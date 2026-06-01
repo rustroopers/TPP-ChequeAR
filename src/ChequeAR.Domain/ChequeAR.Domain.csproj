@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{A1A1A1A1-0000-0000-0000-000000000002}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ChequeAR.Domain</RootNamespace>
+    <AssemblyName>ChequeAR.Domain</AssemblyName>
+    <TargetFrameworkVersion>v4.7.1</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Enums\QuestionnaireStatus.cs" />
+    <Compile Include="Enums\QuestionType.cs" />
+    <Compile Include="Enums\ResponseStatus.cs" />
+    <Compile Include="Enums\Role.cs" />
+    <Compile Include="Entities\Questionnaire.cs" />
+    <Compile Include="Entities\QuestionnaireVersion.cs" />
+    <Compile Include="Entities\QuestionGroup.cs" />
+    <Compile Include="Entities\Question.cs" />
+    <Compile Include="Entities\AnswerOption.cs" />
+    <Compile Include="Entities\QuestionnaireResponse.cs" />
+    <Compile Include="Entities\QuestionnaireResponseItem.cs" />
+    <Compile Include="Entities\Attachment.cs" />
+    <Compile Include="Entities\AuditEvent.cs" />
+    <Compile Include="Entities\User.cs" />
+    <Compile Include="Entities\UserRole.cs" />
+    <Compile Include="Entities\UserSpecialty.cs" />
+    <Compile Include="Entities\Specialty.cs" />
+    <Compile Include="Entities\RefreshToken.cs" />
+    <Compile Include="Entities\SavedReport.cs" />
+    <Compile Include="Entities\ReportExecution.cs" />
+    <Compile Include="Entities\ExportArtifact.cs" />
+    <Compile Include="Entities\ExportJob.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

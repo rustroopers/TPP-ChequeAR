@@ -1,0 +1,17 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "ChequeAR";
+}
+<div class="container">
+    <h1>ChequeAR</h1>
+    <p>Sistema de gestión dinámica de fichas clínicas interoperables (HL7 FHIR R5).</p>
+    <h2>API</h2>
+    <ul>
+        <li><code>GET /fhir/r5/metadata</code> &mdash; CapabilityStatement</li>
+        <li><code>POST /auth/login</code> &mdash; autenticación delegada al hospital</li>
+        <li><code>POST /fhir/r5/Questionnaire</code> &mdash; crear cuestionario (rol Administrador/Jefe)</li>
+        <li><code>POST /fhir/r5/QuestionnaireResponse</code> &mdash; cargar ficha</li>
+        <li><code>POST /api/reports/query</code> &mdash; consultas analíticas</li>
+        <li><code>GET /fhir/r5/AuditEvent</code> &mdash; auditoría</li>
+    </ul>
+</div>
