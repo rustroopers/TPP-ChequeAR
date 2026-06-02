@@ -1,0 +1,94 @@
+# ---------- Visual Studio / .NET ----------
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options directory
+.vs/
+
+# Visual Studio upgrade logs
+UpgradeLog*.htm
+UpgradeLog*.XML
+_UpgradeReport_Files/
+Backup*/
+
+# MSBuild
+*.binlog
+*.tlog
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# ReSharper / Rider
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+.idea/
+
+# Publish output
+[Pp]ublish/
+PublishScripts/
+*.[Pp]ublish.xml
+*.azurePubxml
+*.pubxml
+*.publishproj
+
+# ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+# EF Core
+*.mdf
+*.ldf
+*.ndf
+
+# Local config / secrets
+appsettings.*.Local.json
+*.local.json
+secrets.json
+
+# ---------- OS ----------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# ---------- Cygwin / Git Bash crash dumps ----------
+*.stackdump
+
+# ---------- Editors ----------
+.vscode/
+*.swp
+*.swo
