@@ -20,7 +20,9 @@ namespace ChequeAR.Application.Services
 
         public async Task<string> IssueAsync(string userId, string userAgent, string ip)
         {
-            var raw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+            var bytes = new byte[64];
+            using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
+            var raw = Convert.ToBase64String(bytes);
             var hash = Hash(raw);
             await _repo.AddAsync(new RefreshToken
             {

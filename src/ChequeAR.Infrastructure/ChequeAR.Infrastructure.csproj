@@ -1,63 +1,27 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{A1A1A1A1-0000-0000-0000-000000000004}</ProjectGuid>
-    <OutputType>Library</OutputType>
+    <TargetFramework>net471</TargetFramework>
     <RootNamespace>ChequeAR.Infrastructure</RootNamespace>
     <AssemblyName>ChequeAR.Infrastructure</AssemblyName>
-    <TargetFrameworkVersion>v4.7.1</TargetFrameworkVersion>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <ProjectGuid>{A1A1A1A1-0000-0000-0000-000000000004}</ProjectGuid>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
+
   <ItemGroup>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
   </ItemGroup>
+
   <ItemGroup>
-    <Compile Include="EF\ChequeARDbContext.cs" />
-    <Compile Include="EF\Configurations\QuestionnaireConfig.cs" />
-    <Compile Include="EF\Configurations\QuestionnaireResponseConfig.cs" />
-    <Compile Include="EF\Configurations\AuditEventConfig.cs" />
-    <Compile Include="Repositories\QuestionnaireRepository.cs" />
-    <Compile Include="Repositories\QuestionnaireResponseRepository.cs" />
-    <Compile Include="Repositories\AuditRepository.cs" />
-    <Compile Include="Repositories\UserRepository.cs" />
-    <Compile Include="Repositories\RefreshTokenRepository.cs" />
-    <Compile Include="Repositories\SavedReportRepository.cs" />
-    <Compile Include="Fhir\HospitalFhirClient.cs" />
-    <Compile Include="Fhir\FhirValidatorService.cs" />
-    <Compile Include="Oracle\OracleViewClient.cs" />
-    <Compile Include="Storage\FileShareAttachmentStore.cs" />
-    <Compile Include="Auth\HospitalAuthClient.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <PackageReference Include="EntityFramework" Version="6.4.4" />
+    <PackageReference Include="Oracle.ManagedDataAccess" Version="21.13.0" />
   </ItemGroup>
+
   <ItemGroup>
-    <ProjectReference Include="..\ChequeAR.Domain\ChequeAR.Domain.csproj">
-      <Project>{A1A1A1A1-0000-0000-0000-000000000002}</Project>
-      <Name>ChequeAR.Domain</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\ChequeAR.Application\ChequeAR.Application.csproj">
-      <Project>{A1A1A1A1-0000-0000-0000-000000000003}</Project>
-      <Name>ChequeAR.Application</Name>
-    </ProjectReference>
+    <ProjectReference Include="..\ChequeAR.Domain\ChequeAR.Domain.csproj" />
+    <ProjectReference Include="..\ChequeAR.Application\ChequeAR.Application.csproj" />
   </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+
 </Project>

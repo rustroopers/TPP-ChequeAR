@@ -68,7 +68,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
             catch (InvalidOperationException ex)
             {
-                return Content(HttpStatusCode.UnprocessableEntity, new { error = ex.Message });
+                return Content((HttpStatusCode)422, new { error = ex.Message });
             }
         }
 

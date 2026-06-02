@@ -51,7 +51,7 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content(HttpStatusCode.Created, created);
             }
             catch (ArgumentException ex) { return BadRequest(ex.Message); }
-            catch (InvalidOperationException ex) { return Content(HttpStatusCode.UnprocessableEntity, new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Content((HttpStatusCode)422, new { error = ex.Message }); }
         }
 
         [HttpPost, Route("{id:guid}/$finalize"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
@@ -65,7 +65,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
             catch (InvalidOperationException ex)
             {
-                return Content(HttpStatusCode.UnprocessableEntity, new { error = ex.Message });
+                return Content((HttpStatusCode)422, new { error = ex.Message });
             }
         }
     }
