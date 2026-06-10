@@ -1,10 +1,11 @@
+using System;
 using System.Collections.Generic;
 
 namespace ChequeAR.Api.Models
 {
     public class QuestionnaireListItem
     {
-        public long Id { get; set; }
+        public Guid Id { get; set; }
         public string Title { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
@@ -27,7 +28,7 @@ namespace ChequeAR.Api.Models
 
     public class QuestionnaireDetailViewModel
     {
-        public long Id { get; set; }
+        public Guid Id { get; set; }
         public string Title { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }

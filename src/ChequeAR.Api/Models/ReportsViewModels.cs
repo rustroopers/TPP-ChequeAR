@@ -1,10 +1,11 @@
+using System;
 using System.Collections.Generic;
 
 namespace ChequeAR.Api.Models
 {
     public class SavedReportItem
     {
-        public long Id { get; set; }
+        public Guid Id { get; set; }
         public string Name { get; set; }
         public string QuestionnaireTitle { get; set; }
         public string Author { get; set; }

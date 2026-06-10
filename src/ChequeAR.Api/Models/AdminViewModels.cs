@@ -1,10 +1,11 @@
+using System;
 using System.Collections.Generic;
 
 namespace ChequeAR.Api.Models
 {
     public class AuditEntry
     {
-        public long Id { get; set; }
+        public Guid Id { get; set; }
         public string Timestamp { get; set; }
         public string Username { get; set; }
         public string Action { get; set; }
@@ -26,7 +27,7 @@ namespace ChequeAR.Api.Models
 
     public class AuditDetailViewModel
     {
-        public long Id { get; set; }
+        public Guid Id { get; set; }
         public string Timestamp { get; set; }
         public string Username { get; set; }
         public string FullName { get; set; }
@@ -75,7 +76,7 @@ namespace ChequeAR.Api.Models
     public class IntegrationStatus
     {
         public string Name { get; set; }
-        public string Status { get; set; }   // ok | degraded | down
+        public string Status { get; set; }   // ok | degraded | down | unknown
         public string LastPing { get; set; }
         public string LatencyP95 { get; set; }
         public string Detail { get; set; }

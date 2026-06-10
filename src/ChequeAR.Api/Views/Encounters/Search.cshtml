@@ -62,10 +62,10 @@ else
                     <td><span class="cq-chip cq-chip--@p.SpecialtyCode">@p.SpecialtyLabel</span></td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#selectQModal"
-                                data-patient-id="@p.Id" data-patient-name="@p.FullName" data-patient-hc="@p.HC">
+                                data-patient-id="@p.HC" data-patient-name="@p.FullName" data-patient-hc="@p.HC">
                             Cargar ficha →
                         </button>
-                        <a href="@Url.Action("Timeline", new { patientId = p.Id })" class="btn btn-sm btn-outline-secondary">Historial</a>
+                        <a href="@Url.Action("Timeline", new { patientId = p.HC })" class="btn btn-sm btn-outline-secondary">Historial</a>
                     </td>
                 </tr>
             }

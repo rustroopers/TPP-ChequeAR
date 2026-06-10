@@ -1,5 +1,34 @@
 # API Contracts: Capa de Interoperabilidad y Almacenamiento
 
+## Estado de implementación (2026-06-10)
+
+| Endpoint | Estado | Notas |
+|---|---|---|
+| `GET /metadata` (CapabilityStatement) | ✅ implementado | `MetadataController`, anonymous |
+| `GET /api/integrations/status` | ✅ implementado (nuevo) | `IntegrationStatusController` — F1 |
+| `POST /` (transaction bundle) | ⏳ pendiente | no hay endpoint global de transacción |
+| `GET /Observation` (passthrough) | ⏳ pendiente | `IHospitalFhirClient.GetLastObservationAsync` existe sin endpoint |
+
+**Cliente al hospital (`IHospitalFhirClient`)**:
+
+| Operación | Estado |
+|---|---|
+| `GetPatientAsync(hospitalId)` | ✅ |
+| `GetLastObservationAsync(hospitalId, code)` | ✅ |
+| `SearchConditionsAsync(hospitalId)` | ✅ |
+
+**Cliente Oracle (`IOracleViewClient`)**: `QueryAsync(viewName, filters)` ✅.
+
+Vistas materializadas usadas:
+- `VW_PACIENTE_DATOS_BASICOS` — usada por `PatientService` (R1/R2/R6/R7).
+- `VW_PACIENTE_ANTECEDENTES` — disponible para `PrefillService`.
+- `VW_PACIENTE_MEDICION` — idem.
+
+**Frontend**: pantallas F1, F2 + indirectamente R1-R7 — ver `specs/006-frontend-ux/api-integration.md`.
+
+---
+
+
 ## API expuesta por ChequeAR (servidor FHIR)
 
 **Base**: `/fhir/r5` · **Content-Type**: `application/fhir+json`

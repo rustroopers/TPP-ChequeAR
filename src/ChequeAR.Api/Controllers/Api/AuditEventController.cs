@@ -17,5 +17,19 @@ namespace ChequeAR.Api.Controllers.Api
             var items = await _repo.SearchAsync(agentWho, entityWhat, _offset, _count);
             return Ok(new { resourceType = "Bundle", type = "searchset", total = items.Count, entry = items });
         }
+
+        // A7 — detalle de evento. Búsqueda por id directo (no FHIR-search).
+        [HttpGet, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        public async Task<IHttpActionResult> Get(System.Guid id)
+        {
+            // Reusa SearchAsync con paginación amplia + filtro client-side.
+            // Optimización futura: agregar IAuditRepository.GetAsync(id).
+            var all = await _repo.SearchAsync(null, null, 0, 5000);
+            foreach (var e in all)
+            {
+                if (e.Id == id) return Ok(e);
+            }
+            return NotFound();
+        }
     }
 }

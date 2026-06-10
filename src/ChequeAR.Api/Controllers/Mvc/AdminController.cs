@@ -1,13 +1,20 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
+using ChequeAR.Application.Services;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
+    [Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
     public class AdminController : Controller
     {
-        // F1 — Panel de salud de integraciones
-        public ActionResult Integrations()
+        private readonly IntegrationHealthService _health;
+        public AdminController(IntegrationHealthService health) { _health = health; }
+
+        // F1
+        public async Task<ActionResult> Integrations()
         {
             ViewBag.Title = "Integraciones";
             ViewBag.PageId = "integrations";
@@ -16,10 +23,31 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
                 System.Tuple.Create("Integraciones", (string)null)
             };
-            return View(MockSeed.IntegrationsStatus());
+            var model = new IntegrationsViewModel();
+            try
+            {
+                var probes = await _health.ProbeAllAsync();
+                foreach (var p in probes)
+                {
+                    model.Integrations.Add(new Models.IntegrationStatus
+                    {
+                        Name = p.Name,
+                        Status = p.Status,
+                        LastPing = p.LastPingUtc.ToLocalTime().ToString("HH:mm:ss"),
+                        LatencyP95 = p.LatencyMs + " ms",
+                        Detail = p.Detail
+                    });
+                }
+            }
+            catch
+            {
+                model = MockSeed.IntegrationsStatus();
+                ViewBag.DataMode = "demo";
+            }
+            return View(model);
         }
 
-        // F2 — Visor CapabilityStatement
+        // F2 (estática)
         public ActionResult Capability()
         {
             ViewBag.Title = "CapabilityStatement";

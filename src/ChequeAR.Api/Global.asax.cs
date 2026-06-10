@@ -9,8 +9,13 @@ namespace ChequeAR.Api
     {
         protected void Application_Start()
         {
+            ServiceComposition.Configure();
+            System.Web.Mvc.DependencyResolver.SetResolver(ServiceComposition.MvcResolver);
+
             AreaRegistration.RegisterAllAreas();
             GlobalConfiguration.Configure(WebApiConfig.Register);
+            GlobalConfiguration.Configuration.DependencyResolver = ServiceComposition.WebApiResolver;
+
             FilterConfig.RegisterGlobalFilters(GlobalFilters.Filters);
             RouteConfig.RegisterRoutes(RouteTable.Routes);
         }

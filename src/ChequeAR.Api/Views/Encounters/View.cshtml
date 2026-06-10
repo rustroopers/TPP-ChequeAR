@@ -10,7 +10,7 @@
         <h1 class="cq-page-header__title mt-2">@Model.QuestionnaireTitle <span class="cq-text-sm cq-text-muted">v@(Model.QuestionnaireVersion)</span></h1>
         <p class="cq-page-header__subtitle">@Model.Patient.FullName (HC @Model.Patient.HC) · cargada por @Model.Author · @Model.FinalizedAt</p>
     </div>
-    <a href="@Url.Action("Timeline", new { patientId = Model.Patient.Id })" class="btn btn-outline-secondary">Ver historial</a>
+    <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-outline-secondary">Ver historial</a>
 </header>
 
 <div class="cq-card" style="max-width:820px;">
