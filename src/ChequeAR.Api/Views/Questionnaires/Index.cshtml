@@ -1,0 +1,181 @@
+@model ChequeAR.Api.Models.QuestionnaireListViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Cuestionarios";
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">Cuestionarios</h1>
+        <p class="cq-page-header__subtitle">Definición y publicación de fichas paramétricas</p>
+    </div>
+    <a href="@Url.Action("Edit", new { id = 0 })" class="btn btn-primary">
+        <i class="bi bi-plus-lg me-1"></i> Nuevo cuestionario
+    </a>
+</header>
+
+@using (Html.BeginForm("Index", "Questionnaires", FormMethod.Get, new { @class = "mb-3" }))
+{
+    <div class="row g-2 align-items-end">
+        <div class="col-md-5">
+            <label class="form-label cq-text-sm">Buscar</label>
+            <input type="search" name="q" value="@Model.SearchTerm" class="form-control" placeholder="Título…" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label cq-text-sm">Especialidad</label>
+            <select name="specialty" class="form-select">
+                <option value="">Todas</option>
+                <option value="cardio" selected="@(Model.SpecialtyFilter == "cardio")">Cardiología</option>
+                <option value="neumo" selected="@(Model.SpecialtyFilter == "neumo")">Neumonología</option>
+                <option value="onco" selected="@(Model.SpecialtyFilter == "onco")">Oncología</option>
+                <option value="general" selected="@(Model.SpecialtyFilter == "general")">General</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label cq-text-sm">Estado</label>
+            <select name="status" class="form-select">
+                <option value="">Todos</option>
+                <option value="draft" selected="@(Model.StatusFilter == "draft")">Borrador</option>
+                <option value="published" selected="@(Model.StatusFilter == "published")">Publicado</option>
+                <option value="archived" selected="@(Model.StatusFilter == "archived")">Archivado</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-outline-secondary w-100" type="submit">Filtrar</button>
+        </div>
+    </div>
+}
+
+@if (Model.Items == null || Model.Items.Count == 0)
+{
+    <div class="cq-card">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
+            <div class="cq-empty__title">Aún no hay cuestionarios</div>
+            <div class="cq-empty__desc">Creá el primero para tu especialidad.</div>
+            <a href="@Url.Action("Edit", new { id = 0 })" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Nuevo cuestionario</a>
+        </div>
+    </div>
+}
+else
+{
+    <table class="cq-table">
+        <thead>
+            <tr>
+                <th>Título</th>
+                <th>Especialidad</th>
+                <th>Versión</th>
+                <th>Estado</th>
+                <th>Actualizado</th>
+                <th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var q in Model.Items)
+            {
+                <tr>
+                    <td><a href="@Url.Action("Preview", new { id = q.Id })" class="text-decoration-none">@q.Title</a></td>
+                    <td><span class="cq-chip cq-chip--@q.SpecialtyCode">@q.SpecialtyLabel</span></td>
+                    <td>v@(q.Version)</td>
+                    <td>
+                        @if (q.Status == "published") { <span class="cq-badge cq-badge--published">Publicado</span> }
+                        else if (q.Status == "draft") { <span class="cq-badge cq-badge--draft">Borrador</span> }
+                        else { <span class="cq-badge cq-badge--archived">Archivado</span> }
+                    </td>
+                    <td class="cq-text-sm cq-text-muted">@q.UpdatedAt</td>
+                    <td class="text-end">
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" aria-label="Acciones de @q.Title">
+                                <i class="bi bi-three-dots"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
+                                <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
+                                <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
+                                <li><hr class="dropdown-divider" /></li>
+                                <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                            </ul>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="d-flex justify-content-between align-items-center mt-3 cq-text-sm cq-text-muted">
+        <span>Mostrando @Model.Items.Count de @Model.Total</span>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page - 1 })">‹</a></li>
+                <li class="page-item active"><span class="page-link">@Model.Page</span></li>
+                <li class="page-item"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page + 1 })">›</a></li>
+            </ul>
+        </nav>
+    </div>
+}
+
+@* Q6 — Modal Publicar *@
+<div class="modal fade" id="publishModal" tabindex="-1" aria-labelledby="publishModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        @using (Html.BeginForm("Publish", "Questionnaires", FormMethod.Post, new { @class = "modal-content" }))
+        {
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="publishId" />
+            <div class="modal-header">
+                <h2 class="modal-title h3" id="publishModalLabel">Publicar cuestionario</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="cq-text-sm cq-text-muted mb-3">Una vez publicada, la versión queda inmutable. Las cargas existentes mantienen su versión.</p>
+                <div class="mb-3">
+                    <label class="form-label">Notas del cambio</label>
+                    <textarea name="changeNote" rows="3" class="form-control" placeholder="Describí qué cambia respecto a la versión anterior"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Publicar</button>
+            </div>
+        }
+    </div>
+</div>
+
+@* Q7 — Modal Archivar *@
+<div class="modal fade" id="archiveModal" tabindex="-1" aria-labelledby="archiveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        @using (Html.BeginForm("Archive", "Questionnaires", FormMethod.Post, new { @class = "modal-content" }))
+        {
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="archiveId" />
+            <div class="modal-header">
+                <h2 class="modal-title h3" id="archiveModalLabel">Archivar cuestionario</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Querés archivar <strong id="archiveTitle"></strong>?</p>
+                <p class="cq-text-sm cq-text-muted mb-0">No se podrá usar para nuevas cargas. Las respuestas existentes se conservan.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-danger">Archivar</button>
+            </div>
+        }
+    </div>
+</div>
+
+@section scripts {
+<script>
+    document.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-bs-target='#publishModal'], [data-bs-target='#archiveModal']");
+        if (!btn) return;
+        var id = btn.getAttribute("data-id");
+        var title = btn.getAttribute("data-title");
+        if (btn.getAttribute("data-bs-target") === "#publishModal") {
+            document.getElementById("publishId").value = id;
+        } else {
+            document.getElementById("archiveId").value = id;
+            document.getElementById("archiveTitle").textContent = title;
+        }
+    });
+</script>
+}

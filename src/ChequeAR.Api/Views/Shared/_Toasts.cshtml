@@ -1,0 +1,21 @@
+@* Stack global de toasts — se usa con JS auxiliar window.cqToast(message, level) *@
+<div id="cq-toasts" class="cq-toasts" aria-live="polite" aria-atomic="true"></div>
+<script>
+    (function () {
+        window.cqToast = function (message, level) {
+            level = level || "info";
+            var stack = document.getElementById("cq-toasts");
+            if (!stack) return;
+            var el = document.createElement("div");
+            el.className = "toast align-items-center text-bg-" + (level === "error" ? "danger" : level) + " border-0 show";
+            el.setAttribute("role", "status");
+            el.innerHTML = '<div class="d-flex">' +
+                '<div class="toast-body">' + message + '</div>' +
+                '<button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Cerrar"></button>' +
+                '</div>';
+            el.querySelector(".btn-close").addEventListener("click", function () { el.remove(); });
+            stack.appendChild(el);
+            if (level !== "error") setTimeout(function () { el.remove(); }, 4000);
+        };
+    })();
+</script>

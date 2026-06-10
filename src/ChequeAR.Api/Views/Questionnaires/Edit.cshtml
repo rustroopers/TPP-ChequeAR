@@ -1,0 +1,32 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Editor de cuestionario";
+    var id = ViewBag.QuestionnaireId;
+    var title = ViewBag.QuestionnaireTitle as string;
+    var version = ViewBag.Version;
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">@title</h1>
+        <p class="cq-page-header__subtitle">Versión @version · borrador</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="@Url.Action("Preview", new { id = id })" class="btn btn-outline-secondary"><i class="bi bi-eye me-1"></i> Vista previa</a>
+        <button type="button" class="btn btn-primary" id="saveBtn"><i class="bi bi-check2 me-1"></i> Guardar</button>
+    </div>
+</header>
+
+<div id="qEditor" data-vue-island="questionnaire-editor"
+     data-props='@Html.Raw("{\"id\":" + id + ",\"title\":\"" + title + "\",\"version\":" + version + "}")'>
+    <div class="cq-card text-center cq-text-muted">
+        <i class="bi bi-arrow-clockwise" style="font-size:24px;"></i>
+        <div class="mt-2">Cargando editor…</div>
+    </div>
+</div>
+
+@section scripts {
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js"></script>
+<script src="~/Scripts/islands/bootstrap.js"></script>
+<script src="~/Scripts/islands/questionnaire-editor/index.js"></script>
+}

@@ -1,0 +1,22 @@
+@{
+    var lang = (Request.Cookies["chequear_lang"] != null ? Request.Cookies["chequear_lang"].Value : "es-AR");
+    var label = lang == "en" ? "EN" : "ES";
+}
+<div class="dropdown">
+    <button class="cq-navbar__btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Cambiar idioma">
+        <i class="bi bi-globe2"></i>
+        <span>@label</span>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+            <a class="dropdown-item @(lang == "es-AR" ? "active" : "")" href="@Url.Action("SetLanguage", "Account", new { lang = "es-AR", returnUrl = Request.Url.PathAndQuery })">
+                Español <span class="cq-text-xs cq-text-muted ms-1">(es-AR)</span>
+            </a>
+        </li>
+        <li>
+            <a class="dropdown-item @(lang == "en" ? "active" : "")" href="@Url.Action("SetLanguage", "Account", new { lang = "en", returnUrl = Request.Url.PathAndQuery })">
+                English <span class="cq-text-xs cq-text-muted ms-1">(en)</span>
+            </a>
+        </li>
+    </ul>
+</div>

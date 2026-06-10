@@ -1,0 +1,21 @@
+@{
+    var crumbs = ViewBag.Breadcrumbs as System.Collections.Generic.IList<System.Tuple<string, string>>;
+}
+@if (crumbs != null && crumbs.Count > 0)
+{
+    <nav class="cq-breadcrumbs" aria-label="breadcrumb">
+        @for (int i = 0; i < crumbs.Count; i++)
+        {
+            var c = crumbs[i];
+            if (i > 0) { <span class="sep">/</span> }
+            if (i == crumbs.Count - 1 || string.IsNullOrEmpty(c.Item2))
+            {
+                <span aria-current="page">@c.Item1</span>
+            }
+            else
+            {
+                <a href="@c.Item2">@c.Item1</a>
+            }
+        }
+    </nav>
+}

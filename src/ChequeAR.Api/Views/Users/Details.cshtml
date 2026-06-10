@@ -1,0 +1,63 @@
+@model ChequeAR.Api.Models.UserDetailViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = Model.FullName;
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">@Model.FullName <span class="cq-text-sm cq-text-muted">(@Model.Username)</span></h1>
+    </div>
+</header>
+
+@using (Html.BeginForm("Save", "Users", FormMethod.Post))
+{
+    @Html.AntiForgeryToken()
+    @Html.HiddenFor(m => m.Username)
+
+    <div class="cq-card mb-3" style="max-width:720px;">
+        <h2>Datos</h2>
+        <dl class="row">
+            <dt class="col-sm-3 cq-text-sm cq-text-muted">Email</dt><dd class="col-sm-9">@Model.Email</dd>
+            <dt class="col-sm-3 cq-text-sm cq-text-muted">DNI</dt><dd class="col-sm-9">@Model.DNI</dd>
+        </dl>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="active" name="Active" @(Model.Active ? "checked" : "") />
+            <label class="form-check-label" for="active">Cuenta activa</label>
+        </div>
+    </div>
+
+    <div class="cq-card mb-3" style="max-width:720px;">
+        <h2>Roles por especialidad</h2>
+        @for (int i = 0; i < Model.SpecialtyRoles.Count; i++)
+        {
+            var sr = Model.SpecialtyRoles[i];
+            <div class="row g-2 align-items-center mb-2">
+                <div class="col-md-5"><span class="cq-chip cq-chip--@sr.SpecialtyCode">@sr.SpecialtyLabel</span></div>
+                <div class="col-md-7">
+                    <select class="form-select" name="SpecialtyRoles[@i].Role">
+                        <option value="Sin acceso" selected="@(sr.Role == "Sin acceso")">Sin acceso</option>
+                        <option value="Observador" selected="@(sr.Role == "Observador")">Observador</option>
+                        <option value="Médico" selected="@(sr.Role == "Médico")">Médico</option>
+                        <option value="Referente" selected="@(sr.Role == "Referente")">Referente</option>
+                        <option value="Administrador" selected="@(sr.Role == "Administrador")">Administrador</option>
+                    </select>
+                    <input type="hidden" name="SpecialtyRoles[@i].SpecialtyCode" value="@sr.SpecialtyCode" />
+                    <input type="hidden" name="SpecialtyRoles[@i].SpecialtyLabel" value="@sr.SpecialtyLabel" />
+                </div>
+            </div>
+        }
+        <button type="button" class="btn btn-sm btn-outline-secondary mt-2"><i class="bi bi-plus-lg me-1"></i> Agregar especialidad</button>
+    </div>
+
+    <div class="cq-card mb-3" style="max-width:720px;">
+        <h2>Permisos especiales</h2>
+        <div class="form-check"><input class="form-check-input" type="checkbox" id="canAudit" name="CanAccessAudit" @(Model.CanAccessAudit ? "checked" : "") /><label class="form-check-label" for="canAudit">Acceso a auditoría</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" id="canRep" name="CanCreateReports" @(Model.CanCreateReports ? "checked" : "") /><label class="form-check-label" for="canRep">Creación de reportes</label></div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a href="@Url.Action("Index")" class="btn btn-outline-secondary">Cancelar</a>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+    </div>
+}

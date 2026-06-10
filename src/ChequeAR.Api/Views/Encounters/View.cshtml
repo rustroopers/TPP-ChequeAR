@@ -1,0 +1,33 @@
+@model ChequeAR.Api.Models.EncounterReadonlyViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Ficha #" + Model.EncounterId;
+}
+
+<header class="cq-page-header">
+    <div>
+        <span class="cq-badge cq-badge--archived"><i class="bi bi-lock me-1"></i> Solo lectura</span>
+        <h1 class="cq-page-header__title mt-2">@Model.QuestionnaireTitle <span class="cq-text-sm cq-text-muted">v@(Model.QuestionnaireVersion)</span></h1>
+        <p class="cq-page-header__subtitle">@Model.Patient.FullName (HC @Model.Patient.HC) · cargada por @Model.Author · @Model.FinalizedAt</p>
+    </div>
+    <a href="@Url.Action("Timeline", new { patientId = Model.Patient.Id })" class="btn btn-outline-secondary">Ver historial</a>
+</header>
+
+<div class="cq-card" style="max-width:820px;">
+    @foreach (var g in Model.Groups)
+    {
+        <h2 class="cq-section-title" style="margin-top:0;">@g.Title</h2>
+        <dl class="row mb-0">
+            @foreach (var q in g.Questions)
+            {
+                <dt class="col-sm-5">@q.Text</dt>
+                <dd class="col-sm-7">
+                    <strong>@q.Answer</strong>
+                    @if (!string.IsNullOrEmpty(q.Unit)) { <span class="cq-text-sm cq-text-muted ms-1">@q.Unit</span> }
+                    @if (q.Prefilled) { <span class="cq-badge cq-badge--info ms-2">Pre-cargado</span> }
+                </dd>
+            }
+        </dl>
+        <hr />
+    }
+</div>

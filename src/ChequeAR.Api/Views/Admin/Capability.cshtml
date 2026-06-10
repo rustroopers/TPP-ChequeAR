@@ -1,0 +1,36 @@
+@model ChequeAR.Api.Models.CapabilityStatementViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "CapabilityStatement";
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">CapabilityStatement</h1>
+        <p class="cq-page-header__subtitle">Endpoint FHIR R5 de ChequeAR</p>
+    </div>
+    <button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i> Descargar JSON</button>
+</header>
+
+<div class="cq-card mb-3" style="max-width:760px;">
+    <dl class="row mb-0">
+        <dt class="col-sm-4 cq-text-sm cq-text-muted">FHIR version</dt><dd class="col-sm-8">@Model.FhirVersion</dd>
+        <dt class="col-sm-4 cq-text-sm cq-text-muted">Software</dt><dd class="col-sm-8">@Model.Software</dd>
+        <dt class="col-sm-4 cq-text-sm cq-text-muted">Implementation</dt><dd class="col-sm-8">@Model.Implementation</dd>
+    </dl>
+</div>
+
+<h2>Recursos soportados</h2>
+<table class="cq-table mb-3" style="max-width:760px;">
+    <thead><tr><th>Recurso</th><th>Operaciones</th></tr></thead>
+    <tbody>
+        @foreach (var r in Model.Resources) { <tr><td><code>@r.Type</code></td><td class="cq-text-sm">@r.Interactions</td></tr> }
+    </tbody>
+</table>
+
+<h2>Profiles</h2>
+<div class="cq-card" style="max-width:760px;">
+    <ul class="list-unstyled m-0">
+        @foreach (var p in Model.Profiles) { <li class="cq-text-sm py-1">· @p</li> }
+    </ul>
+</div>

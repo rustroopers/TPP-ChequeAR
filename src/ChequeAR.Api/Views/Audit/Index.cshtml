@@ -1,0 +1,55 @@
+@model ChequeAR.Api.Models.AuditListViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Auditoría";
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">Auditoría</h1>
+        <p class="cq-page-header__subtitle">Eventos del sistema</p>
+    </div>
+    <button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i> Exportar</button>
+</header>
+
+@using (Html.BeginForm("Index", "Audit", FormMethod.Get, new { @class = "mb-3" }))
+{
+    <div class="row g-2 align-items-end">
+        <div class="col-md-3"><label class="form-label cq-text-sm">Usuario</label><input type="text" class="form-control" name="user" value="@Model.UserFilter" /></div>
+        <div class="col-md-2"><label class="form-label cq-text-sm">Acción</label>
+            <select class="form-select" name="action">
+                <option value="">Todas</option>
+                <option value="READ">READ</option>
+                <option value="CREATE">CREATE</option>
+                <option value="UPDATE">UPDATE</option>
+                <option value="DELETE">DELETE</option>
+                <option value="EXPORT">EXPORT</option>
+                <option value="LOGIN">LOGIN</option>
+            </select>
+        </div>
+        <div class="col-md-2"><label class="form-label cq-text-sm">Recurso</label><input type="text" class="form-control" name="resource" value="@Model.ResourceFilter" placeholder="Patient/123" /></div>
+        <div class="col-md-2"><label class="form-label cq-text-sm">Desde</label><input type="date" class="form-control" name="from" value="@Model.From" /></div>
+        <div class="col-md-2"><label class="form-label cq-text-sm">Hasta</label><input type="date" class="form-control" name="to" value="@Model.To" /></div>
+        <div class="col-md-1"><button type="submit" class="btn btn-outline-secondary w-100">Filtrar</button></div>
+    </div>
+}
+
+<table class="cq-table">
+    <thead>
+        <tr><th>Fecha/hora</th><th>Usuario</th><th>Acción</th><th>Recurso</th><th>IP</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var e in Model.Entries)
+        {
+            <tr>
+                <td class="cq-text-sm">@e.Timestamp</td>
+                <td>@e.Username</td>
+                <td><span class="cq-badge cq-badge--info">@e.Action</span></td>
+                <td><code class="cq-text-sm">@e.Resource</code></td>
+                <td class="cq-text-sm cq-text-muted">@e.IP</td>
+                <td class="text-end"><a href="@Url.Action("Details", new { id = e.Id })" class="btn btn-sm btn-outline-secondary">Ver →</a></td>
+            </tr>
+        }
+    </tbody>
+</table>
+<div class="cq-text-sm cq-text-muted mt-3">1-@Model.Entries.Count de @Model.Total.ToString("N0")</div>

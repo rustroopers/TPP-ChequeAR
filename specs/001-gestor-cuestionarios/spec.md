@@ -99,7 +99,7 @@ El editor permite asociar archivos (ej. foto de una lesión) a una pregunta de t
 
 ## Assumptions
 
-- El template UI lo provee el Hospital Garrahan; este módulo expone API REST consumida por dicho template.
+- La UI del gestor (pantallas Q1–Q9) la entrega el equipo como parte de ChequeAR — ver spec 006 (`screens/01-gestor.md`). Este módulo expone la API REST consumida por esa UI.
 - El identificador del autor proviene del módulo de Seguridad/RBAC (referencia al usuario autenticado vía API del Hospital).
 - La especialidad pediátrica es un catálogo fijo administrado fuera del alcance del MVP.
 - El validador HL7 oficial está disponible como servicio externo o librería embebida (HAPI FHIR Validator).

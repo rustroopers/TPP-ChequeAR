@@ -4,18 +4,18 @@
 
 ## Summary
 
-Backend que sirve `Questionnaire` para renderizar y recibe `QuestionnaireResponse` con autosave, validación server-side de `enableWhen` y reglas, y soporte de adjuntos. Una librería JS auxiliar se integra al template del hospital para interpretar el JSON FHIR.
+Backend que sirve `Questionnaire` para renderizar y recibe `QuestionnaireResponse` con autosave, validación server-side de `enableWhen` y reglas, y soporte de adjuntos. La capa cliente es una **isla Vue 3** (`questionnaire-renderer`, pantalla R3 — spec 006) que interpreta el JSON FHIR y se monta dentro de una vista Razor propia.
 
 ## Technical Context
 
-**Language/Version**: .NET Framework 4.7.1 (backend); TypeScript 5.x ES2020 (librería JS para el template)
-**Primary Dependencies**: ASP.NET Web API 2, Hl7.Fhir.R5, EF6, FluentValidation; en el cliente: vanilla TS + un parser de `enableWhen` propio
+**Language/Version**: .NET Framework 4.7.1 (backend); JavaScript ES2020 + Vue 3 (isla `questionnaire-renderer`)
+**Primary Dependencies**: ASP.NET Web API 2, Hl7.Fhir.R5, EF6, FluentValidation; en el cliente: Vue 3 (global build) + parser de `enableWhen` propio
 **Storage**: SQL Server (mismo schema que módulo 001) + file share UNC para adjuntos
-**Testing**: xUnit + Moq; Playwright para E2E sobre el template; Jest para la librería JS
-**Target Platform**: IIS 10 sobre Windows Server 2016; navegadores Chrome/Edge actuales (los desplegados en el Hospital)
-**Project Type**: web-service + librería JS embeddable
+**Testing**: xUnit + Moq; Playwright para E2E sobre la pantalla R3; Vitest para la isla Vue
+**Target Platform**: IIS 10 sobre Windows Server 2016; navegadores Chrome/Edge ≥ 110
+**Project Type**: web-service + isla Vue embebida en `ChequeAR.Api`
 **Performance Goals**: GET ficha < 200 ms p95; POST QR < 500 ms p95
-**Constraints**: el template no puede ser modificado en su core; la librería JS debe ser drop-in
+**Constraints**: la isla Vue debe poder montarse en cualquier vista Razor; assets vendored (sin CDN)
 **Scale/Scope**: ~500 fichas/día en pico de uso
 
 ## Constitution Check
@@ -42,22 +42,20 @@ src/
 │   ├── Storage/FileShareAttachmentStore.cs
 │   └── Fhir/ResponseMapper.cs
 
-frontend/chequear-renderer/
-├── src/
-│   ├── parser/QuestionnaireParser.ts
-│   ├── parser/EnableWhenEvaluator.ts
-│   ├── renderer/FieldFactory.ts
-│   └── autosave/AutosaveQueue.ts
-├── dist/                                          # bundle drop-in para el template
-└── tests/
+src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/
+├── index.js                                       # entrypoint Vue island
+├── parser/QuestionnaireParser.js
+├── parser/EnableWhenEvaluator.js
+├── renderer/FieldFactory.js
+└── autosave/AutosaveQueue.js
 
 tests/
 ├── unit/
 ├── integration/
-└── e2e/                                           # Playwright sobre template
+└── e2e/                                           # Playwright sobre pantalla R3 (spec 006)
 ```
 
-**Structure Decision**: backend reusa la solución `ChequeAR.sln`; el cliente vive en un sub-proyecto frontend independiente que se publica como bundle único integrable al template.
+**Structure Decision**: backend y cliente viven en la misma solución `ChequeAR.sln`. La isla Vue del renderizador se publica en `ChequeAR.Api/Scripts/islands/questionnaire-renderer/` y se monta desde la vista Razor `Views/Encounters/R3.cshtml` (ver spec 006).
 
 ## Fases
 
@@ -67,7 +65,7 @@ tests/
 | 1 | Endpoints CRUD de `QuestionnaireResponse` | S3 |
 | 2 | Validación server (enableWhen, reglas) + autosave | S3 |
 | 3 | Adjuntos + storage | S4 |
-| 4 | Librería JS de renderizado integrada al template | S4-S5 |
+| 4 | Isla Vue `questionnaire-renderer` integrada en vista Razor R3 | S4-S5 |
 | 5 | Pre-carga `$populate` integrada con módulo 003 | S5 |
 
 ## Complexity Tracking

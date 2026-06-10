@@ -99,3 +99,7 @@ Todo recurso generado/recibido pasa por el validador oficial antes de ser persis
 - El hospital expone una API FHIR (versión a confirmar) con OAuth2/JWT.
 - La vista Oracle se materializa y refresca por el hospital; ChequeAR sólo lee.
 - Los identificadores de paciente son consistentes entre FHIR hospital, Oracle y ChequeAR (ID interno).
+
+## UI
+
+Este módulo es predominantemente backend. Sus únicas superficies de UI son las pantallas **F1 (Panel salud de integraciones)** y **F2 (Visor CapabilityStatement)**, ambas administrativas. Ver `specs/006-frontend-ux/screens/03-fhir.md`.

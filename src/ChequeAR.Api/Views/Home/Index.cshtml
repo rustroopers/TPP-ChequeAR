@@ -1,17 +1,117 @@
+@model ChequeAR.Api.Models.HomeViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "ChequeAR";
+    ViewBag.Title = "Inicio";
+    ViewBag.PageId = "home";
 }
-<div class="container">
-    <h1>ChequeAR</h1>
-    <p>Sistema de gestión dinámica de fichas clínicas interoperables (HL7 FHIR R5).</p>
-    <h2>API</h2>
-    <ul>
-        <li><code>GET /fhir/r5/metadata</code> &mdash; CapabilityStatement</li>
-        <li><code>POST /auth/login</code> &mdash; autenticación delegada al hospital</li>
-        <li><code>POST /fhir/r5/Questionnaire</code> &mdash; crear cuestionario (rol Administrador/Jefe)</li>
-        <li><code>POST /fhir/r5/QuestionnaireResponse</code> &mdash; cargar ficha</li>
-        <li><code>POST /api/reports/query</code> &mdash; consultas analíticas</li>
-        <li><code>GET /fhir/r5/AuditEvent</code> &mdash; auditoría</li>
-    </ul>
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">@Model.UserGreeting</h1>
+        <p class="cq-page-header__subtitle">Tu actividad de hoy</p>
+    </div>
+</header>
+
+@* Acciones rápidas *@
+<div class="cq-grid cq-grid--3 mb-4">
+    <a href="#" class="cq-card cq-card--interactive text-decoration-none">
+        <div class="d-flex align-items-center gap-3">
+            <i class="bi bi-clipboard2-pulse fs-3 text-primary"></i>
+            <div>
+                <h3 class="cq-card__title">Cargar ficha</h3>
+                <p class="cq-card__desc">Iniciar carga clínica para un paciente</p>
+            </div>
+        </div>
+    </a>
+    <a href="#" class="cq-card cq-card--interactive text-decoration-none">
+        <div class="d-flex align-items-center gap-3">
+            <i class="bi bi-journal-text fs-3 text-primary"></i>
+            <div>
+                <h3 class="cq-card__title">Cuestionarios</h3>
+                <p class="cq-card__desc">Crear, editar y publicar fichas paramétricas</p>
+            </div>
+        </div>
+    </a>
+    <a href="#" class="cq-card cq-card--interactive text-decoration-none">
+        <div class="d-flex align-items-center gap-3">
+            <i class="bi bi-bar-chart-line fs-3 text-primary"></i>
+            <div>
+                <h3 class="cq-card__title">Reportes</h3>
+                <p class="cq-card__desc">Armar cohortes y exportar resultados</p>
+            </div>
+        </div>
+    </a>
 </div>
+
+@* Recientes *@
+<div class="d-flex align-items-center justify-content-between mb-2">
+    <h2 class="m-0">Fichas recientes</h2>
+    <a href="#" class="cq-text-sm">Ver todas →</a>
+</div>
+
+@if (Model.RecentEncounters == null || Model.RecentEncounters.Count == 0)
+{
+    <div class="cq-card">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
+            <div class="cq-empty__title">Sin actividad reciente</div>
+            <div class="cq-empty__desc">Cuando cargues fichas vas a verlas acá.</div>
+            <a href="#" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Cargar ficha</a>
+        </div>
+    </div>
+}
+else
+{
+    <table class="cq-table">
+        <thead>
+            <tr>
+                <th>Paciente</th>
+                <th>Cuestionario</th>
+                <th>Especialidad</th>
+                <th>Estado</th>
+                <th>Actualizada</th>
+                <th class="text-end">Abrir</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var enc in Model.RecentEncounters)
+            {
+                <tr>
+                    <td>@enc.PatientName</td>
+                    <td>@enc.QuestionnaireTitle</td>
+                    <td><span class="cq-chip cq-chip--@enc.SpecialtyCode">@enc.SpecialtyCode</span></td>
+                    <td>
+                        @if (enc.Status == "published") { <span class="cq-badge cq-badge--published">Finalizada</span> }
+                        else if (enc.Status == "draft") { <span class="cq-badge cq-badge--draft">Borrador</span> }
+                        else { <span class="cq-badge cq-badge--archived">@enc.Status</span> }
+                    </td>
+                    <td class="cq-text-sm cq-text-muted">@enc.UpdatedAt</td>
+                    <td class="text-end"><a href="@enc.OpenUrl" class="btn btn-sm btn-outline-primary">Abrir →</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (Model.IsAdmin && Model.Kpis != null)
+{
+    <h2 class="cq-section-title">Métricas globales</h2>
+    <div class="cq-grid cq-grid--4">
+        <div class="cq-kpi">
+            <div class="cq-kpi__label">Cuestionarios</div>
+            <div class="cq-kpi__value">@Model.Kpis.Questionnaires</div>
+        </div>
+        <div class="cq-kpi">
+            <div class="cq-kpi__label">Fichas cargadas</div>
+            <div class="cq-kpi__value">@Model.Kpis.Encounters.ToString("N0")</div>
+        </div>
+        <div class="cq-kpi">
+            <div class="cq-kpi__label">Usuarios activos</div>
+            <div class="cq-kpi__value">@Model.Kpis.Users</div>
+        </div>
+        <div class="cq-kpi">
+            <div class="cq-kpi__label">Especialidades</div>
+            <div class="cq-kpi__value">@Model.Kpis.Specialties</div>
+        </div>
+    </div>
+}

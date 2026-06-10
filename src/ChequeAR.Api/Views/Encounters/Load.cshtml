@@ -1,0 +1,26 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Carga de ficha";
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">@ViewBag.QuestionnaireTitle <span class="cq-text-sm cq-text-muted">v@(ViewBag.Version)</span></h1>
+        <p class="cq-page-header__subtitle">@ViewBag.PatientName</p>
+    </div>
+    <span class="cq-badge cq-badge--info"><i class="bi bi-cloud-arrow-up me-1"></i> Borrador autosaved</span>
+</header>
+
+<div id="qRenderer" data-vue-island="questionnaire-renderer"
+     data-props='@Html.Raw("{\"patientId\":" + ViewBag.PatientId + ",\"questionnaireId\":" + ViewBag.QuestionnaireId + "}")'>
+    <div class="cq-card text-center cq-text-muted">
+        <i class="bi bi-arrow-clockwise" style="font-size:24px;"></i>
+        <div class="mt-2">Cargando ficha…</div>
+    </div>
+</div>
+
+@section scripts {
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js"></script>
+<script src="~/Scripts/islands/bootstrap.js"></script>
+<script src="~/Scripts/islands/questionnaire-renderer/index.js"></script>
+}

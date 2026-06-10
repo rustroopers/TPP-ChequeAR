@@ -6,10 +6,10 @@
 
 ## Contexto
 
-La UI la provee el Hospital Garrahan como template. Este módulo se compone de dos partes:
+La UI completa de ChequeAR es entregable propio del equipo (spec 006). Este módulo se compone de dos partes:
 
-1. **Backend de soporte al renderizado**: endpoints REST/FHIR que sirven al template el cuestionario publicado, persisten respuestas, validan en servidor y exponen lógica condicional.
-2. **Capa de adaptación dentro del template** (entregable de integración): JavaScript que interpreta el JSON FHIR `Questionnaire` y produce los controles dinámicos.
+1. **Backend de soporte al renderizado**: endpoints REST/FHIR que entregan el cuestionario publicado, persisten respuestas, validan en servidor y exponen lógica condicional.
+2. **Isla Vue `questionnaire-renderer`** (pantalla R3 — ver `specs/006-frontend-ux/screens/02-renderizado.md`): componente que interpreta el JSON FHIR `Questionnaire` y produce los controles dinámicos dentro de la página Razor.
 
 ## User Scenarios & Testing
 
@@ -64,7 +64,7 @@ Rol Observador (y otros) consulta respuestas previas sin poder editarlas.
 - Cuestionario publicado con nueva versión mientras hay un draft abierto del anterior → se guarda contra la versión original.
 - Pregunta `required` no respondida → no se puede finalizar (sí se puede autosaveear).
 - Adjunto > 10 MB → rechazado con error claro.
-- Pérdida de red durante autosave → reintentos con backoff, cola local en el template.
+- Pérdida de red durante autosave → reintentos con backoff, cola local dentro de la isla Vue.
 
 ## Requirements
 
@@ -95,6 +95,6 @@ Rol Observador (y otros) consulta respuestas previas sin poder editarlas.
 
 ## Assumptions
 
-- La UI (template del hospital) implementa los controles; este módulo provee API y librería JS de soporte.
+- La UI (pantallas R1–R7, spec 006) implementa los controles; este módulo provee API y el componente Vue de renderizado.
 - El paciente ya existe en el sistema hospitalario; se referencia, no se crea aquí.
 - El usuario autenticado se obtiene del módulo 005.

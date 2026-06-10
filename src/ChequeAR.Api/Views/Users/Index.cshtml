@@ -1,0 +1,35 @@
+@model ChequeAR.Api.Models.UserListViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Usuarios";
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">Usuarios</h1>
+        <p class="cq-page-header__subtitle">Gestión de cuentas, roles y especialidades</p>
+    </div>
+    <button class="btn btn-outline-secondary"><i class="bi bi-cloud-download me-1"></i> Importar desde hospital</button>
+</header>
+
+<table class="cq-table">
+    <thead>
+        <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Especialidad</th><th>Estado</th><th class="text-end"></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var u in Model.Users)
+        {
+            <tr>
+                <td><code>@u.Username</code></td>
+                <td>@u.FullName</td>
+                <td>@u.Role</td>
+                <td class="cq-text-sm">@u.Specialty</td>
+                <td>
+                    @if (u.Active) { <span class="cq-badge cq-badge--published">Activo</span> }
+                    else { <span class="cq-badge cq-badge--archived">Inactivo</span> }
+                </td>
+                <td class="text-end"><a href="@Url.Action("Details", new { username = u.Username })" class="btn btn-sm btn-outline-secondary">Editar →</a></td>
+            </tr>
+        }
+    </tbody>
+</table>

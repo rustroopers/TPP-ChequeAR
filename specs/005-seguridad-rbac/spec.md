@@ -119,3 +119,12 @@ Toda operación de creación, modificación, publicación, lectura de fichas de 
 - Los roles del hospital son: Administrador, Jefe, Médico, Observador (confirmado por GP 201).
 - El reloj del servidor está sincronizado con NTP del hospital para validar tokens.
 - La normativa relevante (Ley 25.326 datos personales, Ley 26.529 derechos del paciente, Resolución MS 1480/2011) se cumple por retención + auditoría.
+
+## UI
+
+Las pantallas A1–A7 son entregables del equipo (spec 006, `screens/05-seguridad.md`):
+
+- **A1 Login / A2 Sesión expirada**: pantallas Razor sin shell — autenticación delegada al hospital, formulario propio en frontend.
+- **A3 Selector de especialidad activa**: modal Razor (usuarios multi-especialidad).
+- **A4 Listado / A5 Edición de usuarios**: pantallas Razor condicionales a si la gestión de usuarios queda en ChequeAR (decisión abierta — ver Open Questions de spec 006).
+- **A6 Visor / A7 Detalle de auditoría**: pantallas Razor con DataTables, filtros server-side, export integrado al módulo 004.

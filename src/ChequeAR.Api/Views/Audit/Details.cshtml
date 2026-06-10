@@ -1,0 +1,32 @@
+@model ChequeAR.Api.Models.AuditDetailViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Evento #" + Model.Id;
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">Evento de auditoría #@Model.Id</h1>
+        <p class="cq-page-header__subtitle">@Model.Timestamp</p>
+    </div>
+    <a href="@Url.Action("Index")" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Volver</a>
+</header>
+
+<div class="cq-card" style="max-width:760px;">
+    <dl class="row mb-0">
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">Cuándo</dt>      <dd class="col-sm-9">@Model.Timestamp</dd>
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">Usuario</dt>     <dd class="col-sm-9">@Model.Username · @Model.FullName</dd>
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">Rol / especialidad</dt><dd class="col-sm-9">@Model.Role · @Model.Specialty</dd>
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">Acción</dt>      <dd class="col-sm-9"><span class="cq-badge cq-badge--info">@Model.Action</span></dd>
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">Recurso</dt>     <dd class="col-sm-9"><code>@Model.Resource</code></dd>
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">IP</dt>          <dd class="col-sm-9">@Model.IP</dd>
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">User-Agent</dt>  <dd class="col-sm-9 cq-text-sm">@Model.UserAgent</dd>
+    </dl>
+
+    @if (Model.DiffLines != null && Model.DiffLines.Count > 0)
+    {
+        <h2 class="cq-section-title">Cambios</h2>
+        <pre class="bg-light p-3" style="border-radius:var(--cq-radius-sm); font-size:13px;">@foreach (var line in Model.DiffLines) {<text>@line
+</text>}</pre>
+    }
+</div>

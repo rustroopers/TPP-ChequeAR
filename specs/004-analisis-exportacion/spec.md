@@ -91,3 +91,7 @@ Antes de exportar, el usuario ve una previsualización tabular y agregados bási
 - Las respuestas finalizadas se materializan en `QuestionnaireResponseItem` (ver módulo 002) que ya está indexada para queries analíticas.
 - Cuestionarios diferentes producen exports independientes (no se mezclan estructuras dispares).
 - El usuario tiene permiso de lectura sobre todas las respuestas de las especialidades que su rol habilita.
+
+## UI
+
+Las pantallas E1–E6 son entregables del equipo (spec 006, `screens/04-analisis.md`). La pantalla estrella es **E2 (Query Builder)**, implementada como isla Vue `report-builder`. **E3 (Preview)** y **E4 (Exportar)** son Razor; **E5 (Estadísticas)** usa Chart.js sobre Razor.

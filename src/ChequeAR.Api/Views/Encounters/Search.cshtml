@@ -1,0 +1,142 @@
+@model ChequeAR.Api.Models.PatientSearchViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Pacientes";
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">Buscar paciente</h1>
+        <p class="cq-page-header__subtitle">Por DNI, número de historia clínica o apellido</p>
+    </div>
+</header>
+
+@using (Html.BeginForm("Search", "Encounters", FormMethod.Get, new { @class = "mb-4" }))
+{
+    <div class="input-group" style="max-width:640px;">
+        <input type="search" name="q" value="@Model.Query" class="form-control form-control-lg"
+               placeholder="DNI / Nº HC / Apellido…" aria-label="Buscar paciente" autofocus />
+        <button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i> Buscar</button>
+    </div>
+}
+
+@if (!Model.HasSearched)
+{
+    <div class="cq-card">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-search"></i></div>
+            <div class="cq-empty__title">Buscá por DNI, HC o apellido</div>
+            <div class="cq-empty__desc">Los resultados van a aparecer acá.</div>
+        </div>
+    </div>
+}
+else if (Model.Results == null || Model.Results.Count == 0)
+{
+    <div class="cq-card">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-emoji-frown"></i></div>
+            <div class="cq-empty__title">Sin resultados para "@Model.Query"</div>
+            <div class="cq-empty__desc">Revisá la búsqueda o probá con menos caracteres.</div>
+        </div>
+    </div>
+}
+else
+{
+    <table class="cq-table">
+        <thead>
+            <tr>
+                <th>HC</th>
+                <th>Nombre</th>
+                <th>Edad</th>
+                <th>Especialidad</th>
+                <th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Model.Results)
+            {
+                <tr>
+                    <td><code>@p.HC</code></td>
+                    <td>@p.FullName</td>
+                    <td class="cq-text-sm">@p.AgeLabel</td>
+                    <td><span class="cq-chip cq-chip--@p.SpecialtyCode">@p.SpecialtyLabel</span></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#selectQModal"
+                                data-patient-id="@p.Id" data-patient-name="@p.FullName" data-patient-hc="@p.HC">
+                            Cargar ficha →
+                        </button>
+                        <a href="@Url.Action("Timeline", new { patientId = p.Id })" class="btn btn-sm btn-outline-secondary">Historial</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@* R2 — Modal selector de cuestionario *@
+<div class="modal fade" id="selectQModal" tabindex="-1" aria-hidden="true" aria-labelledby="selectQTitle">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h3" id="selectQTitle">¿Qué ficha cargás hoy?</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="cq-text-sm cq-text-muted mb-3" id="selectQSubtitle"></p>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-8">
+                        <input type="search" class="form-control" placeholder="Buscar cuestionario…" />
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select">
+                            <option>Todas las especialidades</option>
+                            <option>Cardiología</option>
+                            <option>Neumonología</option>
+                            <option>Oncología</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="list-group">
+                    <label class="list-group-item d-flex align-items-center gap-3">
+                        <input class="form-check-input me-2" type="radio" name="qchoice" value="1" />
+                        <div class="flex-fill">
+                            <div class="fw-semibold">Cardio basal <span class="cq-text-xs cq-text-muted ms-1">v3</span></div>
+                            <div class="cq-text-sm cq-text-muted">Última carga para este paciente: 2026-05</div>
+                        </div>
+                        <span class="cq-chip cq-chip--cardio">Cardiología</span>
+                    </label>
+                    <label class="list-group-item d-flex align-items-center gap-3">
+                        <input class="form-check-input me-2" type="radio" name="qchoice" value="2" />
+                        <div class="flex-fill">
+                            <div class="fw-semibold">Cardio seguimiento <span class="cq-text-xs cq-text-muted ms-1">v1</span></div>
+                            <div class="cq-text-sm cq-text-muted">Nunca cargado</div>
+                        </div>
+                        <span class="cq-chip cq-chip--cardio">Cardiología</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="selectQStartBtn">Comenzar carga</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section scripts {
+<script>
+    document.addEventListener("click", function (e) {
+        var trigger = e.target.closest("[data-bs-target='#selectQModal']");
+        if (!trigger) return;
+        var pid = trigger.getAttribute("data-patient-id");
+        var name = trigger.getAttribute("data-patient-name");
+        var hc = trigger.getAttribute("data-patient-hc");
+        document.getElementById("selectQSubtitle").textContent = "Paciente: " + name + " (HC " + hc + ")";
+        document.getElementById("selectQStartBtn").onclick = function () {
+            var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
+            if (!qid) { window.cqToast && cqToast("Elegí un cuestionario", "warning"); return; }
+            location.href = "@Url.Action("Load", "Encounters")" + "?patientId=" + pid + "&questionnaireId=" + qid;
+        };
+    });
+</script>
+}

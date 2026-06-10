@@ -1,0 +1,17 @@
+@model string
+@{
+    var active = Model ?? "";
+    Func<string, string> cls = id => active == id ? "cq-sidebar__item is-active" : "cq-sidebar__item";
+}
+<nav class="cq-sidebar" aria-label="Navegación principal">
+    <div class="cq-sidebar__group-label">Trabajo</div>
+    <a class="@cls("home")" href="@Url.Action("Index", "Home")"><i class="bi bi-house-door"></i> Inicio</a>
+    <a class="@cls("encounters")" href="#"><i class="bi bi-person-vcard"></i> Pacientes</a>
+    <a class="@cls("questionnaires")" href="#"><i class="bi bi-clipboard2-pulse"></i> Cuestionarios</a>
+    <a class="@cls("reports")" href="#"><i class="bi bi-bar-chart"></i> Reportes</a>
+
+    <div class="cq-sidebar__group-label">Administración</div>
+    <a class="@cls("audit")" href="#"><i class="bi bi-shield-check"></i> Auditoría</a>
+    <a class="@cls("users")" href="#"><i class="bi bi-people"></i> Usuarios</a>
+    <a class="@cls("integrations")" href="#"><i class="bi bi-plug"></i> Integraciones</a>
+</nav>

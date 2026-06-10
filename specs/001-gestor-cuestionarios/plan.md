@@ -4,14 +4,14 @@
 
 ## Summary
 
-Backend .NET que expone una API REST FHIR R5 para CRUD y publicación de `Questionnaire`. Persiste en SQL Server con un modelo relacional optimizado para edición + snapshots inmutables al publicar. La UI la provee el Hospital Garrahan (template).
+Backend .NET que expone una API REST FHIR R5 para CRUD y publicación de `Questionnaire`. Persiste en SQL Server con un modelo relacional optimizado para edición + snapshots inmutables al publicar. La UI del gestor (pantallas Q1–Q9, isla Vue para el editor Q2) es entregable propio y se especifica en el módulo 006 (Frontend / UX).
 
 ## Technical Context
 
 **Language/Version**: .NET Framework 4.7.1 (C# 7.3)
 **Primary Dependencies**: ASP.NET Web API 2, HAPI-FHIR .NET (Hl7.Fhir.R5), Entity Framework 6, FluentValidation, Serilog
 **Storage**: SQL Server 2016+ (instancia provista por el Hospital)
-**Testing**: xUnit, Moq, WebApi.TestHost, Playwright (E2E vía template), Testcontainers para integración
+**Testing**: xUnit, Moq, WebApi.TestHost, Playwright (E2E sobre pantallas Razor + isla Vue Q2), Testcontainers para integración
 **Target Platform**: IIS 10 sobre Windows Server 2016 (on-premise)
 **Project Type**: web-service (API REST)
 **Performance Goals**: p95 < 500 ms para CRUD; soporta cuestionarios de hasta 200 ítems
@@ -60,7 +60,7 @@ src/
 tests/
 ├── unit/ChequeAR.Domain.Tests/
 ├── integration/ChequeAR.Api.IntegrationTests/   # Docker SQL Server
-└── e2e/                                          # template del hospital + Playwright
+└── e2e/                                          # Playwright contra UI propia (spec 006)
 ```
 
 **Structure Decision**: Package by Layer dentro de una solución única .NET. La capa Domain es independiente de FHIR; la capa Infrastructure traduce hacia/desde recursos FHIR.

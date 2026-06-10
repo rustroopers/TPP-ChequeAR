@@ -1,0 +1,32 @@
+@{
+    var userName = User != null && User.Identity != null && User.Identity.IsAuthenticated
+        ? User.Identity.Name
+        : "Invitado";
+    var lang = (Request.Cookies["chequear_lang"] != null ? Request.Cookies["chequear_lang"].Value : "es-AR");
+    var langLabel = lang == "en" ? "EN" : "ES";
+}
+<header class="cq-navbar" role="banner">
+    <a href="@Url.Action("Index", "Home")" class="cq-navbar__brand" aria-label="ChequeAR — ir al inicio">
+        @* TODO prod: vendor el logo a Content/img/garrahan-logo-white.svg *@
+        <img src="https://www.garrahan.gov.ar/images/logo2.png" alt="Hospital Garrahan" />
+        <span>ChequeAR</span>
+    </a>
+
+    <div class="cq-navbar__spacer"></div>
+
+    <div class="cq-navbar__actions">
+        @Html.Partial("_LanguageSwitcher")
+
+        <div class="dropdown">
+            <button class="cq-navbar__btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-person-circle"></i>
+                <span>@userName</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="@Url.Action("Profile", "Account")"><i class="bi bi-person"></i> Mi perfil</a></li>
+                <li><hr class="dropdown-divider" /></li>
+                <li><a class="dropdown-item text-danger" href="@Url.Action("Logout", "Account")"><i class="bi bi-box-arrow-right"></i> Cerrar sesión</a></li>
+            </ul>
+        </div>
+    </div>
+</header>

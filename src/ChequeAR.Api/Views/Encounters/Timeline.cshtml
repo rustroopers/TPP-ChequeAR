@@ -1,0 +1,43 @@
+@model ChequeAR.Api.Models.PatientTimelineViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Historial";
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">Historial · @Model.Patient.FullName</h1>
+        <p class="cq-page-header__subtitle">HC @Model.Patient.HC · @Model.Patient.AgeLabel · <span class="cq-chip cq-chip--@Model.Patient.SpecialtyCode">@Model.Patient.SpecialtyLabel</span></p>
+    </div>
+</header>
+
+<div class="cq-card" style="max-width:760px;">
+    @if (Model.Entries.Count == 0)
+    {
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-clock-history"></i></div>
+            <div class="cq-empty__title">Sin fichas previas</div>
+        </div>
+    }
+    else
+    {
+        <div style="position:relative; padding-left:20px; border-left:2px solid var(--cq-neutral-200);">
+            @foreach (var e in Model.Entries)
+            {
+                <div style="position:relative; padding-bottom:24px;">
+                    <span style="position:absolute; left:-27px; top:6px; width:12px; height:12px; border-radius:50%; background:var(--cq-primary); border:2px solid #fff;"></span>
+                    <div class="cq-text-sm cq-text-muted">@e.Date</div>
+                    <div class="d-flex align-items-center gap-2 mt-1">
+                        <strong>@e.QuestionnaireTitle</strong>
+                        <span class="cq-text-xs cq-text-muted">v@(e.QuestionnaireVersion)</span>
+                        @if (e.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-1">
+                        <span class="cq-text-sm cq-text-muted">por @e.Author</span>
+                        <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
