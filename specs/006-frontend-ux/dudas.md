@@ -58,6 +58,15 @@ Este archivo recoge las decisiones que tomé sin tu confirmación durante la imp
 - [ ] **Breakpoint mobile (< 1024px)**: oculto el sidebar y queda sólo el navbar. ¿Acepta como degradación o querés sidebar overlay tipo hamburguesa?
 - [ ] **Tablet (R1, R3)**: la spec menciona soporte explícito. Lo dejé responsivo pero no probé con touch.
 
+## Backend wiring (junio 2026)
+
+- [ ] **DI container custom** vs SimpleInjector/Autofac: usé un `ServiceComposition` propio (sin NuGet nuevo) que implementa los dos `IDependencyResolver` (MVC y Web API). Funciona pero no maneja scope por request fino. Si el equipo prefiere SimpleInjector, el `ServiceComposition` está aislado y se reemplaza sin tocar controllers.
+- [ ] **`DbContext` transient**: cada repo crea un context nuevo por resolución. Para un MVP funciona; para producción conviene scope-por-request (con SimpleInjector trivial).
+- [ ] **`Audit detalle`** (A7) hoy hace un `SearchAsync(_count=5000)` + filtro client-side por id porque `IAuditRepository` no tiene `GetAsync(id)`. Agregar el método al interfaz cuando se trabaje en hardening del módulo 005.
+- [ ] **`PatientService.SearchAsync`** asume que la vista Oracle `VW_PACIENTE_DATOS_BASICOS` acepta un filtro `QUERY` libre que parsea DNI/HC/apellido internamente. Si la vista no es así, lo refinamos.
+- [ ] **JWT en islas Vue**: las islas hoy usan mock data internamente. Para que llamen a `/fhir/r5/Questionnaire` etc. con `Authorization: Bearer`, hay que embeber el token en un `<meta name="cq-token">` del layout y leerlo desde `bootstrap.js`. Diseño definido; implementación pendiente.
+- [ ] **Modo demo (`ViewBag.DataMode`)**: los MVC controllers caen a `MockSeed` si la DB no responde. Útil para que el equipo pueda levantar el proyecto sin migración. En prod el flag NO debería entrar; agregar un assert en `Application_Start` que verifique connectividad y bloquee el arranque si no hay DB.
+
 ## Cosas que no implementé y son spec
 
 - [ ] **Style guide en `/styleguide`** (T014 de tasks): no lo creé. Vale la pena si vas a iterar el theme.

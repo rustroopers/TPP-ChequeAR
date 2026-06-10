@@ -1,5 +1,26 @@
 # API Contracts: Módulo de Análisis y Exportación
 
+## Estado de implementación (2026-06-10)
+
+| Endpoint | Estado | Notas |
+|---|---|---|
+| `POST /api/reports/query` | ✅ implementado | `ReportExecutor.ExecuteAsync` |
+| `POST /api/reports/export` | ✅ implementado | CSV + XLSX (XLSX stub a ClosedXML pendiente) |
+| `GET /api/reports/saved` | ✅ implementado (nuevo) | listado por usuario + especialidad |
+| `GET /api/reports/saved/{id}` | ✅ implementado (nuevo) | |
+| `POST /api/reports/saved` | ✅ implementado (nuevo) | |
+| `PUT /api/reports/saved/{id}` | ✅ implementado (nuevo) | check ownership |
+| `DELETE /api/reports/saved/{id}` | ✅ implementado (nuevo) | check ownership |
+| `GET /api/reports/preview-columns?questionnaireId=` | ✅ implementado (nuevo) | devuelve linkIds + types para E2 |
+| `GET /api/reports/saved/{id}/run` | ⏳ pendiente | atajo a `/query` con la cohorte guardada |
+| `GET /api/reports/jobs/{jobId}` | ⏳ pendiente | export asincrónico (Hangfire) |
+| `GET /api/reports/artifacts/{artifactId}` | ⏳ pendiente | descarga diferida |
+
+**Frontend que consume estos endpoints**: pantallas E1, E2, E3, E4, E5, E6 — ver `specs/006-frontend-ux/api-integration.md`.
+
+---
+
+
 **Base path**: `/api/reports` (no es FHIR; es API de aplicación)
 **Content-Type**: `application/json`
 

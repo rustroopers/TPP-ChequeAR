@@ -1,11 +1,11 @@
+using System;
 using System.Collections.Generic;
 
 namespace ChequeAR.Api.Models
 {
     public class PatientSearchItem
     {
-        public long Id { get; set; }
-        public string HC { get; set; }
+        public string HC { get; set; }   // hospital id (string en el sistema del hospital)
         public string FullName { get; set; }
         public string AgeLabel { get; set; }
         public string SpecialtyCode { get; set; }
@@ -25,7 +25,7 @@ namespace ChequeAR.Api.Models
         public string QuestionnaireTitle { get; set; }
         public int QuestionnaireVersion { get; set; }
         public string Author { get; set; }
-        public long EncounterId { get; set; }
+        public Guid EncounterId { get; set; }
         public string Status { get; set; }
     }
 
@@ -37,7 +37,7 @@ namespace ChequeAR.Api.Models
 
     public class EncounterReadonlyViewModel
     {
-        public long EncounterId { get; set; }
+        public Guid EncounterId { get; set; }
         public PatientSearchItem Patient { get; set; }
         public string QuestionnaireTitle { get; set; }
         public int QuestionnaireVersion { get; set; }

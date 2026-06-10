@@ -4,7 +4,7 @@
  */
 (function () {
     var ReportBuilder = {
-        props: { reportId: { type: Number, default: null } },
+        props: { reportId: { type: String, default: null } },
         setup: function (props) {
             var questionnaires = Vue.ref([
                 { id: 1, title: 'Cardio basal',  questions: [

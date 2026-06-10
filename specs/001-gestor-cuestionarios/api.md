@@ -1,5 +1,25 @@
 # API Contracts: Gestor y Editor de Cuestionarios
 
+## Estado de implementación (2026-06-10)
+
+| Endpoint | Estado | Notas |
+|---|---|---|
+| `GET /fhir/r5/Questionnaire` (search) | ✅ implementado | `QuestionnaireController.Search` |
+| `GET /fhir/r5/Questionnaire/{id}` | ✅ implementado | con `Include(Versions, Questions)` |
+| `POST /fhir/r5/Questionnaire` | ✅ implementado | rol Admin/Jefe |
+| `PUT /fhir/r5/Questionnaire/{id}` | ✅ implementado | sin If-Match todavía |
+| `POST /fhir/r5/Questionnaire/{id}/$publish` | ✅ implementado | validación FHIR via `IFhirValidator` stub |
+| `POST /fhir/r5/Questionnaire/{id}/$archive` | ✅ implementado | |
+| `DELETE /fhir/r5/Questionnaire/{id}` | ✅ implementado | soft delete |
+| `GET /fhir/r5/Questionnaire/{id}/_history/{vid}` | ⏳ pendiente | |
+| `POST /fhir/r5/Questionnaire/{id}/$clone` | ⏳ pendiente | |
+| `GET /fhir/r5/Questionnaire/$count` | ✅ implementado | método repo, falta endpoint REST público |
+
+**Frontend que consume estos endpoints**: pantallas Q1, Q2, Q5, Q6, Q7, Q9 — ver `specs/006-frontend-ux/api-integration.md`.
+
+---
+
+
 **Base path**: `/fhir/r5`
 **Content-Type**: `application/fhir+json`
 **Auth**: Bearer token emitido por la API de logueo del Hospital (ver módulo 005).

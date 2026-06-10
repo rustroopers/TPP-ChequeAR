@@ -1,5 +1,24 @@
 # API Contracts: Motor de Renderizado Dinámico
 
+## Estado de implementación (2026-06-10)
+
+| Endpoint | Estado | Notas |
+|---|---|---|
+| `GET /fhir/r5/QuestionnaireResponse` (search) | ✅ implementado | filtros por `subject`, `questionnaire`, `status` |
+| `GET /fhir/r5/QuestionnaireResponse/{id}` | ✅ implementado | |
+| `POST /fhir/r5/QuestionnaireResponse` | ✅ implementado | crea en estado `in-progress` |
+| `POST /fhir/r5/QuestionnaireResponse/{id}/$finalize` | ✅ implementado | dispara validación FHIR |
+| `POST /api/attachments` (multipart) | ✅ implementado | tipos: jpeg/png/pdf, ≤ 10 MB |
+| `GET /api/patients?q=` | ✅ implementado (nuevo) | usa Oracle `VW_PACIENTE_DATOS_BASICOS`; R1 |
+| `GET /api/patients/{hospitalId}` | ✅ implementado (nuevo) | R2/R6 |
+| `GET /api/patients/{hospitalId}/encounters` | ✅ implementado (nuevo) | R7 timeline |
+| `POST /fhir/r5/QuestionnaireResponse/$populate` (prefill) | ⏳ pendiente | `PrefillService` ya existe sin endpoint expuesto |
+
+**Frontend que consume estos endpoints**: pantallas R1, R2, R3, R6, R7 — ver `specs/006-frontend-ux/api-integration.md`.
+
+---
+
+
 **Base path**: `/fhir/r5`
 **Content-Type**: `application/fhir+json`
 

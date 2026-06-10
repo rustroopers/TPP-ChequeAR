@@ -5,7 +5,7 @@
  */
 (function () {
     var QuestionnaireRenderer = {
-        props: { patientId: Number, questionnaireId: Number },
+        props: { patientId: String, questionnaireId: String },
         setup: function (props) {
             // Mock del cuestionario — en producción se hace fetch a /api/fhir/r5/Questionnaire/{id}
             var questionnaire = Vue.ref({

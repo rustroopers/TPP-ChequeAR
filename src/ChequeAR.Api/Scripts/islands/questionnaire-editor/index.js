@@ -5,7 +5,7 @@
  */
 (function () {
     var QuestionnaireEditor = {
-        props: { id: Number, title: String, version: Number },
+        props: { id: String, title: String, version: Number },
         setup: function (props) {
             var groups = Vue.ref([
                 {

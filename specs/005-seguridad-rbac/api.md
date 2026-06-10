@@ -1,5 +1,26 @@
 # API Contracts: Seguridad y Control de Accesos
 
+## Estado de implementación (2026-06-10)
+
+| Endpoint | Estado | Notas |
+|---|---|---|
+| `POST /auth/login` | ✅ implementado | proxy a `IHospitalAuthClient` |
+| `POST /auth/refresh` | ✅ implementado | rota access token |
+| `POST /auth/logout` | ✅ implementado | revoca refresh |
+| `GET /auth/me` | ✅ implementado | id + roles + specialties del JWT |
+| `GET /fhir/r5/AuditEvent` (search) | ✅ implementado | rol Admin/Jefe |
+| `GET /fhir/r5/AuditEvent/{id}` | ✅ implementado (nuevo) | A7 detalle de evento |
+| `GET /api/users` | ✅ implementado (nuevo) | A4 listado, rol Admin |
+| `GET /api/users/{id}` | ✅ implementado (nuevo) | A5 |
+| `PUT /api/users/{id}` | ✅ implementado (nuevo) | A5 save |
+
+**MVC counterpart de login**: `AccountController.DoLogin` setea `FormsAuthentication` cookie tras llamar a `IHospitalAuthClient`. El JWT queda disponible para las islas Vue vía endpoint `GET /auth/me` (recomendado embeber en meta tag — pendiente).
+
+**Frontend**: pantallas A1, A2, A4, A5, A6, A7 — ver `specs/006-frontend-ux/api-integration.md`.
+
+---
+
+
 ## Autenticación
 
 ### `POST /auth/login`
