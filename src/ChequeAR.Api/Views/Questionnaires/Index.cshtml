@@ -1,16 +1,16 @@
 @model ChequeAR.Api.Models.QuestionnaireListViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Cuestionarios";
+    ViewBag.Title = Cq.T("q1.title");
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Cuestionarios</h1>
-        <p class="cq-page-header__subtitle">Definición y publicación de fichas paramétricas</p>
+        <h1 class="cq-page-header__title">@Cq.T("q1.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("q1.subtitle")</p>
     </div>
-    <a href="@Url.Action("Edit", new { id = 0 })" class="btn btn-primary">
-        <i class="bi bi-plus-lg me-1"></i> Nuevo cuestionario
+    <a href="@Url.Action("Edit")" class="btn btn-primary">
+        <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
     </a>
 </header>
 
@@ -51,9 +51,9 @@
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
-            <div class="cq-empty__title">Aún no hay cuestionarios</div>
-            <div class="cq-empty__desc">Creá el primero para tu especialidad.</div>
-            <a href="@Url.Action("Edit", new { id = 0 })" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Nuevo cuestionario</a>
+            <div class="cq-empty__title">@Cq.T("q1.empty.title")</div>
+            <div class="cq-empty__desc">@Cq.T("q1.empty.desc")</div>
+            <a href="@Url.Action("Edit")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")</a>
         </div>
     </div>
 }
@@ -62,12 +62,12 @@ else
     <table class="cq-table">
         <thead>
             <tr>
-                <th>Título</th>
-                <th>Especialidad</th>
-                <th>Versión</th>
-                <th>Estado</th>
-                <th>Actualizado</th>
-                <th class="text-end">Acciones</th>
+                <th>@Cq.T("table.col.title")</th>
+                <th>@Cq.T("table.col.specialty")</th>
+                <th>@Cq.T("table.col.version")</th>
+                <th>@Cq.T("table.col.status")</th>
+                <th>@Cq.T("table.col.updated")</th>
+                <th class="text-end">@Cq.T("table.col.actions")</th>
             </tr>
         </thead>
         <tbody>
@@ -78,9 +78,9 @@ else
                     <td><span class="cq-chip cq-chip--@q.SpecialtyCode">@q.SpecialtyLabel</span></td>
                     <td>v@(q.Version)</td>
                     <td>
-                        @if (q.Status == "published") { <span class="cq-badge cq-badge--published">Publicado</span> }
-                        else if (q.Status == "draft") { <span class="cq-badge cq-badge--draft">Borrador</span> }
-                        else { <span class="cq-badge cq-badge--archived">Archivado</span> }
+                        @if (q.Status == "published") { <span class="cq-badge cq-badge--published">@Cq.T("status.published")</span> }
+                        else if (q.Status == "draft") { <span class="cq-badge cq-badge--draft">@Cq.T("status.draft")</span> }
+                        else { <span class="cq-badge cq-badge--archived">@Cq.T("status.archived")</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@q.UpdatedAt</td>
                     <td class="text-end">

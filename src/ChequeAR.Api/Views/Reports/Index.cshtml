@@ -1,15 +1,15 @@
 @model ChequeAR.Api.Models.ReportListViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Reportes";
+    ViewBag.Title = Cq.T("e1.title");
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Reportes</h1>
-        <p class="cq-page-header__subtitle">Cohortes guardadas y nuevas consultas</p>
+        <h1 class="cq-page-header__title">@Cq.T("e1.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("e1.subtitle")</p>
     </div>
-    <a href="@Url.Action("Build")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Nueva consulta</a>
+    <a href="@Url.Action("Build")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("e1.new")</a>
 </header>
 
 @if (Model.Items.Count == 0)
@@ -17,9 +17,9 @@
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-bar-chart"></i></div>
-            <div class="cq-empty__title">Sin reportes guardados</div>
-            <div class="cq-empty__desc">Armá tu primera consulta para empezar.</div>
-            <a href="@Url.Action("Build")" class="btn btn-primary">Nueva consulta</a>
+            <div class="cq-empty__title">@Cq.T("e1.empty.title")</div>
+            <div class="cq-empty__desc">@Cq.T("e1.empty.desc")</div>
+            <a href="@Url.Action("Build")" class="btn btn-primary">@Cq.T("e1.new")</a>
         </div>
     </div>
 }

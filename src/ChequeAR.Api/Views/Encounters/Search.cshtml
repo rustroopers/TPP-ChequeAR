@@ -1,13 +1,13 @@
 @model ChequeAR.Api.Models.PatientSearchViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Pacientes";
+    ViewBag.Title = Cq.T("sidebar.patients");
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Buscar paciente</h1>
-        <p class="cq-page-header__subtitle">Por DNI, número de historia clínica o apellido</p>
+        <h1 class="cq-page-header__title">@Cq.T("r1.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("r1.subtitle")</p>
     </div>
 </header>
 
@@ -15,8 +15,8 @@
 {
     <div class="input-group" style="max-width:640px;">
         <input type="search" name="q" value="@Model.Query" class="form-control form-control-lg"
-               placeholder="DNI / Nº HC / Apellido…" aria-label="Buscar paciente" autofocus />
-        <button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i> Buscar</button>
+               placeholder="@Cq.T("r1.placeholder")" aria-label="@Cq.T("r1.title")" autofocus />
+        <button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i> @Cq.T("common.search")</button>
     </div>
 }
 
@@ -25,8 +25,8 @@
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-search"></i></div>
-            <div class="cq-empty__title">Buscá por DNI, HC o apellido</div>
-            <div class="cq-empty__desc">Los resultados van a aparecer acá.</div>
+            <div class="cq-empty__title">@Cq.T("r1.empty.title")</div>
+            <div class="cq-empty__desc">@Cq.T("r1.empty.desc")</div>
         </div>
     </div>
 }
@@ -35,8 +35,8 @@ else if (Model.Results == null || Model.Results.Count == 0)
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-emoji-frown"></i></div>
-            <div class="cq-empty__title">Sin resultados para "@Model.Query"</div>
-            <div class="cq-empty__desc">Revisá la búsqueda o probá con menos caracteres.</div>
+            <div class="cq-empty__title">@Cq.T("r1.noresults.title", new { q = Model.Query })</div>
+            <div class="cq-empty__desc">@Cq.T("r1.noresults.desc")</div>
         </div>
     </div>
 }

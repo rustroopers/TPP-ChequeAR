@@ -1,14 +1,15 @@
 @model ChequeAR.Api.Models.HomeViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Inicio";
+    ViewBag.Title = Cq.T("sidebar.home");
     ViewBag.PageId = "home";
+    var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctora";
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">@Model.UserGreeting</h1>
-        <p class="cq-page-header__subtitle">Tu actividad de hoy</p>
+        <h1 class="cq-page-header__title">@Cq.T("home.greeting", new { name = name })</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("home.subtitle")</p>
     </div>
 </header>
 
@@ -18,8 +19,8 @@
         <div class="d-flex align-items-center gap-3">
             <i class="bi bi-clipboard2-pulse fs-3 text-primary"></i>
             <div>
-                <h3 class="cq-card__title">Cargar ficha</h3>
-                <p class="cq-card__desc">Iniciar carga clínica para un paciente</p>
+                <h3 class="cq-card__title">@Cq.T("home.action.load.title")</h3>
+                <p class="cq-card__desc">@Cq.T("home.action.load.desc")</p>
             </div>
         </div>
     </a>
@@ -27,8 +28,8 @@
         <div class="d-flex align-items-center gap-3">
             <i class="bi bi-journal-text fs-3 text-primary"></i>
             <div>
-                <h3 class="cq-card__title">Cuestionarios</h3>
-                <p class="cq-card__desc">Crear, editar y publicar fichas paramétricas</p>
+                <h3 class="cq-card__title">@Cq.T("home.action.questionnaires.title")</h3>
+                <p class="cq-card__desc">@Cq.T("home.action.questionnaires.desc")</p>
             </div>
         </div>
     </a>
@@ -36,8 +37,8 @@
         <div class="d-flex align-items-center gap-3">
             <i class="bi bi-bar-chart-line fs-3 text-primary"></i>
             <div>
-                <h3 class="cq-card__title">Reportes</h3>
-                <p class="cq-card__desc">Armar cohortes y exportar resultados</p>
+                <h3 class="cq-card__title">@Cq.T("home.action.reports.title")</h3>
+                <p class="cq-card__desc">@Cq.T("home.action.reports.desc")</p>
             </div>
         </div>
     </a>
@@ -45,8 +46,8 @@
 
 @* Recientes *@
 <div class="d-flex align-items-center justify-content-between mb-2">
-    <h2 class="m-0">Fichas recientes</h2>
-    <a href="@Url.Action("Search", "Encounters")" class="cq-text-sm">Ver todas →</a>
+    <h2 class="m-0">@Cq.T("home.recent.title")</h2>
+    <a href="@Url.Action("Search", "Encounters")" class="cq-text-sm">@Cq.T("home.recent.viewall")</a>
 </div>
 
 @if (Model.RecentEncounters == null || Model.RecentEncounters.Count == 0)
@@ -54,9 +55,9 @@
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
-            <div class="cq-empty__title">Sin actividad reciente</div>
-            <div class="cq-empty__desc">Cuando cargues fichas vas a verlas acá.</div>
-            <a href="@Url.Action("Search", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Cargar ficha</a>
+            <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
+            <div class="cq-empty__desc">@Cq.T("home.empty.desc")</div>
+            <a href="@Url.Action("Search", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("home.empty.cta")</a>
         </div>
     </div>
 }
@@ -65,12 +66,12 @@ else
     <table class="cq-table">
         <thead>
             <tr>
-                <th>Paciente</th>
-                <th>Cuestionario</th>
-                <th>Especialidad</th>
-                <th>Estado</th>
-                <th>Actualizada</th>
-                <th class="text-end">Abrir</th>
+                <th>@Cq.T("table.col.patient")</th>
+                <th>@Cq.T("table.col.questionnaire")</th>
+                <th>@Cq.T("table.col.specialty")</th>
+                <th>@Cq.T("table.col.status")</th>
+                <th>@Cq.T("table.col.updated")</th>
+                <th class="text-end">@Cq.T("table.col.open")</th>
             </tr>
         </thead>
         <tbody>
@@ -81,12 +82,12 @@ else
                     <td>@enc.QuestionnaireTitle</td>
                     <td><span class="cq-chip cq-chip--@enc.SpecialtyCode">@enc.SpecialtyCode</span></td>
                     <td>
-                        @if (enc.Status == "published") { <span class="cq-badge cq-badge--published">Finalizada</span> }
-                        else if (enc.Status == "draft") { <span class="cq-badge cq-badge--draft">Borrador</span> }
+                        @if (enc.Status == "published") { <span class="cq-badge cq-badge--published">@Cq.T("status.completed")</span> }
+                        else if (enc.Status == "draft") { <span class="cq-badge cq-badge--draft">@Cq.T("status.draft")</span> }
                         else { <span class="cq-badge cq-badge--archived">@enc.Status</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@enc.UpdatedAt</td>
-                    <td class="text-end"><a href="@enc.OpenUrl" class="btn btn-sm btn-outline-primary">Abrir →</a></td>
+                    <td class="text-end"><a href="@enc.OpenUrl" class="btn btn-sm btn-outline-primary">@Cq.T("common.open") →</a></td>
                 </tr>
             }
         </tbody>
@@ -95,22 +96,22 @@ else
 
 @if (Model.IsAdmin && Model.Kpis != null)
 {
-    <h2 class="cq-section-title">Métricas globales</h2>
+    <h2 class="cq-section-title">@Cq.T("home.metrics.title")</h2>
     <div class="cq-grid cq-grid--4">
         <div class="cq-kpi">
-            <div class="cq-kpi__label">Cuestionarios</div>
+            <div class="cq-kpi__label">@Cq.T("home.kpi.questionnaires")</div>
             <div class="cq-kpi__value">@Model.Kpis.Questionnaires</div>
         </div>
         <div class="cq-kpi">
-            <div class="cq-kpi__label">Fichas cargadas</div>
+            <div class="cq-kpi__label">@Cq.T("home.kpi.encounters")</div>
             <div class="cq-kpi__value">@Model.Kpis.Encounters.ToString("N0")</div>
         </div>
         <div class="cq-kpi">
-            <div class="cq-kpi__label">Usuarios activos</div>
+            <div class="cq-kpi__label">@Cq.T("home.kpi.users")</div>
             <div class="cq-kpi__value">@Model.Kpis.Users</div>
         </div>
         <div class="cq-kpi">
-            <div class="cq-kpi__label">Especialidades</div>
+            <div class="cq-kpi__label">@Cq.T("home.kpi.specialties")</div>
             <div class="cq-kpi__value">@Model.Kpis.Specialties</div>
         </div>
     </div>

@@ -68,8 +68,8 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
-        // Q2 — Editor (host Vue)
-        public async Task<ActionResult> Edit(Guid id)
+        // Q2 — Editor (host Vue). id null = nuevo cuestionario.
+        public async Task<ActionResult> Edit(Guid? id = null)
         {
             ViewBag.Title = "Editor de cuestionario";
             ViewBag.PageId = "questionnaires";
@@ -77,20 +77,30 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
                 System.Tuple.Create("Cuestionarios", Url.Action("Index")),
-                System.Tuple.Create("Editar", (string)null)
+                System.Tuple.Create(id.HasValue ? "Editar" : "Nuevo", (string)null)
             };
-            ViewBag.QuestionnaireId = id == Guid.Empty ? Guid.NewGuid() : id;
-            try
+            ViewBag.QuestionnaireId = id ?? Guid.NewGuid();
+            ViewBag.IsNew = !id.HasValue;
+
+            if (id.HasValue)
             {
-                var q = await _repo.GetAsync(id);
-                ViewBag.QuestionnaireTitle = q?.Title ?? "Nuevo cuestionario";
-                ViewBag.Version = (q?.Versions?.Count ?? 0) + 1;
+                try
+                {
+                    var q = await _repo.GetAsync(id.Value);
+                    ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
+                    ViewBag.Version = (q?.Versions?.Count ?? 0) + 1;
+                }
+                catch
+                {
+                    ViewBag.QuestionnaireTitle = "Cardio basal";
+                    ViewBag.Version = 3;
+                    ViewBag.DataMode = "demo";
+                }
             }
-            catch
+            else
             {
-                ViewBag.QuestionnaireTitle = "Cardio basal";
-                ViewBag.Version = 3;
-                ViewBag.DataMode = "demo";
+                ViewBag.QuestionnaireTitle = "Nuevo cuestionario";
+                ViewBag.Version = 1;
             }
             return View();
         }

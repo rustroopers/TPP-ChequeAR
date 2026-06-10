@@ -1,15 +1,15 @@
 @model ChequeAR.Api.Models.UserListViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Usuarios";
+    ViewBag.Title = Cq.T("users.title");
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Usuarios</h1>
-        <p class="cq-page-header__subtitle">Gestión de cuentas, roles y especialidades</p>
+        <h1 class="cq-page-header__title">@Cq.T("users.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("users.subtitle")</p>
     </div>
-    <button class="btn btn-outline-secondary"><i class="bi bi-cloud-download me-1"></i> Importar desde hospital</button>
+    <button class="btn btn-outline-secondary"><i class="bi bi-cloud-download me-1"></i> @Cq.T("users.import")</button>
 </header>
 
 <table class="cq-table">

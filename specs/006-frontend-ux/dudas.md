@@ -50,8 +50,10 @@ Este archivo recoge las decisiones que tomé sin tu confirmación durante la imp
 
 ## i18n
 
-- [ ] **Claves en MVP**: dejé los textos hardcoded en español por ahora; las pantallas funcionan y son legibles. La pasada de i18n llenando `.resx` queda como tarea separada (spec 007 F2/F3).
-- [ ] **Switch de idioma**: funcional, setea cookie y recarga. Pero los textos no rotan hasta que esté el resource provider.
+- [x] **Resource files**: JSON planos en `src/ChequeAR.Api/Content/i18n/es-AR.json` y `en.json` (decisión: descartar `.resx` por editabilidad). El `CqLocalizer` los carga y cachea.
+- [x] **Switch de idioma**: funcional. Setea cookie + middleware OWIN setea `CurrentCulture/UICulture`.
+- [ ] **Cobertura de claves**: chrome + Home + Q1 + R1 + E1 + Auditoría + Usuarios + Integraciones traducidos. Contenido tabular, modales y vistas P2/P3 siguen hardcoded en español. Falta pasada completa.
+- [ ] **Islas Vue**: aún no leen el JSON — labels internos quedan en español. Trivial agregar `fetch('/Content/i18n/' + lang + '.json')` al bootstrap.js.
 
 ## CSS / responsive
 

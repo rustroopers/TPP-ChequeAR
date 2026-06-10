@@ -1,15 +1,15 @@
 @model ChequeAR.Api.Models.AuditListViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Auditoría";
+    ViewBag.Title = Cq.T("audit.title");
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Auditoría</h1>
-        <p class="cq-page-header__subtitle">Eventos del sistema</p>
+        <h1 class="cq-page-header__title">@Cq.T("audit.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("audit.subtitle")</p>
     </div>
-    <button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i> Exportar</button>
+    <button class="btn btn-outline-secondary"><i class="bi bi-download me-1"></i> @Cq.T("common.export")</button>
 </header>
 
 @using (Html.BeginForm("Index", "Audit", FormMethod.Get, new { @class = "mb-3" }))

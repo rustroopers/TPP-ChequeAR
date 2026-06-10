@@ -1,13 +1,13 @@
 @model ChequeAR.Api.Models.IntegrationsViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Integraciones";
+    ViewBag.Title = Cq.T("integrations.title");
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Integraciones</h1>
-        <p class="cq-page-header__subtitle">Salud y latencia de los sistemas conectados</p>
+        <h1 class="cq-page-header__title">@Cq.T("integrations.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("integrations.subtitle")</p>
     </div>
     <a href="@Url.Action("Capability")" class="btn btn-outline-secondary"><i class="bi bi-code-slash me-1"></i> CapabilityStatement</a>
 </header>
@@ -32,11 +32,11 @@
     }
 </div>
 
-<h2 class="cq-section-title">Errores recientes</h2>
+<h2 class="cq-section-title">@Cq.T("integrations.errors.title")</h2>
 <div class="cq-card">
     @if (Model.RecentErrors.Count == 0)
     {
-        <p class="cq-text-sm cq-text-muted m-0">Sin errores recientes.</p>
+        <p class="cq-text-sm cq-text-muted m-0">@Cq.T("integrations.errors.empty")</p>
     }
     else
     {

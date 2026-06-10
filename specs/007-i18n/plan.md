@@ -14,6 +14,15 @@ Implementar i18n end-to-end usando `.resx` de ASP.NET para Razor + JSON simples 
 **Testing**: xUnit (resolución de cultura, fallback), Playwright (E2E switch)
 **Constraints**: sin librerías externas pesadas; sin requests extra en page load
 
+## Estado de implementación (2026-06-10)
+
+Implementación final difiere del plan original en una decisión clave:
+
+- **No usamos `.resx`** — los textos viven en JSON planos bajo `src/ChequeAR.Api/Content/i18n/{culture}.json`. Razón: editables por no-desarrolladores, sin generador de código, fáciles de versionar/diff, y consumibles tanto desde Razor (`Cq.T`) como desde JS (las islas Vue pueden cargar el mismo archivo con `fetch`).
+- **Helper único `Cq.T(key, args)`** en `Helpers/CqLocalizer.cs` con cache por cultura y fallback `cultura → es-AR → [[key]]`.
+- **Middleware OWIN `CultureMiddleware`** setea `Thread.CurrentCulture/UICulture` desde la cookie `chequear_lang`.
+- **Cobertura actual**: chrome (navbar, sidebar, language switcher) + Home + Q1 + R1 + E1 + Auditoría + Usuarios + Integraciones. Contenido en tablas/modales y vistas P2/P3 quedan en español; pasada completa pendiente.
+
 ## Resolución de cultura — Razor
 
 Middleware OWIN en `Startup.cs`:
@@ -82,21 +91,26 @@ specs/007-i18n/
 
 ```text
 src/ChequeAR.Api/
-├── App_GlobalResources/
-│   ├── Resources.es-AR.resx
-│   └── Resources.en.resx
-├── Scripts/i18n/
-│   ├── es-AR.json
-│   └── en.json
-├── Helpers/CqLocalizer.cs            # Cq.T(...) helper
-└── App_Start/CultureMiddleware.cs
+├── Content/i18n/
+│   ├── es-AR.json                    # default (origen)
+│   └── en.json                       # destino
+├── Helpers/CqLocalizer.cs            # Cq.T(...) helper + CultureMiddleware
+└── Startup.cs                        # registra CultureMiddleware
 
 src/ChequeAR.Domain/
-└── ValueObjects/LocalizedText.cs
+└── ValueObjects/LocalizedText.cs     # (pendiente — textos dinámicos del dominio)
 
 src/ChequeAR.Infrastructure/
-└── EF/Configurations/LocalizedTextConfiguration.cs
+└── EF/Configurations/LocalizedTextConfiguration.cs  # (pendiente)
 ```
+
+## Carpeta `Content/i18n/`
+
+Por qué ahí y no en `App_GlobalResources/`: ese path es específico de Web Forms / Razor pages y obligaba al uso de `.resx`. Servir desde `Content/i18n/` permite:
+
+- Mismo archivo consumido por Razor (server) y por islas Vue (`fetch('/Content/i18n/en.json')`).
+- Edición directa por traductores sin Visual Studio.
+- Diff plano amigable a code review.
 
 ## Convenciones de claves
 
