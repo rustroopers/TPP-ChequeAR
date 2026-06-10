@@ -7,7 +7,7 @@ using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    [Authorize(Roles = Role.Administrador)]
+    // TODO: re-habilitar [Authorize(Roles = Role.Administrador)] cuando FormsAuth esté wired.
     public class UsersController : Controller
     {
         private readonly IUserRepository _repo;

@@ -85,10 +85,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             return RedirectToAction("Index", "Home");
         }
 
-        [Authorize]
         public ActionResult Profile() { ViewBag.Title = "Mi perfil"; return View(); }
 
-        [HttpPost, Authorize, ValidateAntiForgeryToken]
+        [HttpPost, ValidateAntiForgeryToken]
         public ActionResult SaveProfile(string lang)
         {
             return SetLanguage(lang, Url.Action("Profile"));

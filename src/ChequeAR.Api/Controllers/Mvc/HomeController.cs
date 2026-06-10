@@ -69,9 +69,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // Fallback demo
                 model.RecentEncounters = new List<RecentEncounter>
                 {
-                    new RecentEncounter { PatientName = "García, Ana",  QuestionnaireTitle = "Cardio basal",   SpecialtyCode = "cardio", Status = "published", UpdatedAt = "hoy 10:23", OpenUrl = "#" },
-                    new RecentEncounter { PatientName = "López, Mateo", QuestionnaireTitle = "Neumo control",  SpecialtyCode = "neumo",  Status = "draft",     UpdatedAt = "ayer",      OpenUrl = "#" },
-                    new RecentEncounter { PatientName = "Pérez, Lucía", QuestionnaireTitle = "Onco seguimiento", SpecialtyCode = "onco", Status = "published", UpdatedAt = "ayer",      OpenUrl = "#" }
+                    new RecentEncounter { PatientName = "García, Ana",  QuestionnaireTitle = "Cardio basal",   SpecialtyCode = "cardio", Status = "published", UpdatedAt = "hoy 10:23", OpenUrl = Url.Action("Search", "Encounters") },
+                    new RecentEncounter { PatientName = "López, Mateo", QuestionnaireTitle = "Neumo control",  SpecialtyCode = "neumo",  Status = "draft",     UpdatedAt = "ayer",      OpenUrl = Url.Action("Search", "Encounters") },
+                    new RecentEncounter { PatientName = "Pérez, Lucía", QuestionnaireTitle = "Onco seguimiento", SpecialtyCode = "onco", Status = "published", UpdatedAt = "ayer",      OpenUrl = Url.Action("Search", "Encounters") }
                 };
                 if (model.IsAdmin)
                 {

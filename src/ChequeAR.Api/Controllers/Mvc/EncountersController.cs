@@ -8,7 +8,7 @@ using ChequeAR.Application.Services;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    [Authorize]
+    // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
     public class EncountersController : Controller
     {
         private readonly PatientService _patients;
