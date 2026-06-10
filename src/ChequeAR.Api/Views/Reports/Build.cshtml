@@ -12,9 +12,11 @@
 
 <div id="rBuilder" data-vue-island="report-builder"
      data-props='@Html.Raw("{\"reportId\":" + (ViewBag.ReportId != null ? "\"" + ViewBag.ReportId + "\"" : "null") + "}")'>
-    <div class="cq-card text-center cq-text-muted">
-        <i class="bi bi-arrow-clockwise" style="font-size:24px;"></i>
-        <div class="mt-2">Cargando query builder…</div>
+    <div class="cq-card">
+        <div class="cq-loading">
+            <div class="cq-spinner cq-spinner--lg"></div>
+            <div class="cq-loading__label">@Cq.T("e2.loading")</div>
+        </div>
     </div>
 </div>
 

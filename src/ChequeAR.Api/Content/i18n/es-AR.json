@@ -35,6 +35,7 @@
   "common.view": "Ver",
   "common.retry": "Reintentar",
   "common.confirm": "Confirmar",
+  "common.loading": "Cargando…",
 
   "status.draft": "Borrador",
   "status.published": "Publicado",
@@ -98,6 +99,8 @@
   "q2.btn.preview": "Vista previa",
   "q2.btn.save": "Guardar",
   "q2.loading": "Cargando editor…",
+  "r3.loading": "Cargando ficha…",
+  "e2.loading": "Cargando query builder…",
 
   "r1.title": "Buscar paciente",
   "r1.subtitle": "Por DNI, número de historia clínica o apellido",

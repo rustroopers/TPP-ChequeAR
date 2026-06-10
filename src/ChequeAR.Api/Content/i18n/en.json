@@ -35,6 +35,7 @@
   "common.view": "View",
   "common.retry": "Retry",
   "common.confirm": "Confirm",
+  "common.loading": "Loading…",
 
   "status.draft": "Draft",
   "status.published": "Published",
@@ -98,6 +99,8 @@
   "q2.btn.preview": "Preview",
   "q2.btn.save": "Save",
   "q2.loading": "Loading editor…",
+  "r3.loading": "Loading form…",
+  "e2.loading": "Loading query builder…",
 
   "r1.title": "Search patient",
   "r1.subtitle": "By national ID, medical record or last name",

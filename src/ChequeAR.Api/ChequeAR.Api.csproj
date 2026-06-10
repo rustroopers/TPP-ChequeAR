@@ -125,6 +125,7 @@
     <Content Include="Views\Shared\_LanguageSwitcher.cshtml" />
     <Content Include="Views\Shared\_Toasts.cshtml" />
     <Content Include="Views\Shared\_Breadcrumbs.cshtml" />
+    <Content Include="Views\Shared\_ProgressBar.cshtml" />
     <Content Include="Views\Error\Index.cshtml" />
     <Content Include="Content\theme\chequear-theme.css" />
     <Content Include="Content\i18n\es-AR.json" />

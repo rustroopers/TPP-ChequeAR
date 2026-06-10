@@ -19,9 +19,11 @@
 
 <div id="qEditor" data-vue-island="questionnaire-editor"
      data-props='@Html.Raw("{\"id\":\"" + id + "\",\"title\":\"" + title + "\",\"version\":" + version + "}")'>
-    <div class="cq-card text-center cq-text-muted">
-        <i class="bi bi-arrow-clockwise" style="font-size:24px;"></i>
-        <div class="mt-2">Cargando editor…</div>
+    <div class="cq-card">
+        <div class="cq-loading">
+            <div class="cq-spinner cq-spinner--lg"></div>
+            <div class="cq-loading__label">@Cq.T("q2.loading")</div>
+        </div>
     </div>
 </div>
 

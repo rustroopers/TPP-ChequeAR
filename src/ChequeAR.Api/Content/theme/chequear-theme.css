@@ -345,6 +345,103 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 .cq-page-header__title { margin: 0; }
 .cq-page-header__subtitle { font-size: 13px; color: var(--cq-neutral-500); margin: 2px 0 0; }
 
+/* ===== Spinners ===== */
+.cq-spinner {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--cq-neutral-200);
+  border-top-color: var(--cq-primary);
+  border-radius: 50%;
+  animation: cq-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+.cq-spinner--sm { width: 16px; height: 16px; border-width: 2px; }
+.cq-spinner--lg { width: 48px; height: 48px; border-width: 4px; }
+.cq-spinner--accent { border-top-color: var(--cq-accent); }
+.cq-spinner--white { border: 3px solid rgba(255,255,255,0.3); border-top-color: #fff; }
+
+@keyframes cq-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cq-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  color: var(--cq-neutral-500);
+}
+.cq-loading__label { font-size: 14px; color: var(--cq-neutral-500); }
+
+/* Skeleton lines (placeholders sin spinner para listados) */
+.cq-skel {
+  background: linear-gradient(90deg, var(--cq-neutral-100) 25%, var(--cq-neutral-200) 50%, var(--cq-neutral-100) 75%);
+  background-size: 200% 100%;
+  border-radius: var(--cq-radius-sm);
+  animation: cq-skel 1.4s ease-in-out infinite;
+}
+.cq-skel--line { height: 14px; margin: 6px 0; }
+.cq-skel--title { height: 22px; width: 60%; margin-bottom: 12px; }
+.cq-skel--card  { height: 80px; margin-bottom: 16px; }
+@keyframes cq-skel {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ===== Top progress bar (al navegar) ===== */
+#cq-progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  width: 0;
+  background: linear-gradient(90deg, var(--cq-primary), var(--cq-accent));
+  z-index: 9999;
+  opacity: 0;
+  transition: width 220ms ease-out, opacity 220ms ease-out;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(111, 95, 165, 0.6);
+}
+#cq-progress.is-active {
+  opacity: 1;
+}
+
+/* Overlay sobre un card específico (cq-card.is-loading) */
+.cq-card.is-loading {
+  position: relative;
+  pointer-events: none;
+}
+.cq-card.is-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: inherit;
+}
+.cq-card.is-loading .cq-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Button con spinner inline */
+.btn.is-loading { position: relative; color: transparent !important; pointer-events: none; }
+.btn.is-loading::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 16px; height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: cq-spin 0.7s linear infinite;
+}
+.btn-outline-secondary.is-loading::after,
+.btn-outline-primary.is-loading::after { border-color: rgba(0, 0, 0, 0.1); border-top-color: var(--cq-primary); }
+
 /* ===== Toasts ===== */
 .cq-toasts {
   position: fixed;

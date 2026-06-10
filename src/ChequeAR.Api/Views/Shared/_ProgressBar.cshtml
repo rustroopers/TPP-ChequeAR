@@ -1,0 +1,60 @@
+@* Barra de progreso superior, tipo YouTube/GitHub.
+   Se activa con cualquier click en links internos o submit de form. *@
+<div id="cq-progress" role="progressbar" aria-hidden="true"></div>
+<script>
+(function () {
+    var bar = document.getElementById("cq-progress");
+    if (!bar) return;
+    var ticker = null;
+
+    function start() {
+        cancelAnimationFrame(ticker);
+        bar.style.width = "0";
+        bar.classList.add("is-active");
+        var pct = 0;
+        function tick() {
+            // Curva no lineal: avanza rápido al principio, lento cerca del 90%.
+            pct += (90 - pct) * 0.06;
+            bar.style.width = pct.toFixed(1) + "%";
+            if (pct < 89) ticker = requestAnimationFrame(tick);
+        }
+        ticker = requestAnimationFrame(tick);
+    }
+    function done() {
+        cancelAnimationFrame(ticker);
+        bar.style.width = "100%";
+        setTimeout(function () {
+            bar.classList.remove("is-active");
+            setTimeout(function () { bar.style.width = "0"; }, 220);
+        }, 180);
+    }
+
+    // Public API por si una isla quiere arrancarlo manualmente.
+    window.cqProgress = { start: start, done: done };
+
+    // Auto-start en navegaciones internas
+    document.addEventListener("click", function (e) {
+        var a = e.target.closest("a[href]");
+        if (!a) return;
+        var href = a.getAttribute("href");
+        if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
+        if (a.target === "_blank" || a.hasAttribute("download")) return;
+        // Solo URLs del mismo origen
+        try {
+            var url = new URL(a.href, window.location.href);
+            if (url.origin !== window.location.origin) return;
+        } catch (err) { return; }
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+        start();
+    });
+
+    // Auto-start en submit de form (cualquier method)
+    document.addEventListener("submit", function (e) {
+        if (e.target && e.target.tagName === "FORM") start();
+    });
+
+    // Si la página se cachea y se vuelve via back/forward, descactivar.
+    window.addEventListener("pageshow", function () { done(); });
+    window.addEventListener("beforeunload", function () { /* la barra sigue activa hasta la próxima página */ });
+})();
+</script>
