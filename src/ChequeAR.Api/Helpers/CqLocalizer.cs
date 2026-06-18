@@ -32,7 +32,7 @@ namespace ChequeAR.Api.Helpers
             var culture = CurrentCulture();
 
             var dict = LoadCulture(culture) ?? LoadCulture(DefaultCulture);
-            string text;
+            string text = null;
             if (dict == null || !dict.TryGetValue(key, out text))
             {
                 // Fallback explícito a es-AR si la cultura activa no es esa.

@@ -9,38 +9,55 @@ namespace ChequeAR.Infrastructure.Fhir
     {
         private readonly HttpClient _http;
         private readonly string _baseUrl;
+        private readonly string _bearerToken;
 
         public HospitalFhirClient(HttpClient http, string baseUrl, string bearerToken = null)
         {
+            // El HttpClient puede ser compartido (singleton): NO se mutan acá sus
+            // propiedades (Timeout/DefaultRequestHeaders). Tras la primera request eso
+            // lanzaría InvalidOperationException. El Timeout se configura una sola vez
+            // al crear el client (ver ServiceComposition); el bearer se aplica por request.
             _http = http ?? new HttpClient();
             _baseUrl = baseUrl?.TrimEnd('/') ?? "";
-            if (!string.IsNullOrEmpty(bearerToken))
-                _http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearerToken);
-            _http.Timeout = TimeSpan.FromSeconds(5);
+            _bearerToken = bearerToken;
         }
 
         public async Task<string> GetPatientAsync(string hospitalId)
         {
-            var res = await _http.GetAsync(_baseUrl + "/Patient/" + Uri.EscapeDataString(hospitalId));
-            if ((int)res.StatusCode == 404) return null;
-            res.EnsureSuccessStatusCode();
-            return await res.Content.ReadAsStringAsync();
+            using (var res = await SendGetAsync(_baseUrl + "/Patient/" + Uri.EscapeDataString(hospitalId)))
+            {
+                if ((int)res.StatusCode == 404) return null;
+                res.EnsureSuccessStatusCode();
+                return await res.Content.ReadAsStringAsync();
+            }
         }
 
         public async Task<string> GetLastObservationAsync(string hospitalId, string code)
         {
             var url = $"{_baseUrl}/Observation?subject=Patient/{Uri.EscapeDataString(hospitalId)}&code={Uri.EscapeDataString(code)}&_sort=-date&_count=1";
-            var res = await _http.GetAsync(url);
-            res.EnsureSuccessStatusCode();
-            return await res.Content.ReadAsStringAsync();
+            using (var res = await SendGetAsync(url))
+            {
+                res.EnsureSuccessStatusCode();
+                return await res.Content.ReadAsStringAsync();
+            }
         }
 
         public async Task<string> SearchConditionsAsync(string hospitalId)
         {
             var url = $"{_baseUrl}/Condition?subject=Patient/{Uri.EscapeDataString(hospitalId)}";
-            var res = await _http.GetAsync(url);
-            res.EnsureSuccessStatusCode();
-            return await res.Content.ReadAsStringAsync();
+            using (var res = await SendGetAsync(url))
+            {
+                res.EnsureSuccessStatusCode();
+                return await res.Content.ReadAsStringAsync();
+            }
+        }
+
+        private Task<HttpResponseMessage> SendGetAsync(string url)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrEmpty(_bearerToken))
+                req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _bearerToken);
+            return _http.SendAsync(req);
         }
     }
 }

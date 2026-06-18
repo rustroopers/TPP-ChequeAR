@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Data.SqlClient;
 using System.Linq;
 using System.Text;
 using ChequeAR.Application.Dtos;
+using Oracle.ManagedDataAccess.Client;
 
 namespace ChequeAR.Application.Reports
 {
@@ -18,25 +18,28 @@ namespace ChequeAR.Application.Reports
         {
             if (q.QuestionnaireId == Guid.Empty) throw new ArgumentException("QuestionnaireId required");
 
+            // Identificadores entrecomillados (case-sensitive) para matchear las tablas/columnas
+            // que crea EF/ODP.NET con el mismo casing que los nombres .NET. La vista
+            // "vw_FlatResponses" se define en db/oracle/schema.sql con estas mismas columnas.
             var sql = new StringBuilder();
-            sql.AppendLine("SELECT v.ResponseId, v.PatientHospitalId, v.AuthoredAt, v.LinkId, v.ValueDecimal, v.ValueString, v.ValueDate, v.ValueBoolean, v.ValueCode");
-            sql.AppendLine("FROM vw_FlatResponses v");
-            sql.AppendLine("WHERE v.QuestionnaireId = @QuestionnaireId");
+            sql.AppendLine("SELECT v.\"ResponseId\", v.\"PatientHospitalId\", v.\"AuthoredAt\", v.\"LinkId\", v.\"ValueDecimal\", v.\"ValueString\", v.\"ValueDate\", v.\"ValueBoolean\", v.\"ValueCode\"");
+            sql.AppendLine("FROM \"vw_FlatResponses\" v");
+            sql.AppendLine("WHERE v.\"QuestionnaireId\" = :QuestionnaireId");
 
-            var parameters = new List<SqlParameter>
+            var parameters = new List<OracleParameter>
             {
-                new SqlParameter("@QuestionnaireId", q.QuestionnaireId)
+                new OracleParameter("QuestionnaireId", q.QuestionnaireId)
             };
 
             if (q.DateRange?.From != null)
             {
-                sql.AppendLine(" AND v.AuthoredAt >= @DateFrom");
-                parameters.Add(new SqlParameter("@DateFrom", q.DateRange.From.Value));
+                sql.AppendLine(" AND v.\"AuthoredAt\" >= :DateFrom");
+                parameters.Add(new OracleParameter("DateFrom", q.DateRange.From.Value));
             }
             if (q.DateRange?.To != null)
             {
-                sql.AppendLine(" AND v.AuthoredAt <= @DateTo");
-                parameters.Add(new SqlParameter("@DateTo", q.DateRange.To.Value));
+                sql.AppendLine(" AND v.\"AuthoredAt\" <= :DateTo");
+                parameters.Add(new OracleParameter("DateTo", q.DateRange.To.Value));
             }
 
             if (q.Filters != null && q.Filters.Predicates != null && q.Filters.Predicates.Any())
@@ -48,7 +51,7 @@ namespace ChequeAR.Application.Reports
             return new BuiltQuery { Sql = sql.ToString(), Parameters = parameters };
         }
 
-        private void BuildNode(FilterNode node, StringBuilder sql, List<SqlParameter> ps)
+        private void BuildNode(FilterNode node, StringBuilder sql, List<OracleParameter> ps)
         {
             var logic = string.Equals(node.Logic, "OR", StringComparison.OrdinalIgnoreCase) ? " OR " : " AND ";
             sql.Append("(");
@@ -65,13 +68,15 @@ namespace ChequeAR.Application.Reports
                 {
                     if (!ValidOps.Contains(p.Op))
                         throw new ArgumentException("Invalid operator: " + p.Op);
-                    var pName = "@p" + ps.Count;
-                    sql.Append("EXISTS (SELECT 1 FROM QuestionnaireResponseItem qri WHERE qri.ResponseId = v.ResponseId");
-                    sql.Append(" AND qri.LinkId = ").Append("@li").Append(ps.Count);
-                    ps.Add(new SqlParameter("@li" + (ps.Count), p.LinkId));
+                    var idx = ps.Count;
+                    sql.Append("EXISTS (SELECT 1 FROM \"QuestionnaireResponseItem\" qri WHERE qri.\"ResponseId\" = v.\"ResponseId\"");
+                    sql.Append(" AND qri.\"LinkId\" = :li").Append(idx);
+                    ps.Add(new OracleParameter("li" + idx, p.LinkId));
                     var col = ResolveColumn(p.Value);
-                    sql.Append(" AND qri.").Append(col).Append(" ").Append(p.Op).Append(" ").Append(pName).Append(")");
-                    ps.Add(new SqlParameter(pName, p.Value ?? DBNull.Value));
+                    sql.Append(" AND qri.\"").Append(col).Append("\" ").Append(p.Op).Append(" :p").Append(idx).Append(")");
+                    // Oracle no tiene BOOLEAN en tablas: ValueBoolean es NUMBER(1), bindeamos 1/0.
+                    object pval = p.Value is bool b ? (b ? 1 : 0) : p.Value;
+                    ps.Add(new OracleParameter("p" + idx, pval ?? DBNull.Value));
                 }
             }
             sql.Append(")");
@@ -89,6 +94,6 @@ namespace ChequeAR.Application.Reports
     public class BuiltQuery
     {
         public string Sql { get; set; }
-        public List<SqlParameter> Parameters { get; set; }
+        public List<OracleParameter> Parameters { get; set; }
     }
 }

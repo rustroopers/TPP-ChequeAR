@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Data.SqlClient;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
+using Oracle.ManagedDataAccess.Client;
 
 namespace ChequeAR.Application.Reports
 {
@@ -21,9 +21,11 @@ namespace ChequeAR.Application.Reports
         {
             var built = _builder.Build(q);
             var rows = new List<Dictionary<string, object>>();
-            using (var conn = new SqlConnection(_connectionString))
-            using (var cmd = new SqlCommand(built.Sql, conn))
+            using (var conn = new OracleConnection(_connectionString))
+            using (var cmd = new OracleCommand(built.Sql, conn))
             {
+                // Bindeo por nombre: el QueryBuilder usa marcadores :nombre (no posicionales).
+                cmd.BindByName = true;
                 cmd.Parameters.AddRange(built.Parameters.ToArray());
                 await conn.OpenAsync();
                 using (var reader = await cmd.ExecuteReaderAsync())
