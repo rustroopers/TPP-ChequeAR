@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
+using System.IO;
 using System.Linq;
 using System.Web.Http.Dependencies;
 using ChequeAR.Application.Interfaces;
@@ -72,7 +73,16 @@ namespace ChequeAR.Api.App_Start
 
             Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
             Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
-            Register<IOracleViewClient>(() => new OracleViewClient(oracleConn));
+
+            // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.
+            // El archivo se copia a la salida con CopyToOutputDirectory=PreserveNewest;
+            // la ubicación final en runtime es bin/Oracle/allowlist.yaml junto al ensamblado.
+            var allowlistPath = Path.Combine(
+                System.AppDomain.CurrentDomain.BaseDirectory, "Oracle", "allowlist.yaml");
+            var allowedViews = File.Exists(allowlistPath)
+                ? AllowlistLoader.Load(allowlistPath)
+                : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
+            Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
             Register<IFhirValidator>(() => new FhirValidatorService());
             Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot));
 
