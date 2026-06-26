@@ -109,11 +109,11 @@ description: "Task list — Mock de la base de datos del lado Hospital (provisor
 
 **Independent Test**: Generar un sample de 5 historiales (script SQL) y revisión manual por un clínico; calificación SC-005.
 
-- [ ] T028 [P] [US3] Curar el array de nombres+apellidos es-AR en `03-seed.sql` (T010): asegurar variedad de orígenes (italiano, español, criollo, mapuche), evitar nombres famosos o reales
-- [ ] T029 [P] [US3] Curar el catálogo CIE-10 (T012): elegir 25 códigos efectivamente frecuentes en pediatría (infecciones respiratorias, gastroenteritis, asma, fiebre, otitis, varicela, etc.) con `display` clínicamente correcto en es
-- [ ] T030 [P] [US3] Curar rangos de LOINC en `03-seed.sql` (T013): cada código LOINC debe tener un rango de valor distinto por banda etaria (neonatal, lactante, preescolar, escolar, adolescente) para que las observaciones sean plausibles para la edad del paciente
-- [ ] T031 [US3] Crear `infra/mock-hospital/init/sample-historiales.sql`: script SQL stand-alone que selecciona 5 pacientes aleatorios (semilla fija distinta a la del seed) y produce un reporte legible (paciente + episodios + dx + observaciones + signos) para la review con clínicos
-- [ ] T032 [US3] Documentar en `infra/mock-hospital/README.md` el procedimiento de stakeholder review (cómo ejecutar `sample-historiales.sql`, qué preguntarle al clínico, cómo registrar el resultado para SC-005)
+- [X] T028 [P] [US3] Curar el array de nombres+apellidos es-AR en `03-seed.sql` (T010): asegurar variedad de orígenes (italiano, español, criollo, mapuche), evitar nombres famosos o reales
+- [X] T029 [P] [US3] Curar el catálogo CIE-10 (T012): elegir 25 códigos efectivamente frecuentes en pediatría (infecciones respiratorias, gastroenteritis, asma, fiebre, otitis, varicela, etc.) con `display` clínicamente correcto en es
+- [X] T030 [P] [US3] Curar rangos de LOINC en `03-seed.sql` (T013): cada código LOINC debe tener un rango de valor distinto por banda etaria (neonatal, lactante, preescolar, escolar, adolescente) para que las observaciones sean plausibles para la edad del paciente
+- [X] T031 [US3] Crear `infra/mock-hospital/init/sample-historiales.sql`: script SQL stand-alone que selecciona 5 pacientes aleatorios (semilla fija distinta a la del seed) y produce un reporte legible (paciente + episodios + dx + observaciones + signos) para la review con clínicos
+- [X] T032 [US3] Documentar en `infra/mock-hospital/README.md` el procedimiento de stakeholder review (cómo ejecutar `sample-historiales.sql`, qué preguntarle al clínico, cómo registrar el resultado para SC-005)
 
 **Checkpoint US3**: Listo para demos con stakeholders.
 
@@ -137,9 +137,9 @@ description: "Task list — Mock de la base de datos del lado Hospital (provisor
 
 - [X] T036 [P] Agregar al README sección "Apple Silicon": confirmar `platform: linux/amd64`, sugerir ≥6 GB de RAM en Docker Desktop, advertir que primer arranque puede tardar ~8 min (R8)
 - [X] T037 [P] Agregar al README sección "Troubleshooting" copiando de `quickstart.md` (puerto 1521 ocupado, `unhealthy` tras 10 min, logs del seed)
-- [ ] T038 [P] Agregar workflow opcional `.github/workflows/mock-hospital-smoke.yml` que en cada PR a `dev` levanta el compose, espera `--wait`, corre los 4 grupos de tests (~5 min total) y reporta; marcar como opcional si CI de GitHub Actions no tiene Docker disponible
-- [ ] T039 Actualizar `src/README.md` (ChequeAR) con una línea al final apuntando a `infra/mock-hospital/README.md` para que devs nuevos lo descubran
-- [ ] T040 Smoke manual completo: clonar el repo en una máquina limpia (o `git clean -fdx`), seguir el quickstart al pie de la letra, cronometrar tiempo a `healthy`; documentar el resultado en una entrada de commit message para evidenciar SC-001
+- [X] T038 [P] Agregar workflow opcional `.github/workflows/mock-hospital-smoke.yml` que en cada PR a `dev` levanta el compose, espera `--wait`, corre los 4 grupos de tests (~5 min total) y reporta; marcar como opcional si CI de GitHub Actions no tiene Docker disponible
+- [X] T039 Actualizar `src/README.md` (ChequeAR) con una línea al final apuntando a `infra/mock-hospital/README.md` para que devs nuevos lo descubran
+- [X] T040 Smoke manual completo: clonar el repo en una máquina limpia (o `git clean -fdx`), seguir el quickstart al pie de la letra, cronometrar tiempo a `healthy`; documentar el resultado en una entrada de commit message para evidenciar SC-001
 
 ---
 

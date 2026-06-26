@@ -28,17 +28,23 @@ DECLARE
   TYPE t_str_arr IS TABLE OF VARCHAR2(200);
   TYPE t_num_arr IS TABLE OF NUMBER;
 
-  -- Nombres y apellidos es-AR (30 x 30 = 900 combinaciones posibles)
+  -- Nombres y apellidos es-AR — variedad de origenes (espaniol, italiano,
+  -- criollo, mapuche, guarani). Evita nombres reales/famosos. ~30 x ~30.
   v_nombres   t_str_arr := t_str_arr(
     'Juan','Mariano','Lucia','Sofia','Mateo','Valentina','Bruno','Camila',
     'Tomas','Martina','Joaquin','Catalina','Benjamin','Emma','Felipe','Mia',
     'Agustin','Olivia','Lautaro','Renata','Bautista','Julieta','Santino','Isabella',
-    'Ciro','Delfina','Thiago','Antonella','Gael','Pilar');
+    'Ciro','Delfina','Nahuel','Antonella','Iara','Pilar');
   v_apellidos t_str_arr := t_str_arr(
+    -- Espaniolas comunes
     'Gonzalez','Rodriguez','Lopez','Fernandez','Martinez','Diaz','Perez','Garcia',
-    'Sanchez','Romero','Sosa','Torres','Alvarez','Ramirez','Flores','Benitez',
-    'Acosta','Medina','Suarez','Herrera','Aguirre','Caceres','Cabrera','Molina',
-    'Ortiz','Silva','Castro','Vega','Carballo','Quiroga');
+    'Sanchez','Romero','Torres','Alvarez','Ramirez','Flores','Suarez','Castro',
+    -- Italianas (alta presencia en Buenos Aires)
+    'Russo','Bianchi','Rossi','Esposito','Romano','Greco','Marchetti',
+    -- Criollas / regionales
+    'Quiroga','Aguirre','Sosa','Carballo',
+    -- Mapuche / pueblos originarios
+    'Calfunao','Curiqueo','Nahuelpan');
 
   -- Coberturas
   v_coberturas t_str_arr := t_str_arr(
@@ -50,37 +56,40 @@ DECLARE
   -- Sexos
   v_sexos t_str_arr := t_str_arr('M','F','F','M','O');
 
-  -- CIE-10 pediátricos frecuentes (codigo + display)
+  -- CIE-10 pediatricos frecuentes (codigo + display clinicamente correcto).
+  -- Curado para reflejar diagnosticos efectivamente comunes en consultorio y
+  -- guardia pediatrica del Hospital Garrahan (referencia: practica clinica
+  -- argentina + IRAB/asma como motivos top de consulta pediatrica).
   v_cie10_cod t_str_arr := t_str_arr(
     'J06.9','A09','J45.9','K21.9','R50.9','H66.9','J20.9','B01.9','L20.9','J18.9',
     'K59.0','R10.4','J03.9','H10.9','J00','R11','R51','L50.9','R05','N39.0',
-    'J34.0','K35.8','R06.0','S00.9','T78.4');
+    'J32.9','K35.80','R06.0','S00.9','T78.4');
   v_cie10_dsp t_str_arr := t_str_arr(
-    'Infeccion aguda de vias respiratorias superiores',
+    'Infeccion aguda de las vias respiratorias superiores, no especificada',
     'Diarrea y gastroenteritis de presunto origen infeccioso',
-    'Asma no especificada',
-    'Enfermedad por reflujo gastroesofagico',
-    'Fiebre no especificada',
-    'Otitis media no especificada',
-    'Bronquitis aguda no especificada',
-    'Varicela no especificada',
-    'Dermatitis atopica',
-    'Neumonia no especificada',
+    'Asma, no especificada',
+    'Enfermedad por reflujo gastroesofagico sin esofagitis',
+    'Fiebre, no especificada',
+    'Otitis media, no especificada',
+    'Bronquitis aguda, no especificada',
+    'Varicela sin complicacion',
+    'Dermatitis atopica, no especificada',
+    'Neumonia, no especificada',
     'Constipacion',
-    'Dolor abdominal no especificado',
-    'Faringitis aguda no especificada',
-    'Conjuntivitis no especificada',
-    'Rinofaringitis aguda',
+    'Dolor abdominal, no especificado',
+    'Faringitis aguda, no especificada',
+    'Conjuntivitis, no especificada',
+    'Rinofaringitis aguda (resfriado comun)',
     'Nauseas y vomitos',
     'Cefalea',
-    'Urticaria no especificada',
+    'Urticaria, no especificada',
     'Tos',
-    'Infeccion de vias urinarias',
-    'Absceso de tabique nasal',
-    'Apendicitis aguda',
+    'Infeccion de vias urinarias, sitio no especificado',
+    'Sinusitis cronica, no especificada',
+    'Apendicitis aguda, no especificada',
     'Disnea',
-    'Traumatismo de cabeza',
-    'Alergia no especificada');
+    'Traumatismo superficial de la cabeza, parte no especificada',
+    'Alergia, no especificada');
 
   -- LOINC laboratorio (codigo + display + unidad + min + max numerico)
   v_loinc_cod t_str_arr := t_str_arr(
@@ -304,9 +313,40 @@ BEGIN
         v_seq_obs := v_seq_obs + 1;
         v_n_obs_tot := v_n_obs_tot + 1;
         v_idx_loinc := pick_idx(v_loinc_cod);
-        v_valor := ROUND(v_loinc_min(v_idx_loinc)
-                         + DBMS_RANDOM.VALUE * (v_loinc_max(v_idx_loinc) - v_loinc_min(v_idx_loinc)),
-                         2);
+
+        -- Rango por banda etaria (FR-012, T030): ajuste para los LOINC mas
+        -- sensibles a edad. v_edad_meses esta en scope del paciente.
+        --   banda 1 neonatal     0..1 mes
+        --   banda 2 lactante     1..24
+        --   banda 3 preescolar   24..72
+        --   banda 4 escolar      72..144
+        --   banda 5 adolescente  144..216
+        DECLARE
+          v_min NUMBER := v_loinc_min(v_idx_loinc);
+          v_max NUMBER := v_loinc_max(v_idx_loinc);
+        BEGIN
+          IF v_loinc_cod(v_idx_loinc) = '718-7' THEN -- Hemoglobina
+            IF    v_edad_meses < 1   THEN v_min := 14;   v_max := 22;
+            ELSIF v_edad_meses < 24  THEN v_min := 9;    v_max := 13;
+            ELSIF v_edad_meses < 72  THEN v_min := 11;   v_max := 14;
+            ELSIF v_edad_meses < 144 THEN v_min := 11.5; v_max := 14.5;
+            ELSE                          v_min := 12;   v_max := 16;
+            END IF;
+          ELSIF v_loinc_cod(v_idx_loinc) = '2160-0' THEN -- Creatinina
+            IF    v_edad_meses < 1   THEN v_min := 0.3; v_max := 1.0;
+            ELSIF v_edad_meses < 24  THEN v_min := 0.2; v_max := 0.5;
+            ELSIF v_edad_meses < 72  THEN v_min := 0.3; v_max := 0.7;
+            ELSE                          v_min := 0.5; v_max := 1.0;
+            END IF;
+          ELSIF v_loinc_cod(v_idx_loinc) = '6690-2' THEN -- Leucocitos
+            IF    v_edad_meses < 1   THEN v_min := 9;  v_max := 30;
+            ELSIF v_edad_meses < 24  THEN v_min := 5;  v_max := 15;
+            ELSIF v_edad_meses < 144 THEN v_min := 5;  v_max := 13;
+            ELSE                          v_min := 4;  v_max := 11;
+            END IF;
+          END IF;
+          v_valor := ROUND(v_min + DBMS_RANDOM.VALUE * (v_max - v_min), 2);
+        END;
 
         -- Cada 50 observaciones, una textual (cualitativa) para cumplir FR-023.
         IF MOD(v_seq_obs, 50) = 0 THEN

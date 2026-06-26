@@ -93,6 +93,37 @@ docker compose up -d --wait
 Como el seed es determinístico (`DBMS_RANDOM.SEED(20260625)`), el dataset
 resultante es idéntico al anterior (SC-002).
 
+## Stakeholder review (US3, SC-005)
+
+Para revisión con clínicos del Garrahan: el script `init/sample-historiales.sql`
+genera 5 historiales completos (paciente + alergias + episodios + dx + signos +
+laboratorio) con una semilla distinta a la del seed (`20260101`), así la muestra
+no privilegia siempre los mismos pacientes.
+
+```bash
+docker compose exec mock-hospital sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 \
+  @/container-entrypoint-initdb.d/sample-historiales.sql
+```
+
+Procedimiento sugerido para la review:
+
+1. Imprimir o compartir en pantalla la salida.
+2. Pedirle al clínico que evalúe **cada uno de los 5 historiales** contra esta
+   rúbrica binaria (✓ / ✗):
+   - **Nombre+apellido creíbles para un paciente argentino**.
+   - **Edad coherente** entre `FECHA_NACIMIENTO` y los episodios.
+   - **Diagnóstico CIE-10 razonable** para la edad y la especialidad atendiente.
+   - **Observaciones de laboratorio dentro de rangos fisiológicos** para la edad.
+   - **Signos vitales coherentes** (peso/talla vs edad, FC/FR vs banda etaria).
+3. Anotar el resultado en una minuta de stakeholder review.
+4. **Criterio de aceptación SC-005**: al menos 4 de los 5 historiales deben
+   tener todos los ítems ✓. Si quedan <4, ajustar el seed (T028–T030) y
+   re-correr la review.
+
+Cualquier dato que el clínico marque como implausible que requiera cambio se
+levanta como issue contra `infra/mock-hospital/init/03-seed.sql` o contra los
+catálogos embebidos (CIE-10, LOINC).
+
 ## Tests de integración
 
 ```bash
@@ -140,6 +171,30 @@ cierra SC-008.
   init cambiaron, los scripts no se re-ejecutan (es comportamiento de la
   imagen `gvenzl/oracle-xe`). Hacer `down -v` para borrar el volumen y forzar
   re-inicialización.
+
+## Smoke manual cronometrado (SC-001)
+
+Para evidenciar el SC-001 ("< 10 min de setup en máquina razonable") en un
+commit/PR concreto:
+
+1. En una máquina limpia (o tras `git clean -fdx` + `docker system prune -a`),
+   clonar el repo desde cero.
+2. Cronometrar:
+   ```bash
+   cd infra/mock-hospital
+   cp .env.example .env
+   time docker compose up -d --wait
+   ```
+3. Anotar el tiempo `real` reportado por `time`. Debe ser `<10m0.000s`.
+4. Registrar el resultado en el cuerpo del commit/PR como:
+   ```
+   smoke SC-001: <tiempo> en <CPU, RAM, OS, plataforma docker>
+   ```
+   Ejemplo: `smoke SC-001: 2m44s en MBP M2 16GB, Docker Desktop 4.30 (Apple Silicon, QEMU)`.
+
+Si el tiempo supera 10 min, abrir un issue con `[SC-001]` y revisar
+healthcheck (`docker compose logs`), tamaño del seed o RAM asignada a Docker
+antes de mergear.
 
 ## Apple Silicon (M1/M2/M3)
 
