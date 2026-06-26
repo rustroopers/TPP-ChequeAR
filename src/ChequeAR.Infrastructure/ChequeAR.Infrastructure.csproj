@@ -25,4 +25,10 @@
     <ProjectReference Include="..\ChequeAR.Application\ChequeAR.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Oracle\allowlist.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

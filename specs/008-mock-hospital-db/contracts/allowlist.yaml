@@ -1,0 +1,24 @@
+# Allowlist consumida por OracleViewClient (parámetro `allowedViews`).
+# Sólo estas vistas pueden ser consultadas; cualquier otra es rechazada
+# antes de tocar la base (FR-006).
+#
+# Ubicación final propuesta en el repo:
+#   src/ChequeAR.Infrastructure/Oracle/allowlist.yaml
+#
+# Carga al iniciar la app (HostingStartup / DI) y se pasa al constructor:
+#   new OracleViewClient(connectionString, allowedViews: allowlist);
+#
+# Cuando llegue el diseño real del hospital, este archivo es uno de los
+# tres puntos de cambio (junto con OracleMappings/*.yaml y el DDL del mock).
+
+allowed_views:
+  - VW_PACIENTE
+  - VW_EPISODIO
+  - VW_DIAGNOSTICO
+  - VW_OBSERVACION_LAB
+  - VW_SIGNOS_VITALES
+  - VW_MEDICACION
+  - VW_ALERGIA
+  - VW_PROFESIONAL
+  - VW_ESPECIALIDAD
+  - VW_TURNO

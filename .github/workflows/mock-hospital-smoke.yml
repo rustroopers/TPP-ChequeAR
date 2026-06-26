@@ -1,0 +1,67 @@
+# Smoke del mock-hospital (US1+US2).
+#
+# Levanta el contenedor Oracle XE del mock, espera a que esté `healthy`
+# (lo que implica que el seed terminó y pasó la verificación de invariantes),
+# y corre la suite tests/integration/MockHospital.Tests/.
+#
+# Marcado como OPCIONAL en el sentido de que su falla NO debe bloquear
+# merges de PRs que NO toquen mock/infra ni el código del OracleViewClient.
+# Para hacerlo "required", agregar el job a branch protection rules en GitHub.
+#
+# Costo: ~8 min por corrida (3 min levantar Oracle XE en runner amd64 + 5 min
+# del seed + tests). Por eso lo limitamos a PRs que tocan los paths relevantes.
+
+name: mock-hospital smoke
+
+on:
+  pull_request:
+    branches: [dev, testing, main]
+    paths:
+      - 'infra/mock-hospital/**'
+      - 'src/ChequeAR.Infrastructure/Oracle/**'
+      - 'tests/integration/MockHospital.Tests/**'
+      - '.github/workflows/mock-hospital-smoke.yml'
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET Framework reference assemblies via mono
+        # ChequeAR.Tests apunta a net471. En Ubuntu necesitamos las
+        # reference assemblies (Microsoft.NETFramework.ReferenceAssemblies
+        # ya las trae como NuGet, así que basta con .NET SDK 8 para msbuild).
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Levantar mock-hospital
+        working-directory: infra/mock-hospital
+        run: |
+          cp .env.example .env
+          docker compose up -d --wait --wait-timeout 720
+
+      - name: Auditar grants
+        run: |
+          docker compose -f infra/mock-hospital/docker-compose.yml exec -T mock-hospital \
+            bash -c "sqlplus -S system/oraclesys@//localhost:1521/XEPDB1 <<'SQL'
+            SET HEAD OFF FEEDBACK OFF PAGESIZE 0;
+            SELECT TABLE_NAME || ':' || PRIVILEGE FROM DBA_TAB_PRIVS WHERE GRANTEE='CHEQUEAR_RO' ORDER BY 1;
+SQL"
+
+      - name: dotnet restore + build
+        run: dotnet build tests/integration/MockHospital.Tests/MockHospital.Tests.csproj -c Release
+
+      - name: dotnet test
+        env:
+          MOCK_HOSPITAL_CONN: "User Id=CHEQUEAR_RO;Password=devdev;Data Source=localhost:1521/XEPDB1;"
+          MOCK_HOSPITAL_OWNER_CONN: "User Id=HOSPITAL_MOCK;Password=hospitalmockdev;Data Source=localhost:1521/XEPDB1;"
+        run: dotnet test tests/integration/MockHospital.Tests/MockHospital.Tests.csproj -c Release --no-build --logger "trx;LogFileName=mock-hospital.trx"
+
+      - name: Logs del contenedor (en fallo)
+        if: failure()
+        run: docker compose -f infra/mock-hospital/docker-compose.yml logs mock-hospital
