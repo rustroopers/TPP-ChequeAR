@@ -27,9 +27,57 @@ namespace ChequeAR.Application.Services
             q.CreatedBy = userId;
             q.CreatedAt = DateTime.UtcNow;
             q.UpdatedAt = DateTime.UtcNow;
+
+            // Asignar PKs/FKs a las entidades hijas: vienen del cliente sin Id (Guid.Empty),
+            // y EF no genera Guids automáticamente -> sin esto, 2+ hijas colisionan en la PK.
+            AssignChildIds(q);
+
             await _repo.AddAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + q.Id, userId));
             return q;
+        }
+
+        private static void AssignChildIds(Questionnaire q)
+        {
+            if (q.Groups != null)
+            {
+                var gOrder = 0;
+                foreach (var g in q.Groups)
+                {
+                    if (g.Id == Guid.Empty) g.Id = Guid.NewGuid();
+                    g.QuestionnaireId = q.Id;
+                    if (g.OrderIndex == 0) g.OrderIndex = gOrder;
+                    gOrder++;
+                    AssignQuestionIds(g.Questions, q.Id, g.Id);
+                }
+            }
+            AssignQuestionIds(q.Questions, q.Id, null);
+        }
+
+        private static void AssignQuestionIds(System.Collections.Generic.ICollection<Question> questions, Guid questionnaireId, Guid? groupId)
+        {
+            if (questions == null) return;
+            var order = 0;
+            foreach (var question in questions)
+            {
+                if (question.Id == Guid.Empty) question.Id = Guid.NewGuid();
+                question.QuestionnaireId = questionnaireId;
+                if (groupId.HasValue) question.GroupId = groupId;
+                if (question.OrderIndex == 0) question.OrderIndex = order;
+                order++;
+
+                if (question.Options != null)
+                {
+                    var oOrder = 0;
+                    foreach (var opt in question.Options)
+                    {
+                        if (opt.Id == Guid.Empty) opt.Id = Guid.NewGuid();
+                        opt.QuestionId = question.Id;
+                        if (opt.OrderIndex == 0) opt.OrderIndex = oOrder;
+                        oOrder++;
+                    }
+                }
+            }
         }
 
         public async Task<Questionnaire> UpdateAsync(Guid id, Questionnaire patch, string userId)

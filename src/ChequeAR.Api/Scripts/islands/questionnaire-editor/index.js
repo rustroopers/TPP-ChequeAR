@@ -5,8 +5,16 @@
  */
 (function () {
     var QuestionnaireEditor = {
-        props: { id: String, title: String, version: Number },
+        props: { id: String, title: String, version: Number, isNew: Boolean },
         setup: function (props) {
+            // Estado de persistencia. Para un cuestionario nuevo el id del controller es
+            // sólo provisorio: el backend asigna uno propio al crear (POST). A partir de
+            // ahí pasamos a modo edición (PUT) usando el id devuelto.
+            var currentId = Vue.ref(props.id);
+            var isNew = Vue.ref(!!props.isNew);
+            var qTitle = Vue.ref(props.title || 'Nuevo cuestionario');
+            var specialtyCode = Vue.ref('general');
+            var saving = Vue.ref(false);
             var groups = Vue.ref([
                 {
                     title: 'Datos del paciente',
@@ -72,24 +80,101 @@
                 if (selected.value && selected.value.group === g) selected.value = null;
                 dirty.value = true;
             }
-            function save() {
-                // TODO: POST a /api/fhir/r5/Questionnaire/{id}
-                lastSaved.value = new Date().toLocaleTimeString();
-                dirty.value = false;
-                if (window.cqToast) window.cqToast('Cambios guardados', 'success');
+            function toast(msg, kind) { if (window.cqToast) window.cqToast(msg, kind); }
+
+            function getToken() {
+                var meta = document.querySelector('meta[name="cq-token"]');
+                return meta ? meta.getAttribute('content') : null;
             }
 
-            // Autosave 2s debounce
+            // Aplana grupos -> array plano de Questions (entidad de dominio). El backend
+            // bindea el enum Type por nombre (case-insensitive), así que mandamos el code tal cual.
+            function buildPayload() {
+                var order = 0;
+                var questions = [];
+                groups.value.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        questions.push({
+                            linkId: q.linkId,
+                            text: q.text,
+                            type: q.type,
+                            required: !!q.required,
+                            orderIndex: order++
+                        });
+                    });
+                });
+                return {
+                    title: qTitle.value,
+                    specialtyCode: specialtyCode.value,
+                    questions: questions
+                };
+            }
+
+            function save() {
+                if (saving.value) return;
+                var token = getToken();
+                if (!token) { toast('No hay sesión: no se puede guardar (token ausente).', 'error'); return; }
+
+                saving.value = true;
+                var creating = isNew.value;
+                var url = creating
+                    ? '/fhir/r5/Questionnaire'
+                    : '/fhir/r5/Questionnaire/' + currentId.value;
+
+                fetch(url, {
+                    method: creating ? 'POST' : 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(buildPayload())
+                }).then(function (res) {
+                    if (!res.ok) { throw new Error('HTTP ' + res.status); }
+                    return res.status === 204 ? null : res.json().catch(function () { return null; });
+                }).then(function (data) {
+                    if (creating && data && data.id) {
+                        currentId.value = data.id;
+                        isNew.value = false;
+                        // Reflejar el id real en la URL sin recargar.
+                        if (window.history && window.history.replaceState) {
+                            window.history.replaceState(null, '', '/Questionnaires/Edit/' + data.id);
+                        }
+                    }
+                    lastSaved.value = new Date().toLocaleTimeString();
+                    dirty.value = false;
+                    toast(creating ? 'Cuestionario creado' : 'Cambios guardados', 'success');
+                }).catch(function (err) {
+                    toast('Error al guardar: ' + err.message, 'error');
+                }).then(function () {
+                    saving.value = false;
+                });
+            }
+
+            // Autosave (2s debounce) sólo para cuestionarios ya persistidos; así evitamos
+            // crear duplicados mientras se arma uno nuevo. El primer guardado de un nuevo
+            // cuestionario es siempre manual (botón Guardar).
             var debounce;
             Vue.watch(groups, function () {
                 dirty.value = true;
+                if (isNew.value) return;
                 clearTimeout(debounce);
                 debounce = setTimeout(save, 2000);
             }, { deep: true });
 
+            // Engancha el botón "Guardar" del header (vive fuera de la isla).
+            Vue.onMounted(function () {
+                var btn = document.getElementById('saveBtn');
+                if (btn) btn.addEventListener('click', save);
+            });
+            Vue.onUnmounted(function () {
+                var btn = document.getElementById('saveBtn');
+                if (btn) btn.removeEventListener('click', save);
+            });
+
             return {
                 groups: groups, types: types, selected: selected,
-                dirty: dirty, lastSaved: lastSaved,
+                dirty: dirty, lastSaved: lastSaved, saving: saving,
+                qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: save
             };
@@ -109,6 +194,23 @@
     </div>\
 \
     <div class="col-lg-6">\
+        <div class="cq-card mb-2">\
+            <div class="row g-2">\
+                <div class="col-8">\
+                    <label class="form-label cq-text-sm">Título del cuestionario</label>\
+                    <input v-model="qTitle" class="form-control form-control-sm" placeholder="Ej: Cardio basal" />\
+                </div>\
+                <div class="col-4">\
+                    <label class="form-label cq-text-sm">Especialidad</label>\
+                    <select v-model="specialtyCode" class="form-select form-select-sm">\
+                        <option value="general">General</option>\
+                        <option value="cardio">Cardiología</option>\
+                        <option value="neumo">Neumonología</option>\
+                        <option value="onco">Oncología</option>\
+                    </select>\
+                </div>\
+            </div>\
+        </div>\
         <div class="d-flex justify-content-between align-items-center mb-2">\
             <h3 class="m-0">Estructura</h3>\
             <span class="cq-text-xs cq-text-muted" v-if="lastSaved">Guardado {{ lastSaved }}</span>\

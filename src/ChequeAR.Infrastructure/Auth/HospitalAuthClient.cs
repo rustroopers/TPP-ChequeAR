@@ -15,9 +15,11 @@ namespace ChequeAR.Infrastructure.Auth
 
         public HospitalAuthClient(HttpClient http, string loginUrl)
         {
-            _http = http ?? new HttpClient();
+            // No mutar Timeout/headers: el HttpClient puede ser compartido entre clientes
+            // (ver ServiceComposition). Modificarlo tras la primera request lanza
+            // InvalidOperationException. El timeout se configura una sola vez en la composición.
+            _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
             _loginUrl = loginUrl;
-            _http.Timeout = TimeSpan.FromSeconds(3);
         }
 
         public async Task<UserInfo> LoginAsync(string username, string password)

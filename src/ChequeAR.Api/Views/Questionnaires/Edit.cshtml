@@ -4,6 +4,7 @@
     var id = ViewBag.QuestionnaireId;
     var title = ViewBag.QuestionnaireTitle as string;
     var version = ViewBag.Version;
+    var isNew = (ViewBag.IsNew is bool) && (bool)ViewBag.IsNew;
 }
 
 <header class="cq-page-header">
@@ -18,7 +19,7 @@
 </header>
 
 <div id="qEditor" data-vue-island="questionnaire-editor"
-     data-props='@Html.Raw("{\"id\":\"" + id + "\",\"title\":\"" + title + "\",\"version\":" + version + "}")'>
+     data-props='@Html.Raw("{\"id\":\"" + id + "\",\"title\":" + Newtonsoft.Json.JsonConvert.SerializeObject(title) + ",\"version\":" + version + ",\"isNew\":" + (isNew ? "true" : "false") + "}")'>
     <div class="cq-card">
         <div class="cq-loading">
             <div class="cq-spinner cq-spinner--lg"></div>
