@@ -30,11 +30,11 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             var name = User != null && User.Identity != null && User.Identity.IsAuthenticated
                 ? User.Identity.Name
-                : "Doctora";
+                : "Doctor";
 
             var model = new HomeViewModel
             {
-                UserGreeting = "Buen día, " + name,
+                UserGreeting = ChequeAR.Api.Helpers.Cq.T(ChequeAR.Api.Helpers.Cq.TimeGreetingKey(), new { name = name }),
                 IsAdmin = User != null && User.IsInRole(ChequeAR.Domain.Enums.Role.Administrador),
                 RecentEncounters = new List<RecentEncounter>(),
                 Kpis = null
@@ -44,13 +44,17 @@ namespace ChequeAR.Api.Controllers.Mvc
             try
             {
                 var recent = await _qrRepo.SearchAsync(null, null, null, 0, 5);
+                var titleCache = new Dictionary<System.Guid, ChequeAR.Domain.Entities.Questionnaire>();
                 foreach (var r in recent)
                 {
+                    if (!titleCache.ContainsKey(r.QuestionnaireId))
+                        titleCache[r.QuestionnaireId] = await _qRepo.GetAsync(r.QuestionnaireId);
+                    var q = titleCache[r.QuestionnaireId];
                     model.RecentEncounters.Add(new RecentEncounter
                     {
-                        PatientName = r.PatientHospitalId,
-                        QuestionnaireTitle = r.QuestionnaireId.ToString(),
-                        SpecialtyCode = "general",
+                        PatientName = ChequeAR.Application.Services.FhirPatientReader.ReadName(r.FhirJson) ?? r.PatientHospitalId,
+                        QuestionnaireTitle = q?.Title ?? r.QuestionnaireId.ToString(),
+                        SpecialtyCode = q?.SpecialtyCode ?? "general",
                         Status = r.Status == ChequeAR.Domain.Enums.ResponseStatus.Completed ? "published" : "draft",
                         UpdatedAt = r.LastSavedAt.ToString("yyyy-MM-dd HH:mm"),
                         OpenUrl = Url.Action("View", "Encounters", new { id = r.Id })
@@ -61,7 +65,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     var totalQ = await _qRepo.CountAsync(null, null, null);
                     var totalU = await _userRepo.CountAsync(null, null, null, true);
-                    model.Kpis = new KpiSummary { Questionnaires = totalQ, Encounters = 0, Users = totalU, Specialties = 4 };
+                    var totalE = (await _qrRepo.SearchAsync(null, null, null, 0, 1000)).Count;
+                    model.Kpis = new KpiSummary { Questionnaires = totalQ, Encounters = totalE, Users = totalU, Specialties = 4 };
                 }
             }
             catch

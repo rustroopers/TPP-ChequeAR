@@ -3,12 +3,12 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("sidebar.home");
     ViewBag.PageId = "home";
-    var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctora";
+    var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctor";
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">@Cq.T("home.greeting", new { name = name })</h1>
+        <h1 class="cq-page-header__title">@Cq.T(Cq.TimeGreetingKey(), new { name = name })</h1>
         <p class="cq-page-header__subtitle">@Cq.T("home.subtitle")</p>
     </div>
 </header>

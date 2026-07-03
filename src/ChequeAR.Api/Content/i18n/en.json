@@ -64,7 +64,9 @@
   "table.empty.title": "No results",
   "table.empty.desc": "Try adjusting the filters.",
 
-  "home.greeting": "Good morning, {name}",
+  "home.greeting.morning": "Good morning, {name}",
+  "home.greeting.afternoon": "Good afternoon, {name}",
+  "home.greeting.evening": "Good evening, {name}",
   "home.subtitle": "Your activity today",
   "home.action.load.title": "Load form",
   "home.action.load.desc": "Start clinical entry for a patient",

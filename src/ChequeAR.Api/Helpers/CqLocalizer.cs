@@ -48,6 +48,31 @@ namespace ChequeAR.Api.Helpers
             return ApplyArgs(text, args);
         }
 
+        /// Hora actual en zona horaria de Argentina (UTC-3), independiente de la
+        /// zona del server. Fallback a hora local si la tz no está disponible.
+        public static DateTime ArgentinaNow()
+        {
+            try
+            {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById("Argentina Standard Time");
+                return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+            }
+            catch
+            {
+                return DateTime.Now;
+            }
+        }
+
+        /// Clave i18n del saludo según la franja horaria (hora de Argentina):
+        /// mañana (6–11), tarde (12–19), noche (resto).
+        public static string TimeGreetingKey()
+        {
+            var hour = ArgentinaNow().Hour;
+            if (hour >= 6 && hour < 12) return "home.greeting.morning";
+            if (hour >= 12 && hour < 20) return "home.greeting.afternoon";
+            return "home.greeting.evening";
+        }
+
         public static string CurrentCulture()
         {
             var ctx = HttpContext.Current;

@@ -19,7 +19,7 @@ namespace ChequeAR.Application.Reports
             if (q.QuestionnaireId == Guid.Empty) throw new ArgumentException("QuestionnaireId required");
 
             var sql = new StringBuilder();
-            sql.AppendLine("SELECT v.ResponseId, v.PatientHospitalId, v.AuthoredAt, v.LinkId, v.ValueDecimal, v.ValueString, v.ValueDate, v.ValueBoolean, v.ValueCode");
+            sql.AppendLine("SELECT v.ResponseId, v.PatientHospitalId, v.AuthoredAt, v.LinkId, v.ValueDecimal, v.ValueString, v.ValueDate, v.ValueBoolean, v.ValueCode, v.ValueText");
             sql.AppendLine("FROM vw_FlatResponses v");
             sql.AppendLine("WHERE v.QuestionnaireId = @QuestionnaireId");
 
@@ -66,7 +66,7 @@ namespace ChequeAR.Application.Reports
                     if (!ValidOps.Contains(p.Op))
                         throw new ArgumentException("Invalid operator: " + p.Op);
                     var pName = "@p" + ps.Count;
-                    sql.Append("EXISTS (SELECT 1 FROM QuestionnaireResponseItem qri WHERE qri.ResponseId = v.ResponseId");
+                    sql.Append("EXISTS (SELECT 1 FROM QuestionnaireResponseItems qri WHERE qri.ResponseId = v.ResponseId");
                     sql.Append(" AND qri.LinkId = ").Append("@li").Append(ps.Count);
                     ps.Add(new SqlParameter("@li" + (ps.Count), p.LinkId));
                     var col = ResolveColumn(p.Value);

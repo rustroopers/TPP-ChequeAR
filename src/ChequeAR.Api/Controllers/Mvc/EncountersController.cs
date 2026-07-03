@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
@@ -116,6 +117,23 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Author = qr.AuthorUserId,
                     FinalizedAt = qr.LastSavedAt.ToString("yyyy-MM-dd HH:mm")
                 };
+
+                // Respuestas: unir los items cargados con las preguntas del cuestionario.
+                var itemsByLink = (qr.Items ?? new List<ChequeAR.Domain.Entities.QuestionnaireResponseItem>())
+                    .GroupBy(i => i.LinkId).ToDictionary(gr => gr.Key, gr => gr.First());
+                var answered = new QuestionGroupAnswered { Title = "Respuestas" };
+                var questions = (q?.Questions ?? new List<ChequeAR.Domain.Entities.Question>()).OrderBy(x => x.OrderIndex);
+                foreach (var question in questions)
+                {
+                    itemsByLink.TryGetValue(question.LinkId, out var item);
+                    answered.Questions.Add(new AnsweredQuestion
+                    {
+                        Text = question.Text,
+                        Answer = FormatAnswer(item),
+                        Prefilled = item?.WasPrefilled ?? false
+                    });
+                }
+                if (answered.Questions.Count > 0) model.Groups.Add(answered);
                 return base.View(model);
             }
             catch
@@ -123,6 +141,18 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.DataMode = "demo";
                 return base.View(MockSeed.EncounterReadonly(id));
             }
+        }
+
+        private static string FormatAnswer(ChequeAR.Domain.Entities.QuestionnaireResponseItem item)
+        {
+            if (item == null) return "—";
+            if (item.ValueBoolean.HasValue) return item.ValueBoolean.Value ? "Sí" : "No";
+            if (item.ValueInteger.HasValue) return item.ValueInteger.Value.ToString();
+            if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value.ToString();
+            if (item.ValueDate.HasValue) return item.ValueDate.Value.ToString("yyyy-MM-dd");
+            if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
+            if (!string.IsNullOrEmpty(item.ValueCode)) return item.ValueCode;
+            return "—";
         }
 
         // R7 — Timeline
@@ -144,13 +174,17 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" }
                 };
+                var titleCache = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
                 foreach (var e in encs)
                 {
+                    if (!titleCache.ContainsKey(e.QuestionnaireId))
+                        titleCache[e.QuestionnaireId] = await _qRepo.GetAsync(e.QuestionnaireId);
+                    var q = titleCache[e.QuestionnaireId];
                     model.Entries.Add(new EncounterTimelineItem
                     {
                         Date = e.AuthoredAt.ToString("yyyy-MM-dd"),
-                        QuestionnaireTitle = e.QuestionnaireId.ToString(),
-                        QuestionnaireVersion = 0,
+                        QuestionnaireTitle = q?.Title ?? e.QuestionnaireId.ToString(),
+                        QuestionnaireVersion = q?.Versions?.Count ?? 0,
                         Author = e.AuthorUserId,
                         EncounterId = e.Id,
                         Status = e.Status.ToString().ToLowerInvariant()

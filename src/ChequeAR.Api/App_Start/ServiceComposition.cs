@@ -88,7 +88,8 @@ namespace ChequeAR.Api.App_Start
             Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), hospitalAuthUrl));
             Register<PatientService>(() => new PatientService(
-                Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), Resolve<IQuestionnaireResponseRepository>()));
+                Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(),
+                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>()));
 
             // Controllers de Web API: SimpleInjector los registra automáticamente;
             // nosotros declaramos los pocos que tenemos.

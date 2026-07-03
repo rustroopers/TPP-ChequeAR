@@ -64,7 +64,9 @@
   "table.empty.title": "Sin resultados",
   "table.empty.desc": "Probá ajustando los filtros.",
 
-  "home.greeting": "Buen día, {name}",
+  "home.greeting.morning": "Buen día, {name}",
+  "home.greeting.afternoon": "Buenas tardes, {name}",
+  "home.greeting.evening": "Buenas noches, {name}",
   "home.subtitle": "Tu actividad de hoy",
   "home.action.load.title": "Cargar ficha",
   "home.action.load.desc": "Iniciar carga clínica para un paciente",
