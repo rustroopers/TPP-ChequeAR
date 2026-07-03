@@ -21,6 +21,7 @@ namespace ChequeAR.Infrastructure.Repositories
             return _ctx.Questionnaires
                 .Include(q => q.Versions)
                 .Include(q => q.Questions)
+                .Include(q => q.Questions.Select(x => x.Options))
                 .FirstOrDefaultAsync(q => q.Id == id && !q.IsDeleted);
         }
 

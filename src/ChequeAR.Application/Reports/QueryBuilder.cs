@@ -66,12 +66,24 @@ namespace ChequeAR.Application.Reports
                     if (!ValidOps.Contains(p.Op))
                         throw new ArgumentException("Invalid operator: " + p.Op);
                     var pName = "@p" + ps.Count;
-                    sql.Append("EXISTS (SELECT 1 FROM QuestionnaireResponseItems qri WHERE qri.ResponseId = v.ResponseId");
+                    // Consultamos la vista (no la tabla cruda): sus columnas ya coalescen
+                    // enteros/decimales y exponen el valor legible, así los filtros funcionan
+                    // para todos los tipos de pregunta.
+                    sql.Append("EXISTS (SELECT 1 FROM vw_FlatResponses qri WHERE qri.ResponseId = v.ResponseId");
                     sql.Append(" AND qri.LinkId = ").Append("@li").Append(ps.Count);
                     ps.Add(new SqlParameter("@li" + (ps.Count), p.LinkId));
-                    var col = ResolveColumn(p.Value);
-                    sql.Append(" AND qri.").Append(col).Append(" ").Append(p.Op).Append(" ").Append(pName).Append(")");
-                    ps.Add(new SqlParameter(pName, p.Value ?? DBNull.Value));
+
+                    if (string.Equals(p.Op, "contains", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sql.Append(" AND qri.ValueString LIKE ").Append(pName).Append(")");
+                        ps.Add(new SqlParameter(pName, "%" + (p.Value?.ToString() ?? string.Empty) + "%"));
+                    }
+                    else
+                    {
+                        var col = ResolveColumn(p.Value);
+                        sql.Append(" AND qri.").Append(col).Append(" ").Append(p.Op).Append(" ").Append(pName).Append(")");
+                        ps.Add(new SqlParameter(pName, p.Value ?? DBNull.Value));
+                    }
                 }
             }
             sql.Append(")");
@@ -79,7 +91,9 @@ namespace ChequeAR.Application.Reports
 
         private string ResolveColumn(object value)
         {
-            if (value is decimal || value is double || value is float || value is int) return "ValueDecimal";
+            // JSON deserializa enteros como long y reales como double: contemplarlos todos.
+            if (value is decimal || value is double || value is float ||
+                value is int || value is long || value is short || value is byte) return "ValueDecimal";
             if (value is DateTime) return "ValueDate";
             if (value is bool) return "ValueBoolean";
             return "ValueString";

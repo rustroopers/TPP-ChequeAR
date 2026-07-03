@@ -101,7 +101,7 @@ namespace ChequeAR.Api.App_Start
                 Resolve<IHospitalAuthClient>(), Resolve<JwtIssuer>(), Resolve<RefreshTokenService>()));
             Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<IAuditRepository>()));
             Register<Controllers.Api.AttachmentController>(() => new Controllers.Api.AttachmentController(Resolve<IAttachmentStore>()));
-            Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>()));
+            Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>(), Resolve<IQuestionnaireRepository>()));
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
             Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<IUserRepository>()));
