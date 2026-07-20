@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
+using System.IO;
 using System.Linq;
 using System.Web.Http.Dependencies;
 using ChequeAR.Application.Interfaces;
@@ -32,7 +33,8 @@ namespace ChequeAR.Api.App_Start
 
         private static AuditDispatcher _audit;
         private static JwtIssuer _jwt;
-        private static System.Net.Http.HttpClient _sharedHttp;
+        private static System.Net.Http.HttpClient _fhirHttp;
+        private static System.Net.Http.HttpClient _authHttp;
 
         public static void Configure()
         {
@@ -51,7 +53,10 @@ namespace ChequeAR.Api.App_Start
 
             // ===== Singletons =====
             _jwt = new JwtIssuer(jwtIssuer, jwtAudience, jwtSecret, jwtTtlMinutes);
-            _sharedHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            // Un HttpClient singleton por integración, con su Timeout fijado una sola vez.
+            // Los clients NO mutan estas instancias (evita InvalidOperationException).
+            _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            _authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
 
             // AuditDispatcher requiere repo; usamos una factory que crea su propio contexto.
             _audit = new AuditDispatcher(NewAuditRepository(), 1000);
@@ -66,9 +71,18 @@ namespace ChequeAR.Api.App_Start
             Register<IRefreshTokenRepository>(() => new RefreshTokenRepository(Resolve<ChequeARDbContext>()));
             Register<ISavedReportRepository>(() => new SavedReportRepository(Resolve<ChequeARDbContext>()));
 
-            Register<IHospitalFhirClient>(() => new HospitalFhirClient(_sharedHttp, hospitalFhirUrl));
-            Register<IHospitalAuthClient>(() => new HospitalAuthClient(_sharedHttp, hospitalAuthUrl));
-            Register<IOracleViewClient>(() => new OracleViewClient(oracleConn));
+            Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
+            Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+
+            // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.
+            // El archivo se copia a la salida con CopyToOutputDirectory=PreserveNewest;
+            // la ubicación final en runtime es bin/Oracle/allowlist.yaml junto al ensamblado.
+            var allowlistPath = Path.Combine(
+                System.AppDomain.CurrentDomain.BaseDirectory, "Oracle", "allowlist.yaml");
+            var allowedViews = File.Exists(allowlistPath)
+                ? AllowlistLoader.Load(allowlistPath)
+                : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
+            Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
             Register<IFhirValidator>(() => new FhirValidatorService());
             Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot));
 

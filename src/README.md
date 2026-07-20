@@ -73,3 +73,10 @@ El MVP define controllers con constructor injection. Para producción registrar 
 ## Trazabilidad spec → código
 
 Ver `/specs/<modulo>/tasks.md` para el desglose por sprint del trabajo restante. Este MVP cubre las fases 0–2 de cada módulo con foco en estructura y endpoints; las fases 3+ (Hangfire, validador real, Polly, perfiles FHIR, librería JS de renderizado) se completan según roadmap.
+
+## Mock del lado Hospital (desarrollo local)
+
+Para desarrollar y testear contra una réplica provisoria del lado hospital
+(Oracle XE en Docker), ver [`infra/mock-hospital/README.md`](../infra/mock-hospital/README.md).
+Levantarlo es un `docker compose up -d --wait` desde esa carpeta. La spec
+completa está en [`specs/008-mock-hospital-db/`](../specs/008-mock-hospital-db/).
