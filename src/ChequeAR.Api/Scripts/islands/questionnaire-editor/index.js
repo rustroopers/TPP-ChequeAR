@@ -251,10 +251,6 @@
                 <input v-model="selected.question.text" class="form-control form-control-sm" />\
             </div>\
             <div class="mb-2">\
-                <label class="form-label cq-text-sm">linkId</label>\
-                <input v-model="selected.question.linkId" class="form-control form-control-sm" />\
-            </div>\
-            <div class="mb-2">\
                 <label class="form-label cq-text-sm">Tipo</label>\
                 <select v-model="selected.question.type" class="form-select form-select-sm">\
                     <option v-for="t in types" :key="t.code" :value="t.code">{{ t.label }}</option>\

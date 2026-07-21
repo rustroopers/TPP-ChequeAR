@@ -53,6 +53,11 @@ namespace ChequeAR.Infrastructure.EF
             mb.Configurations.Add(new QuestionnaireResponseConfig());
             mb.Configurations.Add(new AuditEventConfig());
 
+            // Sin esto, EF no asocia QuestionGroup.Questions con Question.GroupId (no hay
+            // navegación inversa en Question) y crea una FK sombra "QuestionGroup_Id" que
+            // no existe en el esquema Oracle -> ORA-00904 al guardar.
+            mb.Entity<QuestionGroup>().HasMany(g => g.Questions).WithOptional().HasForeignKey(q => q.GroupId).WillCascadeOnDelete(false);
+
             // Claves string: acotadas para que sean PK/FK indexables en Oracle.
             mb.Entity<User>().Property(x => x.Id).HasMaxLength(128);
             mb.Entity<UserRole>().HasKey(x => new { x.UserId, x.Role });
