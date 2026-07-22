@@ -4,9 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -101,9 +104,44 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var p = await _patients.GetAsync(patientId);
                 ViewBag.PatientName = p != null ? (p.FullName + " (HC " + p.HospitalId + ")") : ("HC " + patientId);
+
                 var q = await _qRepo.GetAsync(questionnaireId);
                 ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
-                ViewBag.Version = q?.Versions?.Count ?? 0;
+
+                // La ficha se arma desde la VERSIÓN CONGELADA, no desde la entidad viva: si
+                // alguien publica un cambio mientras el médico completa, lo que está
+                // respondiendo no se puede mover. La respuesta queda anclada a este id.
+                var version = CurrentVersion(q);
+                if (version == null)
+                {
+                    ViewBag.Version = 0;
+                    ViewBag.LoadError = "El cuestionario no tiene una versión publicada. No se puede cargar una ficha.";
+                    return View();
+                }
+
+                ViewBag.Version = version.VersionNumber;
+                var renderable = FhirQuestionnaireReader.Read(version.FhirJson);
+                if (renderable == null)
+                {
+                    ViewBag.LoadError = "La versión publicada no se pudo interpretar.";
+                    return View();
+                }
+
+                ViewBag.RendererProps = JsonConvert.SerializeObject(
+                    new
+                    {
+                        patientId,
+                        questionnaireId,
+                        questionnaireVersionId = version.Id,
+                        version = version.VersionNumber,
+                        title = q.Title,
+                        groups = renderable.Groups
+                    },
+                    new JsonSerializerSettings
+                    {
+                        ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                        NullValueHandling = NullValueHandling.Ignore
+                    });
             }
             catch (Exception ex)
             {
@@ -113,6 +151,18 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.DataError = ex.Message;
             }
             return View();
+        }
+
+        /// <summary>Versión viva del cuestionario, o null si nunca se publicó.</summary>
+        private static ChequeAR.Domain.Entities.QuestionnaireVersion CurrentVersion(ChequeAR.Domain.Entities.Questionnaire q)
+        {
+            if (q?.Versions == null || q.Versions.Count == 0) return null;
+            if (q.CurrentVersionId.HasValue)
+            {
+                var current = q.Versions.FirstOrDefault(v => v.Id == q.CurrentVersionId.Value);
+                if (current != null) return current;
+            }
+            return q.Versions.OrderByDescending(v => v.VersionNumber).First();
         }
 
         // R6 — Read-only

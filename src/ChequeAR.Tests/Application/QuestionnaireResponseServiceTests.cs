@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
@@ -31,8 +31,7 @@ namespace ChequeAR.Tests.Application
         public async Task CreateAsync_AssignsUniqueIdsToItems()
         {
             var questionnaireId = Guid.NewGuid();
-            _qRepo.Setup(r => r.GetAsync(questionnaireId))
-                  .ReturnsAsync(new Questionnaire { Id = questionnaireId, Status = QuestionnaireStatus.Active });
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
 
             var response = new QuestionnaireResponse
             {
@@ -60,8 +59,7 @@ namespace ChequeAR.Tests.Application
         public async Task CreateAsync_KeepsRepeatedLinkIds()
         {
             var questionnaireId = Guid.NewGuid();
-            _qRepo.Setup(r => r.GetAsync(questionnaireId))
-                  .ReturnsAsync(new Questionnaire { Id = questionnaireId, Status = QuestionnaireStatus.Active });
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
 
             var response = new QuestionnaireResponse
             {
@@ -85,9 +83,8 @@ namespace ChequeAR.Tests.Application
         public async Task CreateAsync_BuildsFhirJson()
         {
             var questionnaireId = Guid.NewGuid();
-            var questionnaire = new Questionnaire { Id = questionnaireId, Status = QuestionnaireStatus.Active };
-            questionnaire.Questions.Add(new Question { LinkId = "edad", Text = "Edad", Type = QuestionType.Integer });
-            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(questionnaire);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(
+                Published(questionnaireId, "{\"resourceType\":\"Questionnaire\",\"item\":[{\"linkId\":\"edad\",\"text\":\"Edad\",\"type\":\"integer\"}]}"));
 
             var created = await _sut.CreateAsync(new QuestionnaireResponse
             {
@@ -120,7 +117,7 @@ namespace ChequeAR.Tests.Application
                 FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"status\":\"in-progress\"}"
             };
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
-            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(new Questionnaire { Id = questionnaireId });
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
             var finalized = await _sut.FinalizeAsync(id, "u");
@@ -145,6 +142,70 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(ResponseStatus.InProgress, response.Status);
         }
 
+        // EL CASO REPORTADO: se empieza a completar con la v1 y alguien publica la v2 en el
+        // medio. La ficha tiene que quedar anclada a la v1 y conservar SUS textos, no
+        // ajustarse a la version nueva.
+        [Fact]
+        public async Task CreateAsync_PinsToTheVersionTheClientRendered_NotTheCurrentOne()
+        {
+            var questionnaireId = Guid.NewGuid();
+            var v1 = Guid.NewGuid();
+            var v2 = Guid.NewGuid();
+            var q = new Questionnaire { Id = questionnaireId, Status = QuestionnaireStatus.Active, CurrentVersionId = v2 };
+            q.Versions.Add(new QuestionnaireVersion
+            {
+                Id = v1, VersionNumber = 1,
+                FhirJson = "{\"resourceType\":\"Questionnaire\",\"item\":[{\"linkId\":\"p\",\"text\":\"Texto VIEJO\",\"type\":\"string\"}]}"
+            });
+            q.Versions.Add(new QuestionnaireVersion
+            {
+                Id = v2, VersionNumber = 2,
+                FhirJson = "{\"resourceType\":\"Questionnaire\",\"item\":[{\"linkId\":\"p\",\"text\":\"Texto NUEVO\",\"type\":\"string\"}]}"
+            });
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(q);
+
+            // El medico abrio la ficha con la v1, aunque ya se publico la v2.
+            var created = await _sut.CreateAsync(new QuestionnaireResponse
+            {
+                QuestionnaireId = questionnaireId,
+                QuestionnaireVersionId = v1,
+                PatientHospitalId = "PAC-1",
+                Items = { new QuestionnaireResponseItem { LinkId = "p", ValueString = "respuesta" } }
+            }, "u");
+
+            Assert.Equal(v1, created.QuestionnaireVersionId);
+            Assert.Equal("Texto VIEJO", (string)JObject.Parse(created.FhirJson).SelectToken("item[0].text"));
+        }
+
+        // Sin version indicada (cliente viejo o llamada por API) se cae a la vigente.
+        [Fact]
+        public async Task CreateAsync_NoVersionGiven_FallsBackToCurrent()
+        {
+            var questionnaireId = Guid.NewGuid();
+            var current = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId, null, current));
+
+            var created = await _sut.CreateAsync(new QuestionnaireResponse
+            {
+                QuestionnaireId = questionnaireId,
+                PatientHospitalId = "PAC-1"
+            }, "u");
+
+            Assert.Equal(current, created.QuestionnaireVersionId);
+        }
+
+        // Un cuestionario sin publicar no se puede responder: no hay nada congelado.
+        [Fact]
+        public async Task CreateAsync_NeverPublished_Throws()
+        {
+            var questionnaireId = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(questionnaireId))
+                  .ReturnsAsync(new Questionnaire { Id = questionnaireId, Status = QuestionnaireStatus.Draft });
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateAsync(
+                new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "PAC-1" }, "u"));
+        }
+
         // No se pueden cargar respuestas contra un cuestionario archivado.
         [Fact]
         public async Task CreateAsync_RetiredQuestionnaire_Throws()
@@ -155,6 +216,19 @@ namespace ChequeAR.Tests.Application
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateAsync(
                 new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "HC-1" }, "u"));
+        }
+        /// Cuestionario activo con una version publicada, que es lo minimo para responderlo.
+        private static Questionnaire Published(Guid id, string fhirJson = null, Guid? versionId = null)
+        {
+            var vid = versionId ?? Guid.NewGuid();
+            var q = new Questionnaire { Id = id, Status = QuestionnaireStatus.Active, CurrentVersionId = vid };
+            q.Versions.Add(new QuestionnaireVersion
+            {
+                Id = vid,
+                VersionNumber = 1,
+                FhirJson = fhirJson ?? "{\"resourceType\":\"Questionnaire\",\"item\":[]}"
+            });
+            return q;
         }
     }
 }

@@ -17,7 +17,7 @@ namespace ChequeAR.Application.Fhir
     /// </summary>
     public static class FhirQuestionnaireResponseBuilder
     {
-        public static string Build(QuestionnaireResponse response, Questionnaire questionnaire, PatientDemographicsDto patient = null)
+        public static string Build(QuestionnaireResponse response, RenderableQuestionnaire pinnedVersion, PatientDemographicsDto patient = null)
         {
             if (response == null) throw new ArgumentNullException(nameof(response));
 
@@ -57,13 +57,16 @@ namespace ChequeAR.Application.Fhir
                 resource["contained"] = new JArray(contained);
             }
 
-            resource["item"] = BuildItems(response, questionnaire);
+            resource["item"] = BuildItems(response, pinnedVersion);
             return JsonConvert.SerializeObject(resource, Formatting.None);
         }
 
-        private static JArray BuildItems(QuestionnaireResponse response, Questionnaire questionnaire)
+        private static JArray BuildItems(QuestionnaireResponse response, RenderableQuestionnaire pinnedVersion)
         {
-            var textByLinkId = (questionnaire?.Questions ?? new List<Question>())
+            // Los textos vienen de la VERSION ANCLADA, no de la entidad viva: si alguien
+            // renombro una pregunta despues, la ficha conserva lo que el medico leyo.
+            var textByLinkId = (pinnedVersion?.Groups ?? new List<RenderableGroup>())
+                .SelectMany(g => g.Questions)
                 .Where(x => !string.IsNullOrWhiteSpace(x.LinkId))
                 .GroupBy(x => x.LinkId)
                 .ToDictionary(g => g.Key, g => g.First().Text);

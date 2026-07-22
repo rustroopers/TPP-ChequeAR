@@ -5,11 +5,45 @@
  */
 (function () {
     var QuestionnaireRenderer = {
-        props: { patientId: String, questionnaireId: String },
+        props: {
+            patientId: String,
+            questionnaireId: String,
+            questionnaireVersionId: String,
+            version: Number,
+            title: String,
+            groups: { type: Array, default: function () { return []; } }
+        },
         setup: function (props) {
-            var questionnaire = Vue.ref({ title: '', version: 0, groups: [] });
-            var loading = Vue.ref(true);
-            var loadError = Vue.ref(null);
+            // La estructura llega ya resuelta desde el server, leída de la VERSIÓN
+            // CONGELADA. Antes se pedía la entidad viva a la API, así que una publicación
+            // en el medio le cambiaba las preguntas al médico mientras completaba.
+            var questionnaire = Vue.ref({
+                title: props.title || '',
+                version: props.version || 0,
+                groups: (props.groups || []).map(function (g) {
+                    return {
+                        linkId: g.linkId,
+                        title: g.title,
+                        questions: (g.questions || []).map(function (q) {
+                            return {
+                                linkId: q.linkId,
+                                text: q.text,
+                                type: q.type || 'string',
+                                required: !!q.required,
+                                unit: q.unit,
+                                min: q.min,
+                                max: q.max,
+                                accept: q.accept || 'image/jpeg,image/png,application/pdf',
+                                options: q.options || [],
+                                enableWhen: q.enableWhen || null
+                            };
+                        })
+                    };
+                }).filter(function (g) { return g.questions.length > 0; })
+            });
+            var loading = Vue.ref(false);
+            var loadError = Vue.ref(
+                (props.groups && props.groups.length) ? null : 'La versión publicada no tiene preguntas.');
 
             var answers = Vue.reactive({});
             var errors = Vue.reactive({});
@@ -27,99 +61,6 @@
                 return h;
             }
 
-            // QuestionType del backend (enum serializado como numero) -> tipo del renderer.
-            var TYPES = ['decimal', 'integer', 'string', 'text', 'date', 'dateTime',
-                         'boolean', 'choice', 'openChoice', 'attachment', 'scale'];
-            function typeName(t) {
-                if (typeof t === 'number') return TYPES[t] || 'string';
-                return String(t || 'string').charAt(0).toLowerCase() + String(t || 'string').slice(1);
-            }
-
-            function parseJson(raw) {
-                if (!raw) return null;
-                try { return JSON.parse(raw); } catch (e) { return null; }
-            }
-
-            // El endpoint devuelve la entidad Questionnaire: Groups (opcional) y
-            // Questions plana, cada una con GroupId. Se arma la jerarquia aca.
-            function toViewModel(q) {
-                var rawQuestions = q.Questions || q.questions || [];
-                var rawGroups = q.Groups || q.groups || [];
-
-                var questions = rawQuestions
-                    .slice()
-                    .sort(function (a, b) { return (a.OrderIndex || 0) - (b.OrderIndex || 0); })
-                    .map(function (x) {
-                        var validation = parseJson(x.ValidationJson) || {};
-                        var enableWhen = parseJson(x.EnableWhenJson);
-                        var options = (x.Options || x.options || []).map(function (o) {
-                            return o.Display || o.Value || o.Code;
-                        });
-                        return {
-                            linkId: x.LinkId,
-                            groupId: x.GroupId || null,
-                            text: x.Text,
-                            type: typeName(x.Type),
-                            required: !!x.Required,
-                            unit: validation.unit,
-                            min: validation.min,
-                            max: validation.max,
-                            accept: validation.accept || 'image/jpeg,image/png,application/pdf',
-                            options: options,
-                            enableWhen: enableWhen
-                        };
-                    });
-
-                var groups = rawGroups
-                    .slice()
-                    .sort(function (a, b) { return (a.OrderIndex || 0) - (b.OrderIndex || 0); })
-                    .map(function (g) {
-                        return {
-                            linkId: g.LinkId || ('g-' + g.Id),
-                            id: g.Id,
-                            title: g.Title,
-                            questions: questions.filter(function (x) { return x.groupId === g.Id; })
-                        };
-                    })
-                    .filter(function (g) { return g.questions.length > 0; });
-
-                // Preguntas sin grupo: van a un bloque unico al final.
-                var ungrouped = questions.filter(function (x) {
-                    return !x.groupId || !groups.some(function (g) { return g.id === x.groupId; });
-                });
-                if (ungrouped.length) {
-                    groups.push({ linkId: 'sin-grupo', id: null, title: q.Title || q.title || 'Preguntas', questions: ungrouped });
-                }
-
-                return {
-                    title: q.Title || q.title,
-                    version: (q.Versions || q.versions || []).length,
-                    groups: groups
-                };
-            }
-
-            function load() {
-                if (!props.questionnaireId) {
-                    loading.value = false;
-                    loadError.value = 'No se indicó qué cuestionario cargar.';
-                    return;
-                }
-                fetch('/fhir/r5/Questionnaire/' + props.questionnaireId, { headers: authHeaders() })
-                    .then(function (r) {
-                        if (!r.ok) throw new Error('HTTP ' + r.status);
-                        return r.json();
-                    })
-                    .then(function (q) {
-                        questionnaire.value = toViewModel(q);
-                    })
-                    .catch(function (err) {
-                        loadError.value = err.message;
-                    })
-                    .then(function () {
-                        loading.value = false;
-                    });
-            }
-            load();
 
             function isVisible(q) {
                 if (!q.enableWhen) return true;
@@ -300,6 +241,9 @@
                     headers: authHeaders(),
                     body: JSON.stringify({
                         QuestionnaireId: props.questionnaireId,
+                        // Ancla la ficha a la version que se rendrizo, no a la que este
+                        // publicada al momento de guardar.
+                        QuestionnaireVersionId: props.questionnaireVersionId,
                         PatientHospitalId: props.patientId,
                         Items: items
                     })

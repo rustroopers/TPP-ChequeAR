@@ -196,13 +196,12 @@ namespace ChequeAR.Application.Fhir
         /// </summary>
         private static void AddValidationExtensions(JObject item, Question question)
         {
-            if (string.IsNullOrWhiteSpace(question.ValidationJson)) return;
-
-            var validation = TryParse(question.ValidationJson);
-            if (validation == null) return;   // ausente o corrupto: se publica sin restricciones
+            // ValidationJson ausente o corrupto: se publica sin restricciones, pero el
+            // marcador de escala se emite igual porque hace al TIPO, no a la validación.
+            var validation = TryParse(question.ValidationJson) ?? new JObject();
 
             var extensions = new JArray();
-            var isInteger = question.Type == QuestionType.Integer;
+            var isInteger = question.Type == QuestionType.Integer || question.Type == QuestionType.Scale;
 
             var min = validation["min"];
             if (min != null && min.Type != JTokenType.Null)
@@ -211,6 +210,36 @@ namespace ChequeAR.Application.Fhir
             var max = validation["max"];
             if (max != null && max.Type != JTokenType.Null)
                 extensions.Add(ValueExtension("http://hl7.org/fhir/StructureDefinition/maxValue", max, isInteger));
+
+            // FHIR no tiene tipo "scale": se publica como integer + itemControl slider, que
+            // es la forma estándar. Sin esto, al releer la versión congelada una escala
+            // volvía como un número común.
+            if (question.Type == QuestionType.Scale)
+            {
+                extensions.Add(new JObject
+                {
+                    ["url"] = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl",
+                    ["valueCodeableConcept"] = new JObject
+                    {
+                        ["coding"] = new JArray(new JObject
+                        {
+                            ["system"] = "http://hl7.org/fhir/questionnaire-item-control",
+                            ["code"] = "slider"
+                        })
+                    }
+                });
+            }
+
+            // Formatos aceptados de un adjunto.
+            var accept = (string)validation["accept"];
+            if (!string.IsNullOrWhiteSpace(accept))
+            {
+                extensions.Add(new JObject
+                {
+                    ["url"] = "http://hl7.org/fhir/StructureDefinition/mimeType",
+                    ["valueCode"] = accept
+                });
+            }
 
             var unit = (string)validation["unit"];
             if (!string.IsNullOrWhiteSpace(unit))

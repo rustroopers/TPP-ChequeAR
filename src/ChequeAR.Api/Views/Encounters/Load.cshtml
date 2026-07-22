@@ -1,6 +1,8 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Carga de ficha";
+    string rendererProps = ViewBag.RendererProps as string;
+    string loadError = ViewBag.LoadError as string;
 }
 
 <header class="cq-page-header">
@@ -12,15 +14,30 @@
        QuestionnaireResponse, no hay endpoint de update. *@
 </header>
 
-<div id="qRenderer" data-vue-island="questionnaire-renderer"
-     data-props='@Html.Raw("{\"patientId\":\"" + ViewBag.PatientId + "\",\"questionnaireId\":\"" + ViewBag.QuestionnaireId + "\"}")'>
+@if (!string.IsNullOrEmpty(loadError))
+{
     <div class="cq-card">
-        <div class="cq-loading">
-            <div class="cq-spinner cq-spinner--lg"></div>
-            <div class="cq-loading__label">@Cq.T("r3.loading")</div>
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-exclamation-triangle"></i></div>
+            <div class="cq-empty__title">No se puede cargar la ficha</div>
+            <div class="cq-empty__desc">@loadError</div>
+            <a href="@Url.Action("Search")" class="btn btn-outline-secondary">Volver a Pacientes</a>
         </div>
     </div>
-</div>
+}
+else
+{
+    @* La ficha viene de la versión congelada, servida por el controller. Si alguien
+       publica un cambio mientras se completa, esto no se mueve. *@
+    <div id="qRenderer" data-vue-island="questionnaire-renderer" data-props="@rendererProps">
+        <div class="cq-card">
+            <div class="cq-loading">
+                <div class="cq-spinner cq-spinner--lg"></div>
+                <div class="cq-loading__label">@Cq.T("r3.loading")</div>
+            </div>
+        </div>
+    </div>
+}
 
 @section scripts {
 <script src="https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js"></script>
