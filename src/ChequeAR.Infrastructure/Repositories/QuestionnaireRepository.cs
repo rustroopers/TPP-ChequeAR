@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -50,9 +52,59 @@ namespace ChequeAR.Infrastructure.Repositories
             await _ctx.SaveChangesAsync();
         }
 
-        public Task UpdateAsync(Questionnaire q) => _ctx.SaveChangesAsync();
+        public Task UpdateAsync(Questionnaire q) => SaveAsync();
 
-        public async Task ReplaceStructureAsync(Questionnaire q, ICollection<QuestionGroup> groups, ICollection<Question> questions)
+        public async Task UpdateWithStructureAsync(Questionnaire q, ICollection<QuestionGroup> groups, ICollection<Question> questions)
+        {
+            using (var tx = _ctx.Database.BeginTransaction())
+            {
+                // La cabecera PRIMERO y en su propio SaveChanges: lleva el token de
+                // concurrencia, así que si otra persona tocó el cuestionario esto explota
+                // acá, antes de haber borrado una sola pregunta. Todo dentro de la misma
+                // transacción, de modo que un fallo posterior tampoco deja nada a medias.
+                await SaveAsync();
+                await ReplaceStructureAsync(q, groups, questions);
+                tx.Commit();
+            }
+        }
+
+        public async Task PublishAsync(Questionnaire q, QuestionnaireVersion version)
+        {
+            // Versión congelada y cabecera en una sola transacción: si se cortara entre las
+            // dos, quedaba una versión huérfana y el cuestionario sin publicar.
+            using (var tx = _ctx.Database.BeginTransaction())
+            {
+                _ctx.QuestionnaireVersions.Add(version);
+                await SaveAsync();
+                tx.Commit();
+            }
+        }
+
+        // Traduce el choque de concurrencia de EF al lenguaje de la aplicación. Salta
+        // cuando el UPDATE afecta 0 filas porque el ConcurrencyVersion del WHERE ya no
+        // coincide: alguien más guardó en el medio.
+        private async Task SaveAsync()
+        {
+            try
+            {
+                await _ctx.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                var stale = ex.Entries.Select(e => e.Entity).OfType<Questionnaire>().FirstOrDefault();
+                var expected = stale?.ConcurrencyVersion ?? 0;
+                var actual = expected;
+                if (stale != null)
+                {
+                    var fromDb = await _ctx.Questionnaires.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Id == stale.Id);
+                    actual = fromDb?.ConcurrencyVersion ?? expected;
+                }
+                throw new ConcurrencyConflictException(expected, actual);
+            }
+        }
+
+        private async Task ReplaceStructureAsync(Questionnaire q, ICollection<QuestionGroup> groups, ICollection<Question> questions)
         {
             // Borrado explícito: las FKs están con WillCascadeOnDelete(false), así que hay
             // que bajar de opciones -> preguntas -> secciones a mano y en ese orden.
@@ -80,7 +132,7 @@ namespace ChequeAR.Infrastructure.Repositories
             }
             foreach (var question in questions ?? new List<Question>()) AddQuestion(q, question);
 
-            await _ctx.SaveChangesAsync();
+            await SaveAsync();
         }
 
         private void AddQuestion(Questionnaire q, Question question)
@@ -102,12 +154,6 @@ namespace ChequeAR.Infrastructure.Repositories
             var q = await _ctx.Questionnaires.FindAsync(id);
             if (q == null) return;
             q.IsDeleted = true;
-            await _ctx.SaveChangesAsync();
-        }
-
-        public async Task AddVersionAsync(QuestionnaireVersion v)
-        {
-            _ctx.QuestionnaireVersions.Add(v);
             await _ctx.SaveChangesAsync();
         }
 

@@ -90,6 +90,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var publishedVersion = 0;
             var status = "draft";
             var pendingChanges = false;
+            var concurrencyVersion = 0;
             var groups = new List<QuestionGroupView>();
 
             if (id.HasValue)
@@ -104,6 +105,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         specialty = q.SpecialtyCode ?? "general";
                         status = QuestionnaireStatusMap.ToUi(q.Status);
                         pendingChanges = q.HasUnpublishedChanges();
+                        concurrencyVersion = q.ConcurrencyVersion;
                         // El editor se hidrata con la estructura real desde el server; antes
                         // arrancaba con datos de ejemplo hardcodeados y pisaba lo guardado.
                         groups = BuildEditorGroups(q);
@@ -127,7 +129,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
             // status manda: el editor no autoguarda un cuestionario publicado.
             ViewBag.EditorProps = JsonConvert.SerializeObject(
-                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, groups },
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups },
                 new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
         }

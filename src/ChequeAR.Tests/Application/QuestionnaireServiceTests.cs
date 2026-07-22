@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -111,7 +112,7 @@ namespace ChequeAR.Tests.Application
             await Assert.ThrowsAsync<InvalidOperationException>(
                 () => _sut.PublishAsync(id, "{}", "u"));
 
-            _repo.Verify(r => r.AddVersionAsync(It.IsAny<QuestionnaireVersion>()), Times.Never);
+            _repo.Verify(r => r.PublishAsync(It.IsAny<Questionnaire>(), It.IsAny<QuestionnaireVersion>()), Times.Never);
         }
 
         // Publicación exitosa: el cuestionario pasa a Activo, se crea la versión 1 y se apunta
@@ -129,8 +130,10 @@ namespace ChequeAR.Tests.Application
 
             Assert.Equal(QuestionnaireStatus.Active, result.Status);
             Assert.NotNull(result.CurrentVersionId);
-            _repo.Verify(r => r.AddVersionAsync(It.Is<QuestionnaireVersion>(v => v.VersionNumber == 1)), Times.Once);
-            _repo.Verify(r => r.UpdateAsync(q), Times.Once);
+            // Versión y cabecera van juntas en una sola llamada transaccional: antes eran
+            // dos SaveChanges y una caída en el medio dejaba la versión huérfana.
+            _repo.Verify(r => r.PublishAsync(q, It.Is<QuestionnaireVersion>(v => v.VersionNumber == 1)), Times.Once);
+            _repo.Verify(r => r.UpdateAsync(It.IsAny<Questionnaire>()), Times.Never);
         }
 
         // Publicar desde el listado no manda JSON: el service lo arma desde la base. Sin esto
@@ -146,8 +149,8 @@ namespace ChequeAR.Tests.Application
                       .Returns(TestHelpers.ValidOk());
 
             QuestionnaireVersion saved = null;
-            _repo.Setup(r => r.AddVersionAsync(It.IsAny<QuestionnaireVersion>()))
-                 .Callback<QuestionnaireVersion>(v => saved = v)
+            _repo.Setup(r => r.PublishAsync(It.IsAny<Questionnaire>(), It.IsAny<QuestionnaireVersion>()))
+                 .Callback<Questionnaire, QuestionnaireVersion>((_, v) => saved = v)
                  .Returns(Task.CompletedTask);
 
             var result = await _sut.PublishAsync(id, null, "u");
@@ -178,7 +181,7 @@ namespace ChequeAR.Tests.Application
 
             await _sut.UpdateAsync(id, patch, "u");
 
-            _repo.Verify(r => r.ReplaceStructureAsync(
+            _repo.Verify(r => r.UpdateWithStructureAsync(
                 existing,
                 It.Is<System.Collections.Generic.ICollection<QuestionGroup>>(g => g.Count == 1),
                 It.IsAny<System.Collections.Generic.ICollection<Question>>()), Times.Once);
@@ -195,7 +198,7 @@ namespace ChequeAR.Tests.Application
 
             await _sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u");
 
-            _repo.Verify(r => r.ReplaceStructureAsync(
+            _repo.Verify(r => r.UpdateWithStructureAsync(
                 It.IsAny<Questionnaire>(),
                 It.IsAny<System.Collections.Generic.ICollection<QuestionGroup>>(),
                 It.IsAny<System.Collections.Generic.ICollection<Question>>()), Times.Never);
@@ -215,8 +218,8 @@ namespace ChequeAR.Tests.Application
                       .Returns(TestHelpers.ValidOk());
 
             QuestionnaireVersion saved = null;
-            _repo.Setup(r => r.AddVersionAsync(It.IsAny<QuestionnaireVersion>()))
-                 .Callback<QuestionnaireVersion>(v => saved = v)
+            _repo.Setup(r => r.PublishAsync(It.IsAny<Questionnaire>(), It.IsAny<QuestionnaireVersion>()))
+                 .Callback<Questionnaire, QuestionnaireVersion>((_, v) => saved = v)
                  .Returns(Task.CompletedTask);
 
             var result = await _sut.PublishAsync(id, null, "u");
@@ -245,6 +248,78 @@ namespace ChequeAR.Tests.Application
 
             Assert.True(updated.HasPendingChanges);
             Assert.True(updated.HasUnpublishedChanges());
+        }
+
+        // Concurrencia optimista: si el cliente trae una versión vieja (alguien más guardó
+        // en el medio), la edición se rechaza en vez de pisar el trabajo ajeno.
+        [Fact]
+        public async Task UpdateAsync_StaleVersion_ThrowsConflict_AndTouchesNothing()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire { Id = id, Title = "de otra persona", ConcurrencyVersion = 7 };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var patch = new Questionnaire { Title = "lo mio" };
+            patch.Groups.Add(new QuestionGroup { Title = "S", Questions = { new Question { LinkId = "x" } } });
+
+            var ex = await Assert.ThrowsAsync<ConcurrencyConflictException>(
+                () => _sut.UpdateAsync(id, patch, "u", expectedVersion: 5));
+
+            Assert.Equal(5, ex.ExpectedVersion);
+            Assert.Equal(7, ex.ActualVersion);
+            // Lo importante: no se escribió nada. El titulo ajeno queda intacto.
+            Assert.Equal("de otra persona", existing.Title);
+            _repo.Verify(r => r.UpdateWithStructureAsync(It.IsAny<Questionnaire>(),
+                It.IsAny<System.Collections.Generic.ICollection<QuestionGroup>>(),
+                It.IsAny<System.Collections.Generic.ICollection<Question>>()), Times.Never);
+            _repo.Verify(r => r.UpdateAsync(It.IsAny<Questionnaire>()), Times.Never);
+        }
+
+        // Con la versión correcta la edición pasa y el contador avanza, para que el próximo
+        // guardado de otra pestaña con la version vieja choque.
+        [Fact]
+        public async Task UpdateAsync_MatchingVersion_SucceedsAndBumpsVersion()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire { Id = id, Title = "old", ConcurrencyVersion = 5 };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u", expectedVersion: 5);
+
+            Assert.Equal("nuevo", updated.Title);
+            Assert.Equal(6, updated.ConcurrencyVersion);
+        }
+
+        // Sin expectedVersion (llamadas internas) no se chequea nada: el guard vive en la
+        // capa HTTP, que exige If-Match.
+        [Fact]
+        public async Task UpdateAsync_NoExpectedVersion_SkipsCheck()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire { Id = id, Title = "old", ConcurrencyVersion = 9 };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u");
+
+            Assert.Equal("nuevo", updated.Title);
+            Assert.Equal(10, updated.ConcurrencyVersion);
+        }
+
+        // Publicar tambien avanza el contador: congela una version y deja obsoleto
+        // cualquier editor que estuviera abierto sobre el estado anterior.
+        [Fact]
+        public async Task PublishAsync_BumpsConcurrencyVersion()
+        {
+            var id = Guid.NewGuid();
+            var q = Draftable(id);
+            q.ConcurrencyVersion = 3;
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(q);
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
+                      .Returns(TestHelpers.ValidOk());
+
+            var result = await _sut.PublishAsync(id, null, "u");
+
+            Assert.Equal(4, result.ConcurrencyVersion);
         }
 
         // Archivar deja el cuestionario en estado Retirado y guarda el cambio.

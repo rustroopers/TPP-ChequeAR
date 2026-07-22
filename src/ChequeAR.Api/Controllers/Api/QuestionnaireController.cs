@@ -1,9 +1,13 @@
 using System;
+using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -37,7 +41,26 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var q = await _repo.GetAsync(id);
             if (q == null) return NotFound();
-            return Ok(q);
+
+            // ETag = versión del registro. El cliente la devuelve en If-Match al escribir.
+            var response = Request.CreateResponse(HttpStatusCode.OK, q);
+            response.Headers.ETag = ETagFor(q);
+            return ResponseMessage(response);
+        }
+
+        private static EntityTagHeaderValue ETagFor(Questionnaire q)
+        {
+            // Weak ETag: identifica la versión del recurso, no una representación byte a byte.
+            return new EntityTagHeaderValue("\"" + q.ConcurrencyVersion + "\"", true);
+        }
+
+        // Acepta W/"3" y "3". Devuelve null si no hay un número adentro.
+        private static int? ParseIfMatch(HttpRequestMessage request)
+        {
+            var tag = request.Headers.IfMatch?.FirstOrDefault();
+            if (tag == null) return null;
+            var raw = (tag.Tag ?? string.Empty).Trim('"');
+            return int.TryParse(raw, out var version) ? version : (int?)null;
         }
 
         [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
@@ -46,15 +69,45 @@ namespace ChequeAR.Api.Controllers.Api
             if (q == null) return BadRequest("body required");
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
-            return Content(HttpStatusCode.Created, created);
+            var response = Request.CreateResponse(HttpStatusCode.Created, created);
+            response.Headers.ETag = ETagFor(created);
+            return ResponseMessage(response);
         }
 
         [HttpPut, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] Questionnaire patch)
         {
+            if (patch == null) return BadRequest("body required");
+
+            // If-Match obligatorio: sin él no hay forma de saber si el cliente vio la última
+            // versión, y una edición concurrente pisaría el trabajo ajeno en silencio.
+            // 428 Precondition Required (RFC 6585) existe justamente para este caso.
+            var expectedVersion = ParseIfMatch(Request);
+            if (!expectedVersion.HasValue)
+            {
+                return Content((HttpStatusCode)428, new
+                {
+                    error = "Falta el header If-Match con la versión del cuestionario (ej: If-Match: W/\"3\")."
+                });
+            }
+
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            var updated = await _service.UpdateAsync(id, patch, userId);
-            return Ok(updated);
+            try
+            {
+                var updated = await _service.UpdateAsync(id, patch, userId, expectedVersion);
+                var response = Request.CreateResponse(HttpStatusCode.OK, updated);
+                response.Headers.ETag = ETagFor(updated);
+                return ResponseMessage(response);
+            }
+            catch (ConcurrencyConflictException ex)
+            {
+                return Content(HttpStatusCode.Conflict, new
+                {
+                    error = ex.Message,
+                    expectedVersion = ex.ExpectedVersion,
+                    actualVersion = ex.ActualVersion
+                });
+            }
         }
 
         [HttpPost, Route("{id:guid}/$publish"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]

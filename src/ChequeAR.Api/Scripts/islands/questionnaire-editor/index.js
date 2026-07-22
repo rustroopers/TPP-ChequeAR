@@ -9,6 +9,7 @@
             id: String, title: String, version: Number, isNew: Boolean,
             specialtyCode: String,
             status: String,
+            concurrencyVersion: Number,
             groups: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
@@ -24,6 +25,11 @@
             // Un publicado no se autoguarda: sus cambios quedan pendientes hasta que
             // alguien decide publicar la versión siguiente. Guardar es una decisión.
             var isPublished = Vue.ref(props.status === 'published');
+            // Versión del registro que este editor cargó. Viaja en If-Match y se refresca
+            // con cada guardado propio. Si otra persona guarda, la suya avanza y la nuestra
+            // queda vieja -> el server responde 409 en vez de dejarnos pisar su trabajo.
+            var recordVersion = Vue.ref(props.concurrencyVersion || 0);
+            var conflict = Vue.ref(false);
 
             // Estructura real del cuestionario, inyectada por el server en data-props.
             // Uno nuevo arranca con una sección vacía (no con datos de ejemplo: se
@@ -131,6 +137,9 @@
             function save(options) {
                 var explicit = !!(options && options.explicit);
                 if (saving.value) return Promise.resolve(false);
+                // Con un conflicto sin resolver no se vuelve a intentar: reintentar sólo
+                // serviría para pisar a la otra persona en cuanto refresquemos la versión.
+                if (conflict.value) return Promise.resolve(false);
                 var token = getToken();
                 if (!token) {
                     toast('No hay sesión: no se puede guardar (token ausente).', 'error');
@@ -143,16 +152,27 @@
                     ? '/fhir/r5/Questionnaire'
                     : '/fhir/r5/Questionnaire/' + currentId.value;
 
+                var headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                };
+                // If-Match sólo al actualizar: al crear todavía no hay nada con qué chocar.
+                if (!creating) headers['If-Match'] = 'W/"' + recordVersion.value + '"';
+
                 // Devuelve una promesa que resuelve en true/false: publicar necesita saber
                 // si el guardado previo salió bien antes de congelar una versión.
                 return fetch(url, {
                     method: creating ? 'POST' : 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + token
-                    },
+                    headers: headers,
                     body: JSON.stringify(buildPayload())
                 }).then(function (res) {
+                    if (res.status === 409) {
+                        return res.json().catch(function () { return null; }).then(function (body) {
+                            var err = new Error((body && body.error) || 'Conflicto de edición');
+                            err.isConflict = true;
+                            throw err;
+                        });
+                    }
                     if (!res.ok) { throw new Error('HTTP ' + res.status); }
                     return res.status === 204 ? null : res.json().catch(function () { return null; });
                 }).then(function (data) {
@@ -164,6 +184,13 @@
                             window.history.replaceState(null, '', '/Questionnaires/Edit/' + data.id);
                         }
                     }
+                    // El server devuelve la entidad con su ConcurrencyVersion nueva; sin
+                    // esto el segundo guardado seguido chocaría contra nuestro propio cambio.
+                    if (data) {
+                        var v = data.concurrencyVersion;
+                        if (v === undefined) v = data.ConcurrencyVersion;
+                        if (typeof v === 'number') recordVersion.value = v;
+                    }
                     lastSaved.value = new Date().toLocaleTimeString();
                     dirty.value = false;
                     if (creating) toast('Cuestionario creado', 'success');
@@ -174,7 +201,13 @@
                     }
                     return true;
                 }).catch(function (err) {
-                    toast('Error al guardar: ' + err.message, 'error');
+                    if (err.isConflict) {
+                        // No se pisa nada: se corta acá y decide la persona.
+                        conflict.value = true;
+                        toast(err.message, 'error');
+                    } else {
+                        toast('Error al guardar: ' + err.message, 'error');
+                    }
                     return false;
                 }).then(function (ok) {
                     saving.value = false;
@@ -185,8 +218,19 @@
             // Publicar desde el editor. Guarda primero: publicar congela lo que está en la
             // base, no lo que está en pantalla, así que sin esto publicarías la versión
             // anterior sin enterarte.
+            // Descarta lo local y vuelve a cargar lo que hay en el server. Es la salida
+            // honesta del conflicto: no hay merge automático de estructuras.
+            function reloadFromServer() {
+                dirty.value = false;   // que beforeunload no pregunte: la decisión ya se tomó
+                window.location.reload();
+            }
+
             function publish() {
                 if (saving.value || publishing.value) return;
+                if (conflict.value) {
+                    toast('Resolvé el conflicto de edición antes de publicar.', 'error');
+                    return;
+                }
                 var token = getToken();
                 if (!token) { toast('No hay sesión: no se puede publicar (token ausente).', 'error'); return; }
 
@@ -224,7 +268,7 @@
             var debounce;
             Vue.watch(groups, function () {
                 dirty.value = true;
-                if (isNew.value || isPublished.value) return;
+                if (isNew.value || isPublished.value || conflict.value) return;
                 clearTimeout(debounce);
                 debounce = setTimeout(save, 2000);
             }, { deep: true });
@@ -261,13 +305,24 @@
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
                 qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
                 isPublished: isPublished, publish: publish,
+                conflict: conflict, reloadFromServer: reloadFromServer,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit
             };
         },
         template: '\
 <div>\
-<div v-if="isPublished" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
+<div v-if="conflict" class="cq-card mb-2" style="border-left:3px solid var(--cq-danger);">\
+    <div class="d-flex align-items-start gap-2">\
+        <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-danger);"></i>\
+        <div class="flex-fill">\
+            <div class="cq-text-sm"><strong>Otra persona guardó cambios mientras editabas.</strong></div>\
+            <div class="cq-text-sm cq-text-muted">Tus cambios NO se guardaron, y los de la otra persona siguen intactos. No hay forma automática de combinar las dos versiones, así que tenés que elegir: anotá lo tuyo y volvé a cargar, o abrí el cuestionario en otra pestaña para comparar.</div>\
+            <button class="btn btn-sm btn-danger mt-2" @click="reloadFromServer"><i class="bi bi-arrow-clockwise me-1"></i> Descartar lo mío y recargar</button>\
+        </div>\
+    </div>\
+</div>\
+<div v-if="isPublished && !conflict" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
     <i class="bi bi-info-circle" style="color:var(--cq-info);"></i>\
     <span class="cq-text-sm">Este cuestionario está <strong>publicado</strong>. Los cambios se guardan como pendientes: los clínicos siguen viendo la versión publicada hasta que publiques una nueva.</span>\
 </div>\

@@ -50,6 +50,7 @@ namespace ChequeAR.Infrastructure.EF
             mb.Properties<string>().Configure(p => p.HasMaxLength(2000).IsUnicode(false));
 
             mb.Configurations.Add(new QuestionnaireConfig());
+            mb.Configurations.Add(new QuestionnaireVersionConfig());
             mb.Configurations.Add(new QuestionnaireResponseConfig());
             mb.Configurations.Add(new AuditEventConfig());
 

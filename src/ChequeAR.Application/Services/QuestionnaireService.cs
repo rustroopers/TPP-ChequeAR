@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
@@ -82,12 +83,22 @@ namespace ChequeAR.Application.Services
             }
         }
 
-        public async Task<Questionnaire> UpdateAsync(Guid id, Questionnaire patch, string userId)
+        /// <param name="expectedVersion">
+        /// ConcurrencyVersion que el cliente tenía al abrir el editor (llega por If-Match).
+        /// Si no coincide con la de la base, alguien más guardó en el medio y se rechaza en
+        /// vez de pisar su trabajo.
+        /// </param>
+        public async Task<Questionnaire> UpdateAsync(Guid id, Questionnaire patch, string userId, int? expectedVersion = null)
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
             if (q.Status == QuestionnaireStatus.Retired)
                 throw new InvalidOperationException("Retired questionnaires cannot be edited");
+
+            // Chequeo temprano: da un error claro sin tocar la base. La carrera que queda
+            // entre este read y el write la ataja el token de concurrencia en el UPDATE.
+            if (expectedVersion.HasValue && q.ConcurrencyVersion != expectedVersion.Value)
+                throw new ConcurrencyConflictException(expectedVersion.Value, q.ConcurrencyVersion);
 
             q.Title = patch.Title ?? q.Title;
             q.Description = patch.Description ?? q.Description;
@@ -96,6 +107,7 @@ namespace ChequeAR.Application.Services
             // Toda edición deja cambios pendientes de publicar. En un borrador el flag es
             // inocuo (HasUnpublishedChanges() exige estado Activo).
             q.HasPendingChanges = true;
+            q.ConcurrencyVersion++;
 
             // Estructura (secciones/preguntas/opciones): si el patch trae alguna, reemplaza
             // por completo la existente. Un patch sin estructura (colecciones vacías, que es
@@ -106,10 +118,13 @@ namespace ChequeAR.Application.Services
             {
                 var replacement = new Questionnaire { Id = q.Id, Groups = patch.Groups, Questions = patch.Questions };
                 AssignChildIds(replacement);
-                await _repo.ReplaceStructureAsync(q, replacement.Groups, replacement.Questions);
+                await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
+            }
+            else
+            {
+                await _repo.UpdateAsync(q);
             }
 
-            await _repo.UpdateAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id, userId));
             return q;
         }
@@ -144,13 +159,12 @@ namespace ChequeAR.Application.Services
                 PublishedAt = now,
                 PublishedBy = userId
             };
-            await _repo.AddVersionAsync(version);
-
             q.CurrentVersionId = version.Id;
             q.Status = QuestionnaireStatus.Active;
             q.HasPendingChanges = false;   // lo pendiente acaba de quedar congelado en la versión
             q.UpdatedAt = now;
-            await _repo.UpdateAsync(q);
+            q.ConcurrencyVersion++;
+            await _repo.PublishAsync(q, version);
 
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$publish", userId));
             return q;
@@ -162,6 +176,7 @@ namespace ChequeAR.Application.Services
             if (q == null) throw new InvalidOperationException("Not found");
             q.Status = QuestionnaireStatus.Retired;
             q.UpdatedAt = DateTime.UtcNow;
+            q.ConcurrencyVersion++;
             await _repo.UpdateAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$archive", userId));
         }

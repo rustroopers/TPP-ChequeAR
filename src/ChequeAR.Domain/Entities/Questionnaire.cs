@@ -26,6 +26,17 @@ namespace ChequeAR.Domain.Entities
         /// </summary>
         public bool HasPendingChanges { get; set; }
 
+        /// <summary>
+        /// Contador de escrituras sobre el registro, para concurrencia optimista. Se
+        /// incrementa en cada modificación y viaja al cliente como ETag; el cliente lo
+        /// devuelve en If-Match y el server rechaza la escritura si no coincide.
+        ///
+        /// Es el equivalente de Resource.meta.versionId de FHIR (la versión del registro),
+        /// distinto de QuestionnaireVersion, que son los snapshots publicados.
+        /// Oracle no tiene rowversion, así que lo lleva la aplicación.
+        /// </summary>
+        public int ConcurrencyVersion { get; set; }
+
         public virtual ICollection<QuestionnaireVersion> Versions { get; set; } = new List<QuestionnaireVersion>();
         public virtual ICollection<QuestionGroup> Groups { get; set; } = new List<QuestionGroup>();
         public virtual ICollection<Question> Questions { get; set; } = new List<Question>();
