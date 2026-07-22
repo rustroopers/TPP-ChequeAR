@@ -204,24 +204,56 @@ namespace ChequeAR.Api.Controllers.Mvc
                     FinalizedAt = qr.LastSavedAt.ToString("yyyy-MM-dd HH:mm")
                 };
 
-                // Respuestas: unir los items cargados con las preguntas del cuestionario.
                 // Un linkId puede repetirse (opción múltiple: un item por opción marcada),
                 // así que se agrupan y se muestran todas, no sólo la primera.
                 var itemsByLink = (qr.Items ?? new List<ChequeAR.Domain.Entities.QuestionnaireResponseItem>())
                     .GroupBy(i => i.LinkId).ToDictionary(gr => gr.Key, gr => gr.ToList());
-                var answered = new QuestionGroupAnswered { Title = "Respuestas" };
-                var questions = (q?.Questions ?? new List<ChequeAR.Domain.Entities.Question>()).OrderBy(x => x.OrderIndex);
-                foreach (var question in questions)
+
+                // Las PREGUNTAS salen de la versión anclada, no de la entidad viva: una
+                // ficha respondida con la v1 tiene que seguir mostrando las preguntas y los
+                // textos de la v1 aunque después se hayan publicado otras versiones.
+                var pinned = qr.QuestionnaireVersionId == Guid.Empty
+                    ? null
+                    : q?.Versions?.FirstOrDefault(v => v.Id == qr.QuestionnaireVersionId);
+                var structure = FhirQuestionnaireReader.Read(pinned?.FhirJson);
+
+                if (structure != null)
                 {
-                    itemsByLink.TryGetValue(question.LinkId ?? "", out var items);
-                    answered.Questions.Add(new AnsweredQuestion
+                    foreach (var g in structure.Groups)
                     {
-                        Text = question.Text,
-                        Answer = FormatAnswers(items),
-                        Prefilled = items != null && items.Any(i => i.WasPrefilled)
-                    });
+                        var group = new QuestionGroupAnswered { Title = g.Title };
+                        foreach (var question in g.Questions)
+                        {
+                            itemsByLink.TryGetValue(question.LinkId ?? "", out var items);
+                            group.Questions.Add(new AnsweredQuestion
+                            {
+                                Text = question.Text,
+                                Answer = FormatAnswers(items),
+                                Prefilled = items != null && items.Any(i => i.WasPrefilled)
+                            });
+                        }
+                        if (group.Questions.Count > 0) model.Groups.Add(group);
+                    }
                 }
-                if (answered.Questions.Count > 0) model.Groups.Add(answered);
+                else
+                {
+                    // Ficha anterior al anclaje: no sabemos con qué versión se cargó. La
+                    // fuente más fiel que queda son los textos guardados en la propia
+                    // respuesta; usar el cuestionario vivo mostraría preguntas que esta
+                    // ficha nunca tuvo.
+                    var answered = new QuestionGroupAnswered { Title = "Respuestas" };
+                    foreach (var entry in TextsFromResponse(qr.FhirJson))
+                    {
+                        itemsByLink.TryGetValue(entry.Key, out var items);
+                        answered.Questions.Add(new AnsweredQuestion
+                        {
+                            Text = entry.Value,
+                            Answer = FormatAnswers(items),
+                            Prefilled = items != null && items.Any(i => i.WasPrefilled)
+                        });
+                    }
+                    if (answered.Questions.Count > 0) model.Groups.Add(answered);
+                }
                 return base.View(model);
             }
             catch (Exception ex)
@@ -229,6 +261,29 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.DataError = ex.Message;
                 return base.View(new EncounterReadonlyViewModel { EncounterId = id });
             }
+        }
+
+        /// <summary>
+        /// linkId -> texto, leídos del recurso guardado con la propia respuesta. Es el
+        /// registro de lo que el médico vio en pantalla, y el único disponible cuando la
+        /// ficha no tiene versión anclada.
+        /// </summary>
+        private static IEnumerable<KeyValuePair<string, string>> TextsFromResponse(string fhirJson)
+        {
+            var result = new List<KeyValuePair<string, string>>();
+            if (string.IsNullOrWhiteSpace(fhirJson)) return result;
+            try
+            {
+                var items = Newtonsoft.Json.Linq.JObject.Parse(fhirJson)["item"] as Newtonsoft.Json.Linq.JArray;
+                foreach (var item in items ?? new Newtonsoft.Json.Linq.JArray())
+                {
+                    var linkId = (string)item["linkId"];
+                    if (string.IsNullOrWhiteSpace(linkId)) continue;
+                    result.Add(new KeyValuePair<string, string>(linkId, (string)item["text"] ?? linkId));
+                }
+            }
+            catch (Newtonsoft.Json.JsonException) { /* recurso ilegible: no se inventa nada */ }
+            return result;
         }
 
         private static string FormatAnswers(List<ChequeAR.Domain.Entities.QuestionnaireResponseItem> items)
