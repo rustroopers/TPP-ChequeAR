@@ -51,10 +51,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                model.Results = MockSeed.Patients();
-                ViewBag.DataMode = "demo";
+                model.Results.Clear();
+                ViewBag.DataError = ex.Message;
             }
             return View(model);
         }
@@ -81,12 +81,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
                 ViewBag.Version = q?.Versions?.Count ?? 0;
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.PatientName = "García, Ana (HC " + patientId + ")";
-                ViewBag.QuestionnaireTitle = "Cardio basal";
-                ViewBag.Version = 3;
-                ViewBag.DataMode = "demo";
+                ViewBag.PatientName = "HC " + patientId;
+                ViewBag.QuestionnaireTitle = null;
+                ViewBag.Version = 0;
+                ViewBag.DataError = ex.Message;
             }
             return View();
         }
@@ -136,10 +136,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 if (answered.Questions.Count > 0) model.Groups.Add(answered);
                 return base.View(model);
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.DataMode = "demo";
-                return base.View(MockSeed.EncounterReadonly(id));
+                ViewBag.DataError = ex.Message;
+                return base.View(new EncounterReadonlyViewModel { EncounterId = id });
             }
         }
 
@@ -192,10 +192,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return View(model);
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.DataMode = "demo";
-                return View(MockSeed.PatientTimeline(patientId));
+                ViewBag.DataError = ex.Message;
+                return View(new PatientTimelineViewModel
+                {
+                    Patient = new PatientSearchItem { HC = patientId }
+                });
             }
         }
     }

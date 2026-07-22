@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Web.Mvc;
@@ -42,10 +43,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                model.Users = MockSeed.Users();
-                ViewBag.DataMode = "demo";
+                model.Users.Clear();
+                ViewBag.DataError = ex.Message;
             }
             return View(model);
         }
@@ -83,10 +84,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return View(model);
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.DataMode = "demo";
-                return View(MockSeed.UserDetail(username));
+                ViewBag.DataError = ex.Message;
+                return View(new UserDetailViewModel { Username = username });
             }
         }
 

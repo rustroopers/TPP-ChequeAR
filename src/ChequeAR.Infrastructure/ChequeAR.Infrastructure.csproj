@@ -31,4 +31,23 @@
     </None>
   </ItemGroup>
 
+  <!--
+    Cada migracion EF6 lleva un .resx con el snapshot del modelo. El Designer.cs
+    generado lo busca con ResourceManager(typeof(InitialCreate)), o sea por el
+    nombre de la CLASE: "ChequeAR.Infrastructure.Migrations.InitialCreate".
+    Pero el archivo se llama "<timestamp>_InitialCreate.resx", y en un proyecto
+    SDK-style el manifest name sale de la ruta -> incluiria el timestamp y EF
+    tira MissingManifestResourceException al aplicar.
+
+    Se le saca el prefijo "<15 digitos>_" al nombre del recurso. Aplica solo a
+    Migrations\, asi cualquier migracion futura funciona sin tocar el csproj.
+  -->
+  <Target Name="FixMigrationResourceNames" BeforeTargets="PrepareResourceNames">
+    <ItemGroup>
+      <EmbeddedResource Condition="'%(RelativeDir)' == 'Migrations\'">
+        <LogicalName>$(RootNamespace).Migrations.$([System.Text.RegularExpressions.Regex]::Replace('%(Filename)', '^\d{15}_', '')).resources</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+
 </Project>

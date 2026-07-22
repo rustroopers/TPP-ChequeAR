@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Web.Mvc;
@@ -40,7 +41,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                 Kpis = null
             };
 
-            // Datos reales con fallback a MockSeed si DB no responde.
+            // Si la DB no responde la pantalla queda vacia con el banner de error;
+            // nunca se rellena con datos inventados.
             try
             {
                 var recent = await _qrRepo.SearchAsync(null, null, null, 0, 5);
@@ -69,20 +71,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     model.Kpis = new KpiSummary { Questionnaires = totalQ, Encounters = totalE, Users = totalU, Specialties = 4 };
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fallback demo
-                model.RecentEncounters = new List<RecentEncounter>
-                {
-                    new RecentEncounter { PatientName = "García, Ana",  QuestionnaireTitle = "Cardio basal",   SpecialtyCode = "cardio", Status = "published", UpdatedAt = "hoy 10:23", OpenUrl = Url.Action("Search", "Encounters") },
-                    new RecentEncounter { PatientName = "López, Mateo", QuestionnaireTitle = "Neumo control",  SpecialtyCode = "neumo",  Status = "draft",     UpdatedAt = "ayer",      OpenUrl = Url.Action("Search", "Encounters") },
-                    new RecentEncounter { PatientName = "Pérez, Lucía", QuestionnaireTitle = "Onco seguimiento", SpecialtyCode = "onco", Status = "published", UpdatedAt = "ayer",      OpenUrl = Url.Action("Search", "Encounters") }
-                };
-                if (model.IsAdmin)
-                {
-                    model.Kpis = new KpiSummary { Questionnaires = 47, Encounters = 1230, Users = 85, Specialties = 4 };
-                }
-                ViewBag.DataMode = "demo";
+                model.RecentEncounters.Clear();
+                model.Kpis = null;
+                ViewBag.DataError = ex.Message;
             }
 
             return View(model);

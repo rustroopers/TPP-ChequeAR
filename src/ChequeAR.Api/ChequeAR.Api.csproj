@@ -96,7 +96,7 @@
     <Compile Include="Controllers\Mvc\AuditController.cs" />
     <Compile Include="Controllers\Mvc\UsersController.cs" />
     <Compile Include="Controllers\Mvc\AdminController.cs" />
-    <Compile Include="Controllers\Mvc\MockSeed.cs" />
+    <Compile Include="Fhir\CapabilityCatalog.cs" />
     <Compile Include="Models\HomeViewModel.cs" />
     <Compile Include="Models\QuestionnaireListItem.cs" />
     <Compile Include="Models\EncounterViewModels.cs" />

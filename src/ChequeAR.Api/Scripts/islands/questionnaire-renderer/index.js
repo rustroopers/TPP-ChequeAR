@@ -7,40 +7,118 @@
     var QuestionnaireRenderer = {
         props: { patientId: String, questionnaireId: String },
         setup: function (props) {
-            // Mock del cuestionario — en producción se hace fetch a /api/fhir/r5/Questionnaire/{id}
-            var questionnaire = Vue.ref({
-                title: 'Cardio basal',
-                version: 3,
-                groups: [
-                    {
-                        linkId: 'gpaciente', title: 'Datos del paciente',
-                        questions: [
-                            { linkId: 'edad', text: 'Edad', type: 'integer', required: true, unit: 'años', min: 0, max: 120 },
-                            { linkId: 'sexo', text: 'Sexo', type: 'choice', required: true, options: ['Femenino', 'Masculino', 'Otro'] }
-                        ]
-                    },
-                    {
-                        linkId: 'gvitales', title: 'Signos vitales',
-                        questions: [
-                            { linkId: 'tasis', text: 'TA sistólica', type: 'decimal', required: true, unit: 'mmHg', min: 40, max: 250 },
-                            { linkId: 'tadia', text: 'TA diastólica', type: 'decimal', required: true, unit: 'mmHg', min: 20, max: 150 },
-                            { linkId: 'fc',    text: 'FC',            type: 'integer', required: true, unit: 'lpm', min: 20, max: 240 }
-                        ]
-                    },
-                    {
-                        linkId: 'gantec', title: 'Antecedentes',
-                        questions: [
-                            { linkId: 'hta', text: '¿HTA?', type: 'boolean', required: true },
-                            { linkId: 'htatto', text: 'Tratamiento actual de HTA', type: 'string', enableWhen: { question: 'hta', op: '=', value: true } },
-                            { linkId: 'dm',  text: '¿Diabetes?', type: 'boolean', required: false }
-                        ]
-                    }
-                ]
-            });
+            var questionnaire = Vue.ref({ title: '', version: 0, groups: [] });
+            var loading = Vue.ref(true);
+            var loadError = Vue.ref(null);
 
             var answers = Vue.reactive({});
             var errors = Vue.reactive({});
-            var savingState = Vue.ref('saved'); // idle | saving | saved | error
+            var savingState = Vue.ref('idle'); // idle | dirty | saving | error
+            var submitting = Vue.ref(false);
+
+            function token() {
+                var m = document.querySelector('meta[name="cq-token"]');
+                return m ? m.getAttribute('content') : null;
+            }
+            function authHeaders() {
+                var h = { 'Content-Type': 'application/json' };
+                var t = token();
+                if (t) h['Authorization'] = 'Bearer ' + t;
+                return h;
+            }
+
+            // QuestionType del backend (enum serializado como numero) -> tipo del renderer.
+            var TYPES = ['decimal', 'integer', 'string', 'text', 'date', 'dateTime',
+                         'boolean', 'choice', 'openChoice', 'attachment', 'scale'];
+            function typeName(t) {
+                if (typeof t === 'number') return TYPES[t] || 'string';
+                return String(t || 'string').charAt(0).toLowerCase() + String(t || 'string').slice(1);
+            }
+
+            function parseJson(raw) {
+                if (!raw) return null;
+                try { return JSON.parse(raw); } catch (e) { return null; }
+            }
+
+            // El endpoint devuelve la entidad Questionnaire: Groups (opcional) y
+            // Questions plana, cada una con GroupId. Se arma la jerarquia aca.
+            function toViewModel(q) {
+                var rawQuestions = q.Questions || q.questions || [];
+                var rawGroups = q.Groups || q.groups || [];
+
+                var questions = rawQuestions
+                    .slice()
+                    .sort(function (a, b) { return (a.OrderIndex || 0) - (b.OrderIndex || 0); })
+                    .map(function (x) {
+                        var validation = parseJson(x.ValidationJson) || {};
+                        var enableWhen = parseJson(x.EnableWhenJson);
+                        var options = (x.Options || x.options || []).map(function (o) {
+                            return o.Display || o.Value || o.Code;
+                        });
+                        return {
+                            linkId: x.LinkId,
+                            groupId: x.GroupId || null,
+                            text: x.Text,
+                            type: typeName(x.Type),
+                            required: !!x.Required,
+                            unit: validation.unit,
+                            min: validation.min,
+                            max: validation.max,
+                            options: options,
+                            enableWhen: enableWhen
+                        };
+                    });
+
+                var groups = rawGroups
+                    .slice()
+                    .sort(function (a, b) { return (a.OrderIndex || 0) - (b.OrderIndex || 0); })
+                    .map(function (g) {
+                        return {
+                            linkId: g.LinkId || ('g-' + g.Id),
+                            id: g.Id,
+                            title: g.Title,
+                            questions: questions.filter(function (x) { return x.groupId === g.Id; })
+                        };
+                    })
+                    .filter(function (g) { return g.questions.length > 0; });
+
+                // Preguntas sin grupo: van a un bloque unico al final.
+                var ungrouped = questions.filter(function (x) {
+                    return !x.groupId || !groups.some(function (g) { return g.id === x.groupId; });
+                });
+                if (ungrouped.length) {
+                    groups.push({ linkId: 'sin-grupo', id: null, title: q.Title || q.title || 'Preguntas', questions: ungrouped });
+                }
+
+                return {
+                    title: q.Title || q.title,
+                    version: (q.Versions || q.versions || []).length,
+                    groups: groups
+                };
+            }
+
+            function load() {
+                if (!props.questionnaireId) {
+                    loading.value = false;
+                    loadError.value = 'No se indicó qué cuestionario cargar.';
+                    return;
+                }
+                fetch('/fhir/r5/Questionnaire/' + props.questionnaireId, { headers: authHeaders() })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function (q) {
+                        questionnaire.value = toViewModel(q);
+                    })
+                    .catch(function (err) {
+                        loadError.value = err.message;
+                    })
+                    .then(function () {
+                        loading.value = false;
+                    });
+            }
+            load();
 
             function isVisible(q) {
                 if (!q.enableWhen) return true;
@@ -76,14 +154,12 @@
                 triggerAutosave();
             }
 
-            var debounce;
+            // El backend todavia no expone un endpoint de update para
+            // QuestionnaireResponse (solo POST y $finalize), asi que no hay
+            // autosave posible. Se marca el estado como 'dirty' para que la UI
+            // diga la verdad: hay cambios sin guardar hasta que se finalice.
             function triggerAutosave() {
-                savingState.value = 'idle';
-                clearTimeout(debounce);
-                debounce = setTimeout(function () {
-                    savingState.value = 'saving';
-                    setTimeout(function () { savingState.value = 'saved'; }, 350); // simulado
-                }, 2000);
+                savingState.value = 'dirty';
             }
 
             function totalQuestions() {
@@ -103,31 +179,105 @@
                 return n;
             }
 
+            // Un valor del formulario -> la columna tipada que espera
+            // QuestionnaireResponseItem en el backend.
+            function toItem(q) {
+                var v = answers[q.linkId];
+                var item = { LinkId: q.linkId, QuestionType: q.type };
+                if (v === undefined || v === '' || v === null) return item;
+                switch (q.type) {
+                    case 'boolean':  item.ValueBoolean = !!v; break;
+                    case 'integer':  item.ValueInteger = parseInt(v, 10); break;
+                    case 'decimal':
+                    case 'scale':    item.ValueDecimal = Number(v); break;
+                    case 'date':
+                    case 'dateTime': item.ValueDate = v; break;
+                    case 'choice':
+                    case 'openChoice': item.ValueCode = String(v); break;
+                    default:         item.ValueString = String(v); break;
+                }
+                return item;
+            }
+
             function submit() {
+                if (submitting.value) return;
+
                 var allErrors = [];
+                var items = [];
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (q) {
+                        if (!isVisible(q)) return;
                         validate(q, answers[q.linkId]);
                         if (errors[q.linkId]) allErrors.push(q.text + ': ' + errors[q.linkId]);
+                        items.push(toItem(q));
                     });
                 });
                 if (allErrors.length) {
                     window.cqToast && window.cqToast('Hay ' + allErrors.length + ' campos con error', 'error');
                     return;
                 }
-                window.cqToast && window.cqToast('Ficha finalizada', 'success');
+                if (!token()) {
+                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar la ficha.', 'error');
+                    return;
+                }
+
+                submitting.value = true;
+                savingState.value = 'saving';
+
+                // Se crea la respuesta y recien despues se finaliza: son dos
+                // endpoints distintos y $finalize necesita el id.
+                fetch('/fhir/r5/QuestionnaireResponse', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        QuestionnaireId: props.questionnaireId,
+                        PatientHospitalId: props.patientId,
+                        Items: items
+                    })
+                }).then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(function (created) {
+                    var id = created.Id || created.id;
+                    return fetch('/fhir/r5/QuestionnaireResponse/' + id + '/$finalize', {
+                        method: 'POST',
+                        headers: authHeaders()
+                    }).then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status + ' al finalizar');
+                        return id;
+                    });
+                }).then(function (id) {
+                    savingState.value = 'idle';
+                    window.cqToast && window.cqToast('Ficha finalizada', 'success');
+                    window.location.href = '/Encounters/View/' + id;
+                }).catch(function (err) {
+                    savingState.value = 'error';
+                    window.cqToast && window.cqToast('No se pudo guardar la ficha: ' + err.message, 'error');
+                }).then(function () {
+                    submitting.value = false;
+                });
             }
 
             return {
                 questionnaire: questionnaire, answers: answers, errors: errors,
-                savingState: savingState,
+                savingState: savingState, submitting: submitting,
+                loading: loading, loadError: loadError,
                 isVisible: isVisible, onChange: onChange,
                 totalQuestions: totalQuestions, answeredCount: answeredCount,
                 submit: submit
             };
         },
         template: '\
-<div class="row g-3">\
+<div v-if="loading" class="cq-card">\
+    <div class="cq-loading"><div class="cq-spinner cq-spinner--lg"></div>\
+        <div class="cq-loading__label">Cargando cuestionario…</div>\
+    </div>\
+</div>\
+<div v-else-if="loadError" class="alert alert-danger" role="alert">\
+    <strong>No se pudo cargar el cuestionario.</strong>\
+    <div class="small">{{ loadError }}</div>\
+</div>\
+<div v-else class="row g-3">\
     <aside class="col-lg-3">\
         <div class="cq-card" style="position:sticky; top:84px;">\
             <h3 class="cq-section-title" style="margin-top:0;">Índice</h3>\
@@ -142,7 +292,8 @@
             </div>\
             <p class="cq-text-xs mt-3 mb-0">\
                 <span v-if="savingState === \'saving\'" class="cq-text-muted"><i class="bi bi-cloud-arrow-up"></i> Guardando…</span>\
-                <span v-else-if="savingState === \'saved\'" style="color:var(--cq-success);"><i class="bi bi-cloud-check"></i> Borrador guardado</span>\
+                <span v-else-if="savingState === \'dirty\'" class="cq-text-muted"><i class="bi bi-pencil"></i> Cambios sin guardar</span>\
+                <span v-else-if="savingState === \'error\'" class="text-danger"><i class="bi bi-exclamation-triangle"></i> No se pudo guardar</span>\
             </p>\
         </div>\
     </aside>\
@@ -190,7 +341,7 @@
 \
             <div class="d-flex justify-content-between border-top pt-3 mt-3">\
                 <button class="btn btn-outline-secondary"><i class="bi bi-save me-1"></i> Guardar borrador</button>\
-                <button class="btn btn-primary" @click="submit"><i class="bi bi-check2-circle me-1"></i> Finalizar y enviar</button>\
+                <button class="btn btn-primary" :disabled="submitting" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
             </div>\
         </div>\
     </div>\

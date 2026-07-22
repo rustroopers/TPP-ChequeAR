@@ -130,5 +130,8 @@
   "integrations.title": "Integrations",
   "integrations.subtitle": "Health and latency of connected systems",
   "integrations.errors.title": "Recent errors",
-  "integrations.errors.empty": "No recent errors."
+  "integrations.errors.empty": "No recent errors.",
+
+  "data.error.title": "Could not load data",
+  "data.error.desc": "The database did not respond. What you see below is incomplete: this is not demo data, there is simply nothing to show."
 }

@@ -130,5 +130,8 @@
   "integrations.title": "Integraciones",
   "integrations.subtitle": "Salud y latencia de los sistemas conectados",
   "integrations.errors.title": "Errores recientes",
-  "integrations.errors.empty": "Sin errores recientes."
+  "integrations.errors.empty": "Sin errores recientes.",
+
+  "data.error.title": "No se pudieron cargar los datos",
+  "data.error.desc": "La base de datos no respondió. Lo que se muestra abajo está incompleto: no son datos de demostración, simplemente no hay nada para mostrar."
 }

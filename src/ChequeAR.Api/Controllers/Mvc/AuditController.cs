@@ -48,11 +48,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 model.Total = model.Entries.Count;
             }
-            catch
+            catch (Exception ex)
             {
-                model.Entries = MockSeed.AuditEntries();
-                model.Total = 1230;
-                ViewBag.DataMode = "demo";
+                model.Entries.Clear();
+                model.Total = 0;
+                ViewBag.DataError = ex.Message;
             }
             return View(model);
         }
@@ -84,10 +84,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 };
                 return View(detail);
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.DataMode = "demo";
-                return View(MockSeed.AuditDetail(id));
+                ViewBag.DataError = ex.Message;
+                return View(new AuditDetailViewModel { Id = id });
             }
         }
 

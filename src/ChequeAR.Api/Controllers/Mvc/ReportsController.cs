@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
+using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Reports;
+using Newtonsoft.Json;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -46,10 +49,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                model.Items = MockSeed.SavedReports();
-                ViewBag.DataMode = "demo";
+                model.Items.Clear();
+                ViewBag.DataError = ex.Message;
             }
             return View(model);
         }
@@ -70,7 +73,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // E3
-        public ActionResult Preview(Guid id)
+        public async Task<ActionResult> Preview(Guid id)
         {
             ViewBag.Title = "Preview";
             ViewBag.PageId = "reports";
@@ -81,10 +84,46 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Reportes", Url.Action("Index")),
                 System.Tuple.Create("Preview", (string)null)
             };
-            // El preview real lo ejecuta la isla Vue contra POST /api/reports/query.
-            // Aquí mostramos un preview demo + columnas guardadas.
-            ViewBag.DataMode = "demo";
-            return View(MockSeed.ReportPreview());
+
+            var model = new ReportPreviewViewModel();
+            try
+            {
+                var saved = await _savedRepo.GetAsync(id);
+                if (saved == null) return HttpNotFound();
+
+                model.ReportName = saved.Name;
+
+                var query = JsonConvert.DeserializeObject<ReportQuery>(saved.QueryJson ?? "{}")
+                            ?? new ReportQuery();
+                query.QuestionnaireId = saved.QuestionnaireId;
+
+                model.Page = query.Page;
+                model.PageSize = query.PageSize;
+
+                var result = await _executor.ExecuteAsync(query);
+                model.Total = result.Total;
+
+                // Las columnas salen del propio resultset: el QueryBuilder ya
+                // proyecta solo lo que el reporte pidio.
+                if (result.Rows.Count > 0)
+                    model.Columns = result.Rows[0].Keys.ToList();
+
+                foreach (var row in result.Rows)
+                {
+                    var previewRow = new ReportPreviewRow();
+                    foreach (var col in model.Columns)
+                    {
+                        row.TryGetValue(col, out var value);
+                        previewRow.Cells[col] = value?.ToString() ?? "";
+                    }
+                    model.Rows.Add(previewRow);
+                }
+            }
+            catch (Exception ex)
+            {
+                ViewBag.DataError = ex.Message;
+            }
+            return View(model);
         }
 
         // E5

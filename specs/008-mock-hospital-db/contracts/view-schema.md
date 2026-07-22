@@ -164,3 +164,23 @@ El cliente actual acepta filtros `columna = valor` (bind variables). Las columna
 | `VW_TURNO` | `ID_TURNO`, `ID_PACIENTE`, `ID_PROFESIONAL` |
 
 Filtros por columnas que no están en este listado pueden devolver resultados pero **no** están cubiertos por los índices y pueden degradar performance. Si el hospital real requiere otros filtros frecuentes, agregar índices en `01-schema.sql` y documentarlo aquí.
+
+---
+
+## Búsqueda por texto: `OracleViewClient.SearchAsync`
+
+El buscador de pacientes (pantalla R1) recibe un único campo donde el usuario tipea indistintamente documento, identificador o apellido. Eso no se puede resolver con filtros de igualdad, así que el cliente expone además:
+
+```
+SearchAsync(vista, columnas[], termino, maxRows = 50)
+```
+
+que genera `UPPER(col) LIKE UPPER(:term)` sobre cada columna, unidas por `OR`, con `term` = `%termino%` **como bind variable** (el usuario nunca inyecta SQL) y `FETCH FIRST :maxRows ROWS ONLY`.
+
+| Vista | Columnas buscables | Índice de soporte |
+|---|---|---|
+| `VW_PACIENTE` | `APELLIDO`, `NOMBRE`, `DOCUMENTO`, `ID_PACIENTE` | `IDX_HOSP_PAC_APELLIDO_UP`, `IDX_HOSP_PAC_NOMBRE_UP` (funcionales sobre `UPPER()`), `IDX_HOSP_PAC_DOC`, PK |
+
+**Nota de performance**: un `LIKE '%x%'` con comodín inicial no puede aprovechar un B-tree para el prefijo. Los índices funcionales evitan recalcular `UPPER()` sobre la tabla base, y el `FETCH FIRST` acota el resultado. Si el volumen del hospital real lo justifica, la evolución natural es Oracle Text (`CONTEXT` index) sobre `APELLIDO`/`NOMBRE`.
+
+**Si el hospital real no puede ofrecer esta búsqueda**, el consumidor degrada a los filtros de igualdad de la tabla anterior y la pantalla R1 pasa a aceptar sólo documento o identificador exactos.

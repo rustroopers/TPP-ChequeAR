@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
@@ -39,10 +41,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                model = MockSeed.IntegrationsStatus();
-                ViewBag.DataMode = "demo";
+                model.Integrations.Clear();
+                model.RecentErrors.Clear();
+                ViewBag.DataError = ex.Message;
             }
             return View(model);
         }
@@ -58,7 +61,20 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Integraciones", Url.Action("Integrations")),
                 System.Tuple.Create("CapabilityStatement", (string)null)
             };
-            return View(MockSeed.Capability());
+            // Proyecta el mismo catalogo que sirve GET /fhir/r5/metadata.
+            return View(new CapabilityStatementViewModel
+            {
+                FhirVersion = Fhir.CapabilityCatalog.FhirVersion,
+                Software = Fhir.CapabilityCatalog.SoftwareName + " " + Fhir.CapabilityCatalog.SoftwareVersion,
+                Implementation = Request.Url != null ? Request.Url.GetLeftPart(UriPartial.Authority) : null,
+                Resources = Fhir.CapabilityCatalog.Resources
+                    .Select(r => new CapResource
+                    {
+                        Type = r.Type,
+                        Interactions = string.Join(" · ", r.Interactions)
+                    })
+                    .ToList()
+            });
         }
     }
 }

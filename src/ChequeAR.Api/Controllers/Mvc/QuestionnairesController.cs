@@ -59,11 +59,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                model.Items = MockSeed.Questionnaires();
-                model.Total = model.Items.Count;
-                ViewBag.DataMode = "demo";
+                model.Items.Clear();
+                model.Total = 0;
+                ViewBag.DataError = ex.Message;
             }
             return View(model);
         }
@@ -90,11 +90,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
                     ViewBag.Version = (q?.Versions?.Count ?? 0) + 1;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    ViewBag.QuestionnaireTitle = "Cardio basal";
-                    ViewBag.Version = 3;
-                    ViewBag.DataMode = "demo";
+                    ViewBag.QuestionnaireTitle = null;
+                    ViewBag.Version = 0;
+                    ViewBag.DataError = ex.Message;
                 }
             }
             else
@@ -147,10 +147,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return View(model);
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.DataMode = "demo";
-                return View(MockSeed.QuestionnaireDetail(id));
+                ViewBag.DataError = ex.Message;
+                return View(new QuestionnaireDetailViewModel { Id = id });
             }
         }
 
@@ -182,11 +182,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     }).ToList();
                 return View(list);
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.QuestionnaireTitle = "Cardio basal";
-                ViewBag.DataMode = "demo";
-                return View(MockSeed.QuestionnaireVersions());
+                ViewBag.QuestionnaireTitle = null;
+                ViewBag.DataError = ex.Message;
+                return View(new List<QuestionnaireVersionView>());
             }
         }
 

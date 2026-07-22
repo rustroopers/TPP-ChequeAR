@@ -8,7 +8,8 @@
         <h1 class="cq-page-header__title">@ViewBag.QuestionnaireTitle <span class="cq-text-sm cq-text-muted">v@(ViewBag.Version)</span></h1>
         <p class="cq-page-header__subtitle">@ViewBag.PatientName</p>
     </div>
-    <span class="cq-badge cq-badge--info"><i class="bi bi-cloud-arrow-up me-1"></i> Borrador autosaved</span>
+    @* Sin autosave todavia: el backend solo expone POST + $finalize para
+       QuestionnaireResponse, no hay endpoint de update. *@
 </header>
 
 <div id="qRenderer" data-vue-island="questionnaire-renderer"
