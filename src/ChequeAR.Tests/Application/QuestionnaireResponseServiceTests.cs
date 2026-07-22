@@ -231,6 +231,33 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("subject.display"));
         }
 
+        // Sin datos de paciente NO se inventa un Patient contenido. El recurso escribe la HC
+        // en subject.display cuando no hay nombre; si al regenerarlo se leyera ese display
+        // como nombre, finalizar terminaba fabricando un paciente llamado "PAC-000001".
+        [Fact]
+        public async Task FinalizeAsync_NoPatientData_DoesNotInventContainedPatient()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                PatientHospitalId = "PAC-000001",
+                Status = ResponseStatus.InProgress,
+                // Recurso tal como lo deja CreateAsync cuando el hospital resuelve al
+                // paciente: sin contained, con la HC como display.
+                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"subject\":{\"display\":\"PAC-000001\"}}"
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
+
+            var finalized = await _sut.FinalizeAsync(id, "u");
+
+            Assert.Null(JObject.Parse(finalized.FhirJson)["contained"]);
+        }
+
         // No se pueden cargar respuestas contra un cuestionario archivado.
         [Fact]
         public async Task CreateAsync_RetiredQuestionnaire_Throws()

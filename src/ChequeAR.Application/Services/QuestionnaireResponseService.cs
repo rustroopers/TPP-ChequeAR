@@ -5,6 +5,8 @@ using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace ChequeAR.Application.Services
 {
@@ -85,14 +87,34 @@ namespace ChequeAR.Application.Services
         /// </summary>
         private static PatientDemographicsDto DemographicsFrom(string existingFhirJson)
         {
-            var demo = FhirPatientReader.Read(existingFhirJson);
-            if (demo == null || string.IsNullOrWhiteSpace(demo.Name)) return null;
-            return new PatientDemographicsDto
+            // Sólo se acepta un Patient "contained" de verdad. NO vale FhirPatientReader,
+            // que cae a subject.display como nombre: como ahí escribimos la HC cuando no
+            // hay nombre, regenerar el recurso al finalizar terminaba inventando un
+            // paciente llamado "PAC-000001".
+            if (string.IsNullOrWhiteSpace(existingFhirJson)) return null;
+            try
             {
-                FullName = demo.Name,
-                Gender = demo.Gender,
-                BirthDate = demo.BirthDate
-            };
+                var contained = JObject.Parse(existingFhirJson)["contained"] as JArray;
+                foreach (var c in contained ?? new JArray())
+                {
+                    if ((string)c["resourceType"] != "Patient") continue;
+                    var name = (string)c.SelectToken("name[0].text");
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+
+                    DateTime? birth = null;
+                    var raw = (string)c["birthDate"];
+                    if (!string.IsNullOrWhiteSpace(raw) && DateTime.TryParse(raw, out var parsed)) birth = parsed;
+
+                    return new PatientDemographicsDto
+                    {
+                        FullName = name,
+                        Gender = (string)c["gender"],
+                        BirthDate = birth
+                    };
+                }
+            }
+            catch (JsonException) { /* recurso ilegible: sin datos de paciente */ }
+            return null;
         }
 
         /// <summary>
