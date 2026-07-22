@@ -129,7 +129,11 @@
 
             function validate(q, value) {
                 if (!isVisible(q)) { delete errors[q.linkId]; return; }
-                if (q.required && (value === undefined || value === '' || value === null)) {
+                // Una opción múltiple sin nada tildado llega como [], que no es '' ni null:
+                // sin este caso, una pregunta obligatoria vacía pasaba como respondida.
+                var vacio = value === undefined || value === '' || value === null
+                         || (Array.isArray(value) && value.length === 0);
+                if (q.required && vacio) {
                     errors[q.linkId] = 'Requerido';
                     return;
                 }
@@ -152,6 +156,15 @@
                     });
                 });
                 triggerAutosave();
+            }
+
+            // Opción múltiple: la respuesta es un array de opciones marcadas.
+            function onToggleMulti(q, option, checked) {
+                var current = (answers[q.linkId] || []).slice();
+                var i = current.indexOf(option);
+                if (checked && i < 0) current.push(option);
+                if (!checked && i >= 0) current.splice(i, 1);
+                onChange(q, current);
             }
 
             // El backend todavia no expone un endpoint de update para
@@ -262,7 +275,7 @@
                 questionnaire: questionnaire, answers: answers, errors: errors,
                 savingState: savingState, submitting: submitting,
                 loading: loading, loadError: loadError,
-                isVisible: isVisible, onChange: onChange,
+                isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 totalQuestions: totalQuestions, answeredCount: answeredCount,
                 submit: submit
             };
@@ -329,7 +342,28 @@
                             <option v-for="opt in q.options" :key="opt" :value="opt">{{ opt }}</option>\
                         </select>\
 \
+                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                                  :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)"></textarea>\
+\
+                        <div v-else-if="q.type === \'scale\'" class="d-flex align-items-center gap-3" style="max-width:360px;">\
+                            <input type="range" class="form-range" :min="q.min !== undefined ? q.min : 0" :max="q.max !== undefined ? q.max : 10"\
+                                   :value="answers[q.linkId] !== undefined && answers[q.linkId] !== \'\' ? answers[q.linkId] : (q.min !== undefined ? q.min : 0)"\
+                                   @input="onChange(q, Number($event.target.value))" />\
+                            <span class="cq-text-sm fw-semibold" style="min-width:2.5rem; text-align:right;">{{ answers[q.linkId] !== undefined && answers[q.linkId] !== \'\' ? answers[q.linkId] : \'—\' }}</span>\
+                        </div>\
+\
+                        <div v-else-if="q.type === \'openChoice\'" :class="{ \'is-invalid\': errors[q.linkId] }">\
+                            <div v-for="opt in q.options" :key="opt" class="form-check">\
+                                <input class="form-check-input" type="checkbox" :id="q.linkId + \'_\' + opt"\
+                                       :checked="(answers[q.linkId] || []).indexOf(opt) >= 0" @change="onToggleMulti(q, opt, $event.target.checked)" />\
+                                <label class="form-check-label cq-text-sm" :for="q.linkId + \'_\' + opt">{{ opt }}</label>\
+                            </div>\
+                        </div>\
+\
                         <input v-else-if="q.type === \'date\'" type="date" class="form-control" style="max-width:240px;"\
+                               :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
+\
+                        <input v-else-if="q.type === \'dateTime\'" type="datetime-local" class="form-control" style="max-width:260px;"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <input v-else type="text" class="form-control" disabled placeholder="Tipo no soportado" />\

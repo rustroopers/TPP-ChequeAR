@@ -13,5 +13,7 @@ namespace ChequeAR.Application.Interfaces
         Task AddAsync(QuestionnaireResponse r);
         Task UpdateAsync(QuestionnaireResponse r);
         Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items);
+        /// <summary>¿Hay respuestas cargadas contra este cuestionario? Decide si se puede borrar.</summary>
+        Task<bool> HasResponsesAsync(Guid questionnaireId);
     }
 }

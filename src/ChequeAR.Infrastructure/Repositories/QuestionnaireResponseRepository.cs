@@ -40,5 +40,10 @@ namespace ChequeAR.Infrastructure.Repositories
             _ctx.QuestionnaireResponseItems.AddRange(items);
             await _ctx.SaveChangesAsync();
         }
+
+        public Task<bool> HasResponsesAsync(Guid questionnaireId)
+        {
+            return _ctx.QuestionnaireResponses.AnyAsync(r => r.QuestionnaireId == questionnaireId);
+        }
     }
 }

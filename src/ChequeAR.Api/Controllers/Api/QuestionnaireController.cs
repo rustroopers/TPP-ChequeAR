@@ -133,13 +133,48 @@ namespace ChequeAR.Api.Controllers.Api
             return Ok();
         }
 
+        [HttpPost, Route("{id:guid}/$clone"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        public async Task<IHttpActionResult> Clone(Guid id, [FromBody] CloneBody body)
+        {
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            try
+            {
+                var copy = await _service.CloneAsync(id, body?.Title, userId);
+                var response = Request.CreateResponse(HttpStatusCode.Created, copy);
+                response.Headers.ETag = ETagFor(copy);
+                return ResponseMessage(response);
+            }
+            catch (InvalidOperationException)
+            {
+                return NotFound();
+            }
+        }
+
         [HttpDelete, Route("{id:guid}"), Authorize(Roles = Role.Administrador)]
         public async Task<IHttpActionResult> Delete(Guid id)
         {
-            await _repo.SoftDeleteAsync(id);
-            return StatusCode(HttpStatusCode.NoContent);
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            try
+            {
+                var outcome = await _service.DeleteAsync(id, userId);
+                // Un 204 acá sería mentira: el recurso sigue existiendo, archivado.
+                if (outcome == DeleteOutcome.ArchivedBecauseInUse)
+                {
+                    return Ok(new
+                    {
+                        outcome = "archived",
+                        message = "El cuestionario tiene respuestas cargadas: se archivó en vez de eliminarse."
+                    });
+                }
+                return StatusCode(HttpStatusCode.NoContent);
+            }
+            catch (InvalidOperationException)
+            {
+                return NotFound();
+            }
         }
 
         public class PublishBody { public string FhirJson { get; set; } }
+        public class CloneBody { public string Title { get; set; } }
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
@@ -13,12 +14,13 @@ namespace ChequeAR.Tests.Application
     public class QuestionnaireServiceTests
     {
         private readonly Mock<IQuestionnaireRepository> _repo = new Mock<IQuestionnaireRepository>();
+        private readonly Mock<IQuestionnaireResponseRepository> _responses = new Mock<IQuestionnaireResponseRepository>();
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
         private readonly QuestionnaireService _sut;
 
         public QuestionnaireServiceTests()
         {
-            _sut = new QuestionnaireService(_repo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher());
+            _sut = new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object, TestHelpers.NoopAuditDispatcher());
         }
 
         // Al crear: arranca en estado Draft, se le asigna Id y datos de auditoría (creador/fecha)
@@ -320,6 +322,95 @@ namespace ChequeAR.Tests.Application
             var result = await _sut.PublishAsync(id, null, "u");
 
             Assert.Equal(4, result.ConcurrencyVersion);
+        }
+
+        // Regla de la spec: con respuestas cargadas NO se elimina. Se archiva, porque si
+        // no esas respuestas quedan apuntando a un cuestionario que desaparecio del listado.
+        [Fact]
+        public async Task DeleteAsync_WithResponses_ArchivesInsteadOfDeleting()
+        {
+            var id = Guid.NewGuid();
+            var q = new Questionnaire { Id = id, Status = QuestionnaireStatus.Active };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(q);
+            _responses.Setup(r => r.HasResponsesAsync(id)).ReturnsAsync(true);
+
+            var outcome = await _sut.DeleteAsync(id, "u");
+
+            Assert.Equal(DeleteOutcome.ArchivedBecauseInUse, outcome);
+            Assert.Equal(QuestionnaireStatus.Retired, q.Status);
+            _repo.Verify(r => r.SoftDeleteAsync(It.IsAny<Guid>()), Times.Never);
+        }
+
+        // Sin respuestas si se puede dar de baja.
+        [Fact]
+        public async Task DeleteAsync_WithoutResponses_SoftDeletes()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id });
+            _responses.Setup(r => r.HasResponsesAsync(id)).ReturnsAsync(false);
+
+            var outcome = await _sut.DeleteAsync(id, "u");
+
+            Assert.Equal(DeleteOutcome.Deleted, outcome);
+            _repo.Verify(r => r.SoftDeleteAsync(id), Times.Once);
+        }
+
+        // Clonar copia la estructura completa pero arranca limpio: Borrador, sin versiones
+        // publicadas y con id propio.
+        [Fact]
+        public async Task CloneAsync_CopiesStructure_AsFreshDraft()
+        {
+            var id = Guid.NewGuid();
+            var groupId = Guid.NewGuid();
+            var source = new Questionnaire
+            {
+                Id = id,
+                Title = "Original",
+                SpecialtyCode = "REU",
+                Status = QuestionnaireStatus.Active,
+                CurrentVersionId = Guid.NewGuid()
+            };
+            source.Versions.Add(new QuestionnaireVersion { Id = source.CurrentVersionId.Value, VersionNumber = 1 });
+            source.Groups.Add(new QuestionGroup { Id = groupId, Title = "Sección", OrderIndex = 0 });
+            source.Questions.Add(new Question
+            {
+                Id = Guid.NewGuid(),
+                GroupId = groupId,
+                LinkId = "edad",
+                Text = "Edad",
+                Type = QuestionType.Integer,
+                Required = true,
+                ValidationJson = "{\"min\":0,\"max\":120}",
+                Options = { new AnswerOption { Value = "x", Display = "X" } }
+            });
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(source);
+
+            var copy = await _sut.CloneAsync(id, "Copia nueva", "u");
+
+            Assert.NotEqual(id, copy.Id);
+            Assert.Equal("Copia nueva", copy.Title);
+            Assert.Equal("REU", copy.SpecialtyCode);
+            Assert.Equal(QuestionnaireStatus.Draft, copy.Status);
+            Assert.Null(copy.CurrentVersionId);
+            Assert.Empty(copy.Versions);
+
+            var clonedQuestion = copy.Groups.Single().Questions.Single();
+            Assert.Equal("edad", clonedQuestion.LinkId);          // linkId se conserva
+            Assert.Equal("{\"min\":0,\"max\":120}", clonedQuestion.ValidationJson);
+            Assert.Single(clonedQuestion.Options);
+            _repo.Verify(r => r.AddAsync(It.IsAny<Questionnaire>()), Times.Once);
+        }
+
+        // Sin titulo explicito, el clon se distingue solo.
+        [Fact]
+        public async Task CloneAsync_WithoutTitle_SuffixesCopia()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, Title = "Reumato" });
+
+            var copy = await _sut.CloneAsync(id, null, "u");
+
+            Assert.Equal("Reumato (copia)", copy.Title);
         }
 
         // Archivar deja el cuestionario en estado Retirado y guarda el cambio.

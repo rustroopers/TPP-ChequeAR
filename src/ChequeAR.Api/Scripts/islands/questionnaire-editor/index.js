@@ -44,6 +44,8 @@
                             type: q.type,
                             required: !!q.required,
                             unit: q.unit,
+                            min: typeof q.min === 'number' ? q.min : undefined,
+                            max: typeof q.max === 'number' ? q.max : undefined,
                             options: q.options && q.options.length ? q.options.slice() : undefined,
                             optionsText: q.options && q.options.length ? q.options.join('\n') : ''
                         };
@@ -53,14 +55,22 @@
             if (!initial.length) initial = [{ title: 'Nueva sección', questions: [] }];
             var groups = Vue.ref(initial);
 
+            // Los códigos coinciden con QuestionType del backend (bindeo por nombre,
+            // case-insensitive) y con los que dibuja questionnaire-renderer. Antes de
+            // sumar uno acá hay que poder renderizarlo allá, o queda una pregunta que se
+            // puede crear pero no responder.
             var types = [
-                { code: 'string',  label: 'Texto',     icon: 'bi-fonts' },
-                { code: 'integer', label: 'Número',    icon: 'bi-123' },
-                { code: 'decimal', label: 'Decimal',   icon: 'bi-percent' },
-                { code: 'boolean', label: 'Booleano',  icon: 'bi-toggle-on' },
-                { code: 'choice',  label: 'Opción',    icon: 'bi-ui-radios' },
-                { code: 'date',    label: 'Fecha',     icon: 'bi-calendar' },
-                { code: 'attachment', label: 'Adjunto', icon: 'bi-paperclip' }
+                { code: 'string',     label: 'Texto corto',     icon: 'bi-fonts' },
+                { code: 'text',       label: 'Texto largo',     icon: 'bi-textarea-t' },
+                { code: 'integer',    label: 'Número',          icon: 'bi-123' },
+                { code: 'decimal',    label: 'Decimal',         icon: 'bi-percent' },
+                { code: 'scale',      label: 'Escala',          icon: 'bi-sliders' },
+                { code: 'boolean',    label: 'Booleano',        icon: 'bi-toggle-on' },
+                { code: 'choice',     label: 'Opción única',    icon: 'bi-ui-radios' },
+                { code: 'openChoice', label: 'Opción múltiple', icon: 'bi-check2-square' },
+                { code: 'date',       label: 'Fecha',           icon: 'bi-calendar' },
+                { code: 'dateTime',   label: 'Fecha y hora',    icon: 'bi-clock' },
+                { code: 'attachment', label: 'Adjunto',         icon: 'bi-paperclip' }
             ];
 
             var selected = Vue.ref(null);
@@ -79,7 +89,7 @@
                     type: type,
                     required: false
                 };
-                if (type === 'choice') q.options = ['Opción 1', 'Opción 2'];
+                if (type === 'choice' || type === 'openChoice') q.options = ['Opción 1', 'Opción 2'];
                 g.questions.push(q);
                 selected.value = { group: g, question: q };
                 dirty.value = true;
@@ -101,6 +111,18 @@
                 return meta ? meta.getAttribute('content') : null;
             }
 
+            // min/max/unidad viven en Question.ValidationJson (un CLOB con JSON), que es de
+            // donde los lee el renderer para validar la carga. Se manda serializado porque
+            // la API bindea directo contra la entidad y la propiedad es string.
+            function buildValidation(q) {
+                if (['integer', 'decimal', 'scale'].indexOf(q.type) < 0) return null;
+                var v = {};
+                if (typeof q.min === 'number' && !isNaN(q.min)) v.min = q.min;
+                if (typeof q.max === 'number' && !isNaN(q.max)) v.max = q.max;
+                if (q.unit) v.unit = q.unit;
+                return Object.keys(v).length ? JSON.stringify(v) : null;
+            }
+
             // Manda el árbol completo (secciones -> preguntas -> opciones). El backend
             // bindea el enum Type por nombre (case-insensitive), así que mandamos el code
             // tal cual, y reemplaza la estructura guardada por ésta.
@@ -117,6 +139,7 @@
                                 type: q.type,
                                 required: !!q.required,
                                 orderIndex: order++,
+                                validationJson: buildValidation(q),
                                 options: (q.options || []).map(function (opt, oi) {
                                     return { value: opt, display: opt, code: opt, orderIndex: oi };
                                 })
@@ -406,14 +429,14 @@
                 <input v-model="selected.question.required" type="checkbox" class="form-check-input" id="reqCk" />\
                 <label class="form-check-label cq-text-sm" for="reqCk">Obligatoria</label>\
             </div>\
-            <div v-if="[\'integer\',\'decimal\'].indexOf(selected.question.type) >= 0">\
+            <div v-if="[\'integer\',\'decimal\',\'scale\'].indexOf(selected.question.type) >= 0">\
                 <div class="row g-2 mb-2">\
                     <div class="col-6"><label class="form-label cq-text-sm">Min</label><input v-model.number="selected.question.min" type="number" class="form-control form-control-sm" /></div>\
                     <div class="col-6"><label class="form-label cq-text-sm">Max</label><input v-model.number="selected.question.max" type="number" class="form-control form-control-sm" /></div>\
                 </div>\
                 <div class="mb-2"><label class="form-label cq-text-sm">Unidad</label><input v-model="selected.question.unit" class="form-control form-control-sm" /></div>\
             </div>\
-            <div v-if="selected.question.type === \'choice\'">\
+            <div v-if="[\'choice\',\'openChoice\'].indexOf(selected.question.type) >= 0">\
                 <label class="form-label cq-text-sm">Opciones</label>\
                 <textarea v-model="selected.question.optionsText" @input="selected.question.options = $event.target.value.split(\'\\n\').filter(Boolean)" class="form-control form-control-sm" rows="3" :placeholder="(selected.question.options||[]).join(\'\\n\')">{{ (selected.question.options || []).join(\'\\n\') }}</textarea>\
                 <p class="cq-text-xs cq-text-muted mt-1">Una opción por línea.</p>\

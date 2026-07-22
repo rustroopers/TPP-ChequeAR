@@ -100,6 +100,7 @@ namespace ChequeAR.Application.Fhir
                 ["required"] = question.Required
             };
             if (question.RepeatsAllowed) item["repeats"] = true;
+            AddValidationExtensions(item, question);
 
             var options = (question.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex).ToList();
             if (options.Count > 0)
@@ -114,6 +115,57 @@ namespace ChequeAR.Application.Fhir
                 }).ToArray());
             }
             return item;
+        }
+
+        /// <summary>
+        /// Rango y unidad como extensiones estándar de FHIR, en vez de inventar un formato
+        /// propio: así la versión congelada sigue siendo interpretable por otro sistema.
+        /// </summary>
+        private static void AddValidationExtensions(JObject item, Question question)
+        {
+            if (string.IsNullOrWhiteSpace(question.ValidationJson)) return;
+
+            JObject validation;
+            try { validation = JObject.Parse(question.ValidationJson); }
+            catch (JsonException) { return; }   // JSON corrupto: se publica sin restricciones
+
+            var extensions = new JArray();
+            var isInteger = question.Type == QuestionType.Integer;
+
+            var min = validation["min"];
+            if (min != null && min.Type != JTokenType.Null)
+                extensions.Add(ValueExtension("http://hl7.org/fhir/StructureDefinition/minValue", min, isInteger));
+
+            var max = validation["max"];
+            if (max != null && max.Type != JTokenType.Null)
+                extensions.Add(ValueExtension("http://hl7.org/fhir/StructureDefinition/maxValue", max, isInteger));
+
+            var unit = (string)validation["unit"];
+            if (!string.IsNullOrWhiteSpace(unit))
+            {
+                extensions.Add(new JObject
+                {
+                    ["url"] = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit",
+                    ["valueCoding"] = new JObject
+                    {
+                        ["system"] = "http://unitsofmeasure.org",
+                        ["code"] = unit,
+                        ["display"] = unit
+                    }
+                });
+            }
+
+            if (extensions.Count > 0) item["extension"] = extensions;
+        }
+
+        private static JObject ValueExtension(string url, JToken value, bool isInteger)
+        {
+            var ext = new JObject { ["url"] = url };
+            // El tipo del value[x] tiene que acompañar al de la pregunta: valueInteger para
+            // integer, valueDecimal para decimal.
+            if (isInteger) ext["valueInteger"] = (long)value;
+            else ext["valueDecimal"] = (decimal)value;
+            return ext;
         }
 
         private static string FhirType(QuestionType type)

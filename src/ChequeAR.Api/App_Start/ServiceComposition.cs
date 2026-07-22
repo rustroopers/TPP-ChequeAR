@@ -91,7 +91,8 @@ namespace ChequeAR.Api.App_Start
             Register<RefreshTokenService>(() => new RefreshTokenService(Resolve<IRefreshTokenRepository>(), refreshTtlHours));
 
             Register<QuestionnaireService>(() => new QuestionnaireService(
-                Resolve<IQuestionnaireRepository>(), Resolve<IFhirValidator>(), _audit));
+                Resolve<IQuestionnaireRepository>(), Resolve<IQuestionnaireResponseRepository>(),
+                Resolve<IFhirValidator>(), _audit));
             Register<QuestionnaireResponseService>(() => new QuestionnaireResponseService(
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
                 Resolve<IFhirValidator>(), _audit));

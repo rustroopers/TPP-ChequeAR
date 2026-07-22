@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
@@ -174,7 +175,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         private static QuestionView ToQuestionView(ChequeAR.Domain.Entities.Question qq)
         {
-            return new QuestionView
+            var view = new QuestionView
             {
                 LinkId = qq.LinkId,
                 Text = qq.Text,
@@ -185,6 +186,26 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Select(o => o.Display ?? o.Value ?? o.Code)
                     .ToList()
             };
+
+            // min/max/unidad viajan dentro de ValidationJson; el editor las necesita de
+            // vuelta como campos sueltos para poder mostrarlas en el panel de propiedades.
+            var validation = ParseValidation(qq.ValidationJson);
+            if (validation != null)
+            {
+                view.Min = (decimal?)validation["min"];
+                view.Max = (decimal?)validation["max"];
+                view.Unit = (string)validation["unit"];
+            }
+            return view;
+        }
+
+        // Un ValidationJson corrupto no debe tumbar la pantalla: se ignora y la pregunta
+        // se muestra sin restricciones.
+        private static JObject ParseValidation(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try { return JObject.Parse(json); }
+            catch (JsonException) { return null; }
         }
 
         // Q5 — Vista previa

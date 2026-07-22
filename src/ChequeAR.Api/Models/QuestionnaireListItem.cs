@@ -55,6 +55,8 @@ namespace ChequeAR.Api.Models
         public string Type { get; set; }
         public bool Required { get; set; }
         public string Unit { get; set; }
+        public decimal? Min { get; set; }
+        public decimal? Max { get; set; }
         public List<string> Options { get; set; } = new List<string>();
     }
 

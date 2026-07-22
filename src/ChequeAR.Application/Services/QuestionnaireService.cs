@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
@@ -9,15 +10,29 @@ using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Application.Services
 {
+    /// <summary>Qué terminó pasando al pedir la baja de un cuestionario.</summary>
+    public enum DeleteOutcome
+    {
+        Deleted,
+        /// <summary>Tenía respuestas cargadas: se archivó en vez de eliminarse.</summary>
+        ArchivedBecauseInUse
+    }
+
     public class QuestionnaireService
     {
         private readonly IQuestionnaireRepository _repo;
+        private readonly IQuestionnaireResponseRepository _responses;
         private readonly IFhirValidator _validator;
         private readonly AuditDispatcher _audit;
 
-        public QuestionnaireService(IQuestionnaireRepository repo, IFhirValidator validator, AuditDispatcher audit)
+        public QuestionnaireService(
+            IQuestionnaireRepository repo,
+            IQuestionnaireResponseRepository responses,
+            IFhirValidator validator,
+            AuditDispatcher audit)
         {
             _repo = repo;
+            _responses = responses;
             _validator = validator;
             _audit = audit;
         }
@@ -168,6 +183,95 @@ namespace ChequeAR.Application.Services
 
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$publish", userId));
             return q;
+        }
+
+        /// <summary>
+        /// Copia estructura completa en un cuestionario nuevo, siempre en Borrador y sin
+        /// versiones publicadas: es un punto de partida, no una continuación del original.
+        /// </summary>
+        public async Task<Questionnaire> CloneAsync(Guid id, string newTitle, string userId)
+        {
+            var source = await _repo.GetAsync(id);
+            if (source == null) throw new InvalidOperationException("Not found");
+
+            var copy = new Questionnaire
+            {
+                Title = string.IsNullOrWhiteSpace(newTitle) ? source.Title + " (copia)" : newTitle,
+                Description = source.Description,
+                SpecialtyCode = source.SpecialtyCode,
+                SpecialtyDisplay = source.SpecialtyDisplay
+            };
+
+            // Los linkId se conservan a propósito: son la referencia de las respuestas y
+            // mantenerlos hace que un clon siga siendo comparable con el original en reportes.
+            foreach (var g in (source.Groups ?? new List<QuestionGroup>()).OrderBy(x => x.OrderIndex))
+            {
+                var newGroup = new QuestionGroup { LinkId = g.LinkId, Title = g.Title, OrderIndex = g.OrderIndex };
+                foreach (var question in (source.Questions ?? new List<Question>())
+                             .Where(x => x.GroupId == g.Id).OrderBy(x => x.OrderIndex))
+                    newGroup.Questions.Add(CopyQuestion(question));
+                copy.Groups.Add(newGroup);
+            }
+            foreach (var question in (source.Questions ?? new List<Question>())
+                         .Where(x => !x.GroupId.HasValue).OrderBy(x => x.OrderIndex))
+                copy.Questions.Add(CopyQuestion(question));
+
+            var created = await CreateAsync(copy, userId);
+            _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + created.Id + "$clone-from-" + id, userId));
+            return created;
+        }
+
+        private static Question CopyQuestion(Question source)
+        {
+            var copy = new Question
+            {
+                LinkId = source.LinkId,
+                Text = source.Text,
+                Type = source.Type,
+                Required = source.Required,
+                RepeatsAllowed = source.RepeatsAllowed,
+                OrderIndex = source.OrderIndex,
+                ValidationJson = source.ValidationJson,
+                EnableWhenJson = source.EnableWhenJson,
+                CodingJson = source.CodingJson
+            };
+            foreach (var opt in (source.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex))
+                copy.Options.Add(new AnswerOption
+                {
+                    Value = opt.Value,
+                    Display = opt.Display,
+                    Code = opt.Code,
+                    OrderIndex = opt.OrderIndex
+                });
+            return copy;
+        }
+
+        /// <summary>
+        /// Baja lógica, con la salvaguarda de la spec: si ya hay respuestas cargadas el
+        /// cuestionario NO se elimina —esas respuestas quedarían apuntando a algo que
+        /// desapareció del listado— sino que se archiva.
+        /// </summary>
+        public async Task<DeleteOutcome> DeleteAsync(Guid id, string userId)
+        {
+            var q = await _repo.GetAsync(id);
+            if (q == null) throw new InvalidOperationException("Not found");
+
+            if (await _responses.HasResponsesAsync(id))
+            {
+                if (q.Status != QuestionnaireStatus.Retired)
+                {
+                    q.Status = QuestionnaireStatus.Retired;
+                    q.UpdatedAt = DateTime.UtcNow;
+                    q.ConcurrencyVersion++;
+                    await _repo.UpdateAsync(q);
+                }
+                _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + id + "$archive-instead-of-delete", userId));
+                return DeleteOutcome.ArchivedBecauseInUse;
+            }
+
+            await _repo.SoftDeleteAsync(id);
+            _audit.Enqueue(AuditEventBuilder.For("delete", "Questionnaire/" + id, userId));
+            return DeleteOutcome.Deleted;
         }
 
         public async Task ArchiveAsync(Guid id, string userId)
