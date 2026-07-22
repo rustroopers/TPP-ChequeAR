@@ -173,7 +173,10 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 .cq-content {
   grid-area: content;
   padding: 24px;
-  overflow-x: hidden;
+  /* clip y no hidden: hidden fuerza overflow-y a auto y convierte el contenido en
+     scroll container, que recorta el dropdown-menu de "Acciones" contra el borde
+     inferior (justo donde está el paginado). Con clip, overflow-y sigue visible. */
+  overflow-x: clip;
 }
 
 .cq-breadcrumbs {

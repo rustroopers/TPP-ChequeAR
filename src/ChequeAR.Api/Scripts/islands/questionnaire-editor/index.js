@@ -5,7 +5,12 @@
  */
 (function () {
     var QuestionnaireEditor = {
-        props: { id: String, title: String, version: Number, isNew: Boolean },
+        props: {
+            id: String, title: String, version: Number, isNew: Boolean,
+            specialtyCode: String,
+            status: String,
+            groups: { type: Array, default: function () { return []; } }
+        },
         setup: function (props) {
             // Estado de persistencia. Para un cuestionario nuevo el id del controller es
             // sólo provisorio: el backend asigna uno propio al crear (POST). A partir de
@@ -13,31 +18,34 @@
             var currentId = Vue.ref(props.id);
             var isNew = Vue.ref(!!props.isNew);
             var qTitle = Vue.ref(props.title || 'Nuevo cuestionario');
-            var specialtyCode = Vue.ref('general');
+            var specialtyCode = Vue.ref(props.specialtyCode || 'general');
             var saving = Vue.ref(false);
-            var groups = Vue.ref([
-                {
-                    title: 'Datos del paciente',
-                    questions: [
-                        { linkId: 'edad', text: 'Edad', type: 'integer', required: true, unit: 'años', min: 0, max: 120 },
-                        { linkId: 'sexo', text: 'Sexo', type: 'choice', required: true, options: ['Femenino', 'Masculino', 'Otro'] }
-                    ]
-                },
-                {
-                    title: 'Signos vitales',
-                    questions: [
-                        { linkId: 'tasis', text: 'TA sistólica', type: 'decimal', required: true, unit: 'mmHg' },
-                        { linkId: 'tadia', text: 'TA diastólica', type: 'decimal', required: true, unit: 'mmHg' },
-                        { linkId: 'fc',    text: 'FC',            type: 'integer', required: true, unit: 'lpm' }
-                    ]
-                },
-                {
-                    title: 'Antecedentes',
-                    questions: [
-                        { linkId: 'hta', text: '¿HTA?', type: 'boolean', required: true }
-                    ]
-                }
-            ]);
+            var publishing = Vue.ref(false);
+            // Un publicado no se autoguarda: sus cambios quedan pendientes hasta que
+            // alguien decide publicar la versión siguiente. Guardar es una decisión.
+            var isPublished = Vue.ref(props.status === 'published');
+
+            // Estructura real del cuestionario, inyectada por el server en data-props.
+            // Uno nuevo arranca con una sección vacía (no con datos de ejemplo: se
+            // guardaban como si fueran del usuario).
+            var initial = (props.groups || []).map(function (g) {
+                return {
+                    title: g.title,
+                    questions: (g.questions || []).map(function (q) {
+                        return {
+                            linkId: q.linkId,
+                            text: q.text,
+                            type: q.type,
+                            required: !!q.required,
+                            unit: q.unit,
+                            options: q.options && q.options.length ? q.options.slice() : undefined,
+                            optionsText: q.options && q.options.length ? q.options.join('\n') : ''
+                        };
+                    })
+                };
+            });
+            if (!initial.length) initial = [{ title: 'Nueva sección', questions: [] }];
+            var groups = Vue.ref(initial);
 
             var types = [
                 { code: 'string',  label: 'Texto',     icon: 'bi-fonts' },
@@ -87,33 +95,47 @@
                 return meta ? meta.getAttribute('content') : null;
             }
 
-            // Aplana grupos -> array plano de Questions (entidad de dominio). El backend
-            // bindea el enum Type por nombre (case-insensitive), así que mandamos el code tal cual.
+            // Manda el árbol completo (secciones -> preguntas -> opciones). El backend
+            // bindea el enum Type por nombre (case-insensitive), así que mandamos el code
+            // tal cual, y reemplaza la estructura guardada por ésta.
             function buildPayload() {
                 var order = 0;
-                var questions = [];
-                groups.value.forEach(function (g) {
-                    g.questions.forEach(function (q) {
-                        questions.push({
-                            linkId: q.linkId,
-                            text: q.text,
-                            type: q.type,
-                            required: !!q.required,
-                            orderIndex: order++
-                        });
-                    });
+                var payloadGroups = groups.value.map(function (g, gi) {
+                    return {
+                        title: g.title,
+                        orderIndex: gi,
+                        questions: g.questions.map(function (q) {
+                            return {
+                                linkId: q.linkId,
+                                text: q.text,
+                                type: q.type,
+                                required: !!q.required,
+                                orderIndex: order++,
+                                options: (q.options || []).map(function (opt, oi) {
+                                    return { value: opt, display: opt, code: opt, orderIndex: oi };
+                                })
+                            };
+                        })
+                    };
                 });
                 return {
                     title: qTitle.value,
                     specialtyCode: specialtyCode.value,
-                    questions: questions
+                    groups: payloadGroups
                 };
             }
 
-            function save() {
-                if (saving.value) return;
+            // explicit = lo pidió el usuario (botón Guardar) -> confirmamos con un toast.
+            // El autosave guarda en silencio: para eso está el indicador "Guardado hh:mm"
+            // en el header. Los errores avisan siempre, vengan de donde vengan.
+            function save(options) {
+                var explicit = !!(options && options.explicit);
+                if (saving.value) return Promise.resolve(false);
                 var token = getToken();
-                if (!token) { toast('No hay sesión: no se puede guardar (token ausente).', 'error'); return; }
+                if (!token) {
+                    toast('No hay sesión: no se puede guardar (token ausente).', 'error');
+                    return Promise.resolve(false);
+                }
 
                 saving.value = true;
                 var creating = isNew.value;
@@ -121,7 +143,9 @@
                     ? '/fhir/r5/Questionnaire'
                     : '/fhir/r5/Questionnaire/' + currentId.value;
 
-                fetch(url, {
+                // Devuelve una promesa que resuelve en true/false: publicar necesita saber
+                // si el guardado previo salió bien antes de congelar una versión.
+                return fetch(url, {
                     method: creating ? 'POST' : 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -142,44 +166,111 @@
                     }
                     lastSaved.value = new Date().toLocaleTimeString();
                     dirty.value = false;
-                    toast(creating ? 'Cuestionario creado' : 'Cambios guardados', 'success');
+                    if (creating) toast('Cuestionario creado', 'success');
+                    else if (explicit) {
+                        toast(isPublished.value
+                            ? 'Cambios guardados. Publicá de nuevo para que lleguen a los clínicos.'
+                            : 'Cambios guardados', 'success');
+                    }
+                    return true;
                 }).catch(function (err) {
                     toast('Error al guardar: ' + err.message, 'error');
-                }).then(function () {
+                    return false;
+                }).then(function (ok) {
                     saving.value = false;
+                    return ok;
                 });
             }
 
-            // Autosave (2s debounce) sólo para cuestionarios ya persistidos; así evitamos
-            // crear duplicados mientras se arma uno nuevo. El primer guardado de un nuevo
-            // cuestionario es siempre manual (botón Guardar).
+            // Publicar desde el editor. Guarda primero: publicar congela lo que está en la
+            // base, no lo que está en pantalla, así que sin esto publicarías la versión
+            // anterior sin enterarte.
+            function publish() {
+                if (saving.value || publishing.value) return;
+                var token = getToken();
+                if (!token) { toast('No hay sesión: no se puede publicar (token ausente).', 'error'); return; }
+
+                publishing.value = true;
+                var pending = (dirty.value || isNew.value) ? save({ explicit: false }) : Promise.resolve(true);
+
+                pending.then(function (ok) {
+                    if (!ok) throw new Error('no se pudieron guardar los cambios');
+                    return fetch('/fhir/r5/Questionnaire/' + currentId.value + '/$publish', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                        body: '{}'
+                    });
+                }).then(function (res) {
+                    if (res.ok) return null;
+                    // El API devuelve 422 con {error} cuando la publicación no es válida.
+                    return res.json().catch(function () { return null; }).then(function (body) {
+                        throw new Error((body && body.error) || ('HTTP ' + res.status));
+                    });
+                }).then(function () {
+                    dirty.value = false;
+                    // Recargar: versión, estado y "cambios sin publicar" los calcula el server.
+                    window.location.reload();
+                }).catch(function (err) {
+                    toast('No se pudo publicar: ' + err.message, 'error');
+                    publishing.value = false;
+                });
+            }
+
+            function saveExplicit() { save({ explicit: true }); }
+
+            // Autosave (2s debounce) sólo para borradores ya persistidos:
+            //  - uno nuevo se guarda a mano la primera vez, para no crear duplicados;
+            //  - uno publicado no se autoguarda nunca (ver isPublished).
             var debounce;
             Vue.watch(groups, function () {
                 dirty.value = true;
-                if (isNew.value) return;
+                if (isNew.value || isPublished.value) return;
                 clearTimeout(debounce);
                 debounce = setTimeout(save, 2000);
             }, { deep: true });
 
-            // Engancha el botón "Guardar" del header (vive fuera de la isla).
+            // Sin autosave en publicados, salir de la página con cambios pendientes los
+            // perdía en silencio. El navegador pide confirmación.
+            function beforeUnload(e) {
+                if (!dirty.value) return;
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
+
+            // Engancha los botones del header (viven fuera de la isla). Ojo: el listener
+            // recibe el Event, así que va el wrapper y no save directamente.
             Vue.onMounted(function () {
                 var btn = document.getElementById('saveBtn');
-                if (btn) btn.addEventListener('click', save);
+                if (btn) btn.addEventListener('click', saveExplicit);
+                var pub = document.getElementById('publishBtn');
+                if (pub) pub.addEventListener('click', publish);
+                window.addEventListener('beforeunload', beforeUnload);
             });
             Vue.onUnmounted(function () {
+                clearTimeout(debounce);
                 var btn = document.getElementById('saveBtn');
-                if (btn) btn.removeEventListener('click', save);
+                if (btn) btn.removeEventListener('click', saveExplicit);
+                var pub = document.getElementById('publishBtn');
+                if (pub) pub.removeEventListener('click', publish);
+                window.removeEventListener('beforeunload', beforeUnload);
             });
 
             return {
                 groups: groups, types: types, selected: selected,
-                dirty: dirty, lastSaved: lastSaved, saving: saving,
+                dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
                 qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
+                isPublished: isPublished, publish: publish,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
-                removeQuestion: removeQuestion, removeGroup: removeGroup, save: save
+                removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit
             };
         },
         template: '\
+<div>\
+<div v-if="isPublished" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
+    <i class="bi bi-info-circle" style="color:var(--cq-info);"></i>\
+    <span class="cq-text-sm">Este cuestionario está <strong>publicado</strong>. Los cambios se guardan como pendientes: los clínicos siguen viendo la versión publicada hasta que publiques una nueva.</span>\
+</div>\
 <div class="row g-3">\
     <div class="col-lg-2">\
         <div class="cq-card" style="position:sticky; top:84px;">\
@@ -213,8 +304,8 @@
         </div>\
         <div class="d-flex justify-content-between align-items-center mb-2">\
             <h3 class="m-0">Estructura</h3>\
-            <span class="cq-text-xs cq-text-muted" v-if="lastSaved">Guardado {{ lastSaved }}</span>\
-            <span class="cq-text-xs" style="color:var(--cq-warning);" v-else-if="dirty">Cambios sin guardar</span>\
+            <span class="cq-text-xs" style="color:var(--cq-warning);" v-if="dirty">Cambios sin guardar</span>\
+            <span class="cq-text-xs cq-text-muted" v-else-if="lastSaved">Guardado {{ lastSaved }}</span>\
         </div>\
         <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2">\
             <div class="d-flex align-items-center gap-2 mb-2">\
@@ -277,6 +368,7 @@
         </div>\
         <div v-else class="cq-card cq-text-sm cq-text-muted">Seleccioná una pregunta para editar sus propiedades.</div>\
     </div>\
+</div>\
 </div>'
     };
 

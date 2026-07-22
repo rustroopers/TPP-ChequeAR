@@ -13,6 +13,8 @@ namespace ChequeAR.Api.Models
         public string Status { get; set; }
         public string UpdatedAt { get; set; }
         public string Author { get; set; }
+        /// <summary>Publicado pero editado después: la versión viva no refleja los cambios.</summary>
+        public bool HasUnpublishedChanges { get; set; }
     }
 
     public class QuestionnaireListViewModel
@@ -36,6 +38,7 @@ namespace ChequeAR.Api.Models
         public string Status { get; set; }
         public string Author { get; set; }
         public string UpdatedAt { get; set; }
+        public bool HasUnpublishedChanges { get; set; }
         public List<QuestionGroupView> Groups { get; set; } = new List<QuestionGroupView>();
     }
 

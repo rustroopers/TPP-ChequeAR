@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
@@ -41,8 +43,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                QuestionnaireStatus? st = null;
-                if (Enum.TryParse(status, true, out QuestionnaireStatus s)) st = s;
+                var st = QuestionnaireStatusMap.FromUi(status);
                 var items = await _repo.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
                 model.Total = await _repo.CountAsync(st, q, specialty);
                 foreach (var it in items)
@@ -53,9 +54,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                         SpecialtyCode = it.SpecialtyCode ?? "general",
                         SpecialtyLabel = it.SpecialtyDisplay ?? it.SpecialtyCode ?? "General",
                         Version = it.Versions?.Count ?? 0,
-                        Status = it.Status.ToString().ToLowerInvariant(),
+                        Status = QuestionnaireStatusMap.ToUi(it.Status),
                         UpdatedAt = it.UpdatedAt.ToString("yyyy-MM-dd"),
-                        Author = it.CreatedBy
+                        Author = it.CreatedBy,
+                        HasUnpublishedChanges = it.HasUnpublishedChanges()
                     });
                 }
             }
@@ -79,30 +81,108 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Cuestionarios", Url.Action("Index")),
                 System.Tuple.Create(id.HasValue ? "Editar" : "Nuevo", (string)null)
             };
-            ViewBag.QuestionnaireId = id ?? Guid.NewGuid();
-            ViewBag.IsNew = !id.HasValue;
+            var editorId = id ?? Guid.NewGuid();
+            var isNew = !id.HasValue;
+            var title = "Nuevo cuestionario";
+            var specialty = "general";
+            // Número de la versión PUBLICADA (0 = nunca se publicó), no el de la próxima:
+            // el editor tiene que decir cuál es la que están usando los clínicos.
+            var publishedVersion = 0;
+            var status = "draft";
+            var pendingChanges = false;
+            var groups = new List<QuestionGroupView>();
 
             if (id.HasValue)
             {
                 try
                 {
                     var q = await _repo.GetAsync(id.Value);
-                    ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
-                    ViewBag.Version = (q?.Versions?.Count ?? 0) + 1;
+                    title = q?.Title ?? "Cuestionario";
+                    if (q != null)
+                    {
+                        publishedVersion = CurrentVersionNumber(q);
+                        specialty = q.SpecialtyCode ?? "general";
+                        status = QuestionnaireStatusMap.ToUi(q.Status);
+                        pendingChanges = q.HasUnpublishedChanges();
+                        // El editor se hidrata con la estructura real desde el server; antes
+                        // arrancaba con datos de ejemplo hardcodeados y pisaba lo guardado.
+                        groups = BuildEditorGroups(q);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    ViewBag.QuestionnaireTitle = null;
-                    ViewBag.Version = 0;
+                    title = null;
+                    publishedVersion = 0;
                     ViewBag.DataError = ex.Message;
                 }
             }
-            else
-            {
-                ViewBag.QuestionnaireTitle = "Nuevo cuestionario";
-                ViewBag.Version = 1;
-            }
+
+            ViewBag.QuestionnaireId = editorId;
+            ViewBag.IsNew = isNew;
+            ViewBag.QuestionnaireTitle = title;
+            ViewBag.Version = publishedVersion;
+            ViewBag.NextVersion = publishedVersion + 1;
+            ViewBag.Status = status;
+            ViewBag.HasUnpublishedChanges = pendingChanges;
+            // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
+            // status manda: el editor no autoguarda un cuestionario publicado.
+            ViewBag.EditorProps = JsonConvert.SerializeObject(
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, groups },
+                new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
+        }
+
+        // Versión viva: la que apunta CurrentVersionId. Si por lo que sea quedó colgado,
+        // caemos a la más alta publicada. 0 = nunca se publicó.
+        private static int CurrentVersionNumber(ChequeAR.Domain.Entities.Questionnaire q)
+        {
+            if (q.Versions == null || q.Versions.Count == 0) return 0;
+            if (q.CurrentVersionId.HasValue)
+            {
+                var current = q.Versions.FirstOrDefault(v => v.Id == q.CurrentVersionId.Value);
+                if (current != null) return current.VersionNumber;
+            }
+            return q.Versions.Max(v => v.VersionNumber);
+        }
+
+        // Arma el árbol secciones -> preguntas que consume la isla Vue. Las preguntas sin
+        // sección se juntan en una sección implícita para que sean editables igual.
+        private static List<QuestionGroupView> BuildEditorGroups(ChequeAR.Domain.Entities.Questionnaire q)
+        {
+            var result = new List<QuestionGroupView>();
+            var questions = q.Questions ?? new List<ChequeAR.Domain.Entities.Question>();
+
+            foreach (var g in (q.Groups ?? new List<ChequeAR.Domain.Entities.QuestionGroup>()).OrderBy(g => g.OrderIndex))
+            {
+                var view = new QuestionGroupView { Title = g.Title };
+                foreach (var qq in questions.Where(x => x.GroupId == g.Id).OrderBy(x => x.OrderIndex))
+                    view.Questions.Add(ToQuestionView(qq));
+                result.Add(view);
+            }
+
+            var loose = questions.Where(x => !x.GroupId.HasValue).OrderBy(x => x.OrderIndex).ToList();
+            if (loose.Count > 0)
+            {
+                var view = new QuestionGroupView { Title = "Preguntas" };
+                foreach (var qq in loose) view.Questions.Add(ToQuestionView(qq));
+                result.Add(view);
+            }
+            return result;
+        }
+
+        private static QuestionView ToQuestionView(ChequeAR.Domain.Entities.Question qq)
+        {
+            return new QuestionView
+            {
+                LinkId = qq.LinkId,
+                Text = qq.Text,
+                Type = qq.Type.ToString().ToLowerInvariant(),
+                Required = qq.Required,
+                Options = (qq.Options ?? new List<ChequeAR.Domain.Entities.AnswerOption>())
+                    .OrderBy(o => o.OrderIndex)
+                    .Select(o => o.Display ?? o.Value ?? o.Code)
+                    .ToList()
+            };
         }
 
         // Q5 — Vista previa
@@ -127,24 +207,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                     SpecialtyCode = q.SpecialtyCode ?? "general",
                     SpecialtyLabel = q.SpecialtyDisplay ?? q.SpecialtyCode ?? "General",
                     Version = q.Versions?.Count ?? 0,
-                    Status = q.Status.ToString().ToLowerInvariant(),
+                    Status = QuestionnaireStatusMap.ToUi(q.Status),
                     Author = q.CreatedBy,
-                    UpdatedAt = q.UpdatedAt.ToString("yyyy-MM-dd")
+                    UpdatedAt = q.UpdatedAt.ToString("yyyy-MM-dd"),
+                    HasUnpublishedChanges = q.HasUnpublishedChanges()
                 };
-                if (q.Questions != null)
-                {
-                    var group = new QuestionGroupView { Title = "Preguntas" };
-                    foreach (var qq in q.Questions)
-                    {
-                        group.Questions.Add(new QuestionView
-                        {
-                            LinkId = qq.LinkId, Text = qq.Text,
-                            Type = qq.Type.ToString().ToLowerInvariant(),
-                            Required = qq.Required
-                        });
-                    }
-                    model.Groups.Add(group);
-                }
+                model.Groups.AddRange(BuildEditorGroups(q));
                 return View(model);
             }
             catch (Exception ex)
@@ -194,8 +262,18 @@ namespace ChequeAR.Api.Controllers.Mvc
         public async Task<ActionResult> Publish(Guid id, string changeNote)
         {
             var userId = User?.Identity?.Name ?? "unknown";
-            try { await _svc.PublishAsync(id, null, userId); TempData["Toast"] = "Cuestionario publicado."; }
-            catch (Exception ex) { TempData["Toast"] = "Error: " + ex.Message; }
+            // fhirJson null => el service lo arma desde la base (ver FhirQuestionnaireBuilder).
+            try
+            {
+                await _svc.PublishAsync(id, null, userId);
+                TempData["Toast"] = "Cuestionario publicado.";
+                TempData["ToastLevel"] = "success";
+            }
+            catch (Exception ex)
+            {
+                TempData["Toast"] = "No se pudo publicar: " + ex.Message;
+                TempData["ToastLevel"] = "error";
+            }
             return RedirectToAction("Index");
         }
 
@@ -203,8 +281,17 @@ namespace ChequeAR.Api.Controllers.Mvc
         public async Task<ActionResult> Archive(Guid id)
         {
             var userId = User?.Identity?.Name ?? "unknown";
-            try { await _svc.ArchiveAsync(id, userId); TempData["Toast"] = "Cuestionario archivado."; }
-            catch (Exception ex) { TempData["Toast"] = "Error: " + ex.Message; }
+            try
+            {
+                await _svc.ArchiveAsync(id, userId);
+                TempData["Toast"] = "Cuestionario archivado.";
+                TempData["ToastLevel"] = "success";
+            }
+            catch (Exception ex)
+            {
+                TempData["Toast"] = "No se pudo archivar: " + ex.Message;
+                TempData["ToastLevel"] = "error";
+            }
             return RedirectToAction("Index");
         }
     }

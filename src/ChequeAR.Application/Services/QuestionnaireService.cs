@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -24,6 +25,7 @@ namespace ChequeAR.Application.Services
         {
             q.Id = Guid.NewGuid();
             q.Status = QuestionnaireStatus.Draft;
+            q.HasPendingChanges = false;   // todavía no hay versión publicada que contradecir
             q.CreatedBy = userId;
             q.CreatedAt = DateTime.UtcNow;
             q.UpdatedAt = DateTime.UtcNow;
@@ -91,6 +93,21 @@ namespace ChequeAR.Application.Services
             q.Description = patch.Description ?? q.Description;
             q.SpecialtyCode = patch.SpecialtyCode ?? q.SpecialtyCode;
             q.UpdatedAt = DateTime.UtcNow;
+            // Toda edición deja cambios pendientes de publicar. En un borrador el flag es
+            // inocuo (HasUnpublishedChanges() exige estado Activo).
+            q.HasPendingChanges = true;
+
+            // Estructura (secciones/preguntas/opciones): si el patch trae alguna, reemplaza
+            // por completo la existente. Un patch sin estructura (colecciones vacías, que es
+            // lo que deja el binder cuando el cliente no manda "questions") no la toca.
+            var hasStructure = (patch.Groups != null && patch.Groups.Count > 0)
+                            || (patch.Questions != null && patch.Questions.Count > 0);
+            if (hasStructure)
+            {
+                var replacement = new Questionnaire { Id = q.Id, Groups = patch.Groups, Questions = patch.Questions };
+                AssignChildIds(replacement);
+                await _repo.ReplaceStructureAsync(q, replacement.Groups, replacement.Questions);
+            }
 
             await _repo.UpdateAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id, userId));
@@ -103,25 +120,36 @@ namespace ChequeAR.Application.Services
             if (q == null) throw new InvalidOperationException("Not found");
             if (!q.CanPublish()) throw new InvalidOperationException("Questionnaire cannot be published in current state");
 
-            var validation = _validator.Validate(fhirJson, "https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaire");
+            var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
+
+            // Publicar desde el listado (Q1/Q6) no manda JSON: lo armamos desde la base.
+            // El editor, en cambio, puede mandar el suyo y ese tiene prioridad.
+            if (string.IsNullOrWhiteSpace(fhirJson))
+                fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber);
+
+            var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
             if (!validation.IsValid)
                 throw new InvalidOperationException("FHIR validation failed: " + string.Join("; ", validation.Errors));
 
-            var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
+            // Un único timestamp para la versión y para el cuestionario: no lo necesita
+            // HasPendingChanges (que es explícito), pero deja coherente el "última
+            // modificación" del listado con la fecha de publicación.
+            var now = DateTime.UtcNow;
             var version = new QuestionnaireVersion
             {
                 Id = Guid.NewGuid(),
                 QuestionnaireId = q.Id,
                 VersionNumber = nextVersionNumber,
                 FhirJson = fhirJson,
-                PublishedAt = DateTime.UtcNow,
+                PublishedAt = now,
                 PublishedBy = userId
             };
             await _repo.AddVersionAsync(version);
 
             q.CurrentVersionId = version.Id;
             q.Status = QuestionnaireStatus.Active;
-            q.UpdatedAt = DateTime.UtcNow;
+            q.HasPendingChanges = false;   // lo pendiente acaba de quedar congelado en la versión
+            q.UpdatedAt = now;
             await _repo.UpdateAsync(q);
 
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$publish", userId));

@@ -133,6 +133,120 @@ namespace ChequeAR.Tests.Application
             _repo.Verify(r => r.UpdateAsync(q), Times.Once);
         }
 
+        // Publicar desde el listado no manda JSON: el service lo arma desde la base. Sin esto
+        // el validador rechazaba "Empty resource" y el cuestionario se quedaba en borrador.
+        [Fact]
+        public async Task PublishAsync_NullFhirJson_BuildsResourceFromEntity()
+        {
+            var id = Guid.NewGuid();
+            var q = Draftable(id);
+            q.Title = "Reumato basal";
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(q);
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
+                      .Returns(TestHelpers.ValidOk());
+
+            QuestionnaireVersion saved = null;
+            _repo.Setup(r => r.AddVersionAsync(It.IsAny<QuestionnaireVersion>()))
+                 .Callback<QuestionnaireVersion>(v => saved = v)
+                 .Returns(Task.CompletedTask);
+
+            var result = await _sut.PublishAsync(id, null, "u");
+
+            Assert.Equal(QuestionnaireStatus.Active, result.Status);
+            Assert.NotNull(saved);
+            Assert.Contains("\"resourceType\":\"Questionnaire\"", saved.FhirJson);
+            Assert.Contains("Reumato basal", saved.FhirJson);
+            _validator.Verify(v => v.Validate(It.Is<string>(s => !string.IsNullOrWhiteSpace(s)), It.IsAny<string>()), Times.Once);
+        }
+
+        // Editar la estructura reemplaza secciones/preguntas guardadas: antes UpdateAsync
+        // sólo tocaba título/descripción y los cambios del editor se perdían.
+        [Fact]
+        public async Task UpdateAsync_WithStructure_ReplacesQuestions()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire { Id = id, Title = "old", Status = QuestionnaireStatus.Draft };
+            existing.Questions.Add(new Question { Id = Guid.NewGuid(), LinkId = "vieja" });
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var patch = new Questionnaire { Title = "nuevo" };
+            patch.Groups.Add(new QuestionGroup
+            {
+                Title = "Sección",
+                Questions = { new Question { LinkId = "nueva", Text = "¿Dolor?" } }
+            });
+
+            await _sut.UpdateAsync(id, patch, "u");
+
+            _repo.Verify(r => r.ReplaceStructureAsync(
+                existing,
+                It.Is<System.Collections.Generic.ICollection<QuestionGroup>>(g => g.Count == 1),
+                It.IsAny<System.Collections.Generic.ICollection<Question>>()), Times.Once);
+        }
+
+        // Un patch sin estructura (el binder deja las colecciones vacías) no borra lo guardado.
+        [Fact]
+        public async Task UpdateAsync_WithoutStructure_KeepsQuestions()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire { Id = id, Title = "old", Status = QuestionnaireStatus.Draft };
+            existing.Questions.Add(new Question { Id = Guid.NewGuid(), LinkId = "vieja" });
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            await _sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u");
+
+            _repo.Verify(r => r.ReplaceStructureAsync(
+                It.IsAny<Questionnaire>(),
+                It.IsAny<System.Collections.Generic.ICollection<QuestionGroup>>(),
+                It.IsAny<System.Collections.Generic.ICollection<Question>>()), Times.Never);
+            Assert.Single(existing.Questions);
+        }
+
+        // Publicar apaga el flag de pendientes: lo que estaba sin publicar acaba de quedar
+        // congelado en la versión nueva.
+        [Fact]
+        public async Task PublishAsync_ClearsPendingChanges()
+        {
+            var id = Guid.NewGuid();
+            var q = Draftable(id);
+            q.HasPendingChanges = true;
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(q);
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
+                      .Returns(TestHelpers.ValidOk());
+
+            QuestionnaireVersion saved = null;
+            _repo.Setup(r => r.AddVersionAsync(It.IsAny<QuestionnaireVersion>()))
+                 .Callback<QuestionnaireVersion>(v => saved = v)
+                 .Returns(Task.CompletedTask);
+
+            var result = await _sut.PublishAsync(id, null, "u");
+
+            Assert.False(result.HasPendingChanges);
+            Assert.False(result.HasUnpublishedChanges());
+            Assert.Equal(saved.PublishedAt, result.UpdatedAt);
+        }
+
+        // Editar prende el flag: es lo que hace visible el "cambios sin publicar".
+        [Fact]
+        public async Task UpdateAsync_SetsPendingChanges()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire
+            {
+                Id = id,
+                Title = "old",
+                Status = QuestionnaireStatus.Active,
+                CurrentVersionId = Guid.NewGuid(),
+                HasPendingChanges = false
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u");
+
+            Assert.True(updated.HasPendingChanges);
+            Assert.True(updated.HasUnpublishedChanges());
+        }
+
         // Archivar deja el cuestionario en estado Retirado y guarda el cambio.
         [Fact]
         public async Task ArchiveAsync_SetsRetired()
