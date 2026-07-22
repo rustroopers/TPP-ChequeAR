@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -53,6 +54,11 @@ namespace ChequeAR.Application.Services
                 }
             }
 
+            // El recurso FHIR es la representación canónica de la respuesta y lo que valida
+            // $finalize. Se arma acá porque es el único momento donde tenemos el
+            // cuestionario a mano para resolver los textos de cada linkId.
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, q);
+
             await _repo.AddAsync(r);
             _audit.Enqueue(AuditEventBuilder.For("create", "QuestionnaireResponse/" + r.Id, userId));
             return r;
@@ -65,11 +71,19 @@ namespace ChequeAR.Application.Services
             if (r.Status == ResponseStatus.Completed)
                 return r;
 
+            // Se regenera con status completed antes de validar: el recurso guardado al
+            // crear dice "in-progress" y quedaría contradiciendo el estado final.
+            r.Status = ResponseStatus.Completed;
+            var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, questionnaire);
+
             var validation = _validator.Validate(r.FhirJson);
             if (!validation.IsValid)
+            {
+                r.Status = ResponseStatus.InProgress;   // no se finaliza nada inválido
                 throw new InvalidOperationException("Validation failed: " + string.Join("; ", validation.Errors));
+            }
 
-            r.Status = ResponseStatus.Completed;
             r.LastSavedAt = DateTime.UtcNow;
             await _repo.UpdateAsync(r);
             _audit.Enqueue(AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$finalize", userId));
