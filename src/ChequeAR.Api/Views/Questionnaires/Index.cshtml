@@ -97,8 +97,14 @@ else
                                 <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
                                 <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
                                 <li><hr class="dropdown-divider" /></li>
-                                <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
-                                <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                @if (!(q.Status == "published" && !q.HasUnpublishedChanges))
+                                {
+                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                }
+                                @if (q.Status != "archived")
+                                {
+                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                }
                             </ul>
                         </div>
                     </td>

@@ -45,6 +45,39 @@
             var loadError = Vue.ref(
                 (props.groups && props.groups.length) ? null : 'La versión publicada no tiene preguntas.');
 
+            // Al finalizar, se marca ESTA entrada del historial (replaceState) antes de
+            // redirigir a la ficha. Si la persona vuelve con "atrás", cae de nuevo acá y
+            // la marca sigue puesta: mostramos el aviso en vez de un formulario en blanco.
+            // La marca vive en la entrada del historial, así que sobrevive a la recarga
+            // que fuerza el Cache-Control: no-store del server (no depende del bfcache ni
+            // del tipo de navegación, que con no-store el navegador reporta como "navigate").
+            // Entrando de nuevo desde Pacientes se crea una entrada NUEVA sin marca, así
+            // que un "Seguimiento" real se puede cargar las veces que haga falta.
+            function finalizedMark() {
+                try {
+                    var s = window.history.state;
+                    return (s && s.cqFinalized) ? s : null;
+                } catch (e) { return null; }
+            }
+            var blockedByBack = Vue.ref(false);
+            var completedResponseId = Vue.ref(null);
+            function applyFinalizedMark() {
+                var m = finalizedMark();
+                if (m) { blockedByBack.value = true; completedResponseId.value = m.responseId; }
+            }
+            // Caso recarga real: si el navegador respeta no-store, "atrás" re-ejecuta
+            // setup() con el formulario vacío y la marca del historial todavía puesta.
+            applyFinalizedMark();
+
+            // Caso bfcache: los navegadores actuales (Chromium/Brave) conservan la página
+            // VIVA en memoria aunque el server mande Cache-Control: no-store, así que al
+            // volver con "atrás" setup() NO se re-ejecuta y el chequeo de arriba no corre.
+            // pageshow sí dispara en esa restauración (los listeners sobreviven al
+            // congelado del bfcache): ahí re-evaluamos la marca y bloqueamos el formulario.
+            function onPageShow() { applyFinalizedMark(); }
+            window.addEventListener('pageshow', onPageShow);
+            Vue.onUnmounted(function () { window.removeEventListener('pageshow', onPageShow); });
+
             var answers = Vue.reactive({});
             var errors = Vue.reactive({});
             var savingState = Vue.ref('idle'); // idle | dirty | saving | error
@@ -262,6 +295,13 @@
                 }).then(function (id) {
                     savingState.value = 'idle';
                     window.cqToast && window.cqToast('Ficha finalizada', 'success');
+                    // Marca esta entrada del historial ANTES de redirigir: si la persona
+                    // vuelve con "atrás", el renderer la lee y muestra el aviso en vez de
+                    // dejar re-finalizar. Se guarda el id para poder linkear a la ficha.
+                    try {
+                        window.history.replaceState(
+                            { cqFinalized: true, responseId: id }, '', window.location.href);
+                    } catch (e) { /* history bloqueado: el aviso no aparecerá, pero la ficha ya se guardó */ }
                     window.location.href = '/Encounters/View/' + id;
                 }).catch(function (err) {
                     savingState.value = 'error';
@@ -274,7 +314,8 @@
             return {
                 questionnaire: questionnaire, answers: answers, errors: errors,
                 savingState: savingState, submitting: submitting,
-                loading: loading, loadError: loadError,
+                loading: loading, loadError: loadError, blockedByBack: blockedByBack,
+                completedResponseId: completedResponseId,
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
                 totalQuestions: totalQuestions, answeredCount: answeredCount,
@@ -282,7 +323,15 @@
             };
         },
         template: '\
-<div v-if="loading" class="cq-card">\
+<div v-if="blockedByBack" class="cq-card">\
+    <div class="cq-empty">\
+        <div class="cq-empty__icon"><i class="bi bi-check2-circle"></i></div>\
+        <div class="cq-empty__title">Ya cargaste esta ficha</div>\
+        <div class="cq-empty__desc">La finalizaste recién. Si necesitás cargar otra, entrá de nuevo desde Pacientes.</div>\
+        <a v-if="completedResponseId" :href="\'/Encounters/View/\' + completedResponseId" class="btn btn-outline-secondary">Ver ficha cargada</a>\
+    </div>\
+</div>\
+<div v-else-if="loading" class="cq-card">\
     <div class="cq-loading"><div class="cq-spinner cq-spinner--lg"></div>\
         <div class="cq-loading__label">Cargando cuestionario…</div>\
     </div>\

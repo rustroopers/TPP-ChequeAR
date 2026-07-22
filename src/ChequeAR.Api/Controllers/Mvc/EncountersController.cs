@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Web;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Fhir;
@@ -89,6 +90,14 @@ namespace ChequeAR.Api.Controllers.Mvc
         // R3 — Render (host Vue)
         public async Task<ActionResult> Load(string patientId, Guid questionnaireId)
         {
+            // Sin esto, el navegador restaura esta página desde el bfcache al tocar
+            // "atrás" después de finalizar: el formulario queda editable con las
+            // respuestas viejas todavía en memoria, y un segundo "Finalizar" crea una
+            // QuestionnaireResponse nueva en vez de avisar que ya no hay nada que cargar.
+            // no-store fuerza una recarga real contra el server en su lugar.
+            Response.Cache.SetCacheability(HttpCacheability.NoCache);
+            Response.Cache.SetNoStore();
+
             ViewBag.Title = "Carga de ficha";
             ViewBag.PageId = "encounters";
             ViewBag.PatientId = patientId;

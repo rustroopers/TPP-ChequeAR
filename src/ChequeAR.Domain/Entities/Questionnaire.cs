@@ -42,13 +42,17 @@ namespace ChequeAR.Domain.Entities
         public virtual ICollection<Question> Questions { get; set; } = new List<Question>();
 
         /// <summary>
-        /// Publicable si no está archivado y tiene al menos una pregunta. Un cuestionario
-        /// ya activo se puede volver a publicar: eso congela una versión nueva (v2, v3…)
-        /// con los cambios hechos desde la última publicación.
+        /// Publicable si tiene al menos una pregunta y hay algo que publicar:
+        ///  - Borrador: se publica su primera versión.
+        ///  - Archivado: publicarlo lo saca del archivo y lo vuelve a dejar activo.
+        ///  - Activo con cambios pendientes: congela una versión nueva (v2, v3…).
+        ///  - Activo sin cambios pendientes: no hay nada nuevo que congelar -> no se publica.
         /// </summary>
         public bool CanPublish()
         {
-            return Status != QuestionnaireStatus.Retired && Questions != null && Questions.Count > 0;
+            if (Questions == null || Questions.Count == 0) return false;
+            if (Status == QuestionnaireStatus.Active && !HasPendingChanges) return false;
+            return true;
         }
 
         /// <summary>

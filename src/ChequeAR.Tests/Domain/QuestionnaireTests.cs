@@ -27,25 +27,37 @@ namespace ChequeAR.Tests.Domain
             Assert.False(q.CanPublish());
         }
 
-        // Un cuestionario ya activo se puede volver a publicar: eso congela una versión nueva
-        // con los cambios hechos desde la publicación anterior.
+        // Un cuestionario activo con cambios pendientes se puede volver a publicar: eso
+        // congela una versión nueva con los cambios hechos desde la publicación anterior.
         [Fact]
-        public void CanPublish_ActiveWithQuestions_ReturnsTrue()
+        public void CanPublish_ActiveWithPendingChanges_ReturnsTrue()
         {
-            var q = new Questionnaire { Status = QuestionnaireStatus.Active };
+            var q = new Questionnaire { Status = QuestionnaireStatus.Active, HasPendingChanges = true };
             q.Questions.Add(new Question());
 
             Assert.True(q.CanPublish());
         }
 
-        // Un cuestionario archivado (Retirado) ya no se publica bajo ninguna condición.
+        // Un cuestionario activo sin cambios pendientes NO se puede volver a publicar: no hay
+        // nada nuevo que congelar respecto de la versión ya publicada.
         [Fact]
-        public void CanPublish_Retired_ReturnsFalse()
+        public void CanPublish_ActiveWithoutPendingChanges_ReturnsFalse()
+        {
+            var q = new Questionnaire { Status = QuestionnaireStatus.Active, HasPendingChanges = false };
+            q.Questions.Add(new Question());
+
+            Assert.False(q.CanPublish());
+        }
+
+        // Un cuestionario archivado (Retirado) se puede volver a publicar: eso lo saca del
+        // archivo y lo deja activo de nuevo con una versión nueva.
+        [Fact]
+        public void CanPublish_RetiredWithQuestions_ReturnsTrue()
         {
             var q = new Questionnaire { Status = QuestionnaireStatus.Retired };
             q.Questions.Add(new Question());
 
-            Assert.False(q.CanPublish());
+            Assert.True(q.CanPublish());
         }
 
         // Publicado y editado después: los cambios quedan pendientes, la versión congelada

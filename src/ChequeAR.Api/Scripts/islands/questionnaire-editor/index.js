@@ -52,7 +52,6 @@
                                 op: q.enableWhen.op || '=',
                                 value: q.enableWhen.value
                             } : undefined,
-                            codeSystem: q.codeSystem,
                             code: q.code,
                             codeDisplay: q.codeDisplay,
                             options: q.options && q.options.length ? q.options.slice() : undefined,
@@ -182,11 +181,12 @@
                 return Object.keys(v).length ? JSON.stringify(v) : null;
             }
 
-            // Metadata clínica (CIE-10 / SNOMED) para que la variable sea interoperable
-            // fuera de ChequeAR. Se serializa en Question.CodingJson.
+            // Metadata clínica (SNOMED CT, único sistema soportado) para que la variable
+            // sea interoperable fuera de ChequeAR. Se serializa en Question.CodingJson.
+            var SNOMED_SYSTEM = 'http://snomed.info/sct';
             function buildCoding(q) {
-                if (!q.codeSystem || !q.code) return null;
-                return JSON.stringify({ system: q.codeSystem, code: q.code, display: q.codeDisplay || q.text });
+                if (!q.code) return null;
+                return JSON.stringify({ system: SNOMED_SYSTEM, code: q.code, display: q.codeDisplay || q.text });
             }
 
             // Manda el árbol completo (secciones -> preguntas -> opciones). El backend
@@ -522,6 +522,7 @@
                 <p class="cq-text-xs cq-text-muted mt-1">El servidor acepta JPG, PNG y PDF hasta 10 MB.</p>\
             </div>\
 \
+            <template v-if="conditionSources.length">\
             <hr />\
             <h4 class="cq-text-sm fw-semibold mb-2">Mostrar sólo si…</h4>\
             <select class="form-select form-select-sm mb-2"\
@@ -553,22 +554,13 @@
                            @input="onConditionValue($event.target.value)" placeholder="valor esperado" />\
                 </div>\
             </div>\
-            <p v-if="!conditionSources.length" class="cq-text-xs cq-text-muted mb-0">Sólo se puede condicionar contra preguntas anteriores.</p>\
+            </template>\
 \
             <hr />\
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
-            <div class="row g-2 mb-2">\
-                <div class="col-5">\
-                    <select v-model="selected.question.codeSystem" class="form-select form-select-sm">\
-                        <option :value="undefined">—</option>\
-                        <option value="http://hl7.org/fhir/sid/icd-10">CIE-10</option>\
-                        <option value="http://snomed.info/sct">SNOMED CT</option>\
-                        <option value="http://loinc.org">LOINC</option>\
-                    </select>\
-                </div>\
-                <div class="col-7">\
-                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="código" />\
-                </div>\
+            <div class="mb-2">\
+                <label class="form-label cq-text-sm">Código SNOMED CT</label>\
+                <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
             </div>\
 \
             <hr />\

@@ -279,6 +279,8 @@ namespace ChequeAR.Application.Services
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
+            if (q.Status == QuestionnaireStatus.Retired)
+                throw new InvalidOperationException("Questionnaire is already archived");
             q.Status = QuestionnaireStatus.Retired;
             q.UpdatedAt = DateTime.UtcNow;
             q.ConcurrencyVersion++;
