@@ -206,6 +206,31 @@ namespace ChequeAR.Tests.Application
                 new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "PAC-1" }, "u"));
         }
 
+        // El recurso se regenera al crear, pero los datos del paciente que venian embebidos
+        // NO se pierden: cuando el hospital no responde, ese Patient "contained" es la unica
+        // forma de saber de quien es la ficha.
+        [Fact]
+        public async Task CreateAsync_PreservesContainedPatient()
+        {
+            var questionnaireId = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+
+            var entrante = "{\"resourceType\":\"QuestionnaireResponse\",\"contained\":[{\"resourceType\":\"Patient\"," +
+                           "\"name\":[{\"text\":\"Gómez, Martina\"}],\"birthDate\":\"2016-03-12\",\"gender\":\"female\"}]}";
+
+            var created = await _sut.CreateAsync(new QuestionnaireResponse
+            {
+                QuestionnaireId = questionnaireId,
+                PatientHospitalId = "458821",
+                FhirJson = entrante
+            }, "u");
+
+            var fhir = JObject.Parse(created.FhirJson);
+            Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("contained[0].name[0].text"));
+            Assert.Equal("2016-03-12", (string)fhir.SelectToken("contained[0].birthDate"));
+            Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("subject.display"));
+        }
+
         // No se pueden cargar respuestas contra un cuestionario archivado.
         [Fact]
         public async Task CreateAsync_RetiredQuestionnaire_Throws()

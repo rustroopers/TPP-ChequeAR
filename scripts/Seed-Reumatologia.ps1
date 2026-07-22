@@ -8,7 +8,6 @@
       1. Crear 5 cuestionarios de reumatología (no muy complejos) y publicarlos.
       2. Crear respuestas (encuentros) para 17 pacientes pediátricos simulados,
          finalizando algunas.
-      3. Crear la vista SQL vw_FlatResponses (reportería / exportación a Excel).
 
     Idempotente: si un cuestionario con el mismo título ya existe, no lo recrea.
 
@@ -270,8 +269,11 @@ foreach ($def in $questionnaires) {
     $created = Invoke-Api 'POST' '/fhir/r5/Questionnaire' $def
     Write-Host ("  + Creado: {0} (id {1}, {2} preguntas)" -f $created.title, $created.id, $created.questions.Count) -ForegroundColor Green
 
-    # publicar (el validador es laxo: alcanza con resourceType)
-    $publishBody = @{ fhirJson = ('{"resourceType":"Questionnaire","title":"' + $def.title + '"}') }
+    # Publicar SIN mandar fhirJson: el server serializa el cuestionario completo desde la
+    # base (FhirQuestionnaireBuilder). Antes se mandaba un recurso mínimo con sólo
+    # resourceType para saltear el validador, pero eso congelaba una versión sin preguntas
+    # y la ficha se renderizaba vacía: la carga lee de la versión, no de la entidad viva.
+    $publishBody = @{ changeNote = 'Versión inicial (seed de reumatología)' }
     $published = Invoke-Api 'POST' ("/fhir/r5/Questionnaire/$($created.id)/`$publish") $publishBody
     Write-Host ("    -> publicado, status={0}, versionId={1}" -f $published.status, $published.currentVersionId) -ForegroundColor DarkGreen
     $qByTitle[$def.title] = @{ id = $created.id; versionId = $published.currentVersionId }
@@ -334,45 +336,9 @@ foreach ($enc in $encounters) {
     Write-Host ("  + Respuesta: {0} <- {1}{2}" -f $pat.name, $enc.q, $tag) -ForegroundColor Green
 }
 
-# --- Vista de reportería vw_FlatResponses (para /Reports y exportación) ---
-# EF Code First crea las tablas pero no esta vista; la (re)creamos acá.
-try {
-    [xml]$cfgXml = Get-Content -Path $WebConfig -Raw
-    $connStr = ($cfgXml.configuration.connectionStrings.add | Where-Object { $_.name -eq 'ChequeAR' }).connectionString
-    $createView = @'
-CREATE VIEW dbo.vw_FlatResponses AS
-SELECT
-    r.Id               AS ResponseId,
-    r.QuestionnaireId,
-    r.PatientHospitalId,
-    r.AuthoredAt,
-    i.LinkId,
-    COALESCE(i.ValueDecimal, CAST(i.ValueInteger AS decimal(18,4))) AS ValueDecimal,
-    i.ValueString,
-    i.ValueDate,
-    i.ValueBoolean,
-    i.ValueCode,
-    COALESCE(
-        i.ValueString,
-        i.ValueCode,
-        CAST(i.ValueInteger AS nvarchar(50)),
-        CONVERT(nvarchar(50), i.ValueDecimal),
-        CONVERT(nvarchar(30), i.ValueDate, 23),
-        CASE WHEN i.ValueBoolean IS NULL THEN NULL WHEN i.ValueBoolean = 1 THEN N'Sí' ELSE N'No' END
-    ) AS ValueText
-FROM dbo.QuestionnaireResponse r
-INNER JOIN dbo.QuestionnaireResponseItems i ON i.ResponseId = r.Id;
-'@
-    $conn = New-Object System.Data.SqlClient.SqlConnection $connStr
-    $conn.Open()
-    $drop = $conn.CreateCommand(); $drop.CommandText = "IF OBJECT_ID('dbo.vw_FlatResponses','V') IS NOT NULL DROP VIEW dbo.vw_FlatResponses;"; [void]$drop.ExecuteNonQuery()
-    $cr = $conn.CreateCommand(); $cr.CommandText = $createView; [void]$cr.ExecuteNonQuery()
-    $conn.Close()
-    Write-Host "  + Vista vw_FlatResponses creada." -ForegroundColor Green
-}
-catch {
-    Write-Host ("  ! No pude crear vw_FlatResponses: {0}" -f $_.Exception.Message) -ForegroundColor Red
-}
+# La vista vw_FlatResponses la crea la migración AddFlatResponsesView, no este script.
+# Antes se creaba acá con sintaxis SQL Server (dbo., SqlConnection) contra una base
+# Oracle, así que fallaba siempre y el reporte quedaba sin vista.
 
 Write-Host ""
 Write-Host ("Listo. Cuestionarios: {0} | Respuestas creadas: {1}" -f $qByTitle.Count, $respCount) -ForegroundColor Cyan

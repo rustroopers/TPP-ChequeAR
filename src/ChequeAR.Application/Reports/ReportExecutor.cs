@@ -35,13 +35,28 @@ namespace ChequeAR.Application.Reports
                         var row = new Dictionary<string, object>();
                         for (int i = 0; i < reader.FieldCount; i++)
                         {
-                            row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                            row[reader.GetName(i)] = reader.IsDBNull(i) ? null : OracleValue.Normalize(reader.GetValue(i));
                         }
                         rows.Add(row);
                     }
                 }
             }
             return new ReportResult { Rows = rows, Total = rows.Count };
+        }
+    }
+
+    public static class OracleValue
+    {
+        /// <summary>
+        /// Los Guid se guardan como RAW(16) y ODP.NET los devuelve como byte[].
+        /// Convert.ToString(byte[]) da "System.Byte[]" para TODAS las filas: el pivot
+        /// agrupa por ResponseId, así que todas las fichas colapsaban en una sola con las
+        /// respuestas mezcladas entre pacientes. Y en el Excel se exportaba ese literal.
+        /// </summary>
+        public static object Normalize(object value)
+        {
+            if (value is byte[] bytes && bytes.Length == 16) return new Guid(bytes);
+            return value;
         }
     }
 

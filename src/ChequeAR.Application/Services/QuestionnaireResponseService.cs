@@ -68,11 +68,31 @@ namespace ChequeAR.Application.Services
             // cuestionario a mano para resolver los textos de cada linkId.
             // Los textos salen de la versión anclada, no de la entidad viva: si alguien
             // renombró una pregunta después, la ficha debe conservar lo que el médico leyó.
-            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, FhirQuestionnaireReader.Read(pinned.FhirJson));
+            // Se preservan los datos del paciente que venían embebidos: cuando el hospital
+            // no responde, ese Patient "contained" es la única forma de saber de quién es
+            // la ficha (lo lee PatientService en modo degradado).
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
+                r, FhirQuestionnaireReader.Read(pinned.FhirJson), DemographicsFrom(r.FhirJson));
 
             await _repo.AddAsync(r);
             _audit.Enqueue(AuditEventBuilder.For("create", "QuestionnaireResponse/" + r.Id, userId));
             return r;
+        }
+
+        /// <summary>
+        /// Rescata los datos del paciente del recurso que ya venía guardado, para no
+        /// perderlos al regenerarlo. Null si no había ninguno.
+        /// </summary>
+        private static PatientDemographicsDto DemographicsFrom(string existingFhirJson)
+        {
+            var demo = FhirPatientReader.Read(existingFhirJson);
+            if (demo == null || string.IsNullOrWhiteSpace(demo.Name)) return null;
+            return new PatientDemographicsDto
+            {
+                FullName = demo.Name,
+                Gender = demo.Gender,
+                BirthDate = demo.BirthDate
+            };
         }
 
         /// <summary>
@@ -108,7 +128,8 @@ namespace ChequeAR.Application.Services
             r.Status = ResponseStatus.Completed;
             var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
             var pinned = ResolveVersion(questionnaire, r.QuestionnaireVersionId);
-            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, FhirQuestionnaireReader.Read(pinned?.FhirJson));
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
+                r, FhirQuestionnaireReader.Read(pinned?.FhirJson), DemographicsFrom(r.FhirJson));
 
             var validation = _validator.Validate(r.FhirJson);
             if (!validation.IsValid)
