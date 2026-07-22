@@ -29,7 +29,10 @@
                     <div class="cq-text-sm cq-text-muted">@e.Date</div>
                     <div class="d-flex align-items-center gap-2 mt-1">
                         <strong>@e.QuestionnaireTitle</strong>
-                        <span class="cq-text-xs cq-text-muted">v@(e.QuestionnaireVersion)</span>
+                        @if (e.QuestionnaireVersion > 0)
+                        {
+                            <span class="cq-text-xs cq-text-muted" title="Versión con la que se completó">v@(e.QuestionnaireVersion)</span>
+                        }
                         @if (e.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
                     </div>
                     <div class="d-flex justify-content-between align-items-center mt-1">

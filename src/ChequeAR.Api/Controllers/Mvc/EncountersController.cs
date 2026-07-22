@@ -153,6 +153,16 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View();
         }
 
+        /// <summary>
+        /// Número de la versión a la que quedó anclada una respuesta. 0 si no se puede
+        /// resolver (fichas viejas, previas al anclaje, que guardaron Guid.Empty).
+        /// </summary>
+        private static int PinnedVersionNumber(ChequeAR.Domain.Entities.Questionnaire q, Guid versionId)
+        {
+            if (q?.Versions == null || versionId == Guid.Empty) return 0;
+            return q.Versions.FirstOrDefault(v => v.Id == versionId)?.VersionNumber ?? 0;
+        }
+
         /// <summary>Versión viva del cuestionario, o null si nunca se publicó.</summary>
         private static ChequeAR.Domain.Entities.QuestionnaireVersion CurrentVersion(ChequeAR.Domain.Entities.Questionnaire q)
         {
@@ -187,7 +197,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     EncounterId = qr.Id,
                     Patient = new PatientSearchItem { HC = qr.PatientHospitalId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" },
                     QuestionnaireTitle = q?.Title,
-                    QuestionnaireVersion = q?.Versions?.Count ?? 0,
+                    // La versión con la que se completó ESTA ficha, no la que esté vigente
+                    // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
+                    QuestionnaireVersion = PinnedVersionNumber(q, qr.QuestionnaireVersionId),
                     Author = qr.AuthorUserId,
                     FinalizedAt = qr.LastSavedAt.ToString("yyyy-MM-dd HH:mm")
                 };
@@ -267,7 +279,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     {
                         Date = e.AuthoredAt.ToString("yyyy-MM-dd"),
                         QuestionnaireTitle = q?.Title ?? e.QuestionnaireId.ToString(),
-                        QuestionnaireVersion = q?.Versions?.Count ?? 0,
+                        QuestionnaireVersion = PinnedVersionNumber(q, e.QuestionnaireVersionId),
                         Author = e.AuthorUserId,
                         EncounterId = e.Id,
                         Status = e.Status.ToString().ToLowerInvariant()
