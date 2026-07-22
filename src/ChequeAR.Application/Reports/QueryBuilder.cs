@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Text;
 using ChequeAR.Application.Dtos;
 using Oracle.ManagedDataAccess.Client;
+using Oracle.ManagedDataAccess.Types;
 
 namespace ChequeAR.Application.Reports
 {
@@ -28,7 +30,7 @@ namespace ChequeAR.Application.Reports
 
             var parameters = new List<OracleParameter>
             {
-                new OracleParameter("QuestionnaireId", q.QuestionnaireId)
+                GuidParameter("QuestionnaireId", q.QuestionnaireId)
             };
 
             if (q.DateRange?.From != null)
@@ -89,6 +91,17 @@ namespace ChequeAR.Application.Reports
                 }
             }
             sql.Append(")");
+        }
+
+        /// <summary>
+        /// ODP.NET no sabe bindear un Guid: new OracleParameter(name, guid) tira
+        /// ArgumentException ("El valor no está dentro del intervalo esperado") y toda
+        /// consulta de reportes fallaba antes de llegar a la base. EF guarda los Guid como
+        /// RAW(16), así que se bindea explícitamente como bytes.
+        /// </summary>
+        private static OracleParameter GuidParameter(string name, Guid value)
+        {
+            return new OracleParameter(name, OracleDbType.Raw, 16, value.ToByteArray(), ParameterDirection.Input);
         }
 
         private string ResolveColumn(object value)
