@@ -57,7 +57,20 @@ namespace ChequeAR.Api.Models
         public string Unit { get; set; }
         public decimal? Min { get; set; }
         public decimal? Max { get; set; }
+        public string Accept { get; set; }
+        public EnableWhenView EnableWhen { get; set; }
+        public string CodeSystem { get; set; }
+        public string Code { get; set; }
+        public string CodeDisplay { get; set; }
         public List<string> Options { get; set; } = new List<string>();
+    }
+
+    /// <summary>Condición de visibilidad: "mostrar sólo si &lt;question&gt; &lt;op&gt; &lt;value&gt;".</summary>
+    public class EnableWhenView
+    {
+        public string Question { get; set; }
+        public string Op { get; set; }
+        public object Value { get; set; }
     }
 
     public class QuestionnaireVersionView

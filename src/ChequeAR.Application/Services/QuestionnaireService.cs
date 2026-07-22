@@ -144,7 +144,7 @@ namespace ChequeAR.Application.Services
             return q;
         }
 
-        public async Task<Questionnaire> PublishAsync(Guid id, string fhirJson, string userId)
+        public async Task<Questionnaire> PublishAsync(Guid id, string fhirJson, string userId, string changeNote = null)
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
@@ -172,7 +172,8 @@ namespace ChequeAR.Application.Services
                 VersionNumber = nextVersionNumber,
                 FhirJson = fhirJson,
                 PublishedAt = now,
-                PublishedBy = userId
+                PublishedBy = userId,
+                ChangeNote = string.IsNullOrWhiteSpace(changeNote) ? null : changeNote.Trim()
             };
             q.CurrentVersionId = version.Id;
             q.Status = QuestionnaireStatus.Active;

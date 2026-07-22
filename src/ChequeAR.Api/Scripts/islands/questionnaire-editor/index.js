@@ -46,6 +46,15 @@
                             unit: q.unit,
                             min: typeof q.min === 'number' ? q.min : undefined,
                             max: typeof q.max === 'number' ? q.max : undefined,
+                            accept: q.accept,
+                            enableWhen: q.enableWhen ? {
+                                question: q.enableWhen.question,
+                                op: q.enableWhen.op || '=',
+                                value: q.enableWhen.value
+                            } : undefined,
+                            codeSystem: q.codeSystem,
+                            code: q.code,
+                            codeDisplay: q.codeDisplay,
                             options: q.options && q.options.length ? q.options.slice() : undefined,
                             optionsText: q.options && q.options.length ? q.options.join('\n') : ''
                         };
@@ -78,6 +87,53 @@
             var lastSaved = Vue.ref(null);
 
             function selectQuestion(g, q) { selected.value = { group: g, question: q }; }
+
+            // --- Lógica condicional (enableWhen) -------------------------------------
+            // Solo se puede condicionar contra preguntas ANTERIORES: al responder, el
+            // valor de una pregunta posterior todavía no existe, y además evita ciclos.
+            var conditionSources = Vue.computed(function () {
+                if (!selected.value) return [];
+                var list = [];
+                var reached = false;
+                groups.value.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        if (q === selected.value.question) { reached = true; return; }
+                        if (!reached && q.linkId) list.push(q);
+                    });
+                });
+                return list;
+            });
+
+            // La pregunta de la que depende la condición actual: define qué input mostrar
+            // para el valor esperado.
+            var conditionSource = Vue.computed(function () {
+                var ew = selected.value && selected.value.question.enableWhen;
+                if (!ew || !ew.question) return null;
+                var found = null;
+                groups.value.forEach(function (g) {
+                    g.questions.forEach(function (q) { if (q.linkId === ew.question) found = q; });
+                });
+                return found;
+            });
+
+            function onConditionQuestion(linkId) {
+                var q = selected.value.question;
+                if (!linkId) q.enableWhen = undefined;
+                else q.enableWhen = { question: linkId, op: '=', value: '' };
+                dirty.value = true;
+            }
+
+            function onConditionValue(raw) {
+                var q = selected.value.question;
+                if (!q.enableWhen) return;
+                var src = conditionSource.value;
+                // El renderer compara con === , así que el tipo tiene que coincidir con el
+                // de la respuesta: booleano contra booleano, número contra número.
+                if (src && src.type === 'boolean') q.enableWhen.value = (raw === 'true');
+                else if (src && ['integer', 'decimal', 'scale'].indexOf(src.type) >= 0) q.enableWhen.value = raw === '' ? '' : Number(raw);
+                else q.enableWhen.value = raw;
+                dirty.value = true;
+            }
             function addGroup() {
                 groups.value.push({ title: 'Nueva sección', questions: [] });
                 dirty.value = true;
@@ -115,12 +171,22 @@
             // donde los lee el renderer para validar la carga. Se manda serializado porque
             // la API bindea directo contra la entidad y la propiedad es string.
             function buildValidation(q) {
+                if (q.type === 'attachment') {
+                    return q.accept ? JSON.stringify({ accept: q.accept }) : null;
+                }
                 if (['integer', 'decimal', 'scale'].indexOf(q.type) < 0) return null;
                 var v = {};
                 if (typeof q.min === 'number' && !isNaN(q.min)) v.min = q.min;
                 if (typeof q.max === 'number' && !isNaN(q.max)) v.max = q.max;
                 if (q.unit) v.unit = q.unit;
                 return Object.keys(v).length ? JSON.stringify(v) : null;
+            }
+
+            // Metadata clínica (CIE-10 / SNOMED) para que la variable sea interoperable
+            // fuera de ChequeAR. Se serializa en Question.CodingJson.
+            function buildCoding(q) {
+                if (!q.codeSystem || !q.code) return null;
+                return JSON.stringify({ system: q.codeSystem, code: q.code, display: q.codeDisplay || q.text });
             }
 
             // Manda el árbol completo (secciones -> preguntas -> opciones). El backend
@@ -140,6 +206,9 @@
                                 required: !!q.required,
                                 orderIndex: order++,
                                 validationJson: buildValidation(q),
+                                enableWhenJson: (q.enableWhen && q.enableWhen.question)
+                                    ? JSON.stringify(q.enableWhen) : null,
+                                codingJson: buildCoding(q),
                                 options: (q.options || []).map(function (opt, oi) {
                                     return { value: opt, display: opt, code: opt, orderIndex: oi };
                                 })
@@ -329,6 +398,8 @@
                 qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
                 isPublished: isPublished, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
+                conditionSources: conditionSources, conditionSource: conditionSource,
+                onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit
             };
@@ -441,6 +512,65 @@
                 <textarea v-model="selected.question.optionsText" @input="selected.question.options = $event.target.value.split(\'\\n\').filter(Boolean)" class="form-control form-control-sm" rows="3" :placeholder="(selected.question.options||[]).join(\'\\n\')">{{ (selected.question.options || []).join(\'\\n\') }}</textarea>\
                 <p class="cq-text-xs cq-text-muted mt-1">Una opción por línea.</p>\
             </div>\
+            <div v-if="selected.question.type === \'attachment\'">\
+                <label class="form-label cq-text-sm">Formatos permitidos</label>\
+                <select v-model="selected.question.accept" class="form-select form-select-sm">\
+                    <option :value="undefined">Imágenes y PDF</option>\
+                    <option value="image/jpeg,image/png">Sólo imágenes</option>\
+                    <option value="application/pdf">Sólo PDF</option>\
+                </select>\
+                <p class="cq-text-xs cq-text-muted mt-1">El servidor acepta JPG, PNG y PDF hasta 10 MB.</p>\
+            </div>\
+\
+            <hr />\
+            <h4 class="cq-text-sm fw-semibold mb-2">Mostrar sólo si…</h4>\
+            <select class="form-select form-select-sm mb-2"\
+                    :value="selected.question.enableWhen ? selected.question.enableWhen.question : \'\'"\
+                    @change="onConditionQuestion($event.target.value)">\
+                <option value="">Siempre visible</option>\
+                <option v-for="s in conditionSources" :key="s.linkId" :value="s.linkId">{{ s.text }}</option>\
+            </select>\
+            <div v-if="selected.question.enableWhen" class="row g-2">\
+                <div class="col-4">\
+                    <select v-model="selected.question.enableWhen.op" class="form-select form-select-sm">\
+                        <option value="=">es igual a</option>\
+                        <option value="!=">es distinto de</option>\
+                        <option value="&gt;">es mayor que</option>\
+                        <option value="&lt;">es menor que</option>\
+                    </select>\
+                </div>\
+                <div class="col-8">\
+                    <select v-if="conditionSource && conditionSource.type === \'boolean\'" class="form-select form-select-sm"\
+                            :value="String(selected.question.enableWhen.value)" @change="onConditionValue($event.target.value)">\
+                        <option value="true">Sí</option>\
+                        <option value="false">No</option>\
+                    </select>\
+                    <select v-else-if="conditionSource && conditionSource.options && conditionSource.options.length" class="form-select form-select-sm"\
+                            :value="selected.question.enableWhen.value" @change="onConditionValue($event.target.value)">\
+                        <option v-for="opt in conditionSource.options" :key="opt" :value="opt">{{ opt }}</option>\
+                    </select>\
+                    <input v-else class="form-control form-control-sm" :value="selected.question.enableWhen.value"\
+                           @input="onConditionValue($event.target.value)" placeholder="valor esperado" />\
+                </div>\
+            </div>\
+            <p v-if="!conditionSources.length" class="cq-text-xs cq-text-muted mb-0">Sólo se puede condicionar contra preguntas anteriores.</p>\
+\
+            <hr />\
+            <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
+            <div class="row g-2 mb-2">\
+                <div class="col-5">\
+                    <select v-model="selected.question.codeSystem" class="form-select form-select-sm">\
+                        <option :value="undefined">—</option>\
+                        <option value="http://hl7.org/fhir/sid/icd-10">CIE-10</option>\
+                        <option value="http://snomed.info/sct">SNOMED CT</option>\
+                        <option value="http://loinc.org">LOINC</option>\
+                    </select>\
+                </div>\
+                <div class="col-7">\
+                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="código" />\
+                </div>\
+            </div>\
+\
             <hr />\
             <button class="btn btn-sm btn-outline-danger" @click="removeQuestion(selected.group, selected.question)"><i class="bi bi-trash me-1"></i> Eliminar pregunta</button>\
         </div>\

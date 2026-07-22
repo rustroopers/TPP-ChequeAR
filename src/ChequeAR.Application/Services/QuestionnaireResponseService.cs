@@ -41,6 +41,18 @@ namespace ChequeAR.Application.Services
             r.AuthorUserId = userId;
             if (r.Status == 0) r.Status = ResponseStatus.InProgress;
 
+            // Los items llegan del cliente sin Id (Guid.Empty) y EF no genera Guids: sin
+            // esto, dos respuestas cualesquiera colisionan en la PK y la ficha entera falla
+            // con ORA-00001. Sólo se podían guardar fichas de una sola pregunta.
+            if (r.Items != null)
+            {
+                foreach (var item in r.Items)
+                {
+                    if (item.Id == Guid.Empty) item.Id = Guid.NewGuid();
+                    item.ResponseId = r.Id;
+                }
+            }
+
             await _repo.AddAsync(r);
             _audit.Enqueue(AuditEventBuilder.For("create", "QuestionnaireResponse/" + r.Id, userId));
             return r;

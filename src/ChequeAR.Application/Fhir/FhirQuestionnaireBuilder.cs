@@ -17,6 +17,10 @@ namespace ChequeAR.Application.Fhir
     {
         public const string ProfileUrl = "https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaire";
 
+        // Índice linkId -> pregunta, para resolver el tipo del answer[x] de enableWhen.
+        // [ThreadStatic] porque la clase es estática y Build puede correr en paralelo.
+        [ThreadStatic] private static Dictionary<string, Question> _questionsByLinkId;
+
         public static string Build(Questionnaire q, int versionNumber)
         {
             if (q == null) throw new ArgumentNullException(nameof(q));
@@ -52,6 +56,11 @@ namespace ChequeAR.Application.Fhir
                     }
                 });
             }
+
+            _questionsByLinkId = (q.Questions ?? new List<Question>())
+                .Where(x => !string.IsNullOrWhiteSpace(x.LinkId))
+                .GroupBy(x => x.LinkId)
+                .ToDictionary(g => g.Key, g => g.First());
 
             resource["item"] = BuildItems(q);
             return JsonConvert.SerializeObject(resource, Formatting.None);
@@ -101,6 +110,8 @@ namespace ChequeAR.Application.Fhir
             };
             if (question.RepeatsAllowed) item["repeats"] = true;
             AddValidationExtensions(item, question);
+            AddCoding(item, question);
+            AddEnableWhen(item, question);
 
             var options = (question.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex).ToList();
             if (options.Count > 0)
@@ -117,6 +128,68 @@ namespace ChequeAR.Application.Fhir
             return item;
         }
 
+        /// <summary>Metadata clínica (CIE-10 / SNOMED / LOINC) como Questionnaire.item.code.</summary>
+        private static void AddCoding(JObject item, Question question)
+        {
+            var coding = TryParse(question.CodingJson);
+            if (coding == null) return;
+            var code = (string)coding["code"];
+            if (string.IsNullOrWhiteSpace(code)) return;
+
+            item["code"] = new JArray(new JObject
+            {
+                ["system"] = (string)coding["system"],
+                ["code"] = code,
+                ["display"] = (string)coding["display"]
+            });
+        }
+
+        /// <summary>
+        /// Lógica condicional como Questionnaire.item.enableWhen. El tipo del answer[x]
+        /// tiene que corresponder al de la pregunta referenciada, no al de esta.
+        /// </summary>
+        private static void AddEnableWhen(JObject item, Question question)
+        {
+            var condition = TryParse(question.EnableWhenJson);
+            if (condition == null) return;
+            var sourceLinkId = (string)condition["question"];
+            if (string.IsNullOrWhiteSpace(sourceLinkId)) return;
+
+            var entry = new JObject
+            {
+                ["question"] = sourceLinkId,
+                ["operator"] = (string)condition["op"] ?? "="
+            };
+
+            var value = condition["value"];
+            Question source = null;
+            _questionsByLinkId?.TryGetValue(sourceLinkId, out source);
+            switch (source?.Type)
+            {
+                case QuestionType.Boolean: entry["answerBoolean"] = (bool?)value ?? false; break;
+                case QuestionType.Integer:
+                case QuestionType.Scale:   entry["answerInteger"] = (long?)value ?? 0; break;
+                case QuestionType.Decimal: entry["answerDecimal"] = (decimal?)value ?? 0m; break;
+                case QuestionType.Choice:
+                case QuestionType.OpenChoice:
+                    entry["answerCoding"] = new JObject { ["code"] = (string)value, ["display"] = (string)value };
+                    break;
+                default: entry["answerString"] = (string)value; break;
+            }
+
+            item["enableWhen"] = new JArray(entry);
+            // Con una sola condición el behavior es irrelevante, pero declararlo deja el
+            // recurso listo para cuando se soporte más de una.
+            item["enableBehavior"] = "all";
+        }
+
+        private static JObject TryParse(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try { return JObject.Parse(json); }
+            catch (JsonException) { return null; }
+        }
+
         /// <summary>
         /// Rango y unidad como extensiones estándar de FHIR, en vez de inventar un formato
         /// propio: así la versión congelada sigue siendo interpretable por otro sistema.
@@ -125,9 +198,8 @@ namespace ChequeAR.Application.Fhir
         {
             if (string.IsNullOrWhiteSpace(question.ValidationJson)) return;
 
-            JObject validation;
-            try { validation = JObject.Parse(question.ValidationJson); }
-            catch (JsonException) { return; }   // JSON corrupto: se publica sin restricciones
+            var validation = TryParse(question.ValidationJson);
+            if (validation == null) return;   // ausente o corrupto: se publica sin restricciones
 
             var extensions = new JArray();
             var isInteger = question.Type == QuestionType.Integer;

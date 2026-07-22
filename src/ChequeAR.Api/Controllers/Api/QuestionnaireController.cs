@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -116,7 +116,7 @@ namespace ChequeAR.Api.Controllers.Api
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             try
             {
-                var q = await _service.PublishAsync(id, body?.FhirJson, userId);
+                var q = await _service.PublishAsync(id, body?.FhirJson, userId, body?.ChangeNote);
                 return Ok(q);
             }
             catch (InvalidOperationException ex)
@@ -174,7 +174,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        public class PublishBody { public string FhirJson { get; set; } }
+        public class PublishBody { public string FhirJson { get; set; } public string ChangeNote { get; set; } }
         public class CloneBody { public string Title { get; set; } }
     }
 }

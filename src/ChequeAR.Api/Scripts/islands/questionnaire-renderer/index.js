@@ -64,6 +64,7 @@
                             unit: validation.unit,
                             min: validation.min,
                             max: validation.max,
+                            accept: validation.accept || 'image/jpeg,image/png,application/pdf',
                             options: options,
                             enableWhen: enableWhen
                         };
@@ -123,8 +124,16 @@
             function isVisible(q) {
                 if (!q.enableWhen) return true;
                 var v = answers[q.enableWhen.question];
-                if (q.enableWhen.op === '=') return v === q.enableWhen.value;
-                return true;
+                var expected = q.enableWhen.value;
+                switch (q.enableWhen.op) {
+                    case '=':  return v === expected;
+                    case '!=': return v !== expected;
+                    // Comparaciones numéricas: si todavía no hay respuesta, la condición no
+                    // se cumple (y la pregunta queda oculta) en vez de comparar contra NaN.
+                    case '>':  return v !== undefined && v !== '' && Number(v) > Number(expected);
+                    case '<':  return v !== undefined && v !== '' && Number(v) < Number(expected);
+                    default:   return true;
+                }
             }
 
             function validate(q, value) {
@@ -157,6 +166,35 @@
                 });
                 triggerAutosave();
             }
+
+            // Adjuntos: se sube primero contra /api/attachments (que valida tipo y tamaño)
+            // y la respuesta guarda el id devuelto, no el archivo.
+            var uploading = Vue.reactive({});
+            function onFile(q, file) {
+                if (!file) return;
+                if (!token()) { window.cqToast && window.cqToast('No hay sesión: no se puede subir.', 'error'); return; }
+                uploading[q.linkId] = true;
+                var form = new FormData();
+                form.append('file', file, file.name);
+                fetch('/api/attachments', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token() },   // sin Content-Type: lo pone FormData con su boundary
+                    body: form
+                }).then(function (r) {
+                    if (r.status === 415) throw new Error('formato no permitido');
+                    if (r.status === 413) throw new Error('el archivo supera el máximo permitido');
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(function (att) {
+                    onChange(q, { attachmentId: att.id, fileName: file.name, size: att.size });
+                }).catch(function (err) {
+                    errors[q.linkId] = 'No se pudo subir: ' + err.message;
+                }).then(function () {
+                    uploading[q.linkId] = false;
+                });
+            }
+
+            function clearFile(q) { onChange(q, ''); delete errors[q.linkId]; }
 
             // Opción múltiple: la respuesta es un array de opciones marcadas.
             function onToggleMulti(q, option, checked) {
@@ -194,10 +232,24 @@
 
             // Un valor del formulario -> la columna tipada que espera
             // QuestionnaireResponseItem en el backend.
-            function toItem(q) {
+            // Devuelve una LISTA porque una opción múltiple genera un item por opción
+            // marcada (linkId repetido), que es como FHIR modela las respuestas repetidas.
+            function toItems(q) {
                 var v = answers[q.linkId];
-                var item = { LinkId: q.linkId, QuestionType: q.type };
-                if (v === undefined || v === '' || v === null) return item;
+                var base = function () { return { LinkId: q.linkId, QuestionType: q.type }; };
+                if (v === undefined || v === '' || v === null) return [base()];
+
+                if (q.type === 'openChoice') {
+                    var selectedOpts = Array.isArray(v) ? v : [v];
+                    if (!selectedOpts.length) return [base()];
+                    return selectedOpts.map(function (opt) {
+                        var it = base();
+                        it.ValueCode = String(opt);
+                        return it;
+                    });
+                }
+
+                var item = base();
                 switch (q.type) {
                     case 'boolean':  item.ValueBoolean = !!v; break;
                     case 'integer':  item.ValueInteger = parseInt(v, 10); break;
@@ -205,11 +257,15 @@
                     case 'scale':    item.ValueDecimal = Number(v); break;
                     case 'date':
                     case 'dateTime': item.ValueDate = v; break;
-                    case 'choice':
-                    case 'openChoice': item.ValueCode = String(v); break;
+                    case 'choice':   item.ValueCode = String(v); break;
+                    // El adjunto se guarda por referencia: el archivo ya está subido.
+                    case 'attachment':
+                        item.AttachmentId = v.attachmentId;
+                        item.ValueString = v.fileName;
+                        break;
                     default:         item.ValueString = String(v); break;
                 }
-                return item;
+                return [item];
             }
 
             function submit() {
@@ -222,7 +278,7 @@
                         if (!isVisible(q)) return;
                         validate(q, answers[q.linkId]);
                         if (errors[q.linkId]) allErrors.push(q.text + ': ' + errors[q.linkId]);
-                        items.push(toItem(q));
+                        toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });
                 if (allErrors.length) {
@@ -276,6 +332,7 @@
                 savingState: savingState, submitting: submitting,
                 loading: loading, loadError: loadError,
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
+                onFile: onFile, clearFile: clearFile, uploading: uploading,
                 totalQuestions: totalQuestions, answeredCount: answeredCount,
                 submit: submit
             };
@@ -365,6 +422,19 @@
 \
                         <input v-else-if="q.type === \'dateTime\'" type="datetime-local" class="form-control" style="max-width:260px;"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
+\
+                        <div v-else-if="q.type === \'attachment\'">\
+                            <div v-if="answers[q.linkId] && answers[q.linkId].attachmentId" class="d-flex align-items-center gap-2">\
+                                <i class="bi bi-paperclip"></i>\
+                                <span class="cq-text-sm">{{ answers[q.linkId].fileName }}</span>\
+                                <button class="btn btn-sm btn-link text-danger" @click="clearFile(q)">Quitar</button>\
+                            </div>\
+                            <div v-else class="d-flex align-items-center gap-2">\
+                                <input type="file" class="form-control" style="max-width:340px;" :accept="q.accept"\
+                                       :disabled="uploading[q.linkId]" @change="onFile(q, $event.target.files[0])" />\
+                                <span v-if="uploading[q.linkId]" class="cq-spinner"></span>\
+                            </div>\
+                        </div>\
 \
                         <input v-else type="text" class="form-control" disabled placeholder="Tipo no soportado" />\
 \

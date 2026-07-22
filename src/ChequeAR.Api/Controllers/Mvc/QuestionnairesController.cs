@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -195,6 +195,26 @@ namespace ChequeAR.Api.Controllers.Mvc
                 view.Min = (decimal?)validation["min"];
                 view.Max = (decimal?)validation["max"];
                 view.Unit = (string)validation["unit"];
+                view.Accept = (string)validation["accept"];
+            }
+
+            var enableWhen = ParseValidation(qq.EnableWhenJson);
+            if (enableWhen != null && enableWhen["question"] != null)
+            {
+                view.EnableWhen = new EnableWhenView
+                {
+                    Question = (string)enableWhen["question"],
+                    Op = (string)enableWhen["op"] ?? "=",
+                    Value = ((JValue)enableWhen["value"])?.Value
+                };
+            }
+
+            var coding = ParseValidation(qq.CodingJson);
+            if (coding != null)
+            {
+                view.CodeSystem = (string)coding["system"];
+                view.Code = (string)coding["code"];
+                view.CodeDisplay = (string)coding["display"];
             }
             return view;
         }
@@ -269,7 +289,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Date = v.PublishedAt.ToString("yyyy-MM-dd"),
                         Author = v.PublishedBy,
                         Status = "published",
-                        ChangeNote = ""
+                        ChangeNote = v.ChangeNote
                     }).ToList();
                 return View(list);
             }
@@ -288,7 +308,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // fhirJson null => el service lo arma desde la base (ver FhirQuestionnaireBuilder).
             try
             {
-                await _svc.PublishAsync(id, null, userId);
+                await _svc.PublishAsync(id, null, userId, changeNote);
                 TempData["Toast"] = "Cuestionario publicado.";
                 TempData["ToastLevel"] = "success";
             }
