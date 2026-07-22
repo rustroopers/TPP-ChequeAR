@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -6,6 +6,7 @@ using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -35,6 +36,29 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
 
             var model = new PatientSearchViewModel { Query = q, HasSearched = !string.IsNullOrWhiteSpace(q) };
+
+            // Sólo se pueden cargar fichas de cuestionarios PUBLICADOS: un borrador no está
+            // habilitado para uso clínico y uno archivado ya no se usa.
+            try
+            {
+                var published = await _qRepo.SearchAsync(QuestionnaireStatus.Active, null, null, 0, 200);
+                foreach (var pq in published.OrderBy(x => x.Title))
+                {
+                    model.Questionnaires.Add(new SelectableQuestionnaire
+                    {
+                        Id = pq.Id,
+                        Title = pq.Title,
+                        Version = pq.Versions?.Count ?? 0,
+                        SpecialtyCode = pq.SpecialtyCode ?? "general",
+                        SpecialtyLabel = SpecialtyMap.Label(pq.SpecialtyCode, pq.SpecialtyDisplay)
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                ViewBag.DataError = ex.Message;
+            }
+
             if (!model.HasSearched) return View(model);
 
             try
@@ -47,7 +71,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         HC = h.HospitalId, FullName = h.FullName,
                         AgeLabel = h.AgeLabel,
                         SpecialtyCode = h.SpecialtyCode ?? "general",
-                        SpecialtyLabel = h.SpecialtyLabel ?? "General"
+                        SpecialtyLabel = SpecialtyMap.Label(h.SpecialtyCode, h.SpecialtyLabel)
                     });
                 }
             }
@@ -119,18 +143,20 @@ namespace ChequeAR.Api.Controllers.Mvc
                 };
 
                 // Respuestas: unir los items cargados con las preguntas del cuestionario.
+                // Un linkId puede repetirse (opción múltiple: un item por opción marcada),
+                // así que se agrupan y se muestran todas, no sólo la primera.
                 var itemsByLink = (qr.Items ?? new List<ChequeAR.Domain.Entities.QuestionnaireResponseItem>())
-                    .GroupBy(i => i.LinkId).ToDictionary(gr => gr.Key, gr => gr.First());
+                    .GroupBy(i => i.LinkId).ToDictionary(gr => gr.Key, gr => gr.ToList());
                 var answered = new QuestionGroupAnswered { Title = "Respuestas" };
                 var questions = (q?.Questions ?? new List<ChequeAR.Domain.Entities.Question>()).OrderBy(x => x.OrderIndex);
                 foreach (var question in questions)
                 {
-                    itemsByLink.TryGetValue(question.LinkId, out var item);
+                    itemsByLink.TryGetValue(question.LinkId ?? "", out var items);
                     answered.Questions.Add(new AnsweredQuestion
                     {
                         Text = question.Text,
-                        Answer = FormatAnswer(item),
-                        Prefilled = item?.WasPrefilled ?? false
+                        Answer = FormatAnswers(items),
+                        Prefilled = items != null && items.Any(i => i.WasPrefilled)
                     });
                 }
                 if (answered.Questions.Count > 0) model.Groups.Add(answered);
@@ -141,6 +167,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.DataError = ex.Message;
                 return base.View(new EncounterReadonlyViewModel { EncounterId = id });
             }
+        }
+
+        private static string FormatAnswers(List<ChequeAR.Domain.Entities.QuestionnaireResponseItem> items)
+        {
+            if (items == null || items.Count == 0) return "—";
+            var values = items.Select(FormatAnswer).Where(v => v != "—").ToList();
+            return values.Count > 0 ? string.Join(", ", values) : "—";
         }
 
         private static string FormatAnswer(ChequeAR.Domain.Entities.QuestionnaireResponseItem item)

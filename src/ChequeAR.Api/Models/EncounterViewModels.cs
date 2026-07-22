@@ -17,6 +17,17 @@ namespace ChequeAR.Api.Models
         public string Query { get; set; }
         public List<PatientSearchItem> Results { get; set; } = new List<PatientSearchItem>();
         public bool HasSearched { get; set; }
+        /// <summary>Cuestionarios publicados: son los únicos que se pueden cargar.</summary>
+        public List<SelectableQuestionnaire> Questionnaires { get; set; } = new List<SelectableQuestionnaire>();
+    }
+
+    public class SelectableQuestionnaire
+    {
+        public Guid Id { get; set; }
+        public string Title { get; set; }
+        public int Version { get; set; }
+        public string SpecialtyCode { get; set; }
+        public string SpecialtyLabel { get; set; }
     }
 
     public class EncounterTimelineItem

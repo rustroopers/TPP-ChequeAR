@@ -53,7 +53,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     {
                         Id = it.Id, Title = it.Title,
                         SpecialtyCode = it.SpecialtyCode ?? "general",
-                        SpecialtyLabel = it.SpecialtyDisplay ?? it.SpecialtyCode ?? "General",
+                        SpecialtyLabel = SpecialtyMap.Label(it.SpecialtyCode, it.SpecialtyDisplay),
                         Version = it.Versions?.Count ?? 0,
                         Status = QuestionnaireStatusMap.ToUi(it.Status),
                         UpdatedAt = it.UpdatedAt.ToString("yyyy-MM-dd"),
@@ -248,7 +248,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     Id = q.Id, Title = q.Title,
                     SpecialtyCode = q.SpecialtyCode ?? "general",
-                    SpecialtyLabel = q.SpecialtyDisplay ?? q.SpecialtyCode ?? "General",
+                    SpecialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay),
                     Version = q.Versions?.Count ?? 0,
                     Status = QuestionnaireStatusMap.ToUi(q.Status),
                     Author = q.CreatedBy,
