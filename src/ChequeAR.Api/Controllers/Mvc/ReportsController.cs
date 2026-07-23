@@ -8,6 +8,7 @@ using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Reports;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -16,11 +17,13 @@ namespace ChequeAR.Api.Controllers.Mvc
     {
         private readonly ISavedReportRepository _savedRepo;
         private readonly ReportExecutor _executor;
+        private readonly IQuestionnaireRepository _qRepo;
 
-        public ReportsController(ISavedReportRepository savedRepo, ReportExecutor executor)
+        public ReportsController(ISavedReportRepository savedRepo, ReportExecutor executor, IQuestionnaireRepository qRepo)
         {
             _savedRepo = savedRepo;
             _executor = executor;
+            _qRepo = qRepo;
         }
 
         // E1
@@ -36,14 +39,25 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportListViewModel();
             try
             {
-                var userId = User?.Identity?.Name ?? "anonymous";
+                // Misma identidad que estampa DevToken al emitir el bearer: sin login es
+                // "dev", con login el usuario real. Antes esta pantalla usaba "anonymous",
+                // así que nunca listaba los reportes que la API guardaba bajo "dev" —el
+                // listado salía siempre vacío aunque hubiera consultas guardadas.
+                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
+                    ? User.Identity.Name : "dev";
                 var saved = await _savedRepo.ListForUserAsync(userId, new string[0]);
+                // El titulo del cuestionario base, no su GUID. Se cachea porque varios
+                // reportes guardados suelen apuntar al mismo cuestionario.
+                var titles = new Dictionary<Guid, string>();
                 foreach (var r in saved)
                 {
+                    if (!titles.ContainsKey(r.QuestionnaireId))
+                        titles[r.QuestionnaireId] = (await _qRepo.GetAsync(r.QuestionnaireId))?.Title;
+
                     model.Items.Add(new SavedReportItem
                     {
                         Id = r.Id, Name = r.Name,
-                        QuestionnaireTitle = r.QuestionnaireId.ToString(),
+                        QuestionnaireTitle = titles[r.QuestionnaireId] ?? "(cuestionario eliminado)",
                         Author = r.CreatedBy,
                         LastUsedAt = r.UpdatedAt.ToString("yyyy-MM-dd")
                     });
@@ -100,11 +114,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                 model.Page = query.Page;
                 model.PageSize = query.PageSize;
 
+                // Formato ancho (una fila por ficha), igual que /api/reports/query. Antes esta
+                // pantalla usaba el resultado crudo y mostraba el formato largo: una fila por
+                // respuesta-pregunta, con columnas ResponseId/LinkId/ValueDecimal, y un Total
+                // inflado por el numero de preguntas.
                 var result = await _executor.ExecuteAsync(query);
                 model.Total = result.Total;
 
-                // Las columnas salen del propio resultset: el QueryBuilder ya
-                // proyecta solo lo que el reporte pidio.
                 if (result.Rows.Count > 0)
                     model.Columns = result.Rows[0].Keys.ToList();
 
@@ -127,7 +143,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // E5
-        public ActionResult Stats(Guid id)
+        public async Task<ActionResult> Stats(Guid id)
         {
             ViewBag.Title = "Estadísticas";
             ViewBag.PageId = "reports";
@@ -138,7 +154,29 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Reportes", Url.Action("Index")),
                 System.Tuple.Create("Estadísticas", (string)null)
             };
-            return View();
+
+            var model = new ReportStatsViewModel { ReportId = id };
+            try
+            {
+                var saved = await _savedRepo.GetAsync(id);
+                if (saved == null) return HttpNotFound();
+                model.ReportName = saved.Name;
+
+                // La query viaja a la isla tal cual, y la isla se la manda a /api/reports/stats:
+                // los numeros salen de los mismos filtros que la tabla, no de un id suelto.
+                var query = JsonConvert.DeserializeObject<ReportQuery>(saved.QueryJson ?? "{}") ?? new ReportQuery();
+                query.QuestionnaireId = saved.QuestionnaireId;
+                model.QueryJson = JsonConvert.SerializeObject(query, new JsonSerializerSettings
+                {
+                    ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                    NullValueHandling = NullValueHandling.Ignore
+                });
+            }
+            catch (Exception ex)
+            {
+                ViewBag.DataError = ex.Message;
+            }
+            return View(model);
         }
     }
 }

@@ -95,23 +95,73 @@
             }
 
 
-            function isVisible(q) {
-                if (!q.enableWhen) return true;
-                var v = answers[q.enableWhen.question];
-                var expected = q.enableWhen.value;
-                switch (q.enableWhen.op) {
-                    case '=':  return v === expected;
-                    case '!=': return v !== expected;
+            // --- Evaluación de condiciones (enableWhen) ---------------------------------
+            // La condición referencia otra pregunta y un valor esperado. Los dos lados
+            // pueden no tener la misma forma que un === estricto necesita, y cada
+            // desajuste dejaba la pregunta dependiente invisible para siempre:
+            //  - la respuesta de una opción múltiple es un array, no un valor suelto;
+            //  - los inputs de texto devuelven strings ("5") contra un valor esperado que
+            //    el recurso FHIR guarda tipado (answerInteger -> 5).
+            // Por eso la comparación se normaliza acá en vez de en cada operador.
+
+            /// Un valor del formulario contra el valor esperado de la condición.
+            function sameAnswer(actual, expected) {
+                if (actual === expected) return true;
+                if (typeof expected === 'number') {
+                    var n = parseNumeric(actual);
+                    return !isNaN(n) && n === expected;
+                }
+                return false;
+            }
+
+            function compareAnswer(op, actual, expected) {
+                switch (op) {
+                    case '=':  return sameAnswer(actual, expected);
+                    case '!=': return !sameAnswer(actual, expected);
                     // Comparaciones numéricas: si todavía no hay respuesta, la condición no
                     // se cumple (y la pregunta queda oculta) en vez de comparar contra NaN.
-                    case '>':  return v !== undefined && v !== '' && Number(v) > Number(expected);
-                    case '<':  return v !== undefined && v !== '' && Number(v) < Number(expected);
+                    case '>':  return actual !== undefined && actual !== '' && parseNumeric(actual) > Number(expected);
+                    case '<':  return actual !== undefined && actual !== '' && parseNumeric(actual) < Number(expected);
                     default:   return true;
                 }
             }
 
+            function isVisible(q) {
+                if (!q.enableWhen) return true;
+                var actual = answers[q.enableWhen.question];
+                var expected = q.enableWhen.value;
+
+                // FHIR R5: cuando la pregunta origen admite varias respuestas, la condición
+                // se cumple si ALGUNA de ellas la satisface. Un array sin nada marcado no
+                // satisface ninguna condición: equivale a no haber respondido.
+                if (Array.isArray(actual)) {
+                    return actual.some(function (one) {
+                        return compareAnswer(q.enableWhen.op, one, expected);
+                    });
+                }
+                return compareAnswer(q.enableWhen.op, actual, expected);
+            }
+
+            // Adjuntos que fallaron al subir, por linkId. Van aparte de `errors` porque
+            // validate() reescribe ese mapa entero: como la pregunta queda sin respuesta,
+            // el submit borraba el error y finalizaba la ficha sin el archivo.
+            var uploadErrors = Vue.reactive({});
+
+            // En es-AR el separador decimal es la coma. El input de decimales es de texto
+            // justamente para que la coma llegue hasta acá (un input[type=number] la
+            // descarta y entrega '', sin forma de saber qué se había tipeado).
+            function parseNumeric(value) {
+                if (value === undefined || value === null) return NaN;
+                var raw = String(value).trim().replace(',', '.');
+                if (raw === '') return NaN;
+                return Number(raw);
+            }
+
             function validate(q, value) {
                 if (!isVisible(q)) { delete errors[q.linkId]; return; }
+                // Una subida fallida bloquea antes que cualquier otra regla: la pregunta
+                // figura vacía, pero el problema no es que falte responder.
+                if (uploadErrors[q.linkId]) { errors[q.linkId] = uploadErrors[q.linkId]; return; }
                 // Una opción múltiple sin nada tildado llega como [], que no es '' ni null:
                 // sin este caso, una pregunta obligatoria vacía pasaba como respondida.
                 var vacio = value === undefined || value === '' || value === null
@@ -121,8 +171,10 @@
                     return;
                 }
                 if ((q.type === 'integer' || q.type === 'decimal') && value !== undefined && value !== '') {
-                    var n = Number(value);
+                    var n = parseNumeric(value);
                     if (isNaN(n)) { errors[q.linkId] = 'Debe ser un número'; return; }
+                    // parseInt() truncaba 1,8 a 1 sin avisar. Mejor pedir el valor entero.
+                    if (q.type === 'integer' && n !== Math.trunc(n)) { errors[q.linkId] = 'Debe ser un número entero'; return; }
                     if (q.min !== undefined && n < q.min) { errors[q.linkId] = 'Mín ' + q.min; return; }
                     if (q.max !== undefined && n > q.max) { errors[q.linkId] = 'Máx ' + q.max; return; }
                 }
@@ -147,6 +199,9 @@
             function onFile(q, file) {
                 if (!file) return;
                 if (!token()) { window.cqToast && window.cqToast('No hay sesión: no se puede subir.', 'error'); return; }
+                // Elegir otro archivo es el reintento: se limpia el bloqueo anterior.
+                delete uploadErrors[q.linkId];
+                delete errors[q.linkId];
                 uploading[q.linkId] = true;
                 var form = new FormData();
                 form.append('file', file, file.name);
@@ -162,13 +217,18 @@
                 }).then(function (att) {
                     onChange(q, { attachmentId: att.id, fileName: file.name, size: att.size });
                 }).catch(function (err) {
-                    errors[q.linkId] = 'No se pudo subir: ' + err.message;
+                    uploadErrors[q.linkId] = 'No se pudo subir: ' + err.message + '. Elegí el archivo de nuevo.';
+                    errors[q.linkId] = uploadErrors[q.linkId];
                 }).then(function () {
                     uploading[q.linkId] = false;
                 });
             }
 
-            function clearFile(q) { onChange(q, ''); delete errors[q.linkId]; }
+            function clearFile(q) {
+                delete uploadErrors[q.linkId];
+                onChange(q, '');
+                delete errors[q.linkId];
+            }
 
             // Opción múltiple: la respuesta es un array de opciones marcadas.
             function onToggleMulti(q, option, checked) {
@@ -226,9 +286,9 @@
                 var item = base();
                 switch (q.type) {
                     case 'boolean':  item.ValueBoolean = !!v; break;
-                    case 'integer':  item.ValueInteger = parseInt(v, 10); break;
+                    case 'integer':  item.ValueInteger = parseNumeric(v); break;
                     case 'decimal':
-                    case 'scale':    item.ValueDecimal = Number(v); break;
+                    case 'scale':    item.ValueDecimal = parseNumeric(v); break;
                     case 'date':
                     case 'dateTime': item.ValueDate = v; break;
                     case 'choice':   item.ValueCode = String(v); break;
@@ -373,7 +433,9 @@
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <div v-else-if="q.type === \'integer\' || q.type === \'decimal\'" class="input-group" style="max-width:260px;">\
-                            <input :type="q.type === \'integer\' ? \'number\' : \'number\'" :step="q.type === \'decimal\' ? \'0.1\' : \'1\'"\
+                            <input :type="q.type === \'integer\' ? \'number\' : \'text\'"\
+                                   :inputmode="q.type === \'integer\' ? \'numeric\' : \'decimal\'"\
+                                   :step="q.type === \'integer\' ? \'1\' : null"\
                                    class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                    :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
                             <span v-if="q.unit" class="input-group-text">{{ q.unit }}</span>\
@@ -436,8 +498,7 @@
                 </template>\
             </section>\
 \
-            <div class="d-flex justify-content-between border-top pt-3 mt-3">\
-                <button class="btn btn-outline-secondary"><i class="bi bi-save me-1"></i> Guardar borrador</button>\
+            <div class="d-flex justify-content-end border-top pt-3 mt-3">\
                 <button class="btn btn-primary" :disabled="submitting" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
             </div>\
         </div>\
