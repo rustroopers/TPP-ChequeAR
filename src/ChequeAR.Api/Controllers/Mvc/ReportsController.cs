@@ -39,7 +39,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportListViewModel();
             try
             {
-                var userId = User?.Identity?.Name ?? "anonymous";
+                // Misma identidad que estampa DevToken al emitir el bearer: sin login es
+                // "dev", con login el usuario real. Antes esta pantalla usaba "anonymous",
+                // así que nunca listaba los reportes que la API guardaba bajo "dev" —el
+                // listado salía siempre vacío aunque hubiera consultas guardadas.
+                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
+                    ? User.Identity.Name : "dev";
                 var saved = await _savedRepo.ListForUserAsync(userId, new string[0]);
                 // El titulo del cuestionario base, no su GUID. Se cachea porque varios
                 // reportes guardados suelen apuntar al mismo cuestionario.

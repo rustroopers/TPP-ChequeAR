@@ -43,6 +43,17 @@
             var exporting = Vue.ref(false);
             var error = Vue.ref(null);
 
+            // Consulta guardada. Si la pantalla se abrió con un id (editar), currentReportId
+            // arranca con ese valor y Guardar hace PUT; si no, el primer Guardar hace POST y
+            // recién ahí queda el id.
+            var currentReportId = Vue.ref(props.reportId || null);
+            var reportName = Vue.ref('');
+            var saving = Vue.ref(false);
+            var showSave = Vue.ref(false);
+            // Mientras se rehidrata una consulta guardada, el cambio programático de
+            // cuestionario NO debe limpiar los filtros que se están prefilleando.
+            var rehydrating = false;
+
             function toast(m, k) { if (window.cqToast) window.cqToast(m, k); }
 
             function opsFor(type) {
@@ -60,10 +71,13 @@
                 return questions.value.find(function (q) { return q.linkId === linkId; });
             }
 
+            // Devuelve una promesa: rehidratar una consulta guardada necesita esperar a que
+            // las preguntas estén cargadas antes de reconstruir los filtros (que las
+            // referencian por linkId). No limpia `filters`: de eso se encarga el watch.
             function loadQuestions(id) {
-                questions.value = []; filters.value = [];
-                if (!id) return;
-                fetch('/fhir/r5/Questionnaire/' + id, { headers: authHeaders() })
+                questions.value = [];
+                if (!id) return Promise.resolve();
+                return fetch('/fhir/r5/Questionnaire/' + id, { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
                     .then(function (q) {
                         var raw = q.Questions || q.questions || [];
@@ -82,18 +96,59 @@
                     .catch(function () { /* sin preguntas: se puede filtrar igual por fecha */ });
             }
 
+            // Rehidrata el editor desde una consulta guardada (flujo "Editar consulta").
+            function loadSavedReport(id) {
+                fetch('/api/reports/saved/' + id, { headers: authHeaders() })
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(function (rep) {
+                        reportName.value = rep.Name || rep.name || '';
+                        var query = {};
+                        try { query = JSON.parse(rep.QueryJson || rep.queryJson || '{}'); } catch (e) { query = {}; }
+
+                        rehydrating = true;
+                        selectedId.value = rep.QuestionnaireId || rep.questionnaireId || query.questionnaireId;
+                        loadQuestions(selectedId.value).then(function () {
+                            if (query.dateRange) {
+                                dateFrom.value = (query.dateRange.from || '').slice(0, 10);
+                                dateTo.value = (query.dateRange.to || '').slice(0, 10);
+                            }
+                            if (query.filters) {
+                                combineMode.value = query.filters.logic || 'AND';
+                                filters.value = (query.filters.predicates || []).map(function (p) {
+                                    var q = questionByLink(p.linkId);
+                                    // El select de un booleano espera el string 'true'/'false';
+                                    // guardado viene como bool.
+                                    var val = (q && q.type === 'boolean') ? String(p.value) : p.value;
+                                    return { linkId: p.linkId, op: p.op, value: val };
+                                });
+                            }
+                            rehydrating = false;
+                        });
+                    })
+                    .catch(function () { error.value = 'No se pudo cargar la consulta guardada.'; rehydrating = false; });
+            }
+
             Vue.onMounted(function () {
                 fetch('/fhir/r5/Questionnaire?_count=100', { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
                         var list = (data && data.entry) ? data.entry : [];
                         questionnaires.value = list.map(function (q) { return { id: q.Id || q.id, title: q.Title || q.title }; });
-                        if (questionnaires.value.length) { selectedId.value = questionnaires.value[0].id; }
+                        // Editar una consulta guardada manda su cuestionario; en ese caso no
+                        // se pisa con el primero de la lista.
+                        if (currentReportId.value) loadSavedReport(currentReportId.value);
+                        else if (questionnaires.value.length) selectedId.value = questionnaires.value[0].id;
                     })
                     .catch(function () { error.value = 'No se pudieron cargar los cuestionarios.'; });
             });
 
-            Vue.watch(selectedId, function (id) { loadQuestions(id); });
+            // Cambiar de cuestionario invalida los filtros (referencian preguntas de otro).
+            // Salvo durante la rehidratación, que los está reconstruyendo a propósito.
+            Vue.watch(selectedId, function (id) {
+                if (rehydrating) return;
+                filters.value = [];
+                loadQuestions(id);
+            });
 
             function addFilter() {
                 if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar', 'info'); return; }
@@ -153,6 +208,54 @@
                 window.dispatchEvent(new CustomEvent('cq:report-query', { detail: buildQuery() }));
             }
 
+            function openSave() {
+                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                showSave.value = true;
+            }
+
+            // Guarda la consulta (definicion, no resultados): el cuestionario base y los
+            // filtros/fechas actuales, para volver a correrla despues. Es POST la primera
+            // vez y PUT sobre la misma si ya existia. El backend solo deja actualizar al
+            // dueño (403 si no).
+            function saveReport() {
+                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                var name = (reportName.value || '').trim();
+                if (!name) { toast('Poné un nombre para la consulta', 'error'); return; }
+                if (saving.value) return;
+
+                saving.value = true;
+                var editing = !!currentReportId.value;
+                var body = {
+                    // scope 'private' fijo por ahora: compartir por especialidad depende del
+                    // login contra el hospital, que todavía no está cableado.
+                    name: name,
+                    scope: 'private',
+                    questionnaireId: selectedId.value,
+                    queryJson: JSON.stringify(buildQuery())
+                };
+                var url = editing ? '/api/reports/saved/' + currentReportId.value : '/api/reports/saved';
+                fetch(url, { method: editing ? 'PUT' : 'POST', headers: authHeaders(), body: JSON.stringify(body) })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json().catch(function () { return null; });
+                    })
+                    .then(function (saved) {
+                        if (saved && !editing) {
+                            var id = saved.Id || saved.id;
+                            if (id) {
+                                currentReportId.value = id;
+                                // Reflejar que ahora es una consulta existente (siguiente guardado = PUT).
+                                if (window.history && window.history.replaceState)
+                                    window.history.replaceState(null, '', '/Reports/Build/' + id);
+                            }
+                        }
+                        showSave.value = false;
+                        toast(editing ? 'Consulta actualizada' : 'Consulta guardada', 'success');
+                    })
+                    .catch(function (e) { toast('No se pudo guardar: ' + e.message, 'error'); })
+                    .then(function () { saving.value = false; });
+            }
+
             function exportFile(format, filename) {
                 if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
                 exporting.value = true;
@@ -176,6 +279,8 @@
                 rows: rows, columns: columns, total: total,
                 loading: loading, exporting: exporting, error: error,
                 stats: stats,
+                currentReportId: currentReportId, reportName: reportName,
+                saving: saving, showSave: showSave, openSave: openSave, saveReport: saveReport,
                 opsFor: opsFor, questionByLink: questionByLink,
                 addFilter: addFilter, removeFilter: removeFilter, onQuestionChange: onQuestionChange,
                 preview: preview,
@@ -245,11 +350,22 @@
             <span v-else>Previsualizá para ver los resultados.</span>\
         </div>\
         <div class="d-flex gap-2">\
+            <button class="btn btn-outline-secondary" @click="openSave"><i class="bi bi-bookmark me-1"></i> {{ currentReportId ? \'Guardar cambios\' : \'Guardar consulta\' }}</button>\
             <button class="btn btn-outline-secondary" @click="preview" :disabled="loading"><i class="bi bi-eye me-1"></i> {{ loading ? \'Cargando…\' : \'Previsualizar\' }}</button>\
             <button class="btn btn-outline-secondary" @click="stats"><i class="bi bi-graph-up me-1"></i> Estadísticas</button>\
             <button class="btn btn-outline-success" @click="exportCsv" :disabled="exporting"><i class="bi bi-filetype-csv me-1"></i> CSV</button>\
             <button class="btn btn-primary" @click="exportXlsx" :disabled="exporting"><i class="bi bi-file-earmark-excel me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar a Excel\' }}</button>\
         </div>\
+    </div>\
+\
+    <div v-if="showSave" class="cq-card mt-3 mb-0" style="border-left:3px solid var(--cq-primary);">\
+        <label class="form-label cq-text-sm">Nombre de la consulta</label>\
+        <div class="d-flex gap-2">\
+            <input v-model="reportName" class="form-control form-control-sm" style="max-width:360px;" placeholder="Ej: AIJ oligoarticular 2026" @keyup.enter="saveReport" />\
+            <button class="btn btn-sm btn-primary" @click="saveReport" :disabled="saving">{{ saving ? \'Guardando…\' : \'Guardar\' }}</button>\
+            <button class="btn btn-sm btn-link" @click="showSave = false">Cancelar</button>\
+        </div>\
+        <p class="cq-text-xs cq-text-muted mt-1 mb-0">Se guarda la definición (cuestionario y filtros), no los resultados. La podés volver a correr desde el listado de reportes.</p>\
     </div>\
 \
     <div v-if="error" class="alert alert-danger mt-3 mb-0">{{ error }}</div>\
