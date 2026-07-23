@@ -24,8 +24,8 @@ namespace ChequeAR.Application.Reports
 
         private const string Projection =
             "v.\"ResponseId\", v.\"PatientHospitalId\", v.\"AuthoredAt\", v.\"QuestionnaireVersion\", " +
-            "v.\"AuthorUserId\", v.\"LinkId\", v.\"ValueDecimal\", v.\"ValueString\", v.\"ValueDate\", " +
-            "v.\"ValueBoolean\", v.\"ValueCode\", v.\"ValueText\"";
+            "v.\"AuthorUserId\", v.\"LinkId\", v.\"ValueDecimal\", v.\"ValueInteger\", v.\"ValueString\", " +
+            "v.\"ValueDate\", v.\"ValueBoolean\", v.\"ValueCode\", v.\"ValueText\"";
 
         /// <param name="paginate">
         /// La previsualización pagina; la exportación no (si no, el archivo saldría cortado

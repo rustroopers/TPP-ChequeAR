@@ -94,6 +94,51 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(new[] { "Primera", "Segunda" }, cols.Select(c => c.Value));
         }
 
+        // Segun quien haya cargado la ficha, la respuesta guardo el codigo de la opcion o su
+        // texto. Sin normalizar, la misma categoria aparece como dos barras distintas.
+        [Fact]
+        public void LabelFor_CodigoYTextoLlevanALaMismaEtiqueta()
+        {
+            var schema = SchemaConOpciones("subtipo",
+                ("oligoarticular", "Oligoarticular"),
+                ("entesitis", "Entesitis"));
+
+            Assert.Equal("Oligoarticular", schema.LabelFor("subtipo", "oligoarticular"));
+            Assert.Equal("Oligoarticular", schema.LabelFor("subtipo", "Oligoarticular"));
+            Assert.Equal("Entesitis", schema.LabelFor("subtipo", "entesitis"));
+        }
+
+        // El seed slugificaba: 'Poliarticular FR+' y 'Poliarticular FR-' daban los dos
+        // 'poliarticular_fr_'. Resolver ese codigo a cualquiera de las dos etiquetas seria
+        // inventar la mitad de las veces, asi que se muestra crudo y el problema se ve.
+        [Fact]
+        public void LabelFor_CodigoAmbiguo_NoInventa()
+        {
+            var schema = SchemaConOpciones("subtipo",
+                ("poliarticular_fr_", "Poliarticular FR+"),
+                ("poliarticular_fr_", "Poliarticular FR-"));
+
+            Assert.Equal("poliarticular_fr_", schema.LabelFor("subtipo", "poliarticular_fr_"));
+        }
+
+        [Fact]
+        public void LabelFor_ValorDesconocido_PasaCrudo()
+        {
+            var schema = SchemaConOpciones("subtipo", ("a", "Alfa"));
+            Assert.Equal("otra cosa", schema.LabelFor("subtipo", "otra cosa"));
+        }
+
+        private static ReportSchema SchemaConOpciones(string linkId, params (string code, string display)[] opciones)
+        {
+            var q = new Questionnaire();
+            var pregunta = new Question { LinkId = linkId, Text = linkId, Type = QuestionType.Choice, OrderIndex = 0 };
+            var i = 0;
+            foreach (var (code, display) in opciones)
+                pregunta.Options.Add(new AnswerOption { Code = code, Value = display, Display = display, OrderIndex = i++ });
+            q.Questions.Add(pregunta);
+            return ReportSchema.From(q);
+        }
+
         internal static ReportSchema SchemaCon(params (string linkId, QuestionType tipo)[] preguntas)
         {
             var q = new Questionnaire();

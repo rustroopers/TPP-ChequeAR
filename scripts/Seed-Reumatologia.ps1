@@ -103,7 +103,13 @@ function New-Question {
     if ($Options) {
         $opts = @()
         $i = 0
-        foreach ($o in $Options) { $opts += [ordered]@{ value = $o; display = $o; code = ($o.ToLower() -replace '[^a-z0-9]+', '_'); orderIndex = $i }; $i++ }
+        # code = value = display, igual que lo que manda el editor de cuestionarios.
+        # Antes se generaba un slug (minusculas, no-alfanumerico -> '_') que perdia
+        # informacion y colisionaba: 'Poliarticular FR+' y 'Poliarticular FR-' daban los dos
+        # 'poliarticular_fr_', o sea dos subtipos clinicamente distintos bajo el mismo codigo,
+        # imposibles de separar en un reporte. Los acentos tambien se perdian
+        # ('Sistemica' -> 'sist_mica').
+        foreach ($o in $Options) { $opts += [ordered]@{ value = $o; display = $o; code = $o; orderIndex = $i }; $i++ }
         $q.options = $opts
     }
     return $q
@@ -207,7 +213,11 @@ function New-Item {
         'integer' { $it.valueInteger = [int]$Value }
         'decimal' { $it.valueDecimal = [decimal]$Value }
         'boolean' { $it.valueBoolean = [bool]$Value }
-        'choice'  { $it.valueString = [string]$Value; $it.valueCode = ($Value.ToLower() -replace '[^a-z0-9]+', '_') }
+        # El renderer guarda la opcion elegida tal cual en valueCode y no escribe
+        # valueString. El seed hacia las dos cosas y ademas slugificaba el codigo, asi que la
+        # misma categoria quedaba con dos etiquetas distintas segun quien hubiera cargado la
+        # ficha, y la distribucion de un reporte se partia en dos barras.
+        'choice'  { $it.valueCode = [string]$Value }
         default   { $it.valueString = [string]$Value }
     }
     return $it

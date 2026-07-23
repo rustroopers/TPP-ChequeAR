@@ -24,27 +24,75 @@ namespace ChequeAR.Application.Reports
     public class ReportSchema
     {
         private readonly Dictionary<string, QuestionType> _types;
+        // linkId -> (lo que quedó guardado en la respuesta -> etiqueta legible).
+        private readonly Dictionary<string, Dictionary<string, string>> _optionLabels;
 
         /// <summary>Pares (linkId, texto) en orden de pregunta, para pivotear a formato ancho.</summary>
         public IList<KeyValuePair<string, string>> Columns { get; }
 
-        private ReportSchema(Dictionary<string, QuestionType> types, IList<KeyValuePair<string, string>> columns)
+        private ReportSchema(Dictionary<string, QuestionType> types,
+                             IList<KeyValuePair<string, string>> columns,
+                             Dictionary<string, Dictionary<string, string>> optionLabels)
         {
             _types = types;
             Columns = columns;
+            _optionLabels = optionLabels;
         }
 
         public static ReportSchema From(Questionnaire q)
         {
             var types = new Dictionary<string, QuestionType>(StringComparer.OrdinalIgnoreCase);
             var columns = new List<KeyValuePair<string, string>>();
+            var labels = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var question in (q?.Questions ?? new List<Question>()).OrderBy(x => x.OrderIndex))
             {
                 if (string.IsNullOrWhiteSpace(question.LinkId)) continue;
                 types[question.LinkId] = question.Type;
                 columns.Add(new KeyValuePair<string, string>(question.LinkId, question.Text));
+                labels[question.LinkId] = BuildOptionLabels(question);
             }
-            return new ReportSchema(types, columns);
+            return new ReportSchema(types, columns, labels);
+        }
+
+        /// <summary>
+        /// Diccionario para volver de lo guardado en la respuesta a algo legible. Hace falta
+        /// porque no todas las respuestas guardan lo mismo: el editor manda code = value =
+        /// display (el texto), pero datos cargados por otras vías guardaron el código, así
+        /// que la misma categoría aparece con dos etiquetas y la distribución se parte en dos.
+        ///
+        /// Un código ambiguo —dos opciones distintas que comparten código— se deja afuera a
+        /// propósito: mapearlo a cualquiera de las dos etiquetas sería inventar la mitad de
+        /// las veces. Se muestra el valor crudo, que al menos delata el problema.
+        /// </summary>
+        private static Dictionary<string, string> BuildOptionLabels(Question question)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var ambiguos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var opt in question.Options ?? new List<AnswerOption>())
+            {
+                var display = opt.Display ?? opt.Value ?? opt.Code;
+                if (string.IsNullOrWhiteSpace(display)) continue;
+
+                foreach (var clave in new[] { opt.Code, opt.Value, opt.Display })
+                {
+                    if (string.IsNullOrWhiteSpace(clave)) continue;
+                    if (map.TryGetValue(clave, out var previo) && previo != display) ambiguos.Add(clave);
+                    else map[clave] = display;
+                }
+            }
+            foreach (var clave in ambiguos) map.Remove(clave);
+            return map;
+        }
+
+        /// <summary>Etiqueta legible de una respuesta de opción, o el valor crudo si no se puede resolver.</summary>
+        public string LabelFor(string linkId, string storedValue)
+        {
+            if (string.IsNullOrWhiteSpace(storedValue)) return storedValue;
+            if (_optionLabels.TryGetValue(linkId ?? "", out var map)
+                && map.TryGetValue(storedValue, out var display)) return display;
+            return storedValue;
         }
 
         public bool Knows(string linkId) =>

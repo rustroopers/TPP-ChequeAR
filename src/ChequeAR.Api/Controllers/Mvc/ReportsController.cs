@@ -8,6 +8,7 @@ using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Reports;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -137,7 +138,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // E5
-        public ActionResult Stats(Guid id)
+        public async Task<ActionResult> Stats(Guid id)
         {
             ViewBag.Title = "Estadísticas";
             ViewBag.PageId = "reports";
@@ -148,7 +149,29 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Reportes", Url.Action("Index")),
                 System.Tuple.Create("Estadísticas", (string)null)
             };
-            return View();
+
+            var model = new ReportStatsViewModel { ReportId = id };
+            try
+            {
+                var saved = await _savedRepo.GetAsync(id);
+                if (saved == null) return HttpNotFound();
+                model.ReportName = saved.Name;
+
+                // La query viaja a la isla tal cual, y la isla se la manda a /api/reports/stats:
+                // los numeros salen de los mismos filtros que la tabla, no de un id suelto.
+                var query = JsonConvert.DeserializeObject<ReportQuery>(saved.QueryJson ?? "{}") ?? new ReportQuery();
+                query.QuestionnaireId = saved.QuestionnaireId;
+                model.QueryJson = JsonConvert.SerializeObject(query, new JsonSerializerSettings
+                {
+                    ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                    NullValueHandling = NullValueHandling.Ignore
+                });
+            }
+            catch (Exception ex)
+            {
+                ViewBag.DataError = ex.Message;
+            }
+            return View(model);
         }
     }
 }

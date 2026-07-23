@@ -50,6 +50,25 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
+        /// <summary>
+        /// Estadísticas descriptivas de la cohorte filtrada (FR-008). Recibe la MISMA query
+        /// que /query: si recibiera sólo un id de cuestionario, los números no
+        /// corresponderían a los filtros que la persona tiene puestos en pantalla.
+        /// </summary>
+        [HttpPost, Route("stats"), Authorize]
+        public async Task<IHttpActionResult> Stats([FromBody] ReportQuery query)
+        {
+            if (query == null) return BadRequest("body required");
+            try
+            {
+                return Ok(await _executor.ExecuteStatsAsync(query));
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         [HttpPost, Route("export"), Authorize]
         public async Task<HttpResponseMessage> Export([FromBody] ReportQuery query)
         {

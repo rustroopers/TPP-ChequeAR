@@ -36,7 +36,31 @@ namespace ChequeAR.Application.Reports
         /// <summary>La cohorte completa, para exportar. Sin paginar, con tope.</summary>
         public Task<ReportResult> ExecuteAllAsync(ReportQuery q) => RunAsync(q, paginate: false);
 
+        /// <summary>
+        /// Estadísticas descriptivas de la cohorte (FR-008). Va sin paginar: una media
+        /// calculada sobre la primera página no es la media de la cohorte.
+        /// </summary>
+        public async Task<ReportStats> ExecuteStatsAsync(ReportQuery q)
+        {
+            var raw = await RunRawAsync(q, paginate: false);
+            return StatsCalculator.Compute(
+                new ReportResult { Rows = raw.Rows, Total = raw.Rows.Count },
+                raw.Schema,
+                raw.TotalResponses);
+        }
+
         private async Task<ReportResult> RunAsync(ReportQuery q, bool paginate)
+        {
+            var raw = await RunRawAsync(q, paginate);
+            var wide = ReportPivot.ToWide(
+                new ReportResult { Rows = raw.Rows, Total = raw.Rows.Count }, raw.Schema.Columns);
+            // El total de la cohorte, no el de la página traída.
+            wide.Total = raw.TotalResponses;
+            return wide;
+        }
+
+        /// <summary>Filas en formato largo + el total real de fichas + la metadata usada.</summary>
+        private async Task<RawResult> RunRawAsync(ReportQuery q, bool paginate)
         {
             // La metadata del cuestionario decide de qué tipo es cada pregunta (y por lo
             // tanto qué columna consultar) y qué columnas tiene el reporte. Es lo que hace
@@ -87,10 +111,14 @@ namespace ChequeAR.Application.Reports
                 }
             }
 
-            var wide = ReportPivot.ToWide(new ReportResult { Rows = rows, Total = rows.Count }, schema.Columns);
-            // El total de la cohorte, no el de la página traída.
-            wide.Total = totalResponses;
-            return wide;
+            return new RawResult { Rows = rows, TotalResponses = totalResponses, Schema = schema };
+        }
+
+        private class RawResult
+        {
+            public List<Dictionary<string, object>> Rows { get; set; }
+            public int TotalResponses { get; set; }
+            public ReportSchema Schema { get; set; }
         }
 
         /// <summary>

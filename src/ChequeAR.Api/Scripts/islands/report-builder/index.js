@@ -145,6 +145,14 @@
                     .then(function () { loading.value = false; });
             }
 
+            // Estadisticas de la cohorte ACTUAL. Se le pasa la misma query que a
+            // /query: pedirlas por id de cuestionario daria numeros que no corresponden a
+            // los filtros que la persona tiene puestos en pantalla.
+            function stats() {
+                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                window.dispatchEvent(new CustomEvent('cq:report-query', { detail: buildQuery() }));
+            }
+
             function exportFile(format, filename) {
                 if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
                 exporting.value = true;
@@ -167,6 +175,7 @@
                 dateFrom: dateFrom, dateTo: dateTo,
                 rows: rows, columns: columns, total: total,
                 loading: loading, exporting: exporting, error: error,
+                stats: stats,
                 opsFor: opsFor, questionByLink: questionByLink,
                 addFilter: addFilter, removeFilter: removeFilter, onQuestionChange: onQuestionChange,
                 preview: preview,
@@ -237,6 +246,7 @@
         </div>\
         <div class="d-flex gap-2">\
             <button class="btn btn-outline-secondary" @click="preview" :disabled="loading"><i class="bi bi-eye me-1"></i> {{ loading ? \'Cargando…\' : \'Previsualizar\' }}</button>\
+            <button class="btn btn-outline-secondary" @click="stats"><i class="bi bi-graph-up me-1"></i> Estadísticas</button>\
             <button class="btn btn-outline-success" @click="exportCsv" :disabled="exporting"><i class="bi bi-filetype-csv me-1"></i> CSV</button>\
             <button class="btn btn-primary" @click="exportXlsx" :disabled="exporting"><i class="bi bi-file-earmark-excel me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar a Excel\' }}</button>\
         </div>\
