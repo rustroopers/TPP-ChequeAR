@@ -90,6 +90,9 @@
             // --- Lógica condicional (enableWhen) -------------------------------------
             // Solo se puede condicionar contra preguntas ANTERIORES: al responder, el
             // valor de una pregunta posterior todavía no existe, y además evita ciclos.
+            // Una opción múltiple sirve como origen: el renderer evalúa la condición
+            // contra el conjunto de opciones marcadas ("si alguna es X"), como pide
+            // FHIR R5 para preguntas con varias respuestas.
             var conditionSources = Vue.computed(function () {
                 if (!selected.value) return [];
                 var list = [];
@@ -97,7 +100,9 @@
                 groups.value.forEach(function (g) {
                     g.questions.forEach(function (q) {
                         if (q === selected.value.question) { reached = true; return; }
-                        if (!reached && q.linkId) list.push(q);
+                        // Un adjunto queda afuera: su respuesta es una referencia al archivo
+                        // subido, no un valor comparable contra nada.
+                        if (!reached && q.linkId && q.type !== 'attachment') list.push(q);
                     });
                 });
                 return list;
@@ -133,6 +138,109 @@
                 else q.enableWhen.value = raw;
                 dirty.value = true;
             }
+            // --- Integridad referencial de las condiciones ----------------------------
+            // Una condición referencia otra pregunta por linkId. Si esa pregunta se borra,
+            // o cambia a un tipo que ya no puede producir el valor esperado, la referencia
+            // queda incoherente: el renderer no logra satisfacerla nunca y la pregunta
+            // dependiente desaparece del formulario sin que nadie se entere.
+            //
+            // Toda operación que borre o mute preguntas pasa por estas funciones, así el
+            // árbol no puede llegar a guardarse en ese estado. Una operación nueva (mover,
+            // importar, pegar una sección) sólo tiene que llamarlas: la regla vive en un
+            // único lugar en vez de repetirse en cada handler.
+
+            function allQuestions() {
+                var out = [];
+                groups.value.forEach(function (g) {
+                    g.questions.forEach(function (q) { out.push(q); });
+                });
+                return out;
+            }
+
+            /// Preguntas cuya condición depende de alguno de los linkId dados.
+            /// `exclude` deja afuera preguntas que están por desaparecer igual (borrar una
+            /// sección entera no debería reportar sus propias condiciones internas).
+            function dependentsOf(linkIds, exclude) {
+                exclude = exclude || [];
+                return allQuestions().filter(function (q) {
+                    return q.enableWhen
+                        && linkIds.indexOf(q.enableWhen.question) >= 0
+                        && exclude.indexOf(q) < 0;
+                });
+            }
+
+            /// Deja esas preguntas siempre visibles y lo informa. El aviso no es opcional:
+            /// perder una condición sin enterarse es exactamente el problema que esta capa
+            /// viene a resolver.
+            function dropConditions(questions, motivo) {
+                if (!questions.length) return;
+                questions.forEach(function (q) { q.enableWhen = undefined; });
+                toast((questions.length === 1
+                    ? '"' + questions[0].text + '" quedó siempre visible'
+                    : questions.length + ' preguntas quedaron siempre visibles') + ': ' + motivo, 'warning');
+                dirty.value = true;
+            }
+
+            /// Familia de valor que produce cada tipo al responderse. Cambiar de tipo
+            /// dentro de la misma familia no invalida una condición existente; cambiar de
+            /// familia sí, porque el valor esperado guardado deja de ser comparable.
+            function answerKind(type) {
+                if (type === 'boolean') return 'boolean';
+                if (['integer', 'decimal', 'scale'].indexOf(type) >= 0) return 'number';
+                if (['choice', 'openChoice'].indexOf(type) >= 0) return 'choice';
+                if (type === 'attachment') return 'attachment';   // no comparable: familia propia
+                return 'text';
+            }
+
+            function onTypeChange(newType) {
+                var q = selected.value.question;
+                var previo = q.type;
+                if (!newType || newType === previo) return;
+                q.type = newType;
+
+                // Las opciones pertenecen a los tipos de opción. Si quedan colgadas al
+                // salir de esa familia, buildPayload las sigue mandando y el cuestionario
+                // se publica con answerOption en una pregunta de texto.
+                if (answerKind(newType) === 'choice') {
+                    if (!(q.options && q.options.length)) {
+                        q.options = ['Opción 1', 'Opción 2'];
+                        q.optionsText = q.options.join('\n');
+                    }
+                } else if (answerKind(previo) === 'choice') {
+                    q.options = undefined;
+                    q.optionsText = '';
+                }
+
+                if (answerKind(newType) !== answerKind(previo)) {
+                    dropConditions(dependentsOf([q.linkId]),
+                        'dependían de "' + q.text + '", que cambió de tipo');
+                }
+                dirty.value = true;
+            }
+
+            // Condiciones ya rotas en lo que vino de la base: el árbol pudo haberse
+            // guardado así antes de que existiera esta capa. Se listan en un cartel en vez
+            // de arreglarse solas, porque tocar datos que la persona no editó en esta
+            // sesión no es una decisión del editor.
+            // Cualquier chequeo estructural nuevo se cuelga de esta lista.
+            var issues = Vue.computed(function () {
+                var known = {};
+                allQuestions().forEach(function (q) { if (q.linkId) known[q.linkId] = true; });
+                return allQuestions()
+                    .filter(function (q) {
+                        return q.enableWhen && q.enableWhen.question && !known[q.enableWhen.question];
+                    })
+                    .map(function (q) {
+                        return { question: q, detail: '"' + q.text + '" depende de una pregunta que ya no existe: nunca se va a mostrar.' };
+                    });
+            });
+
+            function fixIssues() {
+                dropConditions(
+                    issues.value.map(function (i) { return i.question; }),
+                    'la pregunta de la que dependían ya no existe');
+            }
+
             function addGroup() {
                 groups.value.push({ title: 'Nueva sección', questions: [] });
                 dirty.value = true;
@@ -150,11 +258,17 @@
                 dirty.value = true;
             }
             function removeQuestion(g, q) {
+                dropConditions(dependentsOf([q.linkId], [q]),
+                    'dependían de "' + q.text + '", que se eliminó');
                 g.questions = g.questions.filter(function (x) { return x !== q; });
                 if (selected.value && selected.value.question === q) selected.value = null;
                 dirty.value = true;
             }
             function removeGroup(g) {
+                var borradas = g.questions.slice();
+                dropConditions(
+                    dependentsOf(borradas.map(function (q) { return q.linkId; }), borradas),
+                    'dependían de preguntas de "' + g.title + '", que se eliminó');
                 groups.value = groups.value.filter(function (x) { return x !== g; });
                 if (selected.value && selected.value.group === g) selected.value = null;
                 dirty.value = true;
@@ -323,6 +437,13 @@
                     toast('Resolvé el conflicto de edición antes de publicar.', 'error');
                     return;
                 }
+                // Publicar congela la estructura para los clínicos: una condición rota se
+                // vuelve una pregunta que nadie va a poder ver, y ya no hay forma de
+                // corregir esa versión.
+                if (issues.value.length) {
+                    toast('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes. Resolvelas antes de publicar.', 'error');
+                    return;
+                }
                 var token = getToken();
                 if (!token) { toast('No hay sesión: no se puede publicar (token ausente).', 'error'); return; }
 
@@ -358,12 +479,17 @@
             //  - uno nuevo se guarda a mano la primera vez, para no crear duplicados;
             //  - uno publicado no se autoguarda nunca (ver isPublished).
             var debounce;
-            Vue.watch(groups, function () {
+            function markDirty() {
                 dirty.value = true;
                 if (isNew.value || isPublished.value || conflict.value) return;
                 clearTimeout(debounce);
                 debounce = setTimeout(save, 2000);
-            }, { deep: true });
+            }
+            Vue.watch(groups, markDirty, { deep: true });
+            // Título y especialidad viven fuera de `groups`: sin este watcher, editar sólo
+            // la cabecera no marcaba nada como sucio, así que no se autoguardaba y
+            // beforeunload dejaba salir de la página perdiendo el cambio en silencio.
+            Vue.watch([qTitle, specialtyCode], markDirty);
 
             // Sin autosave en publicados, salir de la página con cambios pendientes los
             // perdía en silencio. El navegador pide confirmación.
@@ -398,8 +524,10 @@
                 qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
                 isPublished: isPublished, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
+                issues: issues, fixIssues: fixIssues,
                 conditionSources: conditionSources, conditionSource: conditionSource,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
+                onTypeChange: onTypeChange,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit
             };
@@ -413,6 +541,18 @@
             <div class="cq-text-sm"><strong>Otra persona guardó cambios mientras editabas.</strong></div>\
             <div class="cq-text-sm cq-text-muted">Tus cambios NO se guardaron, y los de la otra persona siguen intactos. No hay forma automática de combinar las dos versiones, así que tenés que elegir: anotá lo tuyo y volvé a cargar, o abrí el cuestionario en otra pestaña para comparar.</div>\
             <button class="btn btn-sm btn-danger mt-2" @click="reloadFromServer"><i class="bi bi-arrow-clockwise me-1"></i> Descartar lo mío y recargar</button>\
+        </div>\
+    </div>\
+</div>\
+<div v-if="issues.length" class="cq-card mb-2" style="border-left:3px solid var(--cq-warning);">\
+    <div class="d-flex align-items-start gap-2">\
+        <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
+        <div class="flex-fill">\
+            <div class="cq-text-sm"><strong>Hay condiciones que apuntan a preguntas que ya no existen.</strong></div>\
+            <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
+                <li v-for="(i, ix) in issues" :key="ix">{{ i.detail }}</li>\
+            </ul>\
+            <button class="btn btn-sm btn-outline-secondary mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Dejarlas siempre visibles</button>\
         </div>\
     </div>\
 </div>\
@@ -492,7 +632,7 @@
             </div>\
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Tipo</label>\
-                <select v-model="selected.question.type" class="form-select form-select-sm">\
+                <select :value="selected.question.type" @change="onTypeChange($event.target.value)" class="form-select form-select-sm">\
                     <option v-for="t in types" :key="t.code" :value="t.code">{{ t.label }}</option>\
                 </select>\
             </div>\
