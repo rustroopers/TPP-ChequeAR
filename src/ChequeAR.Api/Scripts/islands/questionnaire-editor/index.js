@@ -241,6 +241,96 @@
                     'la pregunta de la que dependían ya no existe');
             }
 
+            // --- Reordenar por drag & drop (sin dependencias) -------------------------
+            // buildPayload deriva orderIndex de la posición en el arreglo, así que reordenar
+            // el arreglo alcanza: al guardar, el orden nuevo queda persistido. Se usa el
+            // drag nativo de HTML5 en vez de sumar SortableJS: la app ya carga librerías de
+            // un CDN y eso es una deuda abierta; no hace falta agregar una más para mover
+            // filas de una lista.
+            var drag = Vue.ref(null);       // { type:'question'|'group', group, question }
+            var dropTarget = Vue.ref(null); // objeto (pregunta o sección) resaltado al pasar por encima
+
+            function onQuestionDragStart(g, q, ev) {
+                drag.value = { type: 'question', group: g, question: q };
+                if (ev.dataTransfer) {
+                    ev.dataTransfer.effectAllowed = 'move';
+                    try { ev.dataTransfer.setData('text/plain', q.linkId); } catch (e) { /* IE */ }
+                }
+            }
+            function onGroupDragStart(g, ev) {
+                drag.value = { type: 'group', group: g };
+                if (ev.dataTransfer) {
+                    ev.dataTransfer.effectAllowed = 'move';
+                    try { ev.dataTransfer.setData('text/plain', g.title); } catch (e) { /* IE */ }
+                }
+            }
+            function onDragEnd() { drag.value = null; dropTarget.value = null; }
+
+            function onQuestionDragOver(q) {
+                if (drag.value && drag.value.type === 'question') dropTarget.value = q;
+            }
+            function onGroupDragOver(g) {
+                if (drag.value && drag.value.type === 'group') dropTarget.value = g;
+            }
+
+            // Soltar una pregunta ANTES de la pregunta objetivo. Sirve entre secciones:
+            // sacar de la de origen e insertar en la de destino.
+            function onQuestionDrop(targetGroup, targetQuestion) {
+                var d = drag.value;
+                if (!d || d.type !== 'question' || d.question === targetQuestion) { onDragEnd(); return; }
+                var moving = d.question;
+                d.group.questions = d.group.questions.filter(function (x) { return x !== moving; });
+                var idx = targetGroup.questions.indexOf(targetQuestion);
+                targetGroup.questions.splice(idx < 0 ? targetGroup.questions.length : idx, 0, moving);
+                afterReorder();
+                onDragEnd();
+            }
+            // Soltar una pregunta en una sección (al final): cubre secciones vacías y el
+            // hueco debajo de la última pregunta.
+            function onSectionDrop(targetGroup) {
+                var d = drag.value;
+                if (!d) { onDragEnd(); return; }
+                if (d.type === 'group') { onGroupDrop(targetGroup); return; }
+                if (d.type === 'question') {
+                    var moving = d.question;
+                    d.group.questions = d.group.questions.filter(function (x) { return x !== moving; });
+                    targetGroup.questions.push(moving);
+                    afterReorder();
+                }
+                onDragEnd();
+            }
+            // Soltar una sección: se inserta antes de la sección objetivo.
+            function onGroupDrop(targetGroup) {
+                var d = drag.value;
+                if (!d || d.type !== 'group' || d.group === targetGroup) { onDragEnd(); return; }
+                groups.value = groups.value.filter(function (x) { return x !== d.group; });
+                var idx = groups.value.indexOf(targetGroup);
+                groups.value.splice(idx < 0 ? groups.value.length : idx, 0, d.group);
+                afterReorder();
+                onDragEnd();
+            }
+
+            function afterReorder() {
+                dirty.value = true;
+                enforceConditionOrder();
+            }
+
+            // Una condición sólo puede apuntar a una pregunta ANTERIOR: al responder, el
+            // valor de una posterior todavía no existe. Reordenar puede dejar la fuente
+            // después de la dependiente; ahí la condición no se cumple nunca y la pregunta
+            // desaparece del formulario. Misma respuesta que el resto de la capa: se libera
+            // la condición y se avisa.
+            function enforceConditionOrder() {
+                var pos = {};
+                allQuestions().forEach(function (q, i) { if (q.linkId) pos[q.linkId] = i; });
+                var rotas = allQuestions().filter(function (q, i) {
+                    return q.enableWhen && q.enableWhen.question
+                        && pos[q.enableWhen.question] !== undefined
+                        && pos[q.enableWhen.question] >= i;
+                });
+                dropConditions(rotas, 'la pregunta de la que dependían quedó después al reordenar');
+            }
+
             function addGroup() {
                 groups.value.push({ title: 'Nueva sección', questions: [] });
                 dirty.value = true;
@@ -529,7 +619,11 @@
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 onTypeChange: onTypeChange,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
-                removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit
+                removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
+                drag: drag, dropTarget: dropTarget,
+                onQuestionDragStart: onQuestionDragStart, onGroupDragStart: onGroupDragStart,
+                onDragEnd: onDragEnd, onQuestionDragOver: onQuestionDragOver, onGroupDragOver: onGroupDragOver,
+                onQuestionDrop: onQuestionDrop, onSectionDrop: onSectionDrop
             };
         },
         template: '\
@@ -596,17 +690,27 @@
             <span class="cq-text-xs" style="color:var(--cq-warning);" v-if="dirty">Cambios sin guardar</span>\
             <span class="cq-text-xs cq-text-muted" v-else-if="lastSaved">Guardado {{ lastSaved }}</span>\
         </div>\
-        <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2">\
+        <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2"\
+             @dragover.prevent="onGroupDragOver(g)" @drop.prevent="onSectionDrop(g)"\
+             :style="{ outline: (dropTarget === g && drag && drag.type === \'group\') ? \'2px dashed var(--cq-primary)\' : \'none\' }">\
             <div class="d-flex align-items-center gap-2 mb-2">\
+                <i class="bi bi-grip-vertical cq-text-muted" style="cursor:grab;" draggable="true"\
+                   @dragstart="onGroupDragStart(g, $event)" @dragend="onDragEnd"\
+                   :aria-label="\'Arrastrar para reordenar la sección \' + g.title" title="Arrastrar para reordenar la sección"></i>\
                 <i class="bi bi-folder text-primary"></i>\
-                <input v-model="g.title" class="form-control form-control-sm fw-semibold" style="max-width:340px;" />\
+                <input v-model="g.title" class="form-control form-control-sm fw-semibold" style="max-width:320px;" />\
                 <span class="cq-text-xs cq-text-muted">{{ g.questions.length }} preguntas</span>\
                 <button class="btn btn-sm btn-link text-danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title"><i class="bi bi-trash"></i></button>\
             </div>\
             <ul class="list-unstyled mb-2">\
                 <li v-for="q in g.questions" :key="q.linkId"\
+                    draggable="true"\
+                    @dragstart.stop="onQuestionDragStart(g, q, $event)"\
+                    @dragover.prevent.stop="onQuestionDragOver(q)"\
+                    @drop.prevent.stop="onQuestionDrop(g, q)"\
+                    @dragend="onDragEnd"\
                     class="d-flex align-items-center gap-2 py-1 px-2"\
-                    :style="{ borderRadius: \'6px\', cursor: \'pointer\', background: selected && selected.question === q ? \'var(--cq-primary-100)\' : \'transparent\' }"\
+                    :style="{ borderRadius: \'6px\', cursor: \'pointer\', background: selected && selected.question === q ? \'var(--cq-primary-100)\' : \'transparent\', borderTop: (dropTarget === q && drag && drag.type === \'question\') ? \'2px solid var(--cq-primary)\' : \'2px solid transparent\' }"\
                     @click="selectQuestion(g, q)">\
                     <i class="bi bi-grip-vertical cq-text-muted" style="cursor:grab;"></i>\
                     <span class="cq-text-sm flex-fill">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.type }}{{ q.required ? \'*\' : \'\' }})</span></span>\
