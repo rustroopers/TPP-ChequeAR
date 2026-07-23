@@ -20,6 +20,7 @@ namespace ChequeAR.Application.Fhir
         private const string MaxValueUrl = "http://hl7.org/fhir/StructureDefinition/maxValue";
         private const string UnitUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit";
         private const string MimeTypeUrl = "http://hl7.org/fhir/StructureDefinition/mimeType";
+        private const string RegexUrl = "http://hl7.org/fhir/StructureDefinition/regex";
         private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
 
         public static RenderableQuestionnaire Read(string fhirJson)
@@ -71,7 +72,9 @@ namespace ChequeAR.Application.Fhir
                 LinkId = (string)item["linkId"],
                 Text = (string)item["text"],
                 Type = ReadType(item),
-                Required = (bool?)item["required"] ?? false
+                Required = (bool?)item["required"] ?? false,
+                // maxLength es un campo nativo del item, no una extensión.
+                MaxLength = (int?)item["maxLength"]
             };
 
             foreach (var ext in (item["extension"] as JArray) ?? new JArray())
@@ -82,6 +85,7 @@ namespace ChequeAR.Application.Fhir
                     case MaxValueUrl: question.Max = NumericValue(ext); break;
                     case UnitUrl: question.Unit = (string)ext.SelectToken("valueCoding.code"); break;
                     case MimeTypeUrl: question.Accept = (string)ext["valueCode"]; break;
+                    case RegexUrl: question.Pattern = (string)ext["valueString"]; break;
                 }
             }
 
@@ -163,6 +167,8 @@ namespace ChequeAR.Application.Fhir
         public bool Required { get; set; }
         public decimal? Min { get; set; }
         public decimal? Max { get; set; }
+        public int? MaxLength { get; set; }
+        public string Pattern { get; set; }
         public string Unit { get; set; }
         public string Accept { get; set; }
         public List<string> Options { get; set; } = new List<string>();

@@ -129,6 +129,37 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(expected, (string)FirstItem(FhirQuestionnaireBuilder.Build(q, 1))["type"]);
         }
 
+        // Largo máximo de un texto: maxLength es un campo NATIVO del item FHIR, no una
+        // extensión. Y el patrón regex viaja como extensión estándar. Round-trip completo:
+        // lo que emite el builder lo tiene que volver a leer el reader.
+        [Fact]
+        public void Build_TextValidation_MaxLengthIsNative_PatternIsExtension()
+        {
+            var q = WithQuestion(new Question
+            {
+                LinkId = "dni",
+                Text = "DNI",
+                Type = QuestionType.String,
+                ValidationJson = "{\"maxLength\":8,\"pattern\":\"^[0-9]{7,8}$\"}"
+            });
+
+            var json = FhirQuestionnaireBuilder.Build(q, 1);
+            var item = FirstItem(json);
+
+            Assert.Equal(8, (int)item["maxLength"]);
+            Assert.Contains((JArray)item["extension"],
+                e => (string)e["url"] == "http://hl7.org/fhir/StructureDefinition/regex"
+                  && (string)e["valueString"] == "^[0-9]{7,8}$");
+
+            // Reader: el ida y vuelta conserva ambos.
+            var back = FhirQuestionnaireReader.Read(json).Groups.Count > 0
+                ? FhirQuestionnaireReader.Read(json).Groups[0].Questions[0]
+                : null;
+            Assert.NotNull(back);
+            Assert.Equal(8, back.MaxLength);
+            Assert.Equal("^[0-9]{7,8}$", back.Pattern);
+        }
+
         private static Questionnaire WithQuestion(Question question)
         {
             var q = new Questionnaire { Id = Guid.NewGuid(), Title = "Test" };
