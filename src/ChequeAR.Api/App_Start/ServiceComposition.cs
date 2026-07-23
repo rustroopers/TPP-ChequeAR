@@ -35,6 +35,7 @@ namespace ChequeAR.Api.App_Start
         private static JwtIssuer _jwt;
         private static System.Net.Http.HttpClient _fhirHttp;
         private static System.Net.Http.HttpClient _authHttp;
+        private static System.Net.Http.HttpClient _termHttp;
 
         public static void Configure()
         {
@@ -47,6 +48,12 @@ namespace ChequeAR.Api.App_Start
 
             var hospitalAuthUrl = ConfigurationManager.AppSettings["HospitalAuth:LoginUrl"] ?? "";
             var hospitalFhirUrl = ConfigurationManager.AppSettings["HospitalFhir:BaseUrl"] ?? "";
+            // Servidor terminológico SNOMED CT (Snowstorm). Vacío en config => el endpoint
+            // de autocomplete responde 503 sin romper el resto de la app. ECL opcional acota
+            // el dominio de sugerencias; displayLanguage por defecto 'es'.
+            var terminologyUrl = ConfigurationManager.AppSettings["Terminology:BaseUrl"] ?? "";
+            var terminologyEcl = ConfigurationManager.AppSettings["Terminology:Ecl"] ?? "";
+            var terminologyLang = ConfigurationManager.AppSettings["Terminology:DisplayLanguage"] ?? "es";
             var oracleConn = ConfigurationManager.AppSettings["Oracle:ConnectionString"] ?? "";
             var attachmentsRoot = ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments";
             var sqlConn = ConfigurationManager.ConnectionStrings["ChequeAR"]?.ConnectionString ?? "";
@@ -57,6 +64,9 @@ namespace ChequeAR.Api.App_Start
             // Los clients NO mutan estas instancias (evita InvalidOperationException).
             _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             _authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            // El terminológico puede ser un server externo (más lento que el hospital local):
+            // le damos algo más de aire.
+            _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
 
             // AuditDispatcher requiere repo; usamos una factory que crea su propio contexto.
             _audit = new AuditDispatcher(NewAuditRepository(), 1000);
@@ -73,6 +83,7 @@ namespace ChequeAR.Api.App_Start
 
             Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
             Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            Register<ITerminologyClient>(() => new TerminologyClient(_termHttp, terminologyUrl, terminologyEcl, terminologyLang));
 
             // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.
             // El archivo se copia a la salida con CopyToOutputDirectory=PreserveNewest;
@@ -118,6 +129,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Api.AttachmentController>(() => new Controllers.Api.AttachmentController(Resolve<IAttachmentStore>()));
             Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>(), Resolve<IQuestionnaireRepository>()));
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
+            Register<Controllers.Api.TerminologyController>(() => new Controllers.Api.TerminologyController(Resolve<ITerminologyClient>()));
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
             Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<IUserRepository>()));
             Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));

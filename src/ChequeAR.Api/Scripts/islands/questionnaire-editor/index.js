@@ -166,6 +166,107 @@
                 return meta ? meta.getAttribute('content') : null;
             }
 
+            // --- Autocompletado SNOMED CT --------------------------------------------
+            // Toma el TEXTO de la pregunta como término y pide sugerencias al proxy del
+            // backend (/fhir/r5/ValueSet/$expand, que a su vez consulta al servidor
+            // terminológico). Elegir una sugerencia completa code + codeDisplay, que
+            // buildCoding() serializa a Question.CodingJson.
+            var snomedResults = Vue.ref([]);
+            var snomedSearching = Vue.ref(false);
+            var snomedError = Vue.ref(null);
+            var snomedOpen = Vue.ref(false);
+            var snomedAbort = null;
+            var snomedDebounce;
+            // Al cambiar de pregunta, el texto "cambia" sin que nadie tipee: no queremos
+            // disparar una búsqueda por eso. Esta bandera suprime ese primer disparo.
+            var snomedSuppress = false;
+            // Backoff ante 429: hasta este instante (ms epoch) no autocompletamos solos,
+            // para no seguir golpeando un server que ya nos está limitando.
+            var snomedCooldownUntil = 0;
+
+            // Cambiar de pregunta no debe arrastrar los resultados de la anterior.
+            Vue.watch(selected, function () {
+                snomedResults.value = []; snomedOpen.value = false; snomedError.value = null;
+                clearTimeout(snomedDebounce);
+                snomedSuppress = true;
+                Vue.nextTick(function () { snomedSuppress = false; });
+            });
+
+            // Autosugerencia asíncrona: mientras se edita el texto de la pregunta buscamos
+            // solos (debounce 400ms) para no golpear el terminológico en cada tecla.
+            Vue.watch(function () {
+                return selected.value && selected.value.question ? selected.value.question.text : null;
+            }, function (text) {
+                if (snomedSuppress) return;   // el cambio vino de seleccionar otra pregunta
+                clearTimeout(snomedDebounce);
+                if (!text || text.trim().length < 3) {
+                    snomedResults.value = []; snomedOpen.value = false; snomedError.value = null;
+                    return;
+                }
+                if (Date.now() < snomedCooldownUntil) return;   // en backoff por 429
+                snomedDebounce = setTimeout(searchSnomed, 600);
+            });
+
+            function searchSnomed() {
+                var q = selected.value && selected.value.question;
+                var term = q ? (q.text || '').trim() : '';
+                snomedError.value = null;
+                if (term.length < 3) {
+                    snomedError.value = 'Escribí al menos 3 caracteres en el texto de la pregunta.';
+                    snomedResults.value = []; snomedOpen.value = true;
+                    return;
+                }
+                var token = getToken();
+                if (!token) { toast('No hay sesión: no se puede consultar SNOMED (token ausente).', 'error'); return; }
+
+                // Si el usuario busca de nuevo con una consulta en curso, cancelamos la vieja.
+                if (snomedAbort) snomedAbort.abort();
+                snomedAbort = ('AbortController' in window) ? new AbortController() : null;
+                snomedSearching.value = true;
+
+                fetch('/fhir/r5/ValueSet/$expand?count=15&filter=' + encodeURIComponent(term), {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    signal: snomedAbort ? snomedAbort.signal : undefined
+                }).then(function (res) {
+                    return res.json().catch(function () { return null; }).then(function (body) {
+                        if (res.status === 429) {
+                            // El server nos limita: entramos en cooldown y frenamos el autosugerir.
+                            var secs = (body && body.retryAfter) || 8;
+                            snomedCooldownUntil = Date.now() + secs * 1000;
+                            throw new Error((body && body.error) ||
+                                'Demasiadas consultas a SNOMED. Reintentá en unos segundos.');
+                        }
+                        if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+                        return body;
+                    });
+                }).then(function (data) {
+                    snomedResults.value = (data && data.results) || [];
+                    snomedOpen.value = true;
+                }).catch(function (err) {
+                    if (err.name === 'AbortError') return;
+                    snomedError.value = err.message;
+                    snomedResults.value = []; snomedOpen.value = true;
+                }).then(function () {
+                    snomedSearching.value = false;
+                });
+            }
+
+            function pickSnomed(r) {
+                var q = selected.value.question;
+                q.code = r.code;
+                q.codeDisplay = r.display;
+                snomedOpen.value = false;
+                snomedResults.value = [];
+                dirty.value = true;
+            }
+
+            function clearSnomed() {
+                var q = selected.value.question;
+                q.code = undefined;
+                q.codeDisplay = undefined;
+                dirty.value = true;
+            }
+
             // min/max/unidad viven en Question.ValidationJson (un CLOB con JSON), que es de
             // donde los lee el renderer para validar la carga. Se manda serializado porque
             // la API bindea directo contra la entidad y la propiedad es string.
@@ -385,6 +486,8 @@
             });
             Vue.onUnmounted(function () {
                 clearTimeout(debounce);
+                clearTimeout(snomedDebounce);
+                if (snomedAbort) snomedAbort.abort();
                 var btn = document.getElementById('saveBtn');
                 if (btn) btn.removeEventListener('click', saveExplicit);
                 var pub = document.getElementById('publishBtn');
@@ -400,6 +503,9 @@
                 conflict: conflict, reloadFromServer: reloadFromServer,
                 conditionSources: conditionSources, conditionSource: conditionSource,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
+                snomedResults: snomedResults, snomedSearching: snomedSearching,
+                snomedError: snomedError, snomedOpen: snomedOpen,
+                searchSnomed: searchSnomed, pickSnomed: pickSnomed, clearSnomed: clearSnomed,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit
             };
@@ -560,7 +666,26 @@
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Código SNOMED CT</label>\
-                <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                <div class="input-group input-group-sm">\
+                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                    <button class="btn btn-outline-primary" type="button" @click="searchSnomed" :disabled="snomedSearching" title="Sugerir desde el texto de la pregunta">\
+                        <span v-if="snomedSearching" class="spinner-border spinner-border-sm"></span>\
+                        <template v-else><i class="bi bi-search"></i> Sugerir</template>\
+                    </button>\
+                </div>\
+                <p class="cq-text-xs cq-text-muted mt-1">Sugerencias automáticas a partir del texto de la pregunta. Usá “Sugerir” para forzar una búsqueda.</p>\
+                <div v-if="selected.question.codeDisplay" class="cq-text-xs mt-1">\
+                    <i class="bi bi-check-circle-fill text-success"></i> {{ selected.question.codeDisplay }}\
+                    <a href="javascript:" class="ms-1" @click="clearSnomed">quitar</a>\
+                </div>\
+                <div v-if="snomedError" class="cq-text-xs text-danger mt-1">{{ snomedError }}</div>\
+                <ul v-if="snomedOpen && snomedResults.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
+                    <li v-for="r in snomedResults" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="pickSnomed(r)"\
+                        onmouseover="this.style.background=\'var(--cq-primary-100)\'" onmouseout="this.style.background=\'transparent\'">\
+                        {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
+                    </li>\
+                </ul>\
+                <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
             </div>\
 \
             <hr />\

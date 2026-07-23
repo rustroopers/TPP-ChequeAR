@@ -106,6 +106,7 @@
     <Compile Include="Models\AdminViewModels.cs" />
     <Compile Include="Controllers\Api\AuthController.cs" />
     <Compile Include="Controllers\Api\MetadataController.cs" />
+    <Compile Include="Controllers\Api\TerminologyController.cs" />
     <Compile Include="Controllers\Api\QuestionnaireController.cs" />
     <Compile Include="Controllers\Api\QuestionnaireResponseController.cs" />
     <Compile Include="Controllers\Api\AttachmentController.cs" />
