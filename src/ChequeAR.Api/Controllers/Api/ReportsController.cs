@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
@@ -22,44 +23,56 @@ namespace ChequeAR.Api.Controllers.Api
     {
         private readonly ReportExecutor _executor;
         private readonly AuditDispatcher _audit;
-        private readonly IQuestionnaireRepository _qRepo;
 
-        public ReportsController(ReportExecutor executor, AuditDispatcher audit, IQuestionnaireRepository qRepo)
+        public ReportsController(ReportExecutor executor, AuditDispatcher audit)
         {
             _executor = executor;
             _audit = audit;
-            _qRepo = qRepo;
-        }
-
-        // Columnas (linkId -> texto de la pregunta) en orden, para pivotear el reporte.
-        private async Task<List<KeyValuePair<string, string>>> QuestionColumnsAsync(System.Guid questionnaireId)
-        {
-            var cols = new List<KeyValuePair<string, string>>();
-            var q = await _qRepo.GetAsync(questionnaireId);
-            if (q?.Questions != null)
-                foreach (var qq in q.Questions.OrderBy(x => x.OrderIndex))
-                    cols.Add(new KeyValuePair<string, string>(qq.LinkId, qq.Text));
-            return cols;
         }
 
         [HttpPost, Route("query"), Authorize]
         public async Task<IHttpActionResult> Query([FromBody] ReportQuery query)
         {
             if (query == null) return BadRequest("body required");
-            var result = await _executor.ExecuteAsync(query);
-            var wide = ReportPivot.ToWide(result, await QuestionColumnsAsync(query.QuestionnaireId));
-            return Ok(new { total = wide.Total, rows = wide.Rows });
+            try
+            {
+                // El executor ya devuelve el formato ancho: pivotear era responsabilidad del
+                // llamador y la pantalla de Preview (MVC) se olvidaba de hacerlo, con lo cual
+                // mostraba el formato largo crudo. Ahora no hay forma de equivocarse.
+                var wide = await _executor.ExecuteAsync(query);
+                return Ok(new { total = wide.Total, rows = wide.Rows, page = query.Page, pageSize = query.PageSize });
+            }
+            catch (ArgumentException ex)
+            {
+                // Filtro mal armado (linkId ajeno al cuestionario, operador invalido, valor no
+                // parseable): es culpa del pedido, no del servidor.
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPost, Route("export"), Authorize]
         public async Task<HttpResponseMessage> Export([FromBody] ReportQuery query)
         {
             if (query == null) return Request.CreateResponse(HttpStatusCode.BadRequest);
-            var longResult = await _executor.ExecuteAsync(query);
-            var result = ReportPivot.ToWide(longResult, await QuestionColumnsAsync(query.QuestionnaireId));
+
+            ReportResult result;
+            try
+            {
+                // Sin paginar: una exportacion que saliera cortada en la primera pagina seria
+                // peor que un error, porque nadie lo notaria.
+                result = await _executor.ExecuteAllAsync(query);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.BadRequest, ex.Message);
+            }
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            _audit.Enqueue(AuditEventBuilder.For("execute", "Report/export", userId, category: "export"));
+            // FR-009 pide registrar QUE consulta y CUANTOS registros, no solo que hubo un export.
+            _audit.Enqueue(AuditEventBuilder.For(
+                "execute",
+                "Report/export?questionnaire=" + query.QuestionnaireId + "&rows=" + result.Total,
+                userId, category: "export"));
 
             var format = (query.Format ?? "xlsx").ToLowerInvariant();
             var stream = format == "csv" ? new CsvExporter().Export(result) : new XlsxExporter().Export(result);

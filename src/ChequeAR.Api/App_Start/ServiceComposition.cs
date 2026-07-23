@@ -98,7 +98,7 @@ namespace ChequeAR.Api.App_Start
                 Resolve<IFhirValidator>(), _audit));
             Register<PrefillService>(() => new PrefillService(Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>()));
             Register<QueryBuilder>(() => new QueryBuilder());
-            Register<ReportExecutor>(() => new ReportExecutor(sqlConn, Resolve<QueryBuilder>()));
+            Register<ReportExecutor>(() => new ReportExecutor(sqlConn, Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>()));
 
             Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), hospitalAuthUrl));
@@ -116,7 +116,7 @@ namespace ChequeAR.Api.App_Start
                 Resolve<IHospitalAuthClient>(), Resolve<JwtIssuer>(), Resolve<RefreshTokenService>()));
             Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<IAuditRepository>()));
             Register<Controllers.Api.AttachmentController>(() => new Controllers.Api.AttachmentController(Resolve<IAttachmentStore>()));
-            Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>(), Resolve<IQuestionnaireRepository>()));
+            Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>()));
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
             Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<IUserRepository>()));
@@ -133,7 +133,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(
                 Resolve<PatientService>(), Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>()));
             Register<Controllers.Mvc.ReportsController>(() => new Controllers.Mvc.ReportsController(
-                Resolve<ISavedReportRepository>(), Resolve<ReportExecutor>()));
+                Resolve<ISavedReportRepository>(), Resolve<ReportExecutor>(), Resolve<IQuestionnaireRepository>()));
             Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(Resolve<IAuditRepository>()));
             Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<IUserRepository>()));
             Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController(Resolve<IntegrationHealthService>()));

@@ -16,11 +16,13 @@ namespace ChequeAR.Api.Controllers.Mvc
     {
         private readonly ISavedReportRepository _savedRepo;
         private readonly ReportExecutor _executor;
+        private readonly IQuestionnaireRepository _qRepo;
 
-        public ReportsController(ISavedReportRepository savedRepo, ReportExecutor executor)
+        public ReportsController(ISavedReportRepository savedRepo, ReportExecutor executor, IQuestionnaireRepository qRepo)
         {
             _savedRepo = savedRepo;
             _executor = executor;
+            _qRepo = qRepo;
         }
 
         // E1
@@ -38,12 +40,18 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var userId = User?.Identity?.Name ?? "anonymous";
                 var saved = await _savedRepo.ListForUserAsync(userId, new string[0]);
+                // El titulo del cuestionario base, no su GUID. Se cachea porque varios
+                // reportes guardados suelen apuntar al mismo cuestionario.
+                var titles = new Dictionary<Guid, string>();
                 foreach (var r in saved)
                 {
+                    if (!titles.ContainsKey(r.QuestionnaireId))
+                        titles[r.QuestionnaireId] = (await _qRepo.GetAsync(r.QuestionnaireId))?.Title;
+
                     model.Items.Add(new SavedReportItem
                     {
                         Id = r.Id, Name = r.Name,
-                        QuestionnaireTitle = r.QuestionnaireId.ToString(),
+                        QuestionnaireTitle = titles[r.QuestionnaireId] ?? "(cuestionario eliminado)",
                         Author = r.CreatedBy,
                         LastUsedAt = r.UpdatedAt.ToString("yyyy-MM-dd")
                     });
@@ -100,11 +108,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                 model.Page = query.Page;
                 model.PageSize = query.PageSize;
 
+                // Formato ancho (una fila por ficha), igual que /api/reports/query. Antes esta
+                // pantalla usaba el resultado crudo y mostraba el formato largo: una fila por
+                // respuesta-pregunta, con columnas ResponseId/LinkId/ValueDecimal, y un Total
+                // inflado por el numero de preguntas.
                 var result = await _executor.ExecuteAsync(query);
                 model.Total = result.Total;
 
-                // Las columnas salen del propio resultset: el QueryBuilder ya
-                // proyecta solo lo que el reporte pidio.
                 if (result.Rows.Count > 0)
                     model.Columns = result.Rows[0].Keys.ToList();
 

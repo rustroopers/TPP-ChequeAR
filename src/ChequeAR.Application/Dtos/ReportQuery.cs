@@ -9,7 +9,14 @@ namespace ChequeAR.Application.Dtos
         public List<int> QuestionnaireVersions { get; set; }
         public FilterNode Filters { get; set; }
         public DateRange DateRange { get; set; }
-        public List<string> Specialties { get; set; }
+        /// <summary>
+        /// Usuarios que firmaron la ficha. Reemplaza al viejo `Specialties`, que no se podía
+        /// honrar: la especialidad del paciente vive en las vistas del hospital, no en el
+        /// esquema de ChequeAR, y la del cuestionario es redundante porque toda consulta ya
+        /// está acotada a un QuestionnaireId. Un campo que nadie leía daba la impresión de
+        /// filtrar sin filtrar nada.
+        /// </summary>
+        public List<string> Authors { get; set; }
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 50;
         public string SortBy { get; set; }
