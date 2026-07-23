@@ -39,6 +39,11 @@
             var rows = Vue.ref([]);
             var columns = Vue.ref([]);
             var total = Vue.ref(null);
+            var page = Vue.ref(1);
+            var PAGE_SIZE = 25;
+            var totalPages = Vue.computed(function () {
+                return Math.max(1, Math.ceil((total.value || 0) / PAGE_SIZE));
+            });
             var loading = Vue.ref(false);
             var exporting = Vue.ref(false);
             var error = Vue.ref(null);
@@ -186,14 +191,22 @@
                 return query;
             }
 
-            function preview() {
+            // El boton "Previsualizar" pasa el Event como argumento (no un numero): en ese
+            // caso arranca en la pagina 1. Anterior/Siguiente pasan el numero de pagina.
+            function preview(goToPage) {
                 if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                var p = (typeof goToPage === 'number' && goToPage > 0) ? goToPage : 1;
                 loading.value = true; error.value = null;
-                fetch('/api/reports/query', { method: 'POST', headers: authHeaders(), body: JSON.stringify(buildQuery()) })
+                var q = buildQuery();
+                q.page = p;
+                q.pageSize = PAGE_SIZE;
+                fetch('/api/reports/query', { method: 'POST', headers: authHeaders(), body: JSON.stringify(q) })
                     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                     .then(function (data) {
+                        // total es el de la COHORTE, no el de la pagina: lo usa totalPages.
                         total.value = data.total;
-                        rows.value = (data.rows || []).slice(0, 100);
+                        page.value = data.page || p;
+                        rows.value = data.rows || [];
                         columns.value = rows.value.length ? Object.keys(rows.value[0]) : [];
                     })
                     .catch(function (e) { error.value = 'Error al previsualizar: ' + e.message; })
@@ -277,6 +290,7 @@
                 questions: questions, filters: filters, combineMode: combineMode,
                 dateFrom: dateFrom, dateTo: dateTo,
                 rows: rows, columns: columns, total: total,
+                page: page, totalPages: totalPages,
                 loading: loading, exporting: exporting, error: error,
                 stats: stats,
                 currentReportId: currentReportId, reportName: reportName,
@@ -379,7 +393,13 @@
                 </tr>\
             </tbody>\
         </table>\
-        <p class="cq-text-xs cq-text-muted">Mostrando hasta 100 filas. La exportación incluye todas.</p>\
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">\
+            <span class="cq-text-xs cq-text-muted">Mostrando {{ rows.length }} de {{ total }} fichas · página {{ page }} de {{ totalPages }}. La exportación incluye todas.</span>\
+            <div v-if="totalPages > 1" class="btn-group btn-group-sm">\
+                <button class="btn btn-outline-secondary" :disabled="page <= 1 || loading" @click="preview(page - 1)"><i class="bi bi-chevron-left"></i> Anterior</button>\
+                <button class="btn btn-outline-secondary" :disabled="page >= totalPages || loading" @click="preview(page + 1)">Siguiente <i class="bi bi-chevron-right"></i></button>\
+            </div>\
+        </div>\
     </div>\
 </div>'
     };

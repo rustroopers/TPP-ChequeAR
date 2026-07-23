@@ -196,6 +196,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                 view.Max = (decimal?)validation["max"];
                 view.Unit = (string)validation["unit"];
                 view.Accept = (string)validation["accept"];
+                view.MaxLength = (int?)validation["maxLength"];
+                view.Pattern = (string)validation["pattern"];
             }
 
             var enableWhen = ParseValidation(qq.EnableWhenJson);

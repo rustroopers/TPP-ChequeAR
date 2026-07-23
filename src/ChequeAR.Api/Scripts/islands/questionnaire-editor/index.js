@@ -46,6 +46,8 @@
                             unit: q.unit,
                             min: typeof q.min === 'number' ? q.min : undefined,
                             max: typeof q.max === 'number' ? q.max : undefined,
+                            maxLength: typeof q.maxLength === 'number' ? q.maxLength : undefined,
+                            pattern: q.pattern,
                             accept: q.accept,
                             enableWhen: q.enableWhen ? {
                                 question: q.enableWhen.question,
@@ -478,6 +480,13 @@
                 if (q.type === 'attachment') {
                     return q.accept ? JSON.stringify({ accept: q.accept }) : null;
                 }
+                // Texto: largo máximo y patrón (regex). Vacío -> sin restricción.
+                if (q.type === 'string' || q.type === 'text') {
+                    var t = {};
+                    if (typeof q.maxLength === 'number' && !isNaN(q.maxLength) && q.maxLength > 0) t.maxLength = q.maxLength;
+                    if (q.pattern) t.pattern = q.pattern;
+                    return Object.keys(t).length ? JSON.stringify(t) : null;
+                }
                 if (['integer', 'decimal', 'scale'].indexOf(q.type) < 0) return null;
                 var v = {};
                 if (typeof q.min === 'number' && !isNaN(q.min)) v.min = q.min;
@@ -856,6 +865,17 @@
                     <div class="col-6"><label class="form-label cq-text-sm">Max</label><input v-model.number="selected.question.max" type="number" class="form-control form-control-sm" /></div>\
                 </div>\
                 <div class="mb-2"><label class="form-label cq-text-sm">Unidad</label><input v-model="selected.question.unit" class="form-control form-control-sm" /></div>\
+            </div>\
+            <div v-if="[\'string\',\'text\'].indexOf(selected.question.type) >= 0">\
+                <div class="mb-2">\
+                    <label class="form-label cq-text-sm">Largo máximo <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></label>\
+                    <input v-model.number="selected.question.maxLength" type="number" min="1" class="form-control form-control-sm" placeholder="sin límite" />\
+                </div>\
+                <div class="mb-2">\
+                    <label class="form-label cq-text-sm">Patrón <span class="cq-text-xs cq-text-muted fw-normal">(regex, opcional)</span></label>\
+                    <input v-model="selected.question.pattern" class="form-control form-control-sm" placeholder="ej: ^[0-9]{7,8}$" />\
+                    <p class="cq-text-xs cq-text-muted mt-1">La respuesta tiene que coincidir con esta expresión regular.</p>\
+                </div>\
             </div>\
             <div v-if="[\'choice\',\'openChoice\'].indexOf(selected.question.type) >= 0">\
                 <label class="form-label cq-text-sm">Opciones</label>\

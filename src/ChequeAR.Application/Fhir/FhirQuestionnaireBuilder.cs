@@ -241,6 +241,27 @@ namespace ChequeAR.Application.Fhir
                 });
             }
 
+            // Largo máximo de una respuesta de texto: maxLength es un campo NATIVO del
+            // item FHIR, no una extensión. Se emite en la propia pregunta.
+            var maxLength = validation["maxLength"];
+            if (maxLength != null && maxLength.Type != JTokenType.Null)
+            {
+                var n = (long)maxLength;
+                if (n > 0) item["maxLength"] = n;
+            }
+
+            // Patrón (regex) como extensión estándar: preserva la validación en la versión
+            // congelada sin inventar un formato propio.
+            var pattern = (string)validation["pattern"];
+            if (!string.IsNullOrWhiteSpace(pattern))
+            {
+                extensions.Add(new JObject
+                {
+                    ["url"] = "http://hl7.org/fhir/StructureDefinition/regex",
+                    ["valueString"] = pattern
+                });
+            }
+
             var unit = (string)validation["unit"];
             if (!string.IsNullOrWhiteSpace(unit))
             {
