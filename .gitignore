@@ -1,3 +1,6 @@
+# ---------- Infra (docker) ----------
+infra/**/.env
+
 # ---------- Visual Studio / .NET ----------
 
 # User-specific files

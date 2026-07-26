@@ -1,0 +1,58 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: snowstorm-elasticsearch
+    environment:
+      # Un solo nodo, sin seguridad: es un server de terminología de sólo lectura en
+      # la red interna, no guarda nada sensible. NO exponer 9200 fuera de la máquina.
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - node.name=snowstorm
+      - cluster.name=snowstorm-cluster
+      # Heap de Elasticsearch. La International Edition entra con 4g; si la máquina
+      # tiene poca RAM bajalo a 2g (import más lento) vía ES_HEAP en el .env.
+      - "ES_JAVA_OPTS=-Xms${ES_HEAP:-4g} -Xmx${ES_HEAP:-4g}"
+    ulimits:
+      # Elasticsearch exige poder bloquear memoria; sin esto no arranca.
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - snowstorm-es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    # 9200 sólo para debug/administración del índice; el editor no lo usa.
+    ports:
+      - "9200:9200"
+
+  snowstorm:
+    image: snomedinternational/snowstorm:latest
+    container_name: snowstorm
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      # La imagen invoca `java` directo con un entrypoint fijo (no lee JAVA_OPTS).
+      # JDK_JAVA_OPTIONS es la variable estándar que el propio lanzador java toma
+      # automáticamente, sin importar el entrypoint.
+      # --add-opens: Spring Data Elasticsearch usa reflection sobre clases del JDK
+      # (java.util.TimeZone, etc.) para armar el mapping context. Desde Java 16 el
+      # module system bloquea eso por default; sin esto Snowstorm no arranca (falla
+      # con InaccessibleObjectException al crear el bean elasticsearchMappingContext).
+      - JDK_JAVA_OPTIONS=-Xms2g -Xmx${SNOWSTORM_HEAP:-4g} --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.time=ALL-UNNAMED
+    # --snowstorm.rest-api.readonly=false: necesario para poder IMPORTAR el release.
+    # Una vez cargado, podés relanzar con readonly=true para blindarlo en prod.
+    command: >-
+      --elasticsearch.urls=http://elasticsearch:9200
+      --snowstorm.rest-api.readonly=false
+    # 18081 en el host: 18080 ya lo ocupa HospitalFhir. El FHIR endpoint queda en
+    # http://localhost:18081/fhir (eso es lo que va en Terminology:BaseUrl).
+    ports:
+      - "18081:8080"
+
+volumes:
+  snowstorm-es-data:
