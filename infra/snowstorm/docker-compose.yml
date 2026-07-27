@@ -46,9 +46,17 @@ services:
       - JDK_JAVA_OPTIONS=-Xms2g -Xmx${SNOWSTORM_HEAP:-4g} --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.time=ALL-UNNAMED
     # --snowstorm.rest-api.readonly=false: necesario para poder IMPORTAR el release.
     # Una vez cargado, podés relanzar con readonly=true para blindarlo en prod.
+    # --spring.elasticsearch.*-timeout: el cliente REST interno de Snowstorm usa 30s
+    # de default. Con un release grande (edición AR completa, ~500k conceptos) hay
+    # operaciones del import (rollback de commit parcial, build del índice semántico
+    # con scroll sobre millones de relationships) que tardan más que eso y el import
+    # se cae con "30,000 milliseconds timeout" aunque Elasticsearch esté sano (heap
+    # ok, sin circuit breakers). Subirlo evita ese falso negativo.
     command: >-
       --elasticsearch.urls=http://elasticsearch:9200
       --snowstorm.rest-api.readonly=false
+      --spring.elasticsearch.socket-timeout=300s
+      --spring.elasticsearch.connection-timeout=30s
     # 18081 en el host: 18080 ya lo ocupa HospitalFhir. El FHIR endpoint queda en
     # http://localhost:18081/fhir (eso es lo que va en Terminology:BaseUrl).
     ports:
