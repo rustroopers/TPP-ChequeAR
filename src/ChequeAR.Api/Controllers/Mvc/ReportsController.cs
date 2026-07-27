@@ -74,14 +74,14 @@ namespace ChequeAR.Api.Controllers.Mvc
         // E2 host
         public ActionResult Build(Guid? id = null)
         {
-            ViewBag.Title = id.HasValue ? "Editar consulta" : "Nueva consulta";
+            ViewBag.Title = id.HasValue ? "Editar reporte" : "Nuevo reporte";
             ViewBag.PageId = "reports";
             ViewBag.ReportId = id;
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
             {
                 System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
                 System.Tuple.Create("Reportes", Url.Action("Index")),
-                System.Tuple.Create("Consulta", (string)null)
+                System.Tuple.Create("Reporte", (string)null)
             };
             return View();
         }

@@ -73,7 +73,7 @@
   "home.action.questionnaires.title": "Cuestionarios",
   "home.action.questionnaires.desc": "Crear, editar y publicar fichas paramétricas",
   "home.action.reports.title": "Reportes",
-  "home.action.reports.desc": "Armar cohortes y exportar resultados",
+  "home.action.reports.desc": "Analizar fichas y exportar resultados",
   "home.recent.title": "Fichas recientes",
   "home.recent.viewall": "Ver todas →",
   "home.empty.title": "Sin actividad reciente",
@@ -102,7 +102,7 @@
   "q2.btn.save": "Guardar",
   "q2.loading": "Cargando editor…",
   "r3.loading": "Cargando ficha…",
-  "e2.loading": "Cargando query builder…",
+  "e2.loading": "Cargando el armador de reportes…",
 
   "r1.title": "Buscar paciente",
   "r1.subtitle": "Por DNI, número de historia clínica o apellido",
@@ -115,10 +115,10 @@
   "r1.btn.load": "Cargar ficha →",
 
   "e1.title": "Reportes",
-  "e1.subtitle": "Cohortes guardadas y nuevas consultas",
-  "e1.new": "Nueva consulta",
+  "e1.subtitle": "Reportes guardados y análisis de fichas",
+  "e1.new": "Nuevo reporte",
   "e1.empty.title": "Sin reportes guardados",
-  "e1.empty.desc": "Armá tu primera consulta para empezar.",
+  "e1.empty.desc": "Armá tu primer reporte para empezar.",
 
   "audit.title": "Auditoría",
   "audit.subtitle": "Eventos del sistema",

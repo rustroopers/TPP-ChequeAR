@@ -1,7 +1,8 @@
 /*
  * Isla Vue: report-builder (pantalla E2)
- * Cohorte sobre un cuestionario base + filtros por pregunta + rango de fechas.
- * Previsualiza contra POST /api/reports/query y exporta a Excel/CSV (POST /api/reports/export).
+ * Reporte sobre un cuestionario base + condiciones por pregunta + rango de fechas.
+ * El grupo de fichas resultante se previsualiza contra POST /api/reports/query y se
+ * exporta a Excel/CSV (POST /api/reports/export).
  */
 (function () {
     function token() {
@@ -61,16 +62,18 @@
 
             function toast(m, k) { if (window.cqToast) window.cqToast(m, k); }
 
+            // Etiquetas en palabras para que cada condición se lea como una frase:
+            // "PCR sea mayor a 5", "Tratamiento actual sea Corticoides".
             function opsFor(type) {
                 if (type === 'integer' || type === 'decimal')
-                    return [{ v: '=', l: '=' }, { v: '!=', l: '≠' }, { v: '>', l: '>' }, { v: '>=', l: '≥' }, { v: '<', l: '<' }, { v: '<=', l: '≤' }];
+                    return [{ v: '=', l: 'sea igual a' }, { v: '!=', l: 'sea distinto de' }, { v: '>', l: 'sea mayor a' }, { v: '>=', l: 'sea mayor o igual a' }, { v: '<', l: 'sea menor a' }, { v: '<=', l: 'sea menor o igual a' }];
                 if (type === 'choice')
-                    return [{ v: '=', l: 'es' }, { v: '!=', l: 'no es' }];
+                    return [{ v: '=', l: 'sea' }, { v: '!=', l: 'no sea' }];
                 if (type === 'boolean')
-                    return [{ v: '=', l: 'es' }];
+                    return [{ v: '=', l: 'sea' }];
                 if (type === 'date')
-                    return [{ v: '=', l: '=' }, { v: '>=', l: 'desde' }, { v: '<=', l: 'hasta' }];
-                return [{ v: '=', l: 'es' }, { v: '!=', l: 'no es' }, { v: 'contains', l: 'contiene' }];
+                    return [{ v: '=', l: 'sea del' }, { v: '>=', l: 'sea desde' }, { v: '<=', l: 'sea hasta' }];
+                return [{ v: '=', l: 'sea' }, { v: '!=', l: 'no sea' }, { v: 'contains', l: 'contenga' }];
             }
             function questionByLink(linkId) {
                 return questions.value.find(function (q) { return q.linkId === linkId; });
@@ -130,7 +133,7 @@
                             rehydrating = false;
                         });
                     })
-                    .catch(function () { error.value = 'No se pudo cargar la consulta guardada.'; rehydrating = false; });
+                    .catch(function () { error.value = 'No se pudo cargar el reporte guardado.'; rehydrating = false; });
             }
 
             Vue.onMounted(function () {
@@ -233,7 +236,7 @@
             function saveReport() {
                 if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
                 var name = (reportName.value || '').trim();
-                if (!name) { toast('Poné un nombre para la consulta', 'error'); return; }
+                if (!name) { toast('Poné un nombre para el reporte', 'error'); return; }
                 if (saving.value) return;
 
                 saving.value = true;
@@ -263,7 +266,7 @@
                             }
                         }
                         showSave.value = false;
-                        toast(editing ? 'Consulta actualizada' : 'Consulta guardada', 'success');
+                        toast(editing ? 'Reporte actualizado' : 'Reporte guardado', 'success');
                     })
                     .catch(function (e) { toast('No se pudo guardar: ' + e.message, 'error'); })
                     .then(function () { saving.value = false; });
@@ -321,9 +324,10 @@
         </div>\
     </div>\
 \
-    <h3 class="cq-section-title">Filtros por pregunta</h3>\
-    <div v-if="filters.length === 0" class="cq-text-sm cq-text-muted mb-2">Sin filtros — la cohorte incluye todas las respuestas del período.</div>\
+    <h3 class="cq-section-title">Mostrar solo las fichas que:</h3>\
+    <div v-if="filters.length === 0" class="cq-text-sm cq-text-muted mb-2">Sin condiciones — el reporte incluye todas las fichas del período.</div>\
     <div v-for="(f, i) in filters" :key="i" class="row g-2 align-items-center mb-2">\
+        <div class="col-auto cq-text-muted pe-0" style="width:1.2rem;">•</div>\
         <div class="col-md-4">\
             <select v-model="f.linkId" @change="onQuestionChange(f)" class="form-select form-select-sm">\
                 <option v-for="q in questions" :key="q.linkId" :value="q.linkId">{{ q.text }}</option>\
@@ -334,7 +338,7 @@
                 <option v-for="o in opsFor(questionByLink(f.linkId).type)" :key="o.v" :value="o.v">{{ o.l }}</option>\
             </select>\
         </div>\
-        <div class="col-md-4">\
+        <div class="col-md-3">\
             <select v-if="questionByLink(f.linkId).type === \'boolean\'" v-model="f.value" class="form-select form-select-sm">\
                 <option value="true">Sí</option><option value="false">No</option>\
             </select>\
@@ -350,21 +354,21 @@
         </div>\
     </div>\
     <div class="d-flex align-items-center gap-3 mb-3">\
-        <button class="btn btn-sm btn-outline-secondary" @click="addFilter"><i class="bi bi-plus-lg me-1"></i> Agregar filtro</button>\
+        <button class="btn btn-sm btn-outline-secondary" @click="addFilter"><i class="bi bi-plus-lg me-1"></i> Agregar condición</button>\
         <div v-if="filters.length > 1" class="d-inline-flex gap-3 cq-text-sm">\
-            <span class="cq-text-muted">Combinación:</span>\
-            <label><input type="radio" v-model="combineMode" value="AND" /> Y todas</label>\
-            <label><input type="radio" v-model="combineMode" value="OR" /> O cualquiera</label>\
+            <span class="cq-text-muted">Las fichas deben:</span>\
+            <label><input type="radio" v-model="combineMode" value="AND" /> cumplir todas</label>\
+            <label><input type="radio" v-model="combineMode" value="OR" /> cumplir al menos una</label>\
         </div>\
     </div>\
 \
     <div class="d-flex justify-content-between align-items-center border-top pt-3">\
         <div class="cq-text-sm cq-text-muted">\
-            <span v-if="total !== null">Resultado: <strong>{{ total }}</strong> respuestas</span>\
+            <span v-if="total !== null">Grupo de fichas: <strong>{{ total }}</strong> fichas</span>\
             <span v-else>Previsualizá para ver los resultados.</span>\
         </div>\
         <div class="d-flex gap-2">\
-            <button class="btn btn-outline-secondary" @click="openSave"><i class="bi bi-bookmark me-1"></i> {{ currentReportId ? \'Guardar cambios\' : \'Guardar consulta\' }}</button>\
+            <button class="btn btn-outline-secondary" @click="openSave"><i class="bi bi-bookmark me-1"></i> {{ currentReportId ? \'Guardar cambios\' : \'Guardar reporte\' }}</button>\
             <button class="btn btn-outline-secondary" @click="preview" :disabled="loading"><i class="bi bi-eye me-1"></i> {{ loading ? \'Cargando…\' : \'Previsualizar\' }}</button>\
             <button class="btn btn-outline-secondary" @click="stats"><i class="bi bi-graph-up me-1"></i> Estadísticas</button>\
             <button class="btn btn-outline-success" @click="exportCsv" :disabled="exporting"><i class="bi bi-filetype-csv me-1"></i> CSV</button>\
@@ -373,13 +377,13 @@
     </div>\
 \
     <div v-if="showSave" class="cq-card mt-3 mb-0" style="border-left:3px solid var(--cq-primary);">\
-        <label class="form-label cq-text-sm">Nombre de la consulta</label>\
+        <label class="form-label cq-text-sm">Nombre del reporte</label>\
         <div class="d-flex gap-2">\
             <input v-model="reportName" class="form-control form-control-sm" style="max-width:360px;" placeholder="Ej: AIJ oligoarticular 2026" @keyup.enter="saveReport" />\
             <button class="btn btn-sm btn-primary" @click="saveReport" :disabled="saving">{{ saving ? \'Guardando…\' : \'Guardar\' }}</button>\
             <button class="btn btn-sm btn-link" @click="showSave = false">Cancelar</button>\
         </div>\
-        <p class="cq-text-xs cq-text-muted mt-1 mb-0">Se guarda la definición (cuestionario y filtros), no los resultados. La podés volver a correr desde el listado de reportes.</p>\
+        <p class="cq-text-xs cq-text-muted mt-1 mb-0">El reporte guarda la definición (cuestionario y condiciones), no los resultados. Lo podés volver a correr desde el listado de reportes.</p>\
     </div>\
 \
     <div v-if="error" class="alert alert-danger mt-3 mb-0">{{ error }}</div>\

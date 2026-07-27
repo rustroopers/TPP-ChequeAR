@@ -6,12 +6,12 @@
 
 @* Esta pantalla era una maqueta: los numeros estaban escritos a mano en el .cshtml
    ('0-2','3-5', [12,23,41,...]) y los graficos venian de Chart.js por CDN. Ahora los
-   calcula el backend sobre la cohorte real de la consulta guardada. *@
+   calcula el backend sobre el grupo de fichas real del reporte guardado. *@
 
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">Estadísticas@(string.IsNullOrEmpty(Model.ReportName) ? "" : " · " + Model.ReportName)</h1>
-        <p class="cq-page-header__subtitle">Completitud y distribución sobre la cohorte filtrada</p>
+        <p class="cq-page-header__subtitle">Completitud y distribución sobre el grupo de fichas</p>
     </div>
     @if (Model.ReportId.HasValue)
     {
@@ -33,9 +33,9 @@ else if (string.IsNullOrEmpty(Model.QueryJson))
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-graph-up"></i></div>
-            <div class="cq-empty__title">No hay ninguna consulta que analizar</div>
-            <div class="cq-empty__desc">Las estadísticas se calculan sobre una cohorte. Armá una consulta y pedí las estadísticas desde ahí.</div>
-            <a href="@Url.Action("Build")" class="btn btn-primary">Nueva consulta</a>
+            <div class="cq-empty__title">No hay ningún reporte que analizar</div>
+            <div class="cq-empty__desc">Las estadísticas se calculan sobre un grupo de fichas. Armá un reporte y pedí las estadísticas desde ahí.</div>
+            <a href="@Url.Action("Build")" class="btn btn-primary">Nuevo reporte</a>
         </div>
     </div>
 }

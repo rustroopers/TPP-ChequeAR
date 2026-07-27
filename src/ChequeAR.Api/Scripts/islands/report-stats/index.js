@@ -92,16 +92,16 @@
 </div>\
 <div v-else-if="error" class="alert alert-danger">{{ error }}</div>\
 <div v-else-if="!stats" class="cq-card cq-text-sm cq-text-muted">\
-    Definí la cohorte y pedí las estadísticas para verlas acá.\
+    Armá el reporte y pedí las estadísticas para verlas acá.\
 </div>\
 <div v-else>\
     <div v-if="!stats.Responses" class="alert alert-warning">\
-        La cohorte no tiene ninguna ficha. Probá ampliando el rango de fechas o sacando filtros.\
+        El grupo no tiene ninguna ficha. Probá ampliando el rango de fechas o sacando condiciones.\
     </div>\
     <template v-else>\
         <div class="cq-card mb-3 d-flex align-items-center gap-3">\
             <div>\
-                <div class="cq-text-xs cq-text-muted text-uppercase">Fichas en la cohorte</div>\
+                <div class="cq-text-xs cq-text-muted text-uppercase">Fichas en el grupo</div>\
                 <div style="font-size:1.75rem; font-weight:600; line-height:1;">{{ stats.Responses }}</div>\
             </div>\
             <div class="cq-text-sm cq-text-muted">\
