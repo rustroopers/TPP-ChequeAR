@@ -1,0 +1,201 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Newtonsoft.Json.Linq;
+
+namespace ChequeAR.Api.Helpers
+{
+    /// <summary>
+    /// Traduce un evento de auditoría (código C/R/U/D/E + referencia FHIR) a algo legible
+    /// para un clínico: una etiqueta en español, un color y un ícono. También parsea la
+    /// referencia para saber a qué recurso apunta y qué operación fue.
+    /// </summary>
+    public static class AuditPresentation
+    {
+        /// <summary>Operación de negocio, más fina que el código C/R/U/D.</summary>
+        public enum Op { Create, Edit, Publish, Archive, Clone, Delete, Read, Finalize, Export, Other }
+
+        public class ActionView
+        {
+            public string Label { get; set; }        // "Nueva versión publicada"
+            public string BadgeClass { get; set; }   // "cq-badge--published"
+            public string Icon { get; set; }         // "bi-send-check"
+            public string ResourceType { get; set; } // "Questionnaire"
+            public Guid? ResourceId { get; set; }
+            public Op Operation { get; set; }
+        }
+
+        /// <summary>Parte la referencia "Tipo/{id}$sufijo" en (tipo, id, sufijo).</summary>
+        public static void ParseRef(string entityRef, out string type, out Guid? id, out string suffix)
+        {
+            type = null; id = null; suffix = null;
+            if (string.IsNullOrWhiteSpace(entityRef)) return;
+
+            var dollar = entityRef.IndexOf('$');
+            var head = dollar >= 0 ? entityRef.Substring(0, dollar) : entityRef;
+            suffix = dollar >= 0 ? entityRef.Substring(dollar + 1) : null;
+
+            var slash = head.IndexOf('/');
+            if (slash < 0) { type = head; return; }
+            type = head.Substring(0, slash);
+            var idPart = head.Substring(slash + 1);
+            if (Guid.TryParse(idPart, out var g)) id = g;
+        }
+
+        public static ActionView Describe(string entityRef, string actionCode)
+        {
+            ParseRef(entityRef, out var type, out var id, out var suffix);
+            var view = new ActionView { ResourceType = type, ResourceId = id, Operation = Op.Other };
+
+            if (type == "Questionnaire")
+            {
+                if (StartsWith(suffix, "publish")) return Set(view, Op.Publish, "Nueva versión publicada", "cq-badge--published", "bi-send-check");
+                if (StartsWith(suffix, "archive")) return Set(view, Op.Archive, "Cuestionario archivado", "cq-badge--archived", "bi-archive");
+                if (StartsWith(suffix, "clone")) return Set(view, Op.Clone, "Cuestionario clonado", "cq-badge--info", "bi-files");
+                switch (actionCode)
+                {
+                    case "C": return Set(view, Op.Create, "Cuestionario creado", "cq-badge--published", "bi-plus-circle");
+                    case "U": return Set(view, Op.Edit, "Cuestionario editado", "cq-badge--info", "bi-pencil");
+                    case "D": return Set(view, Op.Delete, "Cuestionario eliminado", "cq-badge--danger", "bi-trash");
+                    case "R": return Set(view, Op.Read, "Cuestionario consultado", "cq-badge--archived", "bi-eye");
+                }
+            }
+            else if (type == "QuestionnaireResponse")
+            {
+                if (StartsWith(suffix, "finalize")) return Set(view, Op.Finalize, "Respuesta finalizada", "cq-badge--published", "bi-check2-circle");
+                switch (actionCode)
+                {
+                    case "C": return Set(view, Op.Create, "Respuesta iniciada", "cq-badge--info", "bi-clipboard-plus");
+                    case "R": return Set(view, Op.Read, "Respuesta consultada", "cq-badge--archived", "bi-eye");
+                    case "U": return Set(view, Op.Edit, "Respuesta modificada", "cq-badge--info", "bi-pencil");
+                }
+            }
+            else if (type == "Report")
+            {
+                return Set(view, Op.Export, "Reporte exportado", "cq-badge--info", "bi-download");
+            }
+
+            // Fallback genérico por código, en español.
+            switch (actionCode)
+            {
+                case "C": return Set(view, Op.Create, "Creación", "cq-badge--published", "bi-plus-circle");
+                case "R": return Set(view, Op.Read, "Consulta", "cq-badge--archived", "bi-eye");
+                case "U": return Set(view, Op.Edit, "Modificación", "cq-badge--info", "bi-pencil");
+                case "D": return Set(view, Op.Delete, "Eliminación", "cq-badge--danger", "bi-trash");
+                case "E": return Set(view, Op.Export, "Ejecución", "cq-badge--info", "bi-lightning");
+                default: return Set(view, Op.Other, actionCode ?? "—", "cq-badge--archived", "bi-question-circle");
+            }
+        }
+
+        private static bool StartsWith(string s, string prefix) =>
+            !string.IsNullOrEmpty(s) && s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+
+        private static ActionView Set(ActionView v, Op op, string label, string badge, string icon)
+        {
+            v.Operation = op; v.Label = label; v.BadgeClass = badge; v.Icon = icon;
+            return v;
+        }
+
+        // ===== Diff legible entre dos versiones publicadas =====
+
+        /// <summary>
+        /// Aplana un Questionnaire FHIR (el JSON congelado de una versión) a una lista de
+        /// líneas legibles para un clínico: título, descripción, secciones y preguntas con
+        /// su tipo y si son obligatorias.
+        /// </summary>
+        public static List<string> FlattenForHumans(string fhirJson)
+        {
+            var lines = new List<string>();
+            if (string.IsNullOrWhiteSpace(fhirJson)) return lines;
+
+            JObject root;
+            try { root = JObject.Parse(fhirJson); }
+            catch { return lines; }
+
+            var title = (string)root["title"];
+            if (!string.IsNullOrWhiteSpace(title)) lines.Add("Título: " + title);
+            var desc = (string)root["description"];
+            if (!string.IsNullOrWhiteSpace(desc)) lines.Add("Descripción: " + desc);
+
+            if (root["item"] is JArray items)
+                foreach (var it in items) FlattenItem(it as JObject, lines, "");
+
+            return lines;
+        }
+
+        private static void FlattenItem(JObject item, List<string> lines, string indent)
+        {
+            if (item == null) return;
+            var type = (string)item["type"];
+            var text = (string)item["text"];
+
+            if (type == "group")
+            {
+                lines.Add(indent + "Sección: " + (text ?? "(sin título)"));
+                if (item["item"] is JArray children)
+                    foreach (var c in children) FlattenItem(c as JObject, lines, indent + "    ");
+                return;
+            }
+
+            var required = item["required"] != null && (bool)item["required"];
+            lines.Add(indent + "Pregunta: " + (text ?? "(sin texto)")
+                      + " [" + TypeLabel(type) + (required ? ", obligatoria" : ", opcional") + "]");
+
+            if (item["answerOption"] is JArray opts)
+                foreach (var o in opts)
+                {
+                    var display = (string)(o?["valueCoding"]?["display"]) ?? (string)(o?["valueCoding"]?["code"]);
+                    if (!string.IsNullOrWhiteSpace(display)) lines.Add(indent + "    • Opción: " + display);
+                }
+        }
+
+        private static string TypeLabel(string fhirType)
+        {
+            switch (fhirType)
+            {
+                case "string": return "texto";
+                case "text": return "texto largo";
+                case "integer": return "número";
+                case "decimal": return "número decimal";
+                case "boolean": return "sí/no";
+                case "date": return "fecha";
+                case "dateTime": return "fecha y hora";
+                case "choice": return "opción única";
+                case "open-choice": return "opción múltiple";
+                case "attachment": return "adjunto";
+                default: return fhirType ?? "—";
+            }
+        }
+
+        public enum Change { Same, Added, Removed }
+
+        public class DiffLine
+        {
+            public string Text { get; set; }
+            public Change Change { get; set; }
+        }
+
+        /// <summary>
+        /// Marca cada línea de "después" como agregada o igual, y cada línea de "antes" como
+        /// quitada o igual, comparando por pertenencia. Suficiente para un "así era / así quedó".
+        /// </summary>
+        public static void Diff(List<string> before, List<string> after,
+                                out List<DiffLine> beforeMarked, out List<DiffLine> afterMarked)
+        {
+            var beforeSet = new HashSet<string>(before);
+            var afterSet = new HashSet<string>(after);
+
+            beforeMarked = before.Select(l => new DiffLine
+            {
+                Text = l,
+                Change = afterSet.Contains(l) ? Change.Same : Change.Removed
+            }).ToList();
+
+            afterMarked = after.Select(l => new DiffLine
+            {
+                Text = l,
+                Change = beforeSet.Contains(l) ? Change.Same : Change.Added
+            }).ToList();
+        }
+    }
+}

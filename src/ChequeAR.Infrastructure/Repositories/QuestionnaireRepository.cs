@@ -162,5 +162,16 @@ namespace ChequeAR.Infrastructure.Repositories
             return _ctx.QuestionnaireVersions
                 .FirstOrDefaultAsync(v => v.QuestionnaireId == questionnaireId && v.VersionNumber == versionNumber);
         }
+
+        public async Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
+        {
+            var list = (ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+            if (list.Count == 0) return new Dictionary<Guid, string>();
+            var rows = await _ctx.Questionnaires
+                .Where(q => list.Contains(q.Id))
+                .Select(q => new { q.Id, q.Title })
+                .ToListAsync();
+            return rows.ToDictionary(r => r.Id, r => r.Title);
+        }
     }
 }

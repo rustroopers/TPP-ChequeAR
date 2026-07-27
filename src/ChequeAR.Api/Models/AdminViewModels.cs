@@ -8,8 +8,10 @@ namespace ChequeAR.Api.Models
         public Guid Id { get; set; }
         public string Timestamp { get; set; }
         public string Username { get; set; }
-        public string Action { get; set; }
-        public string Resource { get; set; }
+        public string Action { get; set; }        // etiqueta legible en español
+        public string ActionBadge { get; set; }   // clase css del badge (color)
+        public string ActionIcon { get; set; }    // clase del ícono bootstrap
+        public string Resource { get; set; }       // título del cuestionario o ref limpia
         public string IP { get; set; }
     }
 
@@ -34,10 +36,18 @@ namespace ChequeAR.Api.Models
         public string Role { get; set; }
         public string Specialty { get; set; }
         public string Action { get; set; }
+        public string ActionBadge { get; set; }
+        public string ActionIcon { get; set; }
         public string Resource { get; set; }
         public string IP { get; set; }
         public string UserAgent { get; set; }
-        public List<string> DiffLines { get; set; } = new List<string>();
+
+        // Diff de versiones (solo para publicaciones de un cuestionario).
+        public bool HasVersionDiff { get; set; }
+        public int? FromVersion { get; set; }   // null si fue la primera versión
+        public int? ToVersion { get; set; }
+        public List<Helpers.AuditPresentation.DiffLine> BeforeLines { get; set; } = new List<Helpers.AuditPresentation.DiffLine>();
+        public List<Helpers.AuditPresentation.DiffLine> AfterLines { get; set; } = new List<Helpers.AuditPresentation.DiffLine>();
     }
 
     public class UserListItem
@@ -71,21 +81,6 @@ namespace ChequeAR.Api.Models
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
         public string Role { get; set; }
-    }
-
-    public class IntegrationStatus
-    {
-        public string Name { get; set; }
-        public string Status { get; set; }   // ok | degraded | down | unknown
-        public string LastPing { get; set; }
-        public string LatencyP95 { get; set; }
-        public string Detail { get; set; }
-    }
-
-    public class IntegrationsViewModel
-    {
-        public List<IntegrationStatus> Integrations { get; set; } = new List<IntegrationStatus>();
-        public List<string> RecentErrors { get; set; } = new List<string>();
     }
 
     public class CapabilityStatementViewModel

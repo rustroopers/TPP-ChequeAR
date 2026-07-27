@@ -146,9 +146,10 @@ namespace ChequeAR.Api.App_Start
                 Resolve<PatientService>(), Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>()));
             Register<Controllers.Mvc.ReportsController>(() => new Controllers.Mvc.ReportsController(
                 Resolve<ISavedReportRepository>(), Resolve<ReportExecutor>(), Resolve<IQuestionnaireRepository>()));
-            Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(Resolve<IAuditRepository>()));
+            Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(
+                Resolve<IAuditRepository>(), Resolve<IQuestionnaireRepository>()));
             Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<IUserRepository>()));
-            Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController(Resolve<IntegrationHealthService>()));
+            Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController());
             Register<Controllers.Mvc.ErrorController>(() => new Controllers.Mvc.ErrorController());
         }
 

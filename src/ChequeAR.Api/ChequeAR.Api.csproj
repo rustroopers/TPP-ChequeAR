@@ -85,6 +85,8 @@
     <Compile Include="Auth\ChequeARSpecialtyAttribute.cs" />
     <Compile Include="Auth\CurrentUser.cs" />
     <Compile Include="Auth\DevToken.cs" />
+    <Compile Include="Helpers\ArgentinaTime.cs" />
+    <Compile Include="Helpers\AuditPresentation.cs" />
     <Compile Include="Helpers\CqLocalizer.cs" />
     <Compile Include="Middleware\AuditMiddleware.cs" />
     <Compile Include="Controllers\Mvc\HomeController.cs" />

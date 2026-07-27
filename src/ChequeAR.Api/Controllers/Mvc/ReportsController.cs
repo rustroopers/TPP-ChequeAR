@@ -59,7 +59,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Id = r.Id, Name = r.Name,
                         QuestionnaireTitle = titles[r.QuestionnaireId] ?? "(cuestionario eliminado)",
                         Author = r.CreatedBy,
-                        LastUsedAt = r.UpdatedAt.ToString("yyyy-MM-dd")
+                        LastUsedAt = ChequeAR.Api.Helpers.ArgentinaTime.Format(r.UpdatedAt, "yyyy-MM-dd")
                     });
                 }
             }

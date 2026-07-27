@@ -19,15 +19,14 @@
         <div class="col-md-2"><label class="form-label cq-text-sm">Acción</label>
             <select class="form-select" name="action">
                 <option value="">Todas</option>
-                <option value="READ">READ</option>
-                <option value="CREATE">CREATE</option>
-                <option value="UPDATE">UPDATE</option>
-                <option value="DELETE">DELETE</option>
-                <option value="EXPORT">EXPORT</option>
-                <option value="LOGIN">LOGIN</option>
+                <option value="R">Consultas</option>
+                <option value="C">Creaciones</option>
+                <option value="U">Modificaciones</option>
+                <option value="D">Eliminaciones</option>
+                <option value="E">Exportaciones</option>
             </select>
         </div>
-        <div class="col-md-2"><label class="form-label cq-text-sm">Recurso</label><input type="text" class="form-control" name="resource" value="@Model.ResourceFilter" placeholder="Patient/123" /></div>
+        <div class="col-md-2"><label class="form-label cq-text-sm">Recurso</label><input type="text" class="form-control" name="resource" value="@Model.ResourceFilter" placeholder="Cuestionario…" /></div>
         <div class="col-md-2"><label class="form-label cq-text-sm">Desde</label><input type="date" class="form-control" name="from" value="@Model.From" /></div>
         <div class="col-md-2"><label class="form-label cq-text-sm">Hasta</label><input type="date" class="form-control" name="to" value="@Model.To" /></div>
         <div class="col-md-1"><button type="submit" class="btn btn-outline-secondary w-100">Filtrar</button></div>
@@ -36,7 +35,7 @@
 
 <table class="cq-table">
     <thead>
-        <tr><th>Fecha/hora</th><th>Usuario</th><th>Acción</th><th>Recurso</th><th>IP</th><th></th></tr>
+        <tr><th>Fecha/hora (ARG)</th><th>Usuario</th><th>Acción</th><th>Cuestionario</th><th>IP</th><th></th></tr>
     </thead>
     <tbody>
         @foreach (var e in Model.Entries)
@@ -44,8 +43,8 @@
             <tr>
                 <td class="cq-text-sm">@e.Timestamp</td>
                 <td>@e.Username</td>
-                <td><span class="cq-badge cq-badge--info">@e.Action</span></td>
-                <td><code class="cq-text-sm">@e.Resource</code></td>
+                <td><span class="cq-badge cq-badge--icon @e.ActionBadge"><i class="bi @e.ActionIcon me-1"></i>@e.Action</span></td>
+                <td>@e.Resource</td>
                 <td class="cq-text-sm cq-text-muted">@e.IP</td>
                 <td class="text-end"><a href="@Url.Action("Details", new { id = e.Id })" class="btn btn-sm btn-outline-secondary">Ver →</a></td>
             </tr>

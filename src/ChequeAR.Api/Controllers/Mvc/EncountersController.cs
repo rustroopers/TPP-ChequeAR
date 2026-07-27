@@ -210,7 +210,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
                     QuestionnaireVersion = PinnedVersionNumber(q, qr.QuestionnaireVersionId),
                     Author = qr.AuthorUserId,
-                    FinalizedAt = qr.LastSavedAt.ToString("yyyy-MM-dd HH:mm")
+                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.Format(qr.LastSavedAt, "yyyy-MM-dd HH:mm")
                 };
 
                 // Un linkId puede repetirse (opción múltiple: un item por opción marcada),

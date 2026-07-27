@@ -25,5 +25,8 @@ namespace ChequeAR.Application.Interfaces
         Task PublishAsync(Questionnaire q, QuestionnaireVersion version);
         Task SoftDeleteAsync(Guid id);
         Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber);
+
+        /// <summary>Títulos por id, para resolver referencias sin traer el agregado completo.</summary>
+        Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids);
     }
 }

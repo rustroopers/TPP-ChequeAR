@@ -298,6 +298,23 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 .cq-badge--archived { background: var(--cq-neutral-100); color: var(--cq-neutral-500); }
 .cq-badge--danger { background: #fee2e2; color: var(--cq-danger); }
 .cq-badge--info { background: #e0f2fe; color: var(--cq-info); }
+/* Badges con ícono propio: el ícono reemplaza al punto de color. */
+.cq-badge--icon::before { display: none; }
+
+/* ===== Diff de versiones (auditoría) ===== */
+.cq-diff {
+  background: var(--cq-neutral-50, #f8fafc);
+  border: 1px solid var(--cq-neutral-200, #e2e8f0);
+  border-radius: var(--cq-radius-sm, 6px);
+  padding: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+.cq-diff__add { background: #dcfce7; color: #166534; display: inline-block; width: 100%; }
+.cq-diff__del { background: #fee2e2; color: #991b1b; display: inline-block; width: 100%; text-decoration: line-through; }
 
 /* Chips de especialidad (zonas Garrahan) */
 .cq-chip {
