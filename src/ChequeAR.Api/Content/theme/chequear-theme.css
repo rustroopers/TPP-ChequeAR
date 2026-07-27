@@ -286,20 +286,11 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   font-weight: 500;
   line-height: 18px;
 }
-.cq-badge::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
 .cq-badge--draft { background: #fef3c7; color: var(--cq-warning); }
 .cq-badge--published { background: #dcfce7; color: var(--cq-success); }
 .cq-badge--archived { background: var(--cq-neutral-100); color: var(--cq-neutral-500); }
 .cq-badge--danger { background: #fee2e2; color: var(--cq-danger); }
 .cq-badge--info { background: #e0f2fe; color: var(--cq-info); }
-/* Badges con ícono propio: el ícono reemplaza al punto de color. */
-.cq-badge--icon::before { display: none; }
 
 /* ===== Diff de versiones (auditoría) ===== */
 .cq-diff {
@@ -328,13 +319,7 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   background: var(--cq-neutral-100);
   color: var(--cq-neutral-700);
 }
-.cq-chip::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--chip-color, var(--cq-neutral-500));
-}
+.cq-chip { color: var(--chip-color, var(--cq-neutral-700)); }
 .cq-chip--cardio { --chip-color: var(--cq-zone-red); }
 .cq-chip--neumo { --chip-color: var(--cq-zone-blue); }
 .cq-chip--onco { --chip-color: var(--cq-zone-violet); }
