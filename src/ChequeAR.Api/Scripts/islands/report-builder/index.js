@@ -26,6 +26,11 @@
             default: return 'string';
         }
     }
+    // QuestionnaireStatus (enum del backend: Draft=0, Active=1, Retired=2) -> etiqueta y
+    // orden del picker. Publicado primero (es lo que se usa para cargar datos nuevos);
+    // Archivado al final (solo sirve para reportar sobre lo ya cargado).
+    var STATUS_LABEL = { 0: 'Borrador', 1: 'Publicado', 2: 'Archivado' };
+    var STATUS_ORDER = [1, 0, 2];
 
     var ReportBuilder = {
         props: { reportId: { type: String, default: null } },
@@ -136,16 +141,33 @@
                     .catch(function () { error.value = 'No se pudo cargar el reporte guardado.'; rehydrating = false; });
             }
 
+            // Agrupado por estado (Publicado / Borrador / Archivado): sin esto el <select>
+            // mezclaba todo con el mismo aspecto y no había forma de saber, por ejemplo, que
+            // el cuestionario que tocaba para el reporte estaba archivado (ni de distinguir
+            // entre dos con el mismo título "Nuevo cuestionario" en estados distintos).
+            var groupedQuestionnaires = Vue.computed(function () {
+                var byStatus = {};
+                questionnaires.value.forEach(function (q) {
+                    (byStatus[q.status] = byStatus[q.status] || []).push(q);
+                });
+                return STATUS_ORDER
+                    .filter(function (s) { return byStatus[s] && byStatus[s].length; })
+                    .map(function (s) { return { label: STATUS_LABEL[s] || 'Otro', items: byStatus[s] }; });
+            });
+
             Vue.onMounted(function () {
                 fetch('/fhir/r5/Questionnaire?_count=100', { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
                         var list = (data && data.entry) ? data.entry : [];
-                        questionnaires.value = list.map(function (q) { return { id: q.Id || q.id, title: q.Title || q.title }; });
+                        questionnaires.value = list.map(function (q) {
+                            return { id: q.Id || q.id, title: q.Title || q.title, status: q.Status != null ? q.Status : q.status };
+                        });
                         // Editar una consulta guardada manda su cuestionario; en ese caso no
-                        // se pisa con el primero de la lista.
+                        // se pisa con el primero de la lista. Si no, arranca con el primero
+                        // del primer grupo (Publicado antes que Borrador o Archivado).
                         if (currentReportId.value) loadSavedReport(currentReportId.value);
-                        else if (questionnaires.value.length) selectedId.value = questionnaires.value[0].id;
+                        else if (groupedQuestionnaires.value.length) selectedId.value = groupedQuestionnaires.value[0].items[0].id;
                     })
                     .catch(function () { error.value = 'No se pudieron cargar los cuestionarios.'; });
             });
@@ -289,7 +311,7 @@
             }
 
             return {
-                questionnaires: questionnaires, selectedId: selectedId,
+                questionnaires: questionnaires, groupedQuestionnaires: groupedQuestionnaires, selectedId: selectedId,
                 questions: questions, filters: filters, combineMode: combineMode,
                 dateFrom: dateFrom, dateTo: dateTo,
                 rows: rows, columns: columns, total: total,
@@ -311,7 +333,9 @@
         <div class="col-md-6">\
             <label class="form-label">Cuestionario base</label>\
             <select v-model="selectedId" class="form-select">\
-                <option v-for="q in questionnaires" :key="q.id" :value="q.id">{{ q.title }}</option>\
+                <optgroup v-for="g in groupedQuestionnaires" :key="g.label" :label="g.label">\
+                    <option v-for="q in g.items" :key="q.id" :value="q.id">{{ q.title }}</option>\
+                </optgroup>\
             </select>\
         </div>\
         <div class="col-md-3">\
