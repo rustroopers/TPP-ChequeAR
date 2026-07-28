@@ -47,7 +47,6 @@
 @* Recientes *@
 <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="m-0">@Cq.T("home.recent.title")</h2>
-    <a href="@Url.Action("Search", "Encounters")" class="cq-text-sm">@Cq.T("home.recent.viewall")</a>
 </div>
 
 @if (Model.RecentEncounters == null || Model.RecentEncounters.Count == 0)
@@ -71,7 +70,7 @@ else
                 <th>@Cq.T("table.col.specialty")</th>
                 <th>@Cq.T("table.col.status")</th>
                 <th>@Cq.T("table.col.updated")</th>
-                <th class="text-end">@Cq.T("table.col.open")</th>
+                <th class="text-end"><span class="visually-hidden">@Cq.T("table.col.open")</span></th>
             </tr>
         </thead>
         <tbody>

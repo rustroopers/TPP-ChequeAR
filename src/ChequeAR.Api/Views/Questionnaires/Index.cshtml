@@ -2,6 +2,8 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("q1.title");
+    var pageSize = Model.PageSize > 0 ? Model.PageSize : 20;
+    var totalPages = (int)Math.Ceiling((double)Model.Total / pageSize);
 }
 
 <header class="cq-page-header">
@@ -114,13 +116,16 @@ else
     </table>
     <div class="d-flex justify-content-between align-items-center mt-3 cq-text-sm cq-text-muted">
         <span>Mostrando @Model.Items.Count de @Model.Total</span>
-        <nav>
-            <ul class="pagination pagination-sm mb-0">
-                <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page - 1 })">‹</a></li>
-                <li class="page-item active"><span class="page-link">@Model.Page</span></li>
-                <li class="page-item"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page + 1 })">›</a></li>
-            </ul>
-        </nav>
+        @if (totalPages > 1)
+        {
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page - 1 })">‹</a></li>
+                    <li class="page-item active"><span class="page-link">@Model.Page</span></li>
+                    <li class="page-item @(Model.Page >= totalPages ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page + 1 })">›</a></li>
+                </ul>
+            </nav>
+        }
     </div>
 }
 

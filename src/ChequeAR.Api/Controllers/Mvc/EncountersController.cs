@@ -210,7 +210,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
                     QuestionnaireVersion = PinnedVersionNumber(q, qr.QuestionnaireVersionId),
                     Author = qr.AuthorUserId,
-                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.Format(qr.LastSavedAt, "yyyy-MM-dd HH:mm")
+                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.LastSavedAt)
                 };
 
                 // Un linkId puede repetirse (opción múltiple: un item por opción marcada),
@@ -341,7 +341,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     var q = titleCache[e.QuestionnaireId];
                     model.Entries.Add(new EncounterTimelineItem
                     {
-                        Date = e.AuthoredAt.ToString("yyyy-MM-dd"),
+                        Date = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(e.AuthoredAt),
                         QuestionnaireTitle = q?.Title ?? e.QuestionnaireId.ToString(),
                         QuestionnaireVersion = PinnedVersionNumber(q, e.QuestionnaireVersionId),
                         Author = e.AuthorUserId,

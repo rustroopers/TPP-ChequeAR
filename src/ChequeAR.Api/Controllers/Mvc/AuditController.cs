@@ -51,7 +51,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     model.Entries.Add(new AuditEntry
                     {
                         Id = e.Id,
-                        Timestamp = ArgentinaTime.Format(e.Recorded, "yyyy-MM-dd HH:mm"),
+                        Timestamp = ArgentinaTime.FormatDateTime(e.Recorded),
                         Username = e.AgentUserId,
                         Action = av.Label,
                         ActionBadge = av.BadgeClass,
@@ -94,7 +94,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var detail = new AuditDetailViewModel
                 {
                     Id = e.Id,
-                    Timestamp = ArgentinaTime.Format(e.Recorded, "yyyy-MM-dd HH:mm:ss"),
+                    Timestamp = ArgentinaTime.FormatDateTime(e.Recorded),
                     Username = e.AgentUserId,
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,

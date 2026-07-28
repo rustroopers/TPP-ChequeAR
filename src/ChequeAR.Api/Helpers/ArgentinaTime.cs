@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 
 namespace ChequeAR.Api.Helpers
 {
@@ -10,6 +11,7 @@ namespace ChequeAR.Api.Helpers
     public static class ArgentinaTime
     {
         private static readonly TimeZoneInfo Tz = Resolve();
+        private static readonly CultureInfo Ar = new CultureInfo("es-AR");
 
         private static TimeZoneInfo Resolve()
         {
@@ -38,5 +40,13 @@ namespace ChequeAR.Api.Helpers
 
         /// <summary>Formatea un instante UTC directamente en hora de Argentina.</summary>
         public static string Format(DateTime utc, string format) => From(utc).ToString(format);
+
+        /// <summary>Fecha en el formato estándar de la UI: dd/mm/yyyy (ej: 28/07/2026).</summary>
+        public static string FormatDate(DateTime utc)
+            => From(utc).ToString("dd/MM/yyyy", Ar);
+
+        /// <summary>Fecha y hora en el formato estándar de la UI: dd/mm/yyyy HH:mm hrs (ej: 28/07/2026 18:31 hrs).</summary>
+        public static string FormatDateTime(DateTime utc)
+            => From(utc).ToString("dd/MM/yyyy HH:mm", Ar) + " hrs";
     }
 }

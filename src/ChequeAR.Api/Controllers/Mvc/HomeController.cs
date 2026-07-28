@@ -58,7 +58,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         QuestionnaireTitle = q?.Title ?? r.QuestionnaireId.ToString(),
                         SpecialtyCode = q?.SpecialtyCode ?? "general",
                         Status = r.Status == ChequeAR.Domain.Enums.ResponseStatus.Completed ? "published" : "draft",
-                        UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.Format(r.LastSavedAt, "yyyy-MM-dd HH:mm"),
+                        UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(r.LastSavedAt),
                         OpenUrl = Url.Action("View", "Encounters", new { id = r.Id })
                     });
                 }

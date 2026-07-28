@@ -7,7 +7,6 @@
         System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
         System.Tuple.Create("Mi perfil", (string)null)
     };
-    var lang = (Request.Cookies["chequear_lang"] != null ? Request.Cookies["chequear_lang"].Value : "es-AR");
 }
 
 <header class="cq-page-header">
@@ -42,13 +41,6 @@
     @using (Html.BeginForm("SaveProfile", "Account", FormMethod.Post))
     {
         @Html.AntiForgeryToken()
-        <div class="mb-3">
-            <label class="form-label">Idioma</label>
-            <select name="lang" class="form-select" style="max-width:240px;">
-                <option value="es-AR" selected="@(lang == "es-AR")">Español (es-AR)</option>
-                <option value="en" selected="@(lang == "en")">English (en)</option>
-            </select>
-        </div>
         <div class="mb-3">
             <div class="form-check">
                 <input type="checkbox" class="form-check-input" id="notifyEmail" name="notifyEmail" checked />

@@ -56,7 +56,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         SpecialtyLabel = SpecialtyMap.Label(it.SpecialtyCode, it.SpecialtyDisplay),
                         Version = it.Versions?.Count ?? 0,
                         Status = QuestionnaireStatusMap.ToUi(it.Status),
-                        UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.Format(it.UpdatedAt, "yyyy-MM-dd"),
+                        UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(it.UpdatedAt),
                         Author = it.CreatedBy,
                         HasUnpublishedChanges = it.HasUnpublishedChanges()
                     });
@@ -254,7 +254,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Version = q.Versions?.Count ?? 0,
                     Status = QuestionnaireStatusMap.ToUi(q.Status),
                     Author = q.CreatedBy,
-                    UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.Format(q.UpdatedAt, "yyyy-MM-dd"),
+                    UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(q.UpdatedAt),
                     HasUnpublishedChanges = q.HasUnpublishedChanges()
                 };
                 model.Groups.AddRange(BuildEditorGroups(q));
@@ -288,7 +288,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Select(v => new QuestionnaireVersionView
                     {
                         Version = v.VersionNumber,
-                        Date = ChequeAR.Api.Helpers.ArgentinaTime.Format(v.PublishedAt, "yyyy-MM-dd"),
+                        Date = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.PublishedAt),
                         Author = v.PublishedBy,
                         Status = "published",
                         ChangeNote = v.ChangeNote

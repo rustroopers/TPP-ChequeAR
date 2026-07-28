@@ -70,27 +70,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View();
         }
 
-        // T3 — cambio de idioma
-        public ActionResult SetLanguage(string lang, string returnUrl)
-        {
-            if (lang != "es-AR" && lang != "en") lang = "es-AR";
-            var cookie = new HttpCookie("chequear_lang", lang)
-            {
-                Expires = DateTime.UtcNow.AddDays(30),
-                Path = "/",
-                HttpOnly = false
-            };
-            Response.Cookies.Add(cookie);
-            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl)) return Redirect(returnUrl);
-            return RedirectToAction("Index", "Home");
-        }
-
         public ActionResult Profile() { ViewBag.Title = "Mi perfil"; return View(); }
 
         [HttpPost, ValidateAntiForgeryToken]
-        public ActionResult SaveProfile(string lang)
+        public ActionResult SaveProfile()
         {
-            return SetLanguage(lang, Url.Action("Profile"));
+            return RedirectToAction("Profile");
         }
 
         public ActionResult Logout()
