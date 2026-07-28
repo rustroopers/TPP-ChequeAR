@@ -26,6 +26,15 @@ namespace ChequeAR.Api.Models
         public int Total { get; set; }
         public int Page { get; set; }
         public int PageSize { get; set; }
+
+        /// <summary>Opciones del filtro de especialidad, derivadas de los cuestionarios existentes.</summary>
+        public List<SpecialtyOption> Specialties { get; set; } = new List<SpecialtyOption>();
+    }
+
+    public class SpecialtyOption
+    {
+        public string Code { get; set; }
+        public string Label { get; set; }
     }
 
     public class QuestionnaireDetailViewModel

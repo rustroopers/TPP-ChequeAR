@@ -27,10 +27,10 @@
             <label class="form-label cq-text-sm">Especialidad</label>
             <select name="specialty" class="form-select">
                 <option value="">Todas</option>
-                <option value="cardio" selected="@(Model.SpecialtyFilter == "cardio")">Cardiología</option>
-                <option value="neumo" selected="@(Model.SpecialtyFilter == "neumo")">Neumonología</option>
-                <option value="onco" selected="@(Model.SpecialtyFilter == "onco")">Oncología</option>
-                <option value="general" selected="@(Model.SpecialtyFilter == "general")">General</option>
+                @foreach (var sp in Model.Specialties)
+                {
+                    <option value="@sp.Code" selected="@(Model.SpecialtyFilter == sp.Code)">@sp.Label</option>
+                }
             </select>
         </div>
         <div class="col-md-3">

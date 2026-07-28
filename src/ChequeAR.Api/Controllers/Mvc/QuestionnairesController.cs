@@ -44,6 +44,10 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
+                // Opciones del filtro derivadas de los cuestionarios reales (antes estaban hardcodeadas).
+                foreach (var code in await _repo.GetSpecialtyCodesAsync())
+                    model.Specialties.Add(new SpecialtyOption { Code = code, Label = SpecialtyMap.Label(code) });
+
                 var st = QuestionnaireStatusMap.FromUi(status);
                 var items = await _repo.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
                 model.Total = await _repo.CountAsync(st, q, specialty);

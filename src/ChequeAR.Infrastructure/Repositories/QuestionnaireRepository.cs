@@ -163,6 +163,17 @@ namespace ChequeAR.Infrastructure.Repositories
                 .FirstOrDefaultAsync(v => v.QuestionnaireId == questionnaireId && v.VersionNumber == versionNumber);
         }
 
+        public async Task<IReadOnlyList<string>> GetSpecialtyCodesAsync()
+        {
+            // Ojo: en Oracle '' es NULL, así que un "!= \"\"" excluiría todo. Basta con != null.
+            return await _ctx.Questionnaires
+                .Where(x => !x.IsDeleted && x.SpecialtyCode != null)
+                .Select(x => x.SpecialtyCode)
+                .Distinct()
+                .OrderBy(c => c)
+                .ToListAsync();
+        }
+
         public async Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
         {
             var list = (ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
