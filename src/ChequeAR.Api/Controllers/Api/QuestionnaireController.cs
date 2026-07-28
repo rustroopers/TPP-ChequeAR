@@ -108,6 +108,12 @@ namespace ChequeAR.Api.Controllers.Api
                     actualVersion = ex.ActualVersion
                 });
             }
+            catch (InvalidOperationException ex)
+            {
+                // Mismo criterio que Publish: "no existe" y "no se puede editar en este
+                // estado" (ej. archivado) son ambos errores del cliente, no del server.
+                return Content((HttpStatusCode)422, new { error = ex.Message });
+            }
         }
 
         [HttpPost, Route("{id:guid}/$publish"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]

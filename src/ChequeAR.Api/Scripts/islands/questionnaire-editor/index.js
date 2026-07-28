@@ -25,6 +25,10 @@
             // Un publicado no se autoguarda: sus cambios quedan pendientes hasta que
             // alguien decide publicar la versión siguiente. Guardar es una decisión.
             var isPublished = Vue.ref(props.status === 'published');
+            // Un archivado no se puede editar: el backend lo rechaza (Retired questionnaires
+            // cannot be edited). Sin esto el editor lo trataba como un borrador cualquiera
+            // -autosave incluido- y cada guardado terminaba en un 500 silencioso.
+            var isArchived = Vue.ref(props.status === 'archived');
             // Versión del registro que este editor cargó. Viaja en If-Match y se refresca
             // con cada guardado propio. Si otra persona guarda, la suya avanza y la nuestra
             // queda vieja -> el server responde 409 en vez de dejarnos pisar su trabajo.
@@ -543,6 +547,12 @@
             function save(options) {
                 var explicit = !!(options && options.explicit);
                 if (saving.value) return Promise.resolve(false);
+                // El backend rechaza cualquier escritura sobre un archivado: cortar acá
+                // evita el viaje al server (que hoy devolvía 500) y explica por qué.
+                if (isArchived.value) {
+                    if (explicit) toast('Este cuestionario está archivado: no se puede editar. Publicalo de nuevo desde el listado para reactivarlo.', 'error');
+                    return Promise.resolve(false);
+                }
                 // Con un conflicto sin resolver no se vuelve a intentar: reintentar sólo
                 // serviría para pisar a la otra persona en cuanto refresquemos la versión.
                 if (conflict.value) return Promise.resolve(false);
@@ -677,11 +687,12 @@
 
             // Autosave (2s debounce) sólo para borradores ya persistidos:
             //  - uno nuevo se guarda a mano la primera vez, para no crear duplicados;
-            //  - uno publicado no se autoguarda nunca (ver isPublished).
+            //  - uno publicado no se autoguarda nunca (ver isPublished);
+            //  - uno archivado no se guarda nunca: el backend no lo permite (ver isArchived).
             var debounce;
             function markDirty() {
                 dirty.value = true;
-                if (isNew.value || isPublished.value || conflict.value) return;
+                if (isNew.value || isPublished.value || isArchived.value || conflict.value) return;
                 clearTimeout(debounce);
                 debounce = setTimeout(save, 2000);
             }
@@ -692,9 +703,11 @@
             Vue.watch([qTitle, specialtyCode], markDirty);
 
             // Sin autosave en publicados, salir de la página con cambios pendientes los
-            // perdía en silencio. El navegador pide confirmación.
+            // perdía en silencio. El navegador pide confirmación. En un archivado nada se
+            // guarda nunca, así que preguntar sería confuso ("¿perder cambios?" cuando ya
+            // sabemos que no se iban a guardar).
             function beforeUnload(e) {
-                if (!dirty.value) return;
+                if (!dirty.value || isArchived.value) return;
                 e.preventDefault();
                 e.returnValue = '';
                 return '';
@@ -724,7 +737,7 @@
                 groups: groups, types: types, selected: selected,
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
                 qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
-                isPublished: isPublished, publish: publish,
+                isPublished: isPublished, isArchived: isArchived, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
                 issues: issues, fixIssues: fixIssues,
                 conditionSources: conditionSources, conditionSource: conditionSource,
@@ -768,6 +781,10 @@
 <div v-if="isPublished && !conflict" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
     <i class="bi bi-info-circle" style="color:var(--cq-info);"></i>\
     <span class="cq-text-sm">Este cuestionario está <strong>publicado</strong>. Los cambios se guardan como pendientes: los clínicos siguen viendo la versión publicada hasta que publiques una nueva.</span>\
+</div>\
+<div v-if="isArchived && !conflict" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-warning);">\
+    <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
+    <span class="cq-text-sm">Este cuestionario está <strong>archivado</strong> y es de sólo lectura: no se puede editar ni guardar. Para reactivarlo, publicalo de nuevo desde el listado de Cuestionarios.</span>\
 </div>\
 <div class="row g-3">\
     <div class="col-lg-2">\
