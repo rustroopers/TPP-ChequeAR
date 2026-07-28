@@ -204,6 +204,20 @@
                 loadQuestions(id);
             });
 
+            // Auto-actualización (estilo debounce): apenas cambian cuestionario, fechas o
+            // condiciones, se re-previsualiza y se recalculan las estadísticas — sin botones.
+            var autoTimer = null;
+            function scheduleAuto() {
+                if (autoTimer) clearTimeout(autoTimer);
+                autoTimer = setTimeout(function () {
+                    if (!selectedId.value) return;
+                    preview(1);
+                    stats();
+                }, 500);
+            }
+            Vue.watch([selectedId, dateFrom, dateTo, combineMode], scheduleAuto);
+            Vue.watch(filters, scheduleAuto, { deep: true });
+
             function addFilter() {
                 if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar', 'info'); return; }
                 var q = questions.value[0];
@@ -426,15 +440,21 @@
 \
     <div class="d-flex justify-content-between align-items-center border-top pt-3">\
         <div class="cq-text-sm cq-text-muted">\
-            <span v-if="total !== null">Grupo de fichas: <strong>{{ total }}</strong> fichas</span>\
-            <span v-else>Previsualizá para ver los resultados.</span>\
+            <span v-if="loading"><span class="cq-spinner cq-spinner--sm me-1"></span> Actualizando…</span>\
+            <span v-else-if="total !== null">Grupo de fichas: <strong>{{ total }}</strong> fichas</span>\
+            <span v-else>Elegí un cuestionario para ver los resultados.</span>\
         </div>\
         <div class="d-flex gap-2">\
             <button class="btn btn-outline-secondary" @click="openSave"><i class="bi bi-bookmark me-1"></i> {{ currentReportId ? \'Guardar cambios\' : \'Guardar reporte\' }}</button>\
-            <button class="btn btn-outline-secondary" @click="preview" :disabled="loading"><i class="bi bi-eye me-1"></i> {{ loading ? \'Cargando…\' : \'Previsualizar\' }}</button>\
-            <button class="btn btn-outline-secondary" @click="stats"><i class="bi bi-graph-up me-1"></i> Estadísticas</button>\
-            <button class="btn btn-outline-success" @click="exportCsv" :disabled="exporting"><i class="bi bi-filetype-csv me-1"></i> CSV</button>\
-            <button class="btn btn-primary" @click="exportXlsx" :disabled="exporting"><i class="bi bi-file-earmark-excel me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar a Excel\' }}</button>\
+            <div class="dropdown">\
+                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" :disabled="exporting || !selectedId">\
+                    <i class="bi bi-download me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar\' }}\
+                </button>\
+                <ul class="dropdown-menu dropdown-menu-end">\
+                    <li><button class="dropdown-item" type="button" @click="exportXlsx"><i class="bi bi-file-earmark-excel me-1"></i> Excel (.xlsx)</button></li>\
+                    <li><button class="dropdown-item" type="button" @click="exportCsv"><i class="bi bi-filetype-csv me-1"></i> CSV (.csv)</button></li>\
+                </ul>\
+            </div>\
         </div>\
     </div>\
 \

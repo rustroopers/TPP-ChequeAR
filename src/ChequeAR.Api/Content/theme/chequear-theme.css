@@ -218,12 +218,25 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 /* ===== Buttons ===== */
 .btn { border-radius: var(--cq-radius-sm); font-weight: 500; }
 .btn-primary {
+  /* Bootstrap 5.3 resuelve el color por variables --bs-btn-*: seteándolas, el violeta
+     aplica en TODOS los estados (base, hover, active, show del dropdown, disabled). */
+  --bs-btn-bg: var(--cq-primary);
+  --bs-btn-border-color: var(--cq-primary);
+  --bs-btn-hover-bg: var(--cq-primary-600);
+  --bs-btn-hover-border-color: var(--cq-primary-600);
+  --bs-btn-active-bg: var(--cq-primary-600);
+  --bs-btn-active-border-color: var(--cq-primary-600);
+  --bs-btn-disabled-bg: var(--cq-primary);
+  --bs-btn-disabled-border-color: var(--cq-primary);
   background: var(--cq-primary);
   border-color: var(--cq-primary);
 }
-.btn-primary:hover, .btn-primary:focus {
+.btn-primary:hover, .btn-primary:focus, .btn-primary:active,
+.btn-primary.active, .btn-primary:active:focus,
+.show > .btn-primary.dropdown-toggle {
   background: var(--cq-primary-600);
   border-color: var(--cq-primary-600);
+  box-shadow: none;
 }
 .btn-primary:focus-visible {
   outline: 2px solid var(--cq-primary-400);
