@@ -32,7 +32,7 @@ namespace ChequeAR.Infrastructure.Repositories
         {
             var q = _ctx.Questionnaires.AsQueryable().Where(x => !x.IsDeleted);
             if (status.HasValue) q = q.Where(x => x.Status == status.Value);
-            if (!string.IsNullOrEmpty(titleContains)) q = q.Where(x => x.Title.Contains(titleContains));
+            if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(); q = q.Where(x => x.Title.ToLower().Contains(t)); }
             if (!string.IsNullOrEmpty(specialtyCode)) q = q.Where(x => x.SpecialtyCode == specialtyCode);
             return await q.OrderByDescending(x => x.UpdatedAt).Skip(skip).Take(take).ToListAsync();
         }
@@ -41,7 +41,7 @@ namespace ChequeAR.Infrastructure.Repositories
         {
             var q = _ctx.Questionnaires.AsQueryable().Where(x => !x.IsDeleted);
             if (status.HasValue) q = q.Where(x => x.Status == status.Value);
-            if (!string.IsNullOrEmpty(titleContains)) q = q.Where(x => x.Title.Contains(titleContains));
+            if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(); q = q.Where(x => x.Title.ToLower().Contains(t)); }
             if (!string.IsNullOrEmpty(specialtyCode)) q = q.Where(x => x.SpecialtyCode == specialtyCode);
             return q.CountAsync();
         }

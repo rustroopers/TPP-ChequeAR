@@ -155,7 +155,31 @@
                     .map(function (s) { return { label: STATUS_LABEL[s] || 'Otro', items: byStatus[s] }; });
             });
 
+            // Combobox buscable del cuestionario base: se puede tipear y filtra en vivo,
+            // conservando el agrupado por estado. selectedId sigue siendo la fuente de verdad.
+            var qSearch = Vue.ref('');
+            var qOpen = Vue.ref(false);
+            var qBox = Vue.ref(null);
+            var selectedTitle = Vue.computed(function () {
+                var f = questionnaires.value.find(function (q) { return q.id === selectedId.value; });
+                return f ? f.title : '';
+            });
+            var filteredGroups = Vue.computed(function () {
+                var s = (qSearch.value || '').trim().toLowerCase();
+                if (!s) return groupedQuestionnaires.value;
+                return groupedQuestionnaires.value
+                    .map(function (g) {
+                        return { label: g.label, items: g.items.filter(function (q) { return (q.title || '').toLowerCase().indexOf(s) >= 0; }) };
+                    })
+                    .filter(function (g) { return g.items.length; });
+            });
+            function pickQuestionnaire(q) { selectedId.value = q.id; qSearch.value = ''; qOpen.value = false; }
+
             Vue.onMounted(function () {
+                // Cerrar el combobox al hacer clic fuera.
+                document.addEventListener('click', function (e) {
+                    if (qOpen.value && qBox.value && !qBox.value.contains(e.target)) qOpen.value = false;
+                });
                 fetch('/fhir/r5/Questionnaire?_count=100', { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
@@ -198,6 +222,12 @@
                 if (q.type === 'decimal') return parseFloat(raw);
                 if (q.type === 'boolean') return (raw === true || raw === 'true');
                 return raw;
+            }
+
+            // Sincroniza el rango desde el componente <cq-date-range>.
+            function onRangeChange(e) {
+                dateFrom.value = e.detail.from || '';
+                dateTo.value = e.detail.to || '';
             }
 
             function buildQuery(format) {
@@ -312,8 +342,10 @@
 
             return {
                 questionnaires: questionnaires, groupedQuestionnaires: groupedQuestionnaires, selectedId: selectedId,
+                qSearch: qSearch, qOpen: qOpen, qBox: qBox, selectedTitle: selectedTitle,
+                filteredGroups: filteredGroups, pickQuestionnaire: pickQuestionnaire,
                 questions: questions, filters: filters, combineMode: combineMode,
-                dateFrom: dateFrom, dateTo: dateTo,
+                dateFrom: dateFrom, dateTo: dateTo, onRangeChange: onRangeChange,
                 rows: rows, columns: columns, total: total,
                 page: page, totalPages: totalPages,
                 loading: loading, exporting: exporting, error: error,
@@ -332,19 +364,25 @@
     <div class="row g-3 mb-3">\
         <div class="col-md-6">\
             <label class="form-label">Cuestionario base</label>\
-            <select v-model="selectedId" class="form-select">\
-                <optgroup v-for="g in groupedQuestionnaires" :key="g.label" :label="g.label">\
-                    <option v-for="q in g.items" :key="q.id" :value="q.id">{{ q.title }}</option>\
-                </optgroup>\
-            </select>\
+            <div class="cq-combo" ref="qBox">\
+                <input type="text" class="form-control cq-combo__input" v-model="qSearch"\
+                       :placeholder="selectedTitle || \'Buscar cuestionario…\'"\
+                       @focus="qOpen = true" @keydown.esc="qOpen = false" autocomplete="off" />\
+                <i class="bi bi-chevron-down cq-combo__caret" aria-hidden="true"></i>\
+                <div v-if="qOpen" class="cq-combo__pop">\
+                    <template v-for="g in filteredGroups" :key="g.label">\
+                        <div class="cq-combo__group">{{ g.label }}</div>\
+                        <button v-for="q in g.items" :key="q.id" type="button"\
+                                class="cq-combo__opt" :class="{ \'is-active\': q.id === selectedId }"\
+                                @click="pickQuestionnaire(q)">{{ q.title }}</button>\
+                    </template>\
+                    <div v-if="!filteredGroups.length" class="cq-combo__empty">Sin resultados</div>\
+                </div>\
+            </div>\
         </div>\
-        <div class="col-md-3">\
-            <label class="form-label">Desde</label>\
-            <input v-model="dateFrom" type="date" class="form-control" />\
-        </div>\
-        <div class="col-md-3">\
-            <label class="form-label">Hasta</label>\
-            <input v-model="dateTo" type="date" class="form-control" />\
+        <div class="col-md-6">\
+            <label class="form-label">Período</label>\
+            <cq-date-range :value-from="dateFrom" :value-to="dateTo" @range-change="onRangeChange"></cq-date-range>\
         </div>\
     </div>\
 \

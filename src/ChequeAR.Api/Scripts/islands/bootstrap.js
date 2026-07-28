@@ -23,6 +23,10 @@
             if (rawProps) { try { props = JSON.parse(rawProps); } catch (e) { console.error('Bad data-props on', el, e); } }
             el.innerHTML = '';
             var app = Vue.createApp(component, props);
+            // <cq-date-range> es un custom element nativo, no un componente Vue.
+            app.config.compilerOptions.isCustomElement = function (tag) {
+                return tag === 'cq-date-range';
+            };
             app.mount(el);
             el.setAttribute('data-vue-mounted', '1');
         });

@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Helpers;
 using ChequeAR.Api.Models;
+using ChequeAR.Application.Exporters;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Reports;
 using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Api.Controllers.Mvc
@@ -22,8 +24,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             _questionnaires = questionnaires;
         }
 
-        // A6
-        public async Task<ActionResult> Index(string user = null, string action = null, string resource = null, string from = null, string to = null, int page = 1)
+        // A6. OJO: el parámetro NO puede llamarse "action" — colisiona con el token de ruta
+        // {action} de MVC (nombre del método), que gana sobre el query string y rompía el filtro.
+        public async Task<ActionResult> Index(string user = null, string act = null, string resource = null, string from = null, string to = null, int page = 1)
         {
             ViewBag.Title = "Auditoría";
             ViewBag.PageId = "audit";
@@ -32,35 +35,20 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
                 System.Tuple.Create("Auditoría", (string)null)
             };
+            const int pageSize = 50;
             var model = new AuditListViewModel
             {
-                UserFilter = user, ActionFilter = action, ResourceFilter = resource,
-                From = from, To = to, Page = page
+                UserFilter = user, ActionFilter = act, ResourceFilter = resource,
+                From = from, To = to, Page = page < 1 ? 1 : page, PageSize = pageSize
             };
 
             try
             {
-                var items = await _repo.SearchAsync(user, resource, (page - 1) * 50, 50);
-
-                // Resolvemos todos los títulos de cuestionario de la página de una sola query.
-                var titles = await ResolveTitlesAsync(items);
-
-                foreach (var e in items)
-                {
-                    var av = AuditPresentation.Describe(e.EntityRef, e.Action);
-                    model.Entries.Add(new AuditEntry
-                    {
-                        Id = e.Id,
-                        Timestamp = ArgentinaTime.FormatDateTime(e.Recorded),
-                        Username = e.AgentUserId,
-                        Action = av.Label,
-                        ActionBadge = av.BadgeClass,
-                        ActionIcon = av.Icon,
-                        Resource = ResourceLabel(av, titles),
-                        IP = e.AgentIp
-                    });
-                }
-                model.Total = model.Entries.Count;
+                var all = await LoadFilteredAsync(user, act, resource, from, to);
+                model.Total = all.Count;
+                model.Entries.AddRange(all
+                    .Skip((model.Page - 1) * pageSize)
+                    .Take(pageSize));
             }
             catch (Exception ex)
             {
@@ -69,6 +57,73 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.DataError = ex.Message;
             }
             return View(model);
+        }
+
+        /// <summary>
+        /// Aplica todos los filtros del listado: usuario/acción/fechas en la base y el
+        /// filtro de "Recurso" (por título legible) en memoria, ya que el título no vive en
+        /// la tabla de auditoría sino que se resuelve del cuestionario referenciado.
+        /// </summary>
+        private async Task<List<AuditEntry>> LoadFilteredAsync(string user, string act, string resource, string from, string to)
+        {
+            var fromUtc = ParseArgDateToUtc(from, endOfDay: false);
+            var toUtc = ParseArgDateToUtc(to, endOfDay: true);
+
+            var items = await _repo.SearchAsync(user, act, fromUtc, toUtc, 5000);
+            var titles = await ResolveTitlesAsync(items);
+
+            var res = (resource ?? string.Empty).Trim();
+            var entries = new List<AuditEntry>();
+            foreach (var e in items)
+            {
+                var av = AuditPresentation.Describe(e.EntityRef, e.Action);
+                var label = ResourceLabel(av, titles);
+                if (res.Length > 0 && (label ?? string.Empty).IndexOf(res, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                entries.Add(new AuditEntry
+                {
+                    Id = e.Id,
+                    Timestamp = ArgentinaTime.FormatDateTime(e.Recorded),
+                    Username = e.AgentUserId,
+                    Action = av.Label,
+                    ActionBadge = av.BadgeClass,
+                    ActionIcon = av.Icon,
+                    Resource = label,
+                    IP = e.AgentIp
+                });
+            }
+            return entries;
+        }
+
+        /// <summary>Fecha "yyyy-MM-dd" (local ARG) a límite UTC. endOfDay=true toma el día siguiente (cota superior exclusiva).</summary>
+        private static DateTime? ParseArgDateToUtc(string date, bool endOfDay)
+        {
+            if (!DateTime.TryParseExact((date ?? string.Empty).Trim(), "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+                return null;
+            return ArgentinaTime.ToUtc(endOfDay ? d.Date.AddDays(1) : d.Date);
+        }
+
+        // A6b — Exportación. Reutiliza los mismos exporters (XLSX/CSV) que Reportes,
+        // armando un ReportResult con las columnas visibles del listado.
+        public async Task<ActionResult> Export(string user = null, string act = null, string resource = null, string from = null, string to = null, string format = "xlsx")
+        {
+            // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
+            var entries = await LoadFilteredAsync(user, act, resource, from, to);
+            var rows = entries.ConvertAll(e => new Dictionary<string, object>
+            {
+                ["Fecha"] = e.Timestamp,
+                ["Usuario"] = e.Username,
+                ["Acción"] = e.Action,
+                ["Cuestionario"] = e.Resource,
+                ["IP"] = e.IP
+            });
+
+            var result = new ReportResult { Total = rows.Count, Rows = rows };
+            if ((format ?? "xlsx").ToLowerInvariant() == "csv")
+                return File(new CsvExporter().Export(result), "text/csv", "auditoria.csv");
+            return File(new XlsxExporter().Export(result),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "auditoria.xlsx");
         }
 
         // A7
@@ -84,7 +139,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
-                var all = await _repo.SearchAsync(null, null, 0, 5000);
+                var all = await _repo.SearchAsync(null, null, null, null, 5000);
                 var e = all.FirstOrDefault(x => x.Id == id);
                 if (e == null) return HttpNotFound();
 

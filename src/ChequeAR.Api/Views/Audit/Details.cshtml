@@ -8,14 +8,14 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">Evento de auditoría</h1>
-        <p class="cq-page-header__subtitle">@Model.Timestamp · hora de Argentina</p>
+        <p class="cq-page-header__subtitle">@Model.Timestamp</p>
     </div>
     <a href="@Url.Action("Index")" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Volver</a>
 </header>
 
 <div class="cq-card" style="max-width:760px;">
     <dl class="row mb-0">
-        <dt class="col-sm-3 cq-text-sm cq-text-muted">Cuándo</dt>      <dd class="col-sm-9">@Model.Timestamp <span class="cq-text-sm cq-text-muted">(ARG)</span></dd>
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">Cuándo</dt>      <dd class="col-sm-9">@Model.Timestamp</dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Usuario</dt>     <dd class="col-sm-9">@Model.Username · @Model.FullName</dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Rol / especialidad</dt><dd class="col-sm-9">@Model.Role · @Model.Specialty</dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Acción</dt>      <dd class="col-sm-9"><span class="cq-badge @Model.ActionBadge"><i class="bi @Model.ActionIcon me-1"></i>@Model.Action</span></dd>

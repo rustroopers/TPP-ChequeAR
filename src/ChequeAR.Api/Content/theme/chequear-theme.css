@@ -528,3 +528,169 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
     display: none;
   }
 }
+
+/* ===== Rango de fechas (<cq-date-range>) — calendario propio ===== */
+.cq-daterange { position: relative; display: block; width: 100%; }
+
+.cq-daterange__trigger {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  min-height: calc(1.5em + .75rem + 2px); /* alto de .form-control */
+  padding: .375rem .75rem;
+  text-align: left;
+  background: #fff;
+  color: var(--bs-body-color);
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--cq-radius-sm);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.cq-daterange.is-open .cq-daterange__trigger,
+.cq-daterange__trigger:focus {
+  border-color: var(--cq-primary-400);
+  box-shadow: 0 0 0 .2rem rgba(111, 95, 165, .2);
+  outline: none;
+}
+.cq-daterange__ic { color: var(--cq-neutral-500); }
+.cq-daterange__label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cq-daterange__label.is-placeholder { color: var(--cq-neutral-500); }
+.cq-daterange__caret { color: var(--cq-neutral-500); font-size: .8em; }
+
+.cq-daterange__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1050;
+  width: 288px;
+  padding: .75rem;
+  background: #fff;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--cq-radius-md);
+  box-shadow: var(--cq-shadow-2);
+}
+.cq-daterange__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .5rem;
+}
+.cq-daterange__navbtn {
+  border: 0;
+  background: transparent;
+  padding: .25rem .5rem;
+  border-radius: var(--cq-radius-sm);
+  cursor: pointer;
+  color: var(--cq-neutral-700);
+}
+.cq-daterange__navbtn:hover { background: var(--cq-neutral-100); }
+.cq-daterange__title { font-weight: 600; font-size: .95rem; }
+.cq-daterange__week,
+.cq-daterange__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.cq-daterange__week { margin-bottom: 2px; }
+.cq-daterange__week span {
+  text-align: center;
+  font-size: .7rem;
+  color: var(--cq-neutral-500);
+  text-transform: uppercase;
+}
+.cq-daterange__day {
+  border: 0;
+  background: transparent;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--cq-radius-sm);
+  font-size: .85rem;
+  cursor: pointer;
+  color: var(--cq-neutral-900);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cq-daterange__day:hover { background: var(--cq-primary-100); }
+.cq-daterange__day.is-adjacent { color: var(--cq-neutral-300); }
+.cq-daterange__day.is-today { font-weight: 700; text-decoration: underline; }
+.cq-daterange__day.is-inrange { background: var(--cq-primary-100); border-radius: 0; }
+.cq-daterange__day.is-selected { background: var(--cq-primary); color: #fff; }
+.cq-daterange__day.is-selected:hover { background: var(--cq-primary-600); }
+.cq-daterange__day.is-start { border-top-left-radius: var(--cq-radius-sm); border-bottom-left-radius: var(--cq-radius-sm); }
+.cq-daterange__day.is-end { border-top-right-radius: var(--cq-radius-sm); border-bottom-right-radius: var(--cq-radius-sm); }
+.cq-daterange__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: .5rem;
+  padding-top: .5rem;
+  border-top: 1px solid var(--cq-neutral-100);
+}
+.cq-daterange__clear {
+  border: 0;
+  background: transparent;
+  color: var(--cq-primary);
+  font-size: .8rem;
+  cursor: pointer;
+  padding: .15rem .3rem;
+}
+.cq-daterange__clear:hover { text-decoration: underline; }
+.cq-daterange__hint { font-size: .75rem; color: var(--cq-neutral-500); }
+
+/* ===== Combobox buscable (<div class="cq-combo">) ===== */
+.cq-combo { position: relative; }
+.cq-combo__input { padding-right: 2rem; }
+.cq-combo__input::placeholder { color: var(--cq-neutral-700); opacity: 1; } /* muestra el seleccionado, no un hint tenue */
+.cq-combo__caret {
+  position: absolute;
+  right: .75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--cq-neutral-500);
+  font-size: .8em;
+  pointer-events: none;
+}
+.cq-combo__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: .25rem;
+  background: #fff;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--cq-radius-md);
+  box-shadow: var(--cq-shadow-2);
+}
+.cq-combo__group {
+  padding: .35rem .5rem .15rem;
+  font-size: .7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--cq-neutral-500);
+}
+.cq-combo__opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: .4rem .5rem;
+  border-radius: var(--cq-radius-sm);
+  font: inherit;
+  color: var(--cq-neutral-900);
+  cursor: pointer;
+}
+.cq-combo__opt:hover { background: var(--cq-primary-100); }
+.cq-combo__opt.is-active { background: var(--cq-primary); color: #fff; }
+.cq-combo__empty { padding: .5rem; color: var(--cq-neutral-500); font-size: .85rem; }

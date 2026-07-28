@@ -25,6 +25,7 @@ namespace ChequeAR.Api.Models
         public List<AuditEntry> Entries { get; set; } = new List<AuditEntry>();
         public int Total { get; set; }
         public int Page { get; set; }
+        public int PageSize { get; set; }
     }
 
     public class AuditDetailViewModel
