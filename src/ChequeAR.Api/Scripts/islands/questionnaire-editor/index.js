@@ -25,6 +25,11 @@
             // Un publicado no se autoguarda: sus cambios quedan pendientes hasta que
             // alguien decide publicar la versión siguiente. Guardar es una decisión.
             var isPublished = Vue.ref(props.status === 'published');
+            // Si ya hay cambios guardados sin publicar de una sesión anterior (el server
+            // lo calcula comparando con la versión publicada). "dirty" sólo sabe de esta
+            // sesión, así que publish() necesita este flag además para no bloquear una
+            // publicación legítima cuando recién se abre la página.
+            var hasPendingChanges = Vue.ref(!!props.hasPendingChanges);
             // Un archivado no se puede editar: el backend lo rechaza (Retired questionnaires
             // cannot be edited). Sin esto el editor lo trataba como un borrador cualquiera
             // -autosave incluido- y cada guardado terminaba en un 500 silencioso.
@@ -547,6 +552,13 @@
             function save(options) {
                 var explicit = !!(options && options.explicit);
                 if (saving.value) return Promise.resolve(false);
+                // Nada cambió desde el último guardado: no hay razón para pegarle al
+                // server. Un cuestionario nuevo siempre tiene que crearse la primera vez,
+                // aunque todavía no se haya tocado nada.
+                if (!isNew.value && !dirty.value) {
+                    if (explicit) toast('No hay cambios para guardar', 'info');
+                    return Promise.resolve(true);
+                }
                 // El backend rechaza cualquier escritura sobre un archivado: cortar acá
                 // evita el viaje al server (que hoy devolvía 500) y explica por qué.
                 if (isArchived.value) {
@@ -592,12 +604,16 @@
                     if (!res.ok) { throw new Error('HTTP ' + res.status); }
                     return res.status === 204 ? null : res.json().catch(function () { return null; });
                 }).then(function (data) {
-                    if (creating && data && data.id) {
-                        currentId.value = data.id;
+                    // El server puede devolver "id" o "Id" según el endpoint (ver mismo
+                    // problema con concurrencyVersion más abajo): sin este fallback, crear
+                    // dejaba currentId sin setear y "Publicar" apuntaba a un id inexistente.
+                    var newId = data && (data.id !== undefined ? data.id : data.Id);
+                    if (creating && newId) {
+                        currentId.value = newId;
                         isNew.value = false;
                         // Reflejar el id real en la URL sin recargar.
                         if (window.history && window.history.replaceState) {
-                            window.history.replaceState(null, '', '/Questionnaires/Edit/' + data.id);
+                            window.history.replaceState(null, '', '/Questionnaires/Edit/' + newId);
                         }
                     }
                     // El server devuelve la entidad con su ConcurrencyVersion nueva; sin
@@ -609,6 +625,9 @@
                     }
                     lastSaved.value = new Date().toLocaleTimeString();
                     dirty.value = false;
+                    // Se guardó un cambio sobre un publicado: a partir de ahora hay que
+                    // dejar publicar aunque "dirty" ya esté en false (recién se limpió arriba).
+                    if (isPublished.value) hasPendingChanges.value = true;
                     if (creating) toast('Cuestionario creado', 'success');
                     else if (explicit) {
                         toast(isPublished.value
@@ -643,6 +662,13 @@
 
             function publish() {
                 if (saving.value || publishing.value) return;
+                // Ya publicado y el borrador es igual a esa versión (nada en esta sesión
+                // ni guardado antes sin publicar): publicar de nuevo sólo crearía una
+                // versión idéntica a la actual.
+                if (isPublished.value && !dirty.value && !hasPendingChanges.value) {
+                    toast('No hay cambios para publicar', 'info');
+                    return;
+                }
                 if (conflict.value) {
                     toast('Resolvé el conflicto de edición antes de publicar.', 'error');
                     return;
@@ -721,6 +747,16 @@
                 var pub = document.getElementById('publishBtn');
                 if (pub) pub.addEventListener('click', publish);
                 window.addEventListener('beforeunload', beforeUnload);
+
+                // Deshabilita los botones mientras hay un guardado/publicación en curso:
+                // sin esto, clickear varias veces mientras el primer POST todavía no
+                // volvió disparaba una creación por click (creating quedaba en true hasta
+                // que resolvía el primero).
+                Vue.watch([saving, publishing], function () {
+                    var busy = saving.value || publishing.value;
+                    if (btn) btn.disabled = busy;
+                    if (pub) pub.disabled = busy;
+                });
             });
             Vue.onUnmounted(function () {
                 clearTimeout(debounce);

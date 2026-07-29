@@ -134,7 +134,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
             // status manda: el editor no autoguarda un cuestionario publicado.
             ViewBag.EditorProps = JsonConvert.SerializeObject(
-                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups },
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges },
                 new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
         }

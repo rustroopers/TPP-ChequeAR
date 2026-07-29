@@ -95,20 +95,7 @@
     Armá el reporte y pedí las estadísticas para verlas acá.\
 </div>\
 <div v-else>\
-    <div v-if="!stats.Responses" class="alert alert-warning">\
-        El grupo no tiene ninguna ficha. Probá ampliando el rango de fechas o sacando condiciones.\
-    </div>\
-    <template v-else>\
-        <div class="cq-card mb-3 d-flex align-items-center gap-3">\
-            <div>\
-                <div class="cq-text-xs cq-text-muted text-uppercase">Fichas en el grupo</div>\
-                <div style="font-size:1.75rem; font-weight:600; line-height:1;">{{ stats.Responses }}</div>\
-            </div>\
-            <div class="cq-text-sm cq-text-muted">\
-                Todos los porcentajes de completitud son sobre este total.\
-            </div>\
-        </div>\
-\
+    <template v-if="stats.Responses">\
         <div class="row g-3">\
             <div v-for="q in stats.Questions" :key="q.LinkId" class="col-lg-6">\
                 <div class="cq-card h-100">\
@@ -170,9 +157,6 @@
                                          :aria-valuenow="c.Pct" aria-valuemin="0" aria-valuemax="100"></div>\
                                 </div>\
                             </div>\
-                            <p class="cq-text-xs cq-text-muted mb-0">\
-                                Porcentaje sobre {{ q.N }} respuestas marcadas.\
-                            </p>\
                         </div>\
                     </template>\
 \

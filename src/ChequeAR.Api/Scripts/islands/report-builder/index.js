@@ -401,7 +401,6 @@
     </div>\
 \
     <h3 class="cq-section-title">Mostrar solo las fichas que:</h3>\
-    <div v-if="filters.length === 0" class="cq-text-sm cq-text-muted mb-2">Sin condiciones — el reporte incluye todas las fichas del período.</div>\
     <div v-for="(f, i) in filters" :key="i" class="row g-2 align-items-center mb-2">\
         <div class="col-auto cq-text-muted pe-0" style="width:1.2rem;">•</div>\
         <div class="col-md-4">\
@@ -438,24 +437,9 @@
         </div>\
     </div>\
 \
-    <div class="d-flex justify-content-between align-items-center border-top pt-3">\
-        <div class="cq-text-sm cq-text-muted">\
-            <span v-if="loading"><span class="cq-spinner cq-spinner--sm me-1"></span> Actualizando…</span>\
-            <span v-else-if="total !== null">Grupo de fichas: <strong>{{ total }}</strong> fichas</span>\
-            <span v-else>Elegí un cuestionario para ver los resultados.</span>\
-        </div>\
-        <div class="d-flex gap-2">\
-            <button class="btn btn-outline-secondary" @click="openSave"><i class="bi bi-bookmark me-1"></i> {{ currentReportId ? \'Guardar cambios\' : \'Guardar reporte\' }}</button>\
-            <div class="dropdown">\
-                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" :disabled="exporting || !selectedId">\
-                    <i class="bi bi-download me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar\' }}\
-                </button>\
-                <ul class="dropdown-menu dropdown-menu-end">\
-                    <li><button class="dropdown-item" type="button" @click="exportXlsx"><i class="bi bi-file-earmark-excel me-1"></i> Excel (.xlsx)</button></li>\
-                    <li><button class="dropdown-item" type="button" @click="exportCsv"><i class="bi bi-filetype-csv me-1"></i> CSV (.csv)</button></li>\
-                </ul>\
-            </div>\
-        </div>\
+    <div class="cq-text-sm cq-text-muted border-top pt-3">\
+        <span v-if="loading"><span class="cq-spinner cq-spinner--sm me-1"></span> Actualizando…</span>\
+        <span v-else-if="total === null">Elegí un cuestionario para ver los resultados.</span>\
     </div>\
 \
     <div v-if="showSave" class="cq-card mt-3 mb-0" style="border-left:3px solid var(--cq-primary);">\
@@ -480,11 +464,31 @@
             </tbody>\
         </table>\
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">\
-            <span class="cq-text-xs cq-text-muted">Mostrando {{ rows.length }} de {{ total }} fichas · página {{ page }} de {{ totalPages }}. La exportación incluye todas.</span>\
+            <span class="cq-text-xs cq-text-muted">Mostrando {{ rows.length }} de {{ total }} fichas.</span>\
             <div v-if="totalPages > 1" class="btn-group btn-group-sm">\
                 <button class="btn btn-outline-secondary" :disabled="page <= 1 || loading" @click="preview(page - 1)"><i class="bi bi-chevron-left"></i> Anterior</button>\
                 <button class="btn btn-outline-secondary" :disabled="page >= totalPages || loading" @click="preview(page + 1)">Siguiente <i class="bi bi-chevron-right"></i></button>\
             </div>\
+        </div>\
+    </div>\
+    <div v-else-if="!loading && total !== null" class="cq-card mt-3">\
+        <div class="cq-empty">\
+            <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>\
+            <div class="cq-empty__title">No hay fichas</div>\
+            <div class="cq-empty__desc">Probá ampliando el rango de fechas o sacando condiciones.</div>\
+        </div>\
+    </div>\
+\
+    <div class="d-flex justify-content-end gap-2 mt-3">\
+        <button class="btn btn-outline-secondary" @click="openSave"><i class="bi bi-bookmark me-1"></i> {{ currentReportId ? \'Guardar cambios\' : \'Guardar reporte\' }}</button>\
+        <div class="dropdown">\
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" :disabled="exporting || !selectedId">\
+                <i class="bi bi-download me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar\' }}\
+            </button>\
+            <ul class="dropdown-menu dropdown-menu-end">\
+                <li><button class="dropdown-item" type="button" @click="exportXlsx"><i class="bi bi-file-earmark-excel me-1"></i> Excel (.xlsx)</button></li>\
+                <li><button class="dropdown-item" type="button" @click="exportCsv"><i class="bi bi-filetype-csv me-1"></i> CSV (.csv)</button></li>\
+            </ul>\
         </div>\
     </div>\
 </div>'

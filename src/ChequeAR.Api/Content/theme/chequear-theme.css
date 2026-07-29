@@ -136,11 +136,16 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   grid-area: sidebar;
   background: #fff;
   border-right: 1px solid var(--cq-neutral-200);
+}
+.cq-sidebar__inner {
+  position: sticky;
+  top: 56px;
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
   padding: 16px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow-y: auto;
 }
 .cq-sidebar__item {
   display: flex;

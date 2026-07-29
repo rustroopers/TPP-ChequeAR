@@ -7,7 +7,6 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">Historial · @Model.Patient.FullName</h1>
-        <p class="cq-page-header__subtitle">HC @Model.Patient.HC · @Model.Patient.AgeLabel · <span class="cq-chip cq-chip--@Model.Patient.SpecialtyCode">@Model.Patient.SpecialtyLabel</span></p>
     </div>
 </header>
 
@@ -21,24 +20,30 @@
     }
     else
     {
-        <div style="position:relative; padding-left:20px; border-left:2px solid var(--cq-neutral-200);">
-            @foreach (var e in Model.Entries)
+        <div style="position:relative; padding-left:20px;">
+            @for (var i = 0; i < Model.Entries.Count; i++)
             {
+                var e = Model.Entries[i];
+                var isLast = i == Model.Entries.Count - 1;
                 <div style="position:relative; padding-bottom:24px;">
+                    @if (!isLast)
+                    {
+                        <span style="position:absolute; left:-22px; top:18px; bottom:-12px; width:2px; background:var(--cq-neutral-200);"></span>
+                    }
                     <span style="position:absolute; left:-27px; top:6px; width:12px; height:12px; border-radius:50%; background:var(--cq-primary); border:2px solid #fff;"></span>
                     <div class="cq-text-sm cq-text-muted">@e.Date</div>
-                    <div class="d-flex align-items-center gap-2 mt-1">
-                        <strong>@e.QuestionnaireTitle</strong>
-                        @if (e.QuestionnaireVersion > 0)
-                        {
-                            <span class="cq-text-xs cq-text-muted" title="Versión con la que se completó">v@(e.QuestionnaireVersion)</span>
-                        }
-                        @if (e.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
-                    </div>
                     <div class="d-flex justify-content-between align-items-center mt-1">
-                        <span class="cq-text-sm cq-text-muted">por @e.Author</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <strong>@e.QuestionnaireTitle</strong>
+                            @if (e.QuestionnaireVersion > 0)
+                            {
+                                <span class="cq-text-xs cq-text-muted" title="Versión con la que se completó">v@(e.QuestionnaireVersion)</span>
+                            }
+                            @if (e.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
+                        </div>
                         <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
                     </div>
+                    <div class="cq-text-sm cq-text-muted mt-1">por @e.Author</div>
                 </div>
             }
         </div>

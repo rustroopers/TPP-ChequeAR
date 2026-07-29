@@ -14,7 +14,7 @@
 
 @using (Html.BeginForm("Search", "Encounters", FormMethod.Get, new { @class = "mb-4", data_cq_autofilter = "patients" }))
 {
-    <div class="input-group input-group-lg" style="max-width:640px;">
+    <div class="input-group" style="max-width:640px;">
         <span class="input-group-text"><i class="bi bi-search"></i></span>
         <input type="search" name="q" value="@Model.Query" class="form-control"
                placeholder="@Cq.T("r1.placeholder")" aria-label="@Cq.T("r1.title")" autofocus />
@@ -49,7 +49,6 @@ else
                 <th>HC</th>
                 <th>Nombre</th>
                 <th>Edad</th>
-                <th>Especialidad</th>
                 <th class="text-end">Acciones</th>
             </tr>
         </thead>
@@ -60,7 +59,6 @@ else
                     <td><code>@p.HC</code></td>
                     <td>@p.FullName</td>
                     <td class="cq-text-sm">@p.AgeLabel</td>
-                    <td><span class="cq-chip cq-chip--@p.SpecialtyCode">@p.SpecialtyLabel</span></td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#selectQModal"
                                 data-patient-id="@p.HC" data-patient-name="@p.FullName" data-patient-hc="@p.HC">

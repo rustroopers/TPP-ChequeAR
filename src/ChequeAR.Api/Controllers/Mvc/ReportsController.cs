@@ -87,7 +87,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // E3
-        public async Task<ActionResult> Preview(Guid id)
+        public async Task<ActionResult> Preview(Guid id, int? page = null)
         {
             ViewBag.Title = "Preview";
             ViewBag.PageId = "reports";
@@ -110,6 +110,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var query = JsonConvert.DeserializeObject<ReportQuery>(saved.QueryJson ?? "{}")
                             ?? new ReportQuery();
                 query.QuestionnaireId = saved.QuestionnaireId;
+                if (page.HasValue && page.Value > 0) query.Page = page.Value;
 
                 model.Page = query.Page;
                 model.PageSize = query.PageSize;

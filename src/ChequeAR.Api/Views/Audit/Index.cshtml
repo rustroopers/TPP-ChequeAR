@@ -13,8 +13,15 @@
         <h1 class="cq-page-header__title">@Cq.T("audit.title")</h1>
         <p class="cq-page-header__subtitle">@Cq.T("audit.subtitle")</p>
     </div>
-    <a href="@Url.Action("Export", new { user = Model.UserFilter, act = Model.ActionFilter, resource = Model.ResourceFilter, from = Model.From, to = Model.To, format = "xlsx" })"
-       class="btn btn-primary"><i class="bi bi-file-earmark-excel me-1"></i> @Cq.T("common.export")</a>
+    <div class="dropdown">
+        <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-download me-1"></i> @Cq.T("common.export")
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="@Url.Action("Export", new { user = Model.UserFilter, act = Model.ActionFilter, resource = Model.ResourceFilter, from = Model.From, to = Model.To, format = "xlsx" })"><i class="bi bi-file-earmark-excel me-1"></i> Excel (.xlsx)</a></li>
+            <li><a class="dropdown-item" href="@Url.Action("Export", new { user = Model.UserFilter, act = Model.ActionFilter, resource = Model.ResourceFilter, from = Model.From, to = Model.To, format = "csv" })"><i class="bi bi-filetype-csv me-1"></i> CSV (.csv)</a></li>
+        </ul>
+    </div>
 </header>
 
 @using (Html.BeginForm("Index", "Audit", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "audit" }))
