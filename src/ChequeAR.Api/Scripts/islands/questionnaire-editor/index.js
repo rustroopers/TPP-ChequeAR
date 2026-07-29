@@ -650,9 +650,9 @@
                 });
             }
 
-            // Publicar desde el editor. Guarda primero: publicar congela lo que está en la
-            // base, no lo que está en pantalla, así que sin esto publicarías la versión
-            // anterior sin enterarte.
+            // Publicar desde el editor. Congela en una versión lo que está en la base, no lo
+            // que está en pantalla: por eso exige que no haya cambios sin guardar (ver el
+            // guard en publish()), en vez de guardar por su cuenta.
             // Descarta lo local y vuelve a cargar lo que hay en el server. Es la salida
             // honesta del conflicto: no hay merge automático de estructuras.
             function reloadFromServer() {
@@ -680,19 +680,23 @@
                     toast('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes. Resolvelas antes de publicar.', 'error');
                     return;
                 }
+                // Publicar exige haber guardado antes: no queremos congelar en una versión
+                // algo que sólo está en pantalla, y el guardado implícito de antes, hecho en
+                // el mismo instante que la publicación, dejaba "editado" y "publicado" con la
+                // misma marca de tiempo y se veían fuera de orden en auditoría. Guardar es
+                // una decisión explícita y previa.
+                if (dirty.value || isNew.value) {
+                    toast('Guardá los cambios antes de publicar.', 'error');
+                    return;
+                }
                 var token = getToken();
                 if (!token) { toast('No hay sesión: no se puede publicar (token ausente).', 'error'); return; }
 
                 publishing.value = true;
-                var pending = (dirty.value || isNew.value) ? save({ explicit: false }) : Promise.resolve(true);
-
-                pending.then(function (ok) {
-                    if (!ok) throw new Error('no se pudieron guardar los cambios');
-                    return fetch('/fhir/r5/Questionnaire/' + currentId.value + '/$publish', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                        body: '{}'
-                    });
+                fetch('/fhir/r5/Questionnaire/' + currentId.value + '/$publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: '{}'
                 }).then(function (res) {
                     if (res.ok) return null;
                     // El API devuelve 422 con {error} cuando la publicación no es válida.
@@ -752,11 +756,14 @@
                 // sin esto, clickear varias veces mientras el primer POST todavía no
                 // volvió disparaba una creación por click (creating quedaba en true hasta
                 // que resolvía el primero).
-                Vue.watch([saving, publishing], function () {
+                // Publicar queda deshabilitado mientras haya cambios sin guardar (o sea un
+                // cuestionario nuevo aún sin persistir): publicar exige guardar antes, así el
+                // botón lo comunica y no sólo el toast del guard.
+                Vue.watch([saving, publishing, dirty, isNew], function () {
                     var busy = saving.value || publishing.value;
                     if (btn) btn.disabled = busy;
-                    if (pub) pub.disabled = busy;
-                });
+                    if (pub) pub.disabled = busy || dirty.value || isNew.value;
+                }, { immediate: true });
             });
             Vue.onUnmounted(function () {
                 clearTimeout(debounce);
@@ -849,6 +856,7 @@
                         <option value="cardio">Cardiología</option>\
                         <option value="neumo">Neumonología</option>\
                         <option value="onco">Oncología</option>\
+                        <option value="reuma">Reumatología</option>\
                     </select>\
                 </div>\
             </div>\
