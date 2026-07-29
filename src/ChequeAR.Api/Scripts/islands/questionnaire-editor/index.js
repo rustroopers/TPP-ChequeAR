@@ -65,6 +65,7 @@
                             } : undefined,
                             code: q.code,
                             codeDisplay: q.codeDisplay,
+                            term: q.term,
                             options: q.options && q.options.length ? q.options.slice() : undefined,
                             optionsText: q.options && q.options.length ? q.options.join('\n') : ''
                         };
@@ -382,17 +383,21 @@
             }
 
             // --- Autocompletado SNOMED CT --------------------------------------------
-            // Toma el TEXTO de la pregunta como término y pide sugerencias al proxy del
-            // backend (/fhir/r5/ValueSet/$expand, que a su vez consulta al servidor
-            // terminológico). Elegir una sugerencia completa code + codeDisplay, que
-            // buildCoding() serializa a Question.CodingJson.
+            // Busca por el TÉRMINO CLÍNICO de la pregunta ("dolor torácico"), no por su
+            // enunciado ("¿Presentó dolor en el pecho al esfuerzo?"): $expand hace matching
+            // contra las descripciones de los conceptos, así que una oración con signos de
+            // pregunta, negaciones y calificadores devuelve poco y mal. Separar ambos campos
+            // además desacopla la redacción del significado: se puede reformular la pregunta
+            // sin tocar el código del que dependen los reportes.
+            // Elegir una sugerencia completa code + codeDisplay, que buildCoding() serializa
+            // a Question.CodingJson junto al término.
             var snomedResults = Vue.ref([]);
             var snomedSearching = Vue.ref(false);
             var snomedError = Vue.ref(null);
             var snomedOpen = Vue.ref(false);
             var snomedAbort = null;
             var snomedDebounce;
-            // Al cambiar de pregunta, el texto "cambia" sin que nadie tipee: no queremos
+            // Al cambiar de pregunta, el término "cambia" sin que nadie tipee: no queremos
             // disparar una búsqueda por eso. Esta bandera suprime ese primer disparo.
             var snomedSuppress = false;
             // Backoff ante 429: hasta este instante (ms epoch) no autocompletamos solos,
@@ -407,14 +412,15 @@
                 Vue.nextTick(function () { snomedSuppress = false; });
             });
 
-            // Autosugerencia asíncrona: mientras se edita el texto de la pregunta buscamos
-            // solos (debounce 400ms) para no golpear el terminológico en cada tecla.
+            // Autosugerencia asíncrona: mientras se edita el término clínico buscamos solos
+            // (debounce) para no golpear el terminológico en cada tecla. Escribir el
+            // enunciado ya no dispara búsquedas: sólo el término las provoca.
             Vue.watch(function () {
-                return selected.value && selected.value.question ? selected.value.question.text : null;
-            }, function (text) {
+                return selected.value && selected.value.question ? selected.value.question.term : null;
+            }, function (term) {
                 if (snomedSuppress) return;   // el cambio vino de seleccionar otra pregunta
                 clearTimeout(snomedDebounce);
-                if (!text || text.trim().length < 3) {
+                if (!term || term.trim().length < 3) {
                     snomedResults.value = []; snomedOpen.value = false; snomedError.value = null;
                     return;
                 }
@@ -424,10 +430,10 @@
 
             function searchSnomed() {
                 var q = selected.value && selected.value.question;
-                var term = q ? (q.text || '').trim() : '';
+                var term = q ? (q.term || '').trim() : '';
                 snomedError.value = null;
                 if (term.length < 3) {
-                    snomedError.value = 'Escribí al menos 3 caracteres en el texto de la pregunta.';
+                    snomedError.value = 'Escribí al menos 3 caracteres en el término clínico (ej: "dolor torácico").';
                     snomedResults.value = []; snomedOpen.value = true;
                     return;
                 }
@@ -475,6 +481,9 @@
                 dirty.value = true;
             }
 
+            // Saca el código pero conserva el término: qué mide la pregunta no deja de ser
+            // cierto porque se descarte el concepto elegido, y así se puede volver a buscar
+            // sin reescribirlo.
             function clearSnomed() {
                 var q = selected.value.question;
                 q.code = undefined;
@@ -506,10 +515,24 @@
 
             // Metadata clínica (SNOMED CT, único sistema soportado) para que la variable
             // sea interoperable fuera de ChequeAR. Se serializa en Question.CodingJson.
+            //
+            // "term" es el concepto en palabras que escribe quien diseña el cuestionario, y
+            // se guarda aunque todavía no haya código elegido: deja asentado qué mide la
+            // pregunta y permite retomar la codificación después. No viaja a FHIR (es
+            // metadata de autoría); el display del item.code publicado es el término
+            // preferido de SNOMED, no esta semilla.
             var SNOMED_SYSTEM = 'http://snomed.info/sct';
             function buildCoding(q) {
-                if (!q.code) return null;
-                return JSON.stringify({ system: SNOMED_SYSTEM, code: q.code, display: q.codeDisplay || q.text });
+                var term = (q.term || '').trim();
+                if (!q.code && !term) return null;
+                var coding = {};
+                if (q.code) {
+                    coding.system = SNOMED_SYSTEM;
+                    coding.code = q.code;
+                    coding.display = q.codeDisplay || term || q.text;
+                }
+                if (term) coding.term = term;
+                return JSON.stringify(coding);
             }
 
             // Manda el árbol completo (secciones -> preguntas -> opciones). El backend
@@ -990,19 +1013,15 @@
             <hr />\
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
             <div class="mb-2">\
-                <label class="form-label cq-text-sm">Código SNOMED CT</label>\
+                <label class="form-label cq-text-sm">Término clínico</label>\
                 <div class="input-group input-group-sm">\
-                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
-                    <button class="btn btn-outline-primary" type="button" @click="searchSnomed" :disabled="snomedSearching" title="Sugerir desde el texto de la pregunta">\
+                    <input v-model="selected.question.term" class="form-control form-control-sm" placeholder="ej: dolor torácico" />\
+                    <button class="btn btn-outline-primary" type="button" @click="searchSnomed" :disabled="snomedSearching" title="Buscar el término en SNOMED CT">\
                         <span v-if="snomedSearching" class="spinner-border spinner-border-sm"></span>\
-                        <template v-else><i class="bi bi-search"></i> Sugerir</template>\
+                        <template v-else><i class="bi bi-search"></i> Buscar</template>\
                     </button>\
                 </div>\
-                <p class="cq-text-xs cq-text-muted mt-1">Sugerencias automáticas a partir del texto de la pregunta. Usá “Sugerir” para forzar una búsqueda.</p>\
-                <div v-if="selected.question.codeDisplay" class="cq-text-xs mt-1">\
-                    <i class="bi bi-check-circle-fill text-success"></i> {{ selected.question.codeDisplay }}\
-                    <a href="javascript:" class="ms-1" @click="clearSnomed">quitar</a>\
-                </div>\
+                <p class="cq-text-xs cq-text-muted mt-1">El concepto que mide la pregunta, en pocas palabras y sin signos de pregunta. Es lo que se busca en SNOMED CT: el enunciado completo devuelve peores resultados.</p>\
                 <div v-if="snomedError" class="cq-text-xs text-danger mt-1">{{ snomedError }}</div>\
                 <ul v-if="snomedOpen && snomedResults.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
                     <li v-for="r in snomedResults" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="pickSnomed(r)"\
@@ -1011,6 +1030,15 @@
                     </li>\
                 </ul>\
                 <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
+            </div>\
+            <div class="mb-2">\
+                <label class="form-label cq-text-sm">Código SNOMED CT</label>\
+                <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                <div v-if="selected.question.codeDisplay" class="cq-text-xs mt-1">\
+                    <i class="bi bi-check-circle-fill text-success"></i> {{ selected.question.codeDisplay }}\
+                    <a href="javascript:" class="ms-1" @click="clearSnomed">quitar</a>\
+                </div>\
+                <p v-else class="cq-text-xs cq-text-muted mt-1">Elegí una sugerencia de arriba, o escribí el código a mano si ya lo sabés.</p>\
             </div>\
 \
             <hr />\

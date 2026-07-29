@@ -183,7 +183,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 LinkId = qq.LinkId,
                 Text = qq.Text,
-                Type = qq.Type.ToString().ToLowerInvariant(),
+                Type = QuestionTypeMap.ToUi(qq.Type),
                 Required = qq.Required,
                 Options = (qq.Options ?? new List<ChequeAR.Domain.Entities.AnswerOption>())
                     .OrderBy(o => o.OrderIndex)
@@ -221,6 +221,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 view.CodeSystem = (string)coding["system"];
                 view.Code = (string)coding["code"];
                 view.CodeDisplay = (string)coding["display"];
+                // Las preguntas codificadas antes de que existiera el término explícito no
+                // tienen "term": se cae al display del concepto elegido, que es la mejor
+                // aproximación disponible y evita que el campo aparezca vacío al reabrirlas.
+                view.Term = (string)coding["term"] ?? (string)coding["display"];
             }
             return view;
         }

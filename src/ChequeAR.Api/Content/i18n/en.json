@@ -44,6 +44,18 @@
   "status.active": "Active",
   "status.inactive": "Inactive",
 
+  "qtype.string": "Short text",
+  "qtype.text": "Long text",
+  "qtype.integer": "Number",
+  "qtype.decimal": "Decimal",
+  "qtype.scale": "Scale",
+  "qtype.boolean": "Boolean",
+  "qtype.choice": "Single choice",
+  "qtype.openchoice": "Multiple choice",
+  "qtype.date": "Date",
+  "qtype.datetime": "Date and time",
+  "qtype.attachment": "Attachment",
+
   "table.col.patient": "Patient",
   "table.col.questionnaire": "Questionnaire",
   "table.col.specialty": "Specialty",

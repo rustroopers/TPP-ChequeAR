@@ -95,6 +95,43 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("73211009", (string)code["code"]);
         }
 
+        // El termino clinico es metadata de autoria (la semilla con la que se busco en
+        // SNOMED), no parte del concepto publicado: el display del item.code tiene que ser
+        // el termino preferido de SNOMED. Si se filtrara, dos cuestionarios con el mismo
+        // codigo publicarian displays distintos segun como los hubiera tipeado cada autor.
+        [Fact]
+        public void Build_CodingWithTerm_PublishesSnomedDisplay_NotAuthoringTerm()
+        {
+            var q = WithQuestion(new Question
+            {
+                LinkId = "dx",
+                Type = QuestionType.Boolean,
+                CodingJson = "{\"system\":\"http://snomed.info/sct\",\"code\":\"29857009\","
+                           + "\"display\":\"dolor toracico\",\"term\":\"dolor en el pecho\"}"
+            });
+
+            var code = ((JArray)FirstItem(FhirQuestionnaireBuilder.Build(q, 1))["code"])[0];
+
+            Assert.Equal("dolor toracico", (string)code["display"]);
+            Assert.Null(code["term"]);
+        }
+
+        // Se puede dejar anotado que mide la pregunta antes de haber elegido un concepto.
+        // Ese borrador no es codificacion: sin code no hay item.code que emitir, y publicar
+        // un coding a medias daria un recurso invalido.
+        [Fact]
+        public void Build_TermWithoutCode_EmitsNoItemCode()
+        {
+            var q = WithQuestion(new Question
+            {
+                LinkId = "dx",
+                Type = QuestionType.Boolean,
+                CodingJson = "{\"term\":\"dolor toracico\"}"
+            });
+
+            Assert.Null(FirstItem(FhirQuestionnaireBuilder.Build(q, 1))["code"]);
+        }
+
         // Un JSON corrupto en la base no debe impedir publicar: se ignora esa parte.
         [Fact]
         public void Build_CorruptJson_IsIgnored_AndStillPublishes()

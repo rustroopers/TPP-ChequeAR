@@ -74,6 +74,11 @@ namespace ChequeAR.Api.Models
         public string CodeSystem { get; set; }
         public string Code { get; set; }
         public string CodeDisplay { get; set; }
+        // Concepto clínico que la pregunta mide, en palabras ("dolor torácico"), separado
+        // del enunciado que lee el usuario ("¿Presentó dolor en el pecho al esfuerzo?").
+        // Es la semilla de la búsqueda SNOMED: filtrar por la oración completa devuelve
+        // poco y malo. Ver Term en la codificación de CodingJson.
+        public string Term { get; set; }
         public List<string> Options { get; set; } = new List<string>();
     }
 
