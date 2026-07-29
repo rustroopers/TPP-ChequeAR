@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
@@ -34,7 +35,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     if (u.Specialties != null && u.Specialties.Count > 0)
                     {
                         var e = u.Specialties.GetEnumerator();
-                        if (e.MoveNext()) spec = e.Current.SpecialtyCode;
+                        // Nombre legible, no el código: la tabla mostraba "reuma" donde
+                        // debía decir "Reumatología". Se mapea acá y no en la vista para
+                        // no dejar el "—" (sin especialidad) a merced del default de Label.
+                        if (e.MoveNext()) spec = SpecialtyMap.Label(e.Current.SpecialtyCode);
                     }
                     model.Users.Add(new UserListItem
                     {

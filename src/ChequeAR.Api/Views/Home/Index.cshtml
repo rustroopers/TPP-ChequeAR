@@ -79,7 +79,7 @@ else
                 <tr>
                     <td>@enc.PatientName</td>
                     <td>@enc.QuestionnaireTitle</td>
-                    <td><span class="cq-chip cq-chip--@enc.SpecialtyCode">@enc.SpecialtyCode</span></td>
+                    <td><span class="cq-chip cq-chip--@enc.SpecialtyCode">@enc.SpecialtyLabel</span></td>
                     <td>
                         @if (enc.Status == "published") { <span class="cq-badge cq-badge--published">@Cq.T("status.completed")</span> }
                         else if (enc.Status == "draft") { <span class="cq-badge cq-badge--draft">@Cq.T("status.draft")</span> }

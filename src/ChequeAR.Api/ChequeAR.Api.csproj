@@ -102,7 +102,6 @@
     <Compile Include="Models\HomeViewModel.cs" />
     <Compile Include="Models\QuestionnaireListItem.cs" />
     <Compile Include="Models\QuestionnaireStatusMap.cs" />
-    <Compile Include="Models\SpecialtyMap.cs" />
     <Compile Include="Models\EncounterViewModels.cs" />
     <Compile Include="Models\ReportsViewModels.cs" />
     <Compile Include="Models\AdminViewModels.cs" />

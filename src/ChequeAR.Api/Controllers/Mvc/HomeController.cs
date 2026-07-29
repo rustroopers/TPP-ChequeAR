@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -57,6 +58,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         PatientName = ChequeAR.Application.Services.FhirPatientReader.ReadName(r.FhirJson) ?? r.PatientHospitalId,
                         QuestionnaireTitle = q?.Title ?? r.QuestionnaireId.ToString(),
                         SpecialtyCode = q?.SpecialtyCode ?? "general",
+                        SpecialtyLabel = SpecialtyMap.Label(q?.SpecialtyCode, q?.SpecialtyDisplay),
                         Status = r.Status == ChequeAR.Domain.Enums.ResponseStatus.Completed ? "published" : "draft",
                         UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(r.LastSavedAt),
                         OpenUrl = Url.Action("View", "Encounters", new { id = r.Id })

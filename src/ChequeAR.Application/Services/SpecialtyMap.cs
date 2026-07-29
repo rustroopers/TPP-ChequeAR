@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 
-namespace ChequeAR.Api.Models
+namespace ChequeAR.Application.Services
 {
     /// <summary>
     /// Nombre legible de una especialidad a partir de su código. El editor guarda sólo el
     /// código (SpecialtyDisplay queda null), así que sin esto la UI mostraba "general" o
     /// "cardio" en crudo donde debería decir "General" o "Cardiología".
+    ///
+    /// Vive en Application y no en la capa web porque no sólo la usan los controllers:
+    /// PatientService también arma un label de especialidad, y tener dos tablas de nombres
+    /// terminaba mostrando el código crudo en las pantallas que pasan por ahí.
     ///
     /// Provisorio: cuando el hospital defina su catálogo, esto sale de VW_ESPECIALIDAD.
     /// </summary>

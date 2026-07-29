@@ -102,7 +102,10 @@ namespace ChequeAR.Application.Services
                 if (q != null)
                 {
                     specialtyCode = q.SpecialtyCode;
-                    specialtyLabel = q.SpecialtyDisplay ?? q.SpecialtyCode;
+                    // Caer al código dejaba "reuma" como label en las pantallas de paciente
+                    // y encuentro: el editor guarda SpecialtyDisplay en null, así que ese
+                    // fallback era el caso normal, no el borde.
+                    specialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay);
                 }
             }
             catch { /* ignore */ }
