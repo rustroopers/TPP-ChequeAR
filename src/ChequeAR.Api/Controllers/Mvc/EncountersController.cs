@@ -315,8 +315,9 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // R7 — Timeline
-        public async Task<ActionResult> Timeline(string patientId)
+        public async Task<ActionResult> Timeline(string patientId, Guid? cuestionario = null, string especialidad = null, string autor = null, string from = null, string to = null)
         {
+            NormalizeDateRange(ref from, ref to);
             ViewBag.Title = "Historial del paciente";
             ViewBag.PageId = "encounters";
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
@@ -325,39 +326,95 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Pacientes", Url.Action("Search")),
                 System.Tuple.Create("Historial", (string)null)
             };
+            var model = new PatientTimelineViewModel
+            {
+                QuestionnaireFilter = cuestionario, SpecialtyFilter = especialidad, AuthorFilter = autor, From = from, To = to
+            };
             try
             {
                 var p = await _patients.GetAsync(patientId);
-                var encs = await _patients.GetEncountersAsync(patientId, 50);
-                var model = new PatientTimelineViewModel
-                {
-                    Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" }
-                };
+                model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" };
+
+                // El historial de UN paciente está intrínsecamente acotado (no crece sin
+                // límite como el log global de auditoría), así que se trae completo y se
+                // filtra en memoria en vez de empujar el filtro al repositorio.
+                var encs = await _patients.GetEncountersAsync(patientId, 500);
                 var titleCache = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
+                var all = new List<EncounterTimelineItem>();
                 foreach (var e in encs)
                 {
                     if (!titleCache.ContainsKey(e.QuestionnaireId))
                         titleCache[e.QuestionnaireId] = await _qRepo.GetAsync(e.QuestionnaireId);
                     var q = titleCache[e.QuestionnaireId];
-                    model.Entries.Add(new EncounterTimelineItem
+                    all.Add(new EncounterTimelineItem
                     {
+                        RawDate = e.AuthoredAt,
                         Date = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(e.AuthoredAt),
+                        QuestionnaireId = e.QuestionnaireId,
                         QuestionnaireTitle = q?.Title ?? e.QuestionnaireId.ToString(),
                         QuestionnaireVersion = PinnedVersionNumber(q, e.QuestionnaireVersionId),
+                        SpecialtyCode = q?.SpecialtyCode ?? "general",
+                        SpecialtyLabel = SpecialtyMap.Label(q?.SpecialtyCode, q?.SpecialtyDisplay),
                         Author = e.AuthorUserId,
                         EncounterId = e.Id,
                         Status = e.Status.ToString().ToLowerInvariant()
                     });
                 }
+
+                model.AvailableQuestionnaires = all
+                    .GroupBy(x => x.QuestionnaireId)
+                    .Select(g => new TimelineFilterOption { Value = g.Key.ToString(), Label = g.First().QuestionnaireTitle })
+                    .OrderBy(x => x.Label).ToList();
+                model.AvailableSpecialties = all
+                    .GroupBy(x => x.SpecialtyCode)
+                    .Select(g => new TimelineFilterOption { Value = g.Key, Label = g.First().SpecialtyLabel })
+                    .OrderBy(x => x.Label).ToList();
+                model.AvailableAuthors = all
+                    .Select(x => x.Author).Where(a => !string.IsNullOrWhiteSpace(a))
+                    .Distinct().OrderBy(a => a).ToList();
+                model.HasAnyEncounters = all.Count > 0;
+
+                var fromUtc = ParseArgDateToUtc(from, endOfDay: false);
+                var toUtc = ParseArgDateToUtc(to, endOfDay: true);
+
+                model.Entries.AddRange(all.Where(x =>
+                    (cuestionario == null || x.QuestionnaireId == cuestionario.Value) &&
+                    (string.IsNullOrEmpty(especialidad) || x.SpecialtyCode == especialidad) &&
+                    (string.IsNullOrEmpty(autor) || x.Author == autor) &&
+                    (fromUtc == null || x.RawDate >= fromUtc.Value) &&
+                    (toUtc == null || x.RawDate < toUtc.Value)));
+
                 return View(model);
             }
             catch (Exception ex)
             {
                 ViewBag.DataError = ex.Message;
-                return View(new PatientTimelineViewModel
-                {
-                    Patient = new PatientSearchItem { HC = patientId }
-                });
+                model.Patient = new PatientSearchItem { HC = patientId };
+                return View(model);
+            }
+        }
+
+        /// <summary>Fecha "yyyy-MM-dd" (local ARG) a límite UTC. endOfDay=true toma el día siguiente (cota superior exclusiva).</summary>
+        private static DateTime? ParseArgDateToUtc(string date, bool endOfDay)
+        {
+            if (!DateTime.TryParseExact((date ?? string.Empty).Trim(), "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+                return null;
+            return ChequeAR.Api.Helpers.ArgentinaTime.ToUtc(endOfDay ? d.Date.AddDays(1) : d.Date);
+        }
+
+        /// <summary>
+        /// Si "desde" quedó después de "hasta" (rango invertido, tipeado a mano en la URL o
+        /// pegado sin pasar por el date-range picker), se intercambian acá. Nunca debe llegar a
+        /// filtrarse con un rango negativo.
+        /// </summary>
+        private static void NormalizeDateRange(ref string from, ref string to)
+        {
+            var fd = ParseArgDateToUtc(from, endOfDay: false);
+            var td = ParseArgDateToUtc(to, endOfDay: false);
+            if (fd.HasValue && td.HasValue && fd.Value > td.Value)
+            {
+                var tmp = from; from = to; to = tmp;
             }
         }
     }

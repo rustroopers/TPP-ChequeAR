@@ -28,6 +28,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // {action} de MVC (nombre del método), que gana sobre el query string y rompía el filtro.
         public async Task<ActionResult> Index(string user = null, string act = null, string resource = null, string from = null, string to = null, int page = 1)
         {
+            NormalizeDateRange(ref from, ref to);
             ViewBag.Title = "Auditoría";
             ViewBag.PageId = "audit";
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
@@ -104,10 +105,26 @@ namespace ChequeAR.Api.Controllers.Mvc
             return ArgentinaTime.ToUtc(endOfDay ? d.Date.AddDays(1) : d.Date);
         }
 
+        /// <summary>
+        /// Si "desde" quedó después de "hasta" (rango invertido, tipeado a mano en la URL o
+        /// pegado sin pasar por el date-range picker), se intercambian acá. Nunca debe llegar a
+        /// filtrarse con un rango negativo.
+        /// </summary>
+        private static void NormalizeDateRange(ref string from, ref string to)
+        {
+            var fd = ParseArgDateToUtc(from, endOfDay: false);
+            var td = ParseArgDateToUtc(to, endOfDay: false);
+            if (fd.HasValue && td.HasValue && fd.Value > td.Value)
+            {
+                var tmp = from; from = to; to = tmp;
+            }
+        }
+
         // A6b — Exportación. Reutiliza los mismos exporters (XLSX/CSV) que Reportes,
         // armando un ReportResult con las columnas visibles del listado.
         public async Task<ActionResult> Export(string user = null, string act = null, string resource = null, string from = null, string to = null, string format = "xlsx")
         {
+            NormalizeDateRange(ref from, ref to);
             // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
             var entries = await LoadFilteredAsync(user, act, resource, from, to);
             var rows = entries.ConvertAll(e => new Dictionary<string, object>
