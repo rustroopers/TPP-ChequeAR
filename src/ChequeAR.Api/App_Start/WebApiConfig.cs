@@ -1,5 +1,5 @@
-using System.Net.Http.Formatting;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 
 namespace ChequeAR.Api.App_Start
 {
@@ -22,9 +22,16 @@ namespace ChequeAR.Api.App_Start
 
             // Resto en attribute routing
 
-            // Soporte application/fhir+json (mapeo a JSON formatter)
+            // El formatter de FHIR va PRIMERO: la negociación de contenido recorre la cadena
+            // en orden, así que ser el primero es lo que hace que application/fhir+json sea el
+            // comportamiento por omisión y no una opción que el consumidor deba pedir (FR-002).
+            //
+            // Sólo se queda con los tipos que derivan de Resource (ver CanWriteType), de modo
+            // que los endpoints que no son FHIR —reportes, usuarios, adjuntos, auth— siguen
+            // resolviéndose con el serializador JSON de siempre.
+            config.Formatters.Insert(0, new FhirMediaTypeFormatter());
+
             var jsonFormatter = config.Formatters.JsonFormatter;
-            jsonFormatter.SupportedMediaTypes.Add(new System.Net.Http.Headers.MediaTypeHeaderValue("application/fhir+json"));
             jsonFormatter.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
             config.Formatters.Remove(config.Formatters.XmlFormatter);
         }

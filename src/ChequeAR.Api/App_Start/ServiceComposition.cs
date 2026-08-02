@@ -33,6 +33,7 @@ namespace ChequeAR.Api.App_Start
 
         private static AuditDispatcher _audit;
         private static JwtIssuer _jwt;
+        private static IFhirValidator _fhirValidator;
         private static System.Net.Http.HttpClient _fhirHttp;
         private static System.Net.Http.HttpClient _authHttp;
         private static System.Net.Http.HttpClient _termHttp;
@@ -60,6 +61,11 @@ namespace ChequeAR.Api.App_Start
 
             // ===== Singletons =====
             _jwt = new JwtIssuer(jwtIssuer, jwtAudience, jwtSecret, jwtTtlMinutes);
+            // Instancia única, no transitoria: el validador de perfiles lee y cachea la
+            // especificación FHIR completa (~10 MB de definiciones). Crear uno por request
+            // sería inviable. Mientras fue un sustituto que no hacía nada, ser transitorio
+            // no costaba nada; con el validador real sí.
+            _fhirValidator = new FhirValidatorService();
             // Un HttpClient singleton por integración, con su Timeout fijado una sola vez.
             // Los clients NO mutan estas instancias (evita InvalidOperationException).
             _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
@@ -94,7 +100,7 @@ namespace ChequeAR.Api.App_Start
                 ? AllowlistLoader.Load(allowlistPath)
                 : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
             Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
-            Register<IFhirValidator>(() => new FhirValidatorService());
+            Register<IFhirValidator>(() => _fhirValidator);
             Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot));
 
             Register<JwtIssuer>(() => _jwt);
