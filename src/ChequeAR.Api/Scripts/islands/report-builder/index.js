@@ -15,22 +15,30 @@
         if (t) h['Authorization'] = 'Bearer ' + t;
         return h;
     }
-    // QuestionType (enum del backend, serializado como número) -> categoría de filtro.
-    function typeCategory(n) {
-        switch (n) {
-            case 0: return 'decimal';
-            case 1: return 'integer';
-            case 4: case 5: return 'date';
-            case 6: return 'boolean';
-            case 7: case 8: return 'choice';
+    // Questionnaire.item.type de FHIR R5 -> categoría de filtro.
+    //
+    // Antes llegaba el enum del backend serializado como número; ahora llega el recurso FHIR,
+    // así que el tipo es un string del estándar. 'coding' cubre opción cerrada y abierta:
+    // para filtrar da lo mismo, en los dos casos se compara contra un código.
+    function typeCategory(t) {
+        switch (t) {
+            case 'decimal': return 'decimal';
+            case 'integer': return 'integer';
+            case 'date':
+            case 'dateTime': return 'date';
+            case 'boolean': return 'boolean';
+            case 'coding': return 'choice';
+            // Vocabulario R4 de las versiones publicadas antes de la feature 009.
+            case 'choice':
+            case 'open-choice': return 'choice';
             default: return 'string';
         }
     }
-    // QuestionnaireStatus (enum del backend: Draft=0, Active=1, Retired=2) -> etiqueta y
-    // orden del picker. Publicado primero (es lo que se usa para cargar datos nuevos);
-    // Archivado al final (solo sirve para reportar sobre lo ya cargado).
-    var STATUS_LABEL = { 0: 'Borrador', 1: 'Publicado', 2: 'Archivado' };
-    var STATUS_ORDER = [1, 0, 2];
+    // Questionnaire.status de FHIR -> etiqueta y orden del picker. Publicado primero (es lo
+    // que se usa para cargar datos nuevos); Archivado al final (solo sirve para reportar
+    // sobre lo ya cargado).
+    var STATUS_LABEL = { draft: 'Borrador', active: 'Publicado', retired: 'Archivado' };
+    var STATUS_ORDER = ['active', 'draft', 'retired'];
 
     var ReportBuilder = {
         props: { reportId: { type: String, default: null } },
@@ -87,25 +95,31 @@
             // Devuelve una promesa: rehidratar una consulta guardada necesita esperar a que
             // las preguntas estén cargadas antes de reconstruir los filtros (que las
             // referencian por linkId). No limpia `filters`: de eso se encarga el watch.
+            // Aplana el árbol de item[] del recurso FHIR. Las secciones anidan, así que hay
+            // que recorrer en profundidad: con la lista plana de antes, las preguntas dentro
+            // de una sección quedaban invisibles para el constructor de filtros.
+            function flattenItems(items, out) {
+                (items || []).forEach(function (it) {
+                    if (it.type === 'group') { flattenItems(it.item, out); return; }
+                    out.push({
+                        linkId: it.linkId,
+                        text: it.text,
+                        type: typeCategory(it.type),
+                        options: (it.answerOption || []).map(function (o) {
+                            var c = o.valueCoding || {};
+                            return { value: c.code, display: c.display || c.code };
+                        })
+                    });
+                });
+                return out;
+            }
+
             function loadQuestions(id) {
                 questions.value = [];
                 if (!id) return Promise.resolve();
                 return fetch('/fhir/r5/Questionnaire/' + id, { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
-                    .then(function (q) {
-                        var raw = q.Questions || q.questions || [];
-                        questions.value = raw.map(function (x) {
-                            var opts = (x.Options || x.options || []).map(function (o) {
-                                return { value: (o.Value != null ? o.Value : o.value), display: (o.Display != null ? o.Display : o.display) };
-                            });
-                            return {
-                                linkId: x.LinkId || x.linkId,
-                                text: x.Text || x.text,
-                                type: typeCategory(x.Type != null ? x.Type : x.type),
-                                options: opts
-                            };
-                        });
-                    })
+                    .then(function (q) { questions.value = flattenItems(q.item, []); })
                     .catch(function () { /* sin preguntas: se puede filtrar igual por fecha */ });
             }
 
@@ -183,10 +197,14 @@
                 fetch('/fhir/r5/Questionnaire?_count=100', { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
+                        // Bundle conforme: cada resultado viene envuelto en entry[].resource.
                         var list = (data && data.entry) ? data.entry : [];
-                        questionnaires.value = list.map(function (q) {
-                            return { id: q.Id || q.id, title: q.Title || q.title, status: q.Status != null ? q.Status : q.status };
-                        });
+                        questionnaires.value = list
+                            .map(function (e) { return e.resource; })
+                            .filter(Boolean)
+                            .map(function (q) {
+                                return { id: q.id, title: q.title, status: q.status };
+                            });
                         // Editar una consulta guardada manda su cuestionario; en ese caso no
                         // se pisa con el primero de la lista. Si no, arranca con el primero
                         // del primer grupo (Publicado antes que Borrador o Archivado).

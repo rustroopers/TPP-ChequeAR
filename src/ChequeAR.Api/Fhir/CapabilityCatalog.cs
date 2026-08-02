@@ -27,6 +27,13 @@ namespace ChequeAR.Api.Fhir
             public string Type { get; set; }
             public IList<string> Interactions { get; set; } = new List<string>();
             public IList<OperationCap> Operations { get; set; } = new List<OperationCap>();
+
+            /// <summary>
+            /// Nota para quien integra. Se usa sobre todo para declarar explícitamente lo que
+            /// NO se soporta: un recurso sin interacciones y con esta nota comunica una
+            /// decisión; omitirlo del catálogo se leería como un olvido.
+            /// </summary>
+            public string Documentation { get; set; }
         }
 
         public static IReadOnlyList<ResourceCap> Resources { get; } = new List<ResourceCap>

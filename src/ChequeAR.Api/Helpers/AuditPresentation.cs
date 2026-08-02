@@ -139,7 +139,8 @@ namespace ChequeAR.Api.Helpers
 
             var required = item["required"] != null && (bool)item["required"];
             lines.Add(indent + "Pregunta: " + (text ?? "(sin texto)")
-                      + " [" + TypeLabel(type) + (required ? ", obligatoria" : ", opcional") + "]");
+                      + " [" + TypeLabel(type, (string)item["answerConstraint"])
+                      + (required ? ", obligatoria" : ", opcional") + "]");
 
             if (item["answerOption"] is JArray opts)
                 foreach (var o in opts)
@@ -149,7 +150,17 @@ namespace ChequeAR.Api.Helpers
                 }
         }
 
-        private static string TypeLabel(string fhirType)
+        /// <summary>
+        /// Etiqueta legible por un clínico. Tiene que cubrir DOS vocabularios a la vez:
+        ///
+        ///  - R5 (lo que se publica desde la feature 009): las preguntas de opción son
+        ///    'coding', y lo que separa la cerrada de la abierta es answerConstraint.
+        ///  - R4 ('choice' / 'open-choice'): lo que quedó congelado en las versiones
+        ///    publicadas antes, que son inmutables y se siguen mostrando en auditoría.
+        ///
+        /// Sin el caso 'coding' esta pantalla mostraría el literal crudo de FHIR a un médico.
+        /// </summary>
+        private static string TypeLabel(string fhirType, string answerConstraint = null)
         {
             switch (fhirType)
             {
@@ -160,9 +171,15 @@ namespace ChequeAR.Api.Helpers
                 case "boolean": return "sí/no";
                 case "date": return "fecha";
                 case "dateTime": return "fecha y hora";
-                case "choice": return "opción única";
-                case "open-choice": return "opción múltiple";
                 case "attachment": return "adjunto";
+
+                case "coding":
+                    return answerConstraint == "optionsOrString" ? "opción o texto libre" : "opción única";
+
+                // Legado R4 de lo ya congelado.
+                case "choice": return "opción única";
+                case "open-choice": return "opción o texto libre";
+
                 default: return fhirType ?? "—";
             }
         }

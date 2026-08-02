@@ -1,9 +1,11 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -29,16 +31,36 @@ namespace ChequeAR.Api.Controllers.Api
             ResponseStatus? st = null;
             if (Enum.TryParse(status, true, out ResponseStatus s)) st = s;
             var items = await _repo.SearchAsync(subject, questionnaire, st, _offset, _count);
-            return Ok(new { resourceType = "Bundle", type = "searchset", total = items.Count, entry = items });
+
+            var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)ToFhir(r));
+            return Ok(FhirBundles.SearchSet(recursos, items.Count, FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
             var r = await _repo.GetAsync(id);
-            if (r == null) return NotFound();
-            return Ok(r);
+            if (r == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            return Ok(ToFhir(r));
         }
+
+        /// <summary>
+        /// Devuelve el recurso ALMACENADO, no uno regenerado: FhirJson es la representación
+        /// canónica de la ficha —es lo que validó $finalize y lo que conserva los textos de la
+        /// versión anclada y el paciente embebido—. Regenerarlo acá, sin la versión a mano,
+        /// perdería los textos que el médico leyó.
+        ///
+        /// Sólo se reconstruye si el guardado está vacío o ilegible, para que una fila corrupta
+        /// degrade en vez de tumbar la búsqueda entera.
+        /// </summary>
+        private static Hl7.Fhir.Model.QuestionnaireResponse ToFhir(QuestionnaireResponse r)
+        {
+            var almacenado = FhirResourceReader.ReadResponse(r.FhirJson);
+            return almacenado ?? FhirQuestionnaireResponseBuilder.ToResource(r, null);
+        }
+
+        private string FhirBaseUrl()
+            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
 
         [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
         public async Task<IHttpActionResult> Create([FromBody] QuestionnaireResponse r)

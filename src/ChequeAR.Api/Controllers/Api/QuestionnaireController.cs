@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -33,20 +34,35 @@ namespace ChequeAR.Api.Controllers.Api
             QuestionnaireStatus? st = null;
             if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
             var items = await _repo.SearchAsync(st, titleContains, specialty, _offset, _count);
-            return Ok(new { resourceType = "Bundle", type = "searchset", total = items.Count, entry = items });
+
+            var total = await _repo.CountAsync(st, titleContains, specialty);
+            var recursos = items.Select(q => (Hl7.Fhir.Model.Resource)ToFhir(q));
+            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
             var q = await _repo.GetAsync(id);
-            if (q == null) return NotFound();
+            if (q == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
 
             // ETag = versión del registro. El cliente la devuelve en If-Match al escribir.
-            var response = Request.CreateResponse(HttpStatusCode.OK, q);
+            // Viaja además en meta.versionId, que es el mecanismo nativo del estándar.
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(q));
             response.Headers.ETag = ETagFor(q);
             return ResponseMessage(response);
         }
+
+        /// <summary>
+        /// El número de versión publicada que se declara en el recurso. 0 = nunca se publicó;
+        /// es correcto que un borrador diga 0 y no invente una versión que no existe.
+        /// </summary>
+        private static Hl7.Fhir.Model.Questionnaire ToFhir(Questionnaire q)
+            => FhirQuestionnaireBuilder.ToResource(q, q.Versions?.Count ?? 0);
+
+        /// <summary>Base del servidor FHIR, para el fullUrl de cada entrada del Bundle.</summary>
+        private string FhirBaseUrl()
+            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
 
         private static EntityTagHeaderValue ETagFor(Questionnaire q)
         {
