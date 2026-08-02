@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
@@ -29,6 +30,16 @@ namespace ChequeAR.Application.Services
             _validator = validator;
             _audit = audit;
         }
+
+        // ── Lecturas ──────────────────────────────────────────────────────────────────
+
+        public Task<QuestionnaireResponse> GetAsync(Guid id) => _repo.GetAsync(id);
+
+        public Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(
+            string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take)
+            => _repo.SearchAsync(patientHospitalId, questionnaireId, status, skip, take);
+
+        public Task<bool> HasResponsesAsync(Guid questionnaireId) => _repo.HasResponsesAsync(questionnaireId);
 
         public async Task<QuestionnaireResponse> CreateAsync(QuestionnaireResponse r, string userId)
         {

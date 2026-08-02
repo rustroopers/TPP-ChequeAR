@@ -134,6 +134,13 @@ namespace ChequeAR.Api.App_Start
             Register<QuestionnaireResponseService>(() => new QuestionnaireResponseService(
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
                 Resolve<IFhirValidator>(), _audit));
+            Register<AuditQueryService>(() => new AuditQueryService(Resolve<IAuditRepository>()));
+            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>()));
+            Register<UserService>(() => new UserService(Resolve<IUserRepository>()));
+            Register<TerminologyService>(() => new TerminologyService(Resolve<ITerminologyClient>()));
+            Register<HomeDashboardService>(() => new HomeDashboardService(
+                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
+                Resolve<IUserRepository>()));
             Register<PrefillService>(() => new PrefillService(Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>()));
             Register<QueryBuilder>(() => new QueryBuilder());
             Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
@@ -149,36 +156,35 @@ namespace ChequeAR.Api.App_Start
             // Controllers de Web API: SimpleInjector los registra automáticamente;
             // nosotros declaramos los pocos que tenemos.
             Register<Controllers.Api.QuestionnaireController>(() => new Controllers.Api.QuestionnaireController(
-                Resolve<IQuestionnaireRepository>(), Resolve<QuestionnaireService>()));
+                Resolve<QuestionnaireService>()));
             Register<Controllers.Api.QuestionnaireResponseController>(() => new Controllers.Api.QuestionnaireResponseController(
-                Resolve<IQuestionnaireResponseRepository>(), Resolve<QuestionnaireResponseService>()));
+                Resolve<QuestionnaireResponseService>()));
             Register<Controllers.Api.AuthController>(() => new Controllers.Api.AuthController(
                 Resolve<IHospitalAuthClient>(), Resolve<JwtIssuer>(), Resolve<RefreshTokenService>()));
-            Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<IAuditRepository>()));
+            Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<AuditQueryService>()));
             Register<Controllers.Api.AttachmentController>(() => new Controllers.Api.AttachmentController(Resolve<IAttachmentStore>()));
             Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>()));
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
             Register<Controllers.Api.TerminologyController>(() => new Controllers.Api.TerminologyController(Resolve<ITerminologyClient>()));
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
             Register<Controllers.Api.EncounterController>(() => new Controllers.Api.EncounterController(Resolve<PatientService>()));
-            Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<IUserRepository>()));
+            Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<UserService>()));
             Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));
-            Register<Controllers.Api.SavedReportController>(() => new Controllers.Api.SavedReportController(Resolve<ISavedReportRepository>(), Resolve<IQuestionnaireRepository>()));
+            Register<Controllers.Api.SavedReportController>(() => new Controllers.Api.SavedReportController(Resolve<SavedReportService>(), Resolve<QuestionnaireService>()));
 
             // Controllers MVC
-            Register<Controllers.Mvc.HomeController>(() => new Controllers.Mvc.HomeController(
-                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(), Resolve<IUserRepository>()));
+            Register<Controllers.Mvc.HomeController>(() => new Controllers.Mvc.HomeController(Resolve<HomeDashboardService>()));
             Register<Controllers.Mvc.AccountController>(() => new Controllers.Mvc.AccountController(
-                Resolve<IHospitalAuthClient>(), Resolve<IUserRepository>()));
+                Resolve<IHospitalAuthClient>(), Resolve<UserService>()));
             Register<Controllers.Mvc.QuestionnairesController>(() => new Controllers.Mvc.QuestionnairesController(
-                Resolve<IQuestionnaireRepository>(), Resolve<QuestionnaireService>()));
+                Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(
-                Resolve<PatientService>(), Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>()));
+                Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.ReportsController>(() => new Controllers.Mvc.ReportsController(
-                Resolve<ISavedReportRepository>(), Resolve<ReportExecutor>(), Resolve<IQuestionnaireRepository>()));
+                Resolve<SavedReportService>(), Resolve<ReportExecutor>(), Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(
-                Resolve<IAuditRepository>(), Resolve<IQuestionnaireRepository>()));
-            Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<IUserRepository>()));
+                Resolve<AuditQueryService>(), Resolve<QuestionnaireService>()));
+            Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<UserService>()));
             Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController());
             Register<Controllers.Mvc.ErrorController>(() => new Controllers.Mvc.ErrorController());
         }

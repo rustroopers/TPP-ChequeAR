@@ -5,7 +5,7 @@ using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Application.Fhir;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 using Hl7.Fhir.Model;
 using DomainAuditEvent = ChequeAR.Domain.Entities.AuditEvent;
@@ -16,34 +16,25 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("fhir/r5/AuditEvent")]
     public class AuditEventController : ApiController
     {
-        private readonly IAuditRepository _repo;
-        public AuditEventController(IAuditRepository repo) { _repo = repo; }
+        private readonly AuditQueryService _audit;
+        public AuditEventController(AuditQueryService audit) { _audit = audit; }
 
         [HttpGet, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
         public async Task<IHttpActionResult> Search([FromUri(Name = "agent.who")] string agentWho = null, [FromUri(Name = "entity.what")] string entityWhat = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
-            // TODO(T087): el filtrado y la paginación se mueven a AuditQueryService en US7.
-            var all = await _repo.SearchAsync(agentWho, null, null, null, 5000);
-            IEnumerable<DomainAuditEvent> filtered = all;
-            if (!string.IsNullOrEmpty(entityWhat)) filtered = filtered.Where(x => x.EntityRef == entityWhat);
-            var list = filtered.ToList();
-            var page = list.Skip(_offset).Take(_count).Select(e => (Resource)ToFhir(e));
+            var pagina = await _audit.SearchAsync(agentWho, entityRef: entityWhat, skip: _offset, take: _count);
 
-            return Ok(FhirBundles.SearchSet(page, list.Count, FhirBaseUrl()));
+            var recursos = pagina.Items.Select(e => (Resource)ToFhir(e));
+            return Ok(FhirBundles.SearchSet(recursos, pagina.Total, FhirBaseUrl()));
         }
 
         // A7 — detalle de evento. Búsqueda por id directo (no FHIR-search).
         [HttpGet, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            // Reusa SearchAsync con paginación amplia + filtro client-side.
-            // Optimización futura: agregar IAuditRepository.GetAsync(id).
-            var all = await _repo.SearchAsync(null, null, null, null, 5000);
-            foreach (var e in all)
-            {
-                if (e.Id == id) return Ok(ToFhir(e));
-            }
-            return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            var evento = await _audit.GetAsync(id);
+            if (evento == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            return Ok(ToFhir(evento));
         }
 
         /// <summary>

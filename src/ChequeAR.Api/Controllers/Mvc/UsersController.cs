@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
@@ -12,8 +12,8 @@ namespace ChequeAR.Api.Controllers.Mvc
     // TODO: re-habilitar [Authorize(Roles = Role.Administrador)] cuando FormsAuth esté wired.
     public class UsersController : Controller
     {
-        private readonly IUserRepository _repo;
-        public UsersController(IUserRepository repo) { _repo = repo; }
+        private readonly UserService _users;
+        public UsersController(UserService users) { _users = users; }
 
         public async Task<ActionResult> Index()
         {
@@ -27,7 +27,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new UserListViewModel();
             try
             {
-                var items = await _repo.ListAsync(null, null, null, null, 0, 100);
+                var items = (await _users.ListAsync(null, null, null, null, 0, 100)).Items;
                 foreach (var u in items)
                 {
                     var role = "—"; var spec = "—";
@@ -67,7 +67,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
-                var u = await _repo.GetAsync(username);
+                var u = await _users.GetAsync(username);
                 if (u == null) return HttpNotFound();
                 var model = new UserDetailViewModel
                 {
@@ -100,11 +100,11 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             try
             {
-                var existing = await _repo.GetAsync(model.Username);
+                var existing = await _users.GetAsync(model.Username);
                 if (existing == null) return HttpNotFound();
                 existing.DisplayName = model.FullName ?? existing.DisplayName;
                 existing.IsActive = model.Active;
-                await _repo.UpsertAsync(existing);
+                await _users.UpsertAsync(existing);
                 TempData["Toast"] = "Cambios guardados.";
             }
             catch (System.Exception ex)

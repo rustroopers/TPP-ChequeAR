@@ -17,12 +17,11 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("fhir/r5/QuestionnaireResponse")]
     public class QuestionnaireResponseController : ApiController
     {
-        private readonly IQuestionnaireResponseRepository _repo;
+        
         private readonly QuestionnaireResponseService _service;
 
-        public QuestionnaireResponseController(IQuestionnaireResponseRepository repo, QuestionnaireResponseService service)
+        public QuestionnaireResponseController(QuestionnaireResponseService service)
         {
-            _repo = repo;
             _service = service;
         }
 
@@ -31,7 +30,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             ResponseStatus? st = null;
             if (Enum.TryParse(status, true, out ResponseStatus s)) st = s;
-            var items = await _repo.SearchAsync(subject, questionnaire, st, _offset, _count);
+            var items = await _service.SearchAsync(subject, questionnaire, st, _offset, _count);
 
             var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)ToFhir(r));
             return Ok(FhirBundles.SearchSet(recursos, items.Count, FhirBaseUrl()));
@@ -40,7 +39,7 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var r = await _repo.GetAsync(id);
+            var r = await _service.GetAsync(id);
             if (r == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             return Ok(ToFhir(r));
         }

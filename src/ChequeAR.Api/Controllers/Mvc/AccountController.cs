@@ -4,18 +4,19 @@ using System.Web;
 using System.Web.Mvc;
 using System.Web.Security;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
     public class AccountController : Controller
     {
         private readonly IHospitalAuthClient _hospitalAuth;
-        private readonly IUserRepository _userRepo;
+        private readonly UserService _users;
 
-        public AccountController(IHospitalAuthClient hospitalAuth, IUserRepository userRepo)
+        public AccountController(IHospitalAuthClient hospitalAuth, UserService users)
         {
             _hospitalAuth = hospitalAuth;
-            _userRepo = userRepo;
+            _users = users;
         }
 
         [HttpGet, AllowAnonymous]

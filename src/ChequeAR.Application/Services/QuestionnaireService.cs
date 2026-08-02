@@ -37,6 +37,29 @@ namespace ChequeAR.Application.Services
             _audit = audit;
         }
 
+        // ── Lecturas ──────────────────────────────────────────────────────────────────
+        // Delegan al repositorio sin agregar nada. Existen igual porque la capa de
+        // presentación no debe conocer la de datos: un controller que inyecta un repositorio
+        // se salta la capa donde viven las reglas, y cuando aparece una regla nueva termina
+        // copiada en cada pantalla que hacía la consulta a mano.
+
+        public Task<Questionnaire> GetAsync(Guid id) => _repo.GetAsync(id);
+
+        public Task<IReadOnlyList<Questionnaire>> SearchAsync(
+            QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)
+            => _repo.SearchAsync(status, titleContains, specialtyCode, skip, take);
+
+        public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
+            => _repo.CountAsync(status, titleContains, specialtyCode);
+
+        public Task<IReadOnlyList<string>> GetSpecialtyCodesAsync() => _repo.GetSpecialtyCodesAsync();
+
+        public Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
+            => _repo.GetTitlesAsync(ids);
+
+        public Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber)
+            => _repo.GetVersionAsync(questionnaireId, versionNumber);
+
         public async Task<Questionnaire> CreateAsync(Questionnaire q, string userId)
         {
             q.Id = Guid.NewGuid();

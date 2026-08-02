@@ -7,7 +7,7 @@ using ChequeAR.Api.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
@@ -16,12 +16,11 @@ namespace ChequeAR.Api.Controllers.Mvc
     // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
     public class QuestionnairesController : Controller
     {
-        private readonly IQuestionnaireRepository _repo;
+        
         private readonly QuestionnaireService _svc;
 
-        public QuestionnairesController(IQuestionnaireRepository repo, QuestionnaireService svc)
+        public QuestionnairesController(QuestionnaireService svc)
         {
-            _repo = repo;
             _svc = svc;
         }
 
@@ -45,12 +44,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             try
             {
                 // Opciones del filtro derivadas de los cuestionarios reales (antes estaban hardcodeadas).
-                foreach (var code in await _repo.GetSpecialtyCodesAsync())
+                foreach (var code in await _svc.GetSpecialtyCodesAsync())
                     model.Specialties.Add(new SpecialtyOption { Code = code, Label = SpecialtyMap.Label(code) });
 
                 var st = QuestionnaireStatusMap.FromUi(status);
-                var items = await _repo.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
-                model.Total = await _repo.CountAsync(st, q, specialty);
+                var items = await _svc.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
+                model.Total = await _svc.CountAsync(st, q, specialty);
                 foreach (var it in items)
                 {
                     model.Items.Add(new QuestionnaireListItem
@@ -102,7 +101,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 try
                 {
-                    var q = await _repo.GetAsync(id.Value);
+                    var q = await _svc.GetAsync(id.Value);
                     title = q?.Title ?? "Cuestionario";
                     if (q != null)
                     {
@@ -252,7 +251,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                var q = await _repo.GetAsync(id);
+                var q = await _svc.GetAsync(id);
                 if (q == null) return View("~/Views/Error/Index.cshtml");
                 var model = new QuestionnaireDetailViewModel
                 {
@@ -289,7 +288,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
-                var q = await _repo.GetAsync(id);
+                var q = await _svc.GetAsync(id);
                 ViewBag.QuestionnaireTitle = q?.Title;
                 var list = (q?.Versions ?? new List<ChequeAR.Domain.Entities.QuestionnaireVersion>())
                     .OrderByDescending(v => v.VersionNumber)

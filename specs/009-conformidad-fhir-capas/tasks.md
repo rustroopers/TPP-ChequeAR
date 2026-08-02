@@ -290,23 +290,23 @@ pruebas nuevas de autorización por propietario y de auditoría que no instancia
 
 ### Tests for User Story 7
 
-- [ ] T085 [P] [US7] Crear `src/ChequeAR.Tests/Application/SavedReportServiceTests.cs`: una persona no puede modificar ni eliminar la consulta guardada de otra (SC-008)
-- [ ] T086 [P] [US7] Crear `src/ChequeAR.Tests/Application/AuditQueryServiceTests.cs`: filtrado por actor y por recurso, y paginación con total real
+- [X] T085 [P] [US7] Crear `src/ChequeAR.Tests/Application/SavedReportServiceTests.cs`: una persona no puede modificar ni eliminar la consulta guardada de otra (SC-008)
+- [X] T086 [P] [US7] Crear `src/ChequeAR.Tests/Application/AuditQueryServiceTests.cs`: filtrado por actor y por recurso, y paginación con total real
 
 ### Implementation for User Story 7
 
-- [ ] T087 [P] [US7] Crear `src/ChequeAR.Application/Services/AuditQueryService.cs` absorbiendo el traer-5000-filas-y-filtrar-en-memoria de `AuditEventController.cs:19-24` y `Mvc/AuditController.cs:72,142`
-- [ ] T088 [P] [US7] Crear `src/ChequeAR.Application/Services/SavedReportService.cs` absorbiendo la autorización por propietario y el merge de campos de `SavedReportController.cs:60-77`
-- [ ] T089 [P] [US7] Crear `src/ChequeAR.Application/Services/UserService.cs` con el listado, conteo y alta/modificación que hoy hace `UserController` directo contra el repositorio
-- [ ] T090 [P] [US7] Crear `src/ChequeAR.Application/Services/HomeDashboardService.cs` absorbiendo el N+1 con cache manual de títulos de `Mvc/HomeController.cs:49-63`
-- [ ] T091 [P] [US7] Crear `src/ChequeAR.Application/Services/TerminologyService.cs` absorbiendo el parseo de `expansion.contains` → `{code, display}` de `TerminologyController.cs:39-47`
-- [ ] T092 [US7] Agregar métodos de lectura (`GetAsync`, `SearchAsync`, `CountAsync`, `GetSpecialtyCodesAsync`, `GetTitlesAsync`) a `src/ChequeAR.Application/Services/QuestionnaireService.cs`, y de lectura (`GetAsync`, `SearchAsync`) a `QuestionnaireResponseService.cs`
+- [X] T087 [P] [US7] Crear `src/ChequeAR.Application/Services/AuditQueryService.cs` absorbiendo el traer-5000-filas-y-filtrar-en-memoria de `AuditEventController.cs:19-24` y `Mvc/AuditController.cs:72,142`
+- [X] T088 [P] [US7] Crear `src/ChequeAR.Application/Services/SavedReportService.cs` absorbiendo la autorización por propietario y el merge de campos de `SavedReportController.cs:60-77`
+- [X] T089 [P] [US7] Crear `src/ChequeAR.Application/Services/UserService.cs` con el listado, conteo y alta/modificación que hoy hace `UserController` directo contra el repositorio
+- [X] T090 [P] [US7] Crear `src/ChequeAR.Application/Services/HomeDashboardService.cs` absorbiendo el N+1 con cache manual de títulos de `Mvc/HomeController.cs:49-63`
+- [X] T091 [P] [US7] Crear `src/ChequeAR.Application/Services/TerminologyService.cs` absorbiendo el parseo de `expansion.contains` → `{code, display}` de `TerminologyController.cs:39-47`
+- [X] T092 [US7] Agregar métodos de lectura (`GetAsync`, `SearchAsync`, `CountAsync`, `GetSpecialtyCodesAsync`, `GetTitlesAsync`) a `src/ChequeAR.Application/Services/QuestionnaireService.cs`, y de lectura (`GetAsync`, `SearchAsync`) a `QuestionnaireResponseService.cs`
 - [ ] T093 [US7] Mover el parseo de `ValidationJson` / `EnableWhenJson` / `CodingJson` de `Mvc/QuestionnairesController.ParseValidation` (línea 234) a la capa de negocio. El armado de `QuestionView` / `QuestionGroupView` (líneas 157-230) **se queda** en presentación: es mapeo a ViewModel. Evaluar también mover ahí el parseo de `Helpers/AuditPresentation.cs` (ver T024): es la misma clase de problema
-- [ ] T094 [US7] Reemplazar la inyección de repositorios por servicios en los 12 controllers afectados de `src/ChequeAR.Api/Controllers/Api/` y `src/ChequeAR.Api/Controllers/Mvc/` (18 declaraciones), hasta que `grep -rn "I[A-Za-z]*Repository" src/ChequeAR.Api/Controllers/` no devuelva nada (FR-019)
-- [ ] T095 [US7] Registrar los cinco servicios nuevos en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` (líneas 104-136) y actualizar los constructores de los controllers registrados (líneas 122-153)
-- [ ] T096 [US7] Verificar que `src/ChequeAR.Tests/ChequeAR.Tests.csproj` sigue referenciando **sólo** Domain y Application (FR-021)
-- [ ] T097 [US7] Verificar el paso 10 de `quickstart.md`: auditoría con filtros y paginación devuelve lo mismo que antes
-- [ ] T098 [US7] Verificar que el tablero de inicio muestra la misma información y sigue vaciándose con aviso —sin datos inventados— cuando la base no responde
+- [X] T094 [US7] Reemplazar la inyección de repositorios por servicios en los 12 controllers afectados de `src/ChequeAR.Api/Controllers/Api/` y `src/ChequeAR.Api/Controllers/Mvc/` (18 declaraciones), hasta que `grep -rn "I[A-Za-z]*Repository" src/ChequeAR.Api/Controllers/` no devuelva nada (FR-019)
+- [X] T095 [US7] Registrar los cinco servicios nuevos en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` (líneas 104-136) y actualizar los constructores de los controllers registrados (líneas 122-153)
+- [X] T096 [US7] Verificar que `src/ChequeAR.Tests/ChequeAR.Tests.csproj` sigue referenciando **sólo** Domain y Application (FR-021)
+- [X] T097 [US7] Verificar el paso 10 de `quickstart.md`: auditoría con filtros y paginación devuelve lo mismo que antes
+- [X] T098 [US7] Verificar que el tablero de inicio muestra la misma información y sigue vaciándose con aviso —sin datos inventados— cuando la base no responde
 
 **Checkpoint**: las siete historias completas.
 

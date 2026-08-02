@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Fhir;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Api.Controllers.Api
@@ -15,12 +15,12 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("api/reports/saved")]
     public class SavedReportController : ApiController
     {
-        private readonly ISavedReportRepository _repo;
-        private readonly IQuestionnaireRepository _qrepo;
-        public SavedReportController(ISavedReportRepository repo, IQuestionnaireRepository qrepo)
+        private readonly SavedReportService _saved;
+        private readonly QuestionnaireService _questionnaires;
+        public SavedReportController(SavedReportService saved, QuestionnaireService questionnaires)
         {
-            _repo = repo;
-            _qrepo = qrepo;
+            _saved = saved;
+            _questionnaires = questionnaires;
         }
 
         [HttpGet, Route(""), Authorize]
@@ -28,14 +28,14 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var specialties = CurrentUser.Specialties(User as ClaimsPrincipal);
-            var items = await _repo.ListForUserAsync(userId, specialties);
+            var items = await _saved.ListForUserAsync(userId, specialties);
             return Ok(new { total = items.Count, results = items });
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var r = await _repo.GetAsync(id);
+            var r = await _saved.GetAsync(id);
             if (r == null) return NotFound();
             return Ok(r);
         }
@@ -44,45 +44,44 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Create([FromBody] SavedReport body)
         {
             if (body == null) return BadRequest("body required");
-            body.Id = Guid.NewGuid();
-            body.CreatedBy = CurrentUser.Id(User as ClaimsPrincipal);
-            body.CreatedAt = DateTime.UtcNow;
-            body.UpdatedAt = DateTime.UtcNow;
-            await _repo.AddAsync(body);
-            return Content(HttpStatusCode.Created, body);
+            var creada = await _saved.CreateAsync(body, CurrentUser.Id(User as ClaimsPrincipal));
+            return Content(HttpStatusCode.Created, creada);
         }
 
         [HttpPut, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] SavedReport body)
         {
             if (body == null) return BadRequest("body required");
-            var existing = await _repo.GetAsync(id);
-            if (existing == null) return NotFound();
-            var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            if (existing.CreatedBy != userId)
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "Sólo quien creó la consulta guardada puede modificarla o eliminarla."));
 
-            existing.Name = body.Name ?? existing.Name;
-            existing.Scope = body.Scope ?? existing.Scope;
-            existing.SpecialtyCode = body.SpecialtyCode ?? existing.SpecialtyCode;
-            existing.QueryJson = body.QueryJson ?? existing.QueryJson;
-            existing.UpdatedAt = DateTime.UtcNow;
-            await _repo.UpdateAsync(existing);
-            return Ok(existing);
+            var resultado = await _saved.UpdateAsync(id, body, CurrentUser.Id(User as ClaimsPrincipal));
+            return Responder(resultado, r => Ok(r));
         }
 
         [HttpDelete, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Delete(Guid id)
         {
-            var existing = await _repo.GetAsync(id);
-            if (existing == null) return NotFound();
-            var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            if (existing.CreatedBy != userId)
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "Sólo quien creó la consulta guardada puede modificarla o eliminarla."));
-            await _repo.DeleteAsync(id);
-            return StatusCode(HttpStatusCode.NoContent);
+            var resultado = await _saved.DeleteAsync(id, CurrentUser.Id(User as ClaimsPrincipal));
+            return Responder(resultado, _ => StatusCode(HttpStatusCode.NoContent));
+        }
+
+        /// <summary>
+        /// Traduce el resultado del servicio a una respuesta HTTP. La REGLA (quién puede
+        /// modificar qué) vive en el servicio; acá sólo queda elegir el código de estado,
+        /// que es lo único propio de la capa web.
+        /// </summary>
+        private IHttpActionResult Responder(
+            SavedReportResult resultado, Func<SavedReport, IHttpActionResult> ok)
+        {
+            switch (resultado.Outcome)
+            {
+                case SavedReportOutcome.NotFound:
+                    return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+                case SavedReportOutcome.Forbidden:
+                    return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                        "Sólo quien creó la consulta guardada puede modificarla o eliminarla."));
+                default:
+                    return ok(resultado.Report);
+            }
         }
 
         // GET /api/reports/preview-columns?questionnaireId={guid}
@@ -90,7 +89,7 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpGet, Route("~/api/reports/preview-columns"), Authorize]
         public async Task<IHttpActionResult> PreviewColumns([FromUri] Guid questionnaireId)
         {
-            var q = await _qrepo.GetAsync(questionnaireId);
+            var q = await _questionnaires.GetAsync(questionnaireId);
             if (q == null) return NotFound();
             var cols = new System.Collections.Generic.List<object>();
             if (q.Questions != null)

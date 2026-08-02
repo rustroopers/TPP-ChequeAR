@@ -19,12 +19,11 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("fhir/r5/Questionnaire")]
     public class QuestionnaireController : ApiController
     {
-        private readonly IQuestionnaireRepository _repo;
+        
         private readonly QuestionnaireService _service;
 
-        public QuestionnaireController(IQuestionnaireRepository repo, QuestionnaireService service)
+        public QuestionnaireController(QuestionnaireService service)
         {
-            _repo = repo;
             _service = service;
         }
 
@@ -33,9 +32,9 @@ namespace ChequeAR.Api.Controllers.Api
         {
             QuestionnaireStatus? st = null;
             if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
-            var items = await _repo.SearchAsync(st, titleContains, specialty, _offset, _count);
+            var items = await _service.SearchAsync(st, titleContains, specialty, _offset, _count);
 
-            var total = await _repo.CountAsync(st, titleContains, specialty);
+            var total = await _service.CountAsync(st, titleContains, specialty);
             var recursos = items.Select(q => (Hl7.Fhir.Model.Resource)ToFhir(q));
             return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
         }
@@ -43,7 +42,7 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var q = await _repo.GetAsync(id);
+            var q = await _service.GetAsync(id);
             if (q == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
 
             // ETag = versión del registro. El cliente la devuelve en If-Match al escribir.
