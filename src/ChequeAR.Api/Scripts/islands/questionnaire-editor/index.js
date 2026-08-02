@@ -1021,7 +1021,6 @@
                         <template v-else><i class="bi bi-search"></i> Buscar</template>\
                     </button>\
                 </div>\
-                <p class="cq-text-xs cq-text-muted mt-1">El concepto que mide la pregunta, en pocas palabras y sin signos de pregunta. Es lo que se busca en SNOMED CT: el enunciado completo devuelve peores resultados.</p>\
                 <div v-if="snomedError" class="cq-text-xs text-danger mt-1">{{ snomedError }}</div>\
                 <ul v-if="snomedOpen && snomedResults.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
                     <li v-for="r in snomedResults" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="pickSnomed(r)"\
