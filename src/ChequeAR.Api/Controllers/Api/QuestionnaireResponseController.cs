@@ -63,17 +63,25 @@ namespace ChequeAR.Api.Controllers.Api
             => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
 
         [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
-        public async Task<IHttpActionResult> Create([FromBody] QuestionnaireResponse r)
+        public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.QuestionnaireResponse body)
         {
-            if (r == null) return BadRequest("body required");
+            var r = FhirQuestionnaireResponseParser.ToDomain(body);
+            if (r == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
+
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             try
             {
                 var created = await _service.CreateAsync(r, userId);
-                return Content(HttpStatusCode.Created, created);
+                return Content(HttpStatusCode.Created, ToFhir(created));
             }
-            catch (ArgumentException ex) { return BadRequest(ex.Message); }
-            catch (InvalidOperationException ex) { return Content((HttpStatusCode)422, new { error = ex.Message }); }
+            catch (ArgumentException ex)
+            {
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
+            }
         }
 
         [HttpPost, Route("{id:guid}/$finalize"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
@@ -83,11 +91,11 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 var r = await _service.FinalizeAsync(id, userId);
-                return Ok(r);
+                return Ok(ToFhir(r));
             }
             catch (InvalidOperationException ex)
             {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
             }
         }
     }

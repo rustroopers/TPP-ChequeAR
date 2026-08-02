@@ -139,23 +139,23 @@ verificar que ninguna propiedad se perdió (paso 6 de `quickstart.md`).
 > **⚠️ Escribir estas pruebas ANTES de tocar el JavaScript.** Son la única red contra pérdida
 > silenciosa de datos clínicos, que es el mayor riesgo de la feature.
 
-- [ ] T032 [P] [US2] Crear `src/ChequeAR.Tests/Application/FhirRoundTripTests.cs`: dominio → `FhirQuestionnaireBuilder` → `FhirQuestionnaireParser` → dominio, con una pregunta de cada uno de los 11 tipos de §1.2 de `data-model.md`
-- [ ] T033 [P] [US2] Agregar a `FhirRoundTripTests.cs` la verificación de que **no se pierden**: `term`, la distinción `AnswerOption.Code` vs `Value` vs `Display`, `scale`, `maxLength`, `pattern`, `accept`, `unit`, `min`/`max` y `enableWhen` con su tipo correcto
-- [ ] T034 [P] [US2] Agregar a `FhirRoundTripTests.cs` el caso de secciones anidadas con orden de preguntas preservado
-- [ ] T035 [P] [US2] Crear `src/ChequeAR.Tests/Application/FhirResponseRoundTripTests.cs` para el par constructor/parser de fichas, incluyendo adjuntos y el anclaje de versión
+- [X] T032 [P] [US2] Crear `src/ChequeAR.Tests/Application/FhirRoundTripTests.cs`: dominio → `FhirQuestionnaireBuilder` → `FhirQuestionnaireParser` → dominio, con una pregunta de cada uno de los 11 tipos de §1.2 de `data-model.md`
+- [X] T033 [P] [US2] Agregar a `FhirRoundTripTests.cs` la verificación de que **no se pierden**: `term`, la distinción `AnswerOption.Code` vs `Value` vs `Display`, `scale`, `maxLength`, `pattern`, `accept`, `unit`, `min`/`max` y `enableWhen` con su tipo correcto
+- [X] T034 [P] [US2] Agregar a `FhirRoundTripTests.cs` el caso de secciones anidadas con orden de preguntas preservado
+- [X] T035 [P] [US2] Crear `src/ChequeAR.Tests/Application/FhirResponseRoundTripTests.cs` para el par constructor/parser de fichas, incluyendo adjuntos y el anclaje de versión
 
 ### Implementation for User Story 2
 
-- [ ] T036 [US2] Crear `src/ChequeAR.Application/Fhir/FhirQuestionnaireParser.cs`: FHIR `Questionnaire` → entidad de dominio, reconstituyendo `Groups`, `Questions`, `Options`, `ValidationJson`, `EnableWhenJson` y `CodingJson`. Es el inverso exacto de T018-T020
-- [ ] T037 [P] [US2] Crear `src/ChequeAR.Application/Fhir/FhirQuestionnaireResponseParser.cs`: FHIR `QuestionnaireResponse` → dominio, con los `Value*` tipados y `AttachmentId` extraído de `valueAttachment.url`
-- [ ] T038 [US2] Convertir `POST` y `PUT` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireController.cs` (líneas 66 y 77) para recibir `Questionnaire` FHIR y pasarlo por el parser, conservando la semántica de `If-Match` / 428 / 409 de las líneas 51-64 y 85-92
-- [ ] T039 [P] [US2] Convertir `POST` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireResponseController.cs` (línea 43) para recibir `QuestionnaireResponse` FHIR
-- [ ] T040 [US2] Reescribir `buildPayload()` en `src/ChequeAR.Api/Scripts/islands/questionnaire-editor/index.js` (línea 541) para emitir un `Questionnaire` FHIR: `item[]` anidado con grupos `type: "group"`, `answerOption.valueCoding`, y lo que hoy empaquetan `buildValidation()` / `buildCoding()` (líneas 497-536) como extensiones estándar + `question-term`
-- [ ] T041 [US2] Cambiar el `Content-Type` a `application/fhir+json` en `questionnaire-editor/index.js` línea 607
-- [ ] T042 [US2] Leer la versión de registro desde `data.meta.versionId` en `questionnaire-editor/index.js` líneas 645-647, y eliminar el fallback `Id`/`id` de la línea 633 (FHIR normaliza en `id` minúscula)
-- [ ] T043 [US2] Reescribir `toItems()` y el cuerpo de `submit()` en `src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/index.js` (líneas ~300-360) para emitir `item[].answer[].value[x]` en lugar de `{ ValueBoolean, ValueInteger, ... }`, con `subject.identifier.value` y la extensión de versión anclada
-- [ ] T044 [US2] Verificar manualmente el ciclo completo del paso 6 de `quickstart.md`: 11 tipos, guardar, F5, nada perdido — **especialmente el término descriptivo**
-- [ ] T045 [US2] Verificar el escenario de concurrencia: dos pestañas, guardar en ambas, la segunda recibe 409 y no pisa a la primera (paso 6 de `quickstart.md`)
+- [X] T036 [US2] Crear `src/ChequeAR.Application/Fhir/FhirQuestionnaireParser.cs`: FHIR `Questionnaire` → entidad de dominio, reconstituyendo `Groups`, `Questions`, `Options`, `ValidationJson`, `EnableWhenJson` y `CodingJson`. Es el inverso exacto de T018-T020
+- [X] T037 [P] [US2] Crear `src/ChequeAR.Application/Fhir/FhirQuestionnaireResponseParser.cs`: FHIR `QuestionnaireResponse` → dominio, con los `Value*` tipados y `AttachmentId` extraído de `valueAttachment.url`
+- [X] T038 [US2] Convertir `POST` y `PUT` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireController.cs` (líneas 66 y 77) para recibir `Questionnaire` FHIR y pasarlo por el parser, conservando la semántica de `If-Match` / 428 / 409 de las líneas 51-64 y 85-92
+- [X] T039 [P] [US2] Convertir `POST` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireResponseController.cs` (línea 43) para recibir `QuestionnaireResponse` FHIR
+- [X] T040 [US2] Reescribir `buildPayload()` en `src/ChequeAR.Api/Scripts/islands/questionnaire-editor/index.js` (línea 541) para emitir un `Questionnaire` FHIR: `item[]` anidado con grupos `type: "group"`, `answerOption.valueCoding`, y lo que hoy empaquetan `buildValidation()` / `buildCoding()` (líneas 497-536) como extensiones estándar + `question-term`
+- [X] T041 [US2] Cambiar el `Content-Type` a `application/fhir+json` en `questionnaire-editor/index.js` línea 607
+- [X] T042 [US2] Leer la versión de registro desde `data.meta.versionId` en `questionnaire-editor/index.js` líneas 645-647, y eliminar el fallback `Id`/`id` de la línea 633 (FHIR normaliza en `id` minúscula)
+- [X] T043 [US2] Reescribir `toItems()` y el cuerpo de `submit()` en `src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/index.js` (líneas ~300-360) para emitir `item[].answer[].value[x]` en lugar de `{ ValueBoolean, ValueInteger, ... }`, con `subject.identifier.value` y la extensión de versión anclada
+- [X] T044 [US2] Verificar manualmente el ciclo completo del paso 6 de `quickstart.md`: 11 tipos, guardar, F5, nada perdido — **especialmente el término descriptivo**
+- [X] T045 [US2] Verificar el escenario de concurrencia: dos pestañas, guardar en ambas, la segunda recibe 409 y no pisa a la primera (paso 6 de `quickstart.md`)
 
 **Checkpoint**: US1 y US2 funcionan. Superficie única FHIR de lectura y escritura, sin pérdida.
 
@@ -178,11 +178,11 @@ que T040-T043. Van después de T043.
 
 ### Implementation for User Story 3
 
-- [ ] T047 [US3] Reemplazar por `OperationOutcome` los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireController.cs` líneas 88, 104, 115 y 130, y el mensaje informativo de archivado-en-lugar-de-borrado de la línea 169
+- [X] T047 [US3] Reemplazar por `OperationOutcome` los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireController.cs` líneas 88, 104, 115 y 130, y el mensaje informativo de archivado-en-lugar-de-borrado de la línea 169
 - [ ] T048 [P] [US3] Reemplazar los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireResponseController.cs` líneas 54 y 68
 - [ ] T049 [P] [US3] Reemplazar los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/TerminologyController.cs` líneas 53 y 59, mapeando 429/502/503 a `code = "transient"` y conservando el dato de cuánto esperar antes de reintentar
 - [ ] T050 [P] [US3] Devolver `OperationOutcome` con `code = "forbidden"` en `src/ChequeAR.Api/Controllers/Api/SavedReportController.cs` líneas 66 y 79
-- [ ] T051 [US3] Leer `body.issue[0].diagnostics` en lugar de `body.error` en `src/ChequeAR.Api/Scripts/islands/questionnaire-editor/index.js` líneas 622 (conflicto 409) y 726 (fallo de `$publish`) — **después de T042**
+- [X] T051 [US3] Leer `body.issue[0].diagnostics` en lugar de `body.error` en `src/ChequeAR.Api/Scripts/islands/questionnaire-editor/index.js` líneas 622 (conflicto 409) y 726 (fallo de `$publish`) — **después de T042**
 - [ ] T052 [US3] Leer `issue[0].diagnostics` en el manejo de errores de `src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/index.js` — **después de T043**
 - [ ] T053 [US3] Recorrer manualmente la tabla completa del paso 4 de `quickstart.md`, verificando que ninguna pantalla degrada a mensaje genérico (FR-009)
 

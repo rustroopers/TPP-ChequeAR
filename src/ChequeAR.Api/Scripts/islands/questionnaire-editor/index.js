@@ -490,83 +490,192 @@
                 q.codeDisplay = undefined;
                 dirty.value = true;
             }
-
-            // min/max/unidad viven en Question.ValidationJson (un CLOB con JSON), que es de
-            // donde los lee el renderer para validar la carga. Se manda serializado porque
-            // la API bindea directo contra la entidad y la propiedad es string.
-            function buildValidation(q) {
-                if (q.type === 'attachment') {
-                    return q.accept ? JSON.stringify({ accept: q.accept }) : null;
-                }
-                // Texto: largo máximo y patrón (regex). Vacío -> sin restricción.
-                if (q.type === 'string' || q.type === 'text') {
-                    var t = {};
-                    if (typeof q.maxLength === 'number' && !isNaN(q.maxLength) && q.maxLength > 0) t.maxLength = q.maxLength;
-                    if (q.pattern) t.pattern = q.pattern;
-                    return Object.keys(t).length ? JSON.stringify(t) : null;
-                }
-                if (['integer', 'decimal', 'scale'].indexOf(q.type) < 0) return null;
-                var v = {};
-                if (typeof q.min === 'number' && !isNaN(q.min)) v.min = q.min;
-                if (typeof q.max === 'number' && !isNaN(q.max)) v.max = q.max;
-                if (q.unit) v.unit = q.unit;
-                return Object.keys(v).length ? JSON.stringify(v) : null;
-            }
-
-            // Metadata clínica (SNOMED CT, único sistema soportado) para que la variable
-            // sea interoperable fuera de ChequeAR. Se serializa en Question.CodingJson.
+            // ---- Serialización a FHIR R5 ----
             //
-            // "term" es el concepto en palabras que escribe quien diseña el cuestionario, y
-            // se guarda aunque todavía no haya código elegido: deja asentado qué mide la
-            // pregunta y permite retomar la codificación después. No viaja a FHIR (es
-            // metadata de autoría); el display del item.code publicado es el término
-            // preferido de SNOMED, no esta semilla.
+            // Desde la feature 009 el editor habla FHIR directamente: hay UNA sola
+            // representación del cuestionario, no una interna y otra de interoperabilidad.
+            // Lo que se emite acá tiene que poder reconstruirlo FhirQuestionnaireParser sin
+            // pérdida; el par está cubierto por FhirRoundTripTests sobre los 11 tipos.
+
+            var EXT = 'http://hl7.org/fhir/StructureDefinition/';
+            var CQ_EXT = 'https://chequear.garrahan/StructureDefinition/';
             var SNOMED_SYSTEM = 'http://snomed.info/sct';
-            function buildCoding(q) {
-                var term = (q.term || '').trim();
-                if (!q.code && !term) return null;
-                var coding = {};
-                if (q.code) {
-                    coding.system = SNOMED_SYSTEM;
-                    coding.code = q.code;
-                    coding.display = q.codeDisplay || term || q.text;
+            var SPECIALTY_SYSTEM = 'https://chequear.garrahan/CodeSystem/specialty';
+
+            // Vocabulario de las islas -> vocabulario del estándar.
+            // OJO: R5 eliminó 'choice' y 'open-choice' (eran de R4). Ambos son 'coding', y
+            // lo que los distingue es answerConstraint.
+            function fhirType(t) {
+                switch (t) {
+                    case 'choice':
+                    case 'openChoice': return 'coding';
+                    case 'scale': return 'integer';   // FHIR no tiene tipo escala
+                    default: return t;
                 }
-                if (term) coding.term = term;
-                return JSON.stringify(coding);
+            }
+            function answerConstraint(t) {
+                if (t === 'choice') return 'optionsOnly';
+                if (t === 'openChoice') return 'optionsOrString';
+                return null;
+            }
+            function esEntero(t) { return t === 'integer' || t === 'scale'; }
+
+            function ext(url, key, value) {
+                var e = { url: url };
+                e[key] = value;
+                return e;
             }
 
-            // Manda el árbol completo (secciones -> preguntas -> opciones). El backend
-            // bindea el enum Type por nombre (case-insensitive), así que mandamos el code
-            // tal cual, y reemplaza la estructura guardada por ésta.
-            function buildPayload() {
-                var order = 0;
-                var payloadGroups = groups.value.map(function (g, gi) {
-                    return {
-                        title: g.title,
-                        orderIndex: gi,
-                        questions: g.questions.map(function (q) {
-                            return {
-                                linkId: q.linkId,
-                                text: q.text,
-                                type: q.type,
-                                required: !!q.required,
-                                orderIndex: order++,
-                                validationJson: buildValidation(q),
-                                enableWhenJson: (q.enableWhen && q.enableWhen.question)
-                                    ? JSON.stringify(q.enableWhen) : null,
-                                codingJson: buildCoding(q),
-                                options: (q.options || []).map(function (opt, oi) {
-                                    return { value: opt, display: opt, code: opt, orderIndex: oi };
-                                })
-                            };
-                        })
-                    };
-                });
-                return {
-                    title: qTitle.value,
-                    specialtyCode: specialtyCode.value,
-                    groups: payloadGroups
+            // Rango, unidad, patrón y formatos aceptados como extensiones ESTÁNDAR. maxLength
+            // NO va acá: es campo nativo del item (lo agrega buildItem).
+            function buildExtensions(q) {
+                var out = [];
+                var entero = esEntero(q.type);
+
+                if (['integer', 'decimal', 'scale'].indexOf(q.type) >= 0) {
+                    if (typeof q.min === 'number' && !isNaN(q.min))
+                        out.push(ext(EXT + 'minValue', entero ? 'valueInteger' : 'valueDecimal', q.min));
+                    if (typeof q.max === 'number' && !isNaN(q.max))
+                        out.push(ext(EXT + 'maxValue', entero ? 'valueInteger' : 'valueDecimal', q.max));
+                    if (q.unit)
+                        out.push(ext(EXT + 'questionnaire-unit', 'valueCoding',
+                                     { system: 'http://unitsofmeasure.org', code: q.unit, display: q.unit }));
+                }
+
+                // El marcador de escala hace al TIPO, no a la validación: sin él, al releer
+                // la versión congelada una escala vuelve como número común.
+                if (q.type === 'scale') {
+                    out.push(ext(EXT + 'questionnaire-itemControl', 'valueCodeableConcept', {
+                        coding: [{ system: 'http://hl7.org/fhir/questionnaire-item-control', code: 'slider' }]
+                    }));
+                }
+
+                if (q.type === 'attachment' && q.accept)
+                    out.push(ext(EXT + 'mimeType', 'valueCode', q.accept));
+
+                if ((q.type === 'string' || q.type === 'text') && q.pattern)
+                    out.push(ext(EXT + 'regex', 'valueString', q.pattern));
+
+                // El término de autoría no tiene lugar nativo en FHIR y hasta la feature 009
+                // no viajaba: se guarda aunque todavía no haya código elegido, porque deja
+                // asentado qué mide la pregunta. Sin esta extensión se pierde en CADA guardado.
+                var term = (q.term || '').trim();
+                if (term) out.push(ext(CQ_EXT + 'question-term', 'valueString', term));
+
+                return out;
+            }
+
+            // El answer[x] de la condición se tipa según la pregunta REFERENCIADA, no según
+            // la que declara la condición.
+            function buildEnableWhen(q, porLinkId) {
+                if (!q.enableWhen || !q.enableWhen.question) return null;
+
+                var origen = porLinkId[q.enableWhen.question];
+                var valor = q.enableWhen.value;
+                var entrada = { question: q.enableWhen.question, operator: q.enableWhen.op || '=' };
+                var tipo = origen ? origen.type : 'string';
+
+                if (tipo === 'boolean') entrada.answerBoolean = (valor === true || valor === 'true');
+                else if (esEntero(tipo)) entrada.answerInteger = parseInt(valor, 10) || 0;
+                else if (tipo === 'decimal') entrada.answerDecimal = parseFloat(valor) || 0;
+                else if (tipo === 'choice' || tipo === 'openChoice')
+                    entrada.answerCoding = { code: String(valor), display: String(valor) };
+                else entrada.answerString = valor == null ? null : String(valor);
+
+                return [entrada];
+            }
+
+            function buildItem(q, porLinkId) {
+                var item = {
+                    linkId: q.linkId,
+                    text: q.text,
+                    type: fhirType(q.type),
+                    required: !!q.required
                 };
+
+                var constraint = answerConstraint(q.type);
+                if (constraint) item.answerConstraint = constraint;
+
+                // maxLength es campo NATIVO del item, no extensión.
+                if ((q.type === 'string' || q.type === 'text')
+                    && typeof q.maxLength === 'number' && !isNaN(q.maxLength) && q.maxLength > 0) {
+                    item.maxLength = q.maxLength;
+                }
+
+                var extensiones = buildExtensions(q);
+                if (extensiones.length) item.extension = extensiones;
+
+                if (q.code) {
+                    item.code = [{
+                        system: SNOMED_SYSTEM,
+                        code: q.code,
+                        display: q.codeDisplay || (q.term || '').trim() || q.text
+                    }];
+                }
+
+                var condicion = buildEnableWhen(q, porLinkId);
+                if (condicion) {
+                    item.enableWhen = condicion;
+                    item.enableBehavior = 'all';
+                }
+
+                if (q.options && q.options.length) {
+                    item.answerOption = q.options.map(function (o) {
+                        return { valueCoding: { code: o, display: o } };
+                    });
+                }
+
+                return item;
+            }
+
+            // Emite el recurso completo: secciones como item type=group con las preguntas
+            // anidadas. El backend reemplaza la estructura guardada por ésta.
+            function buildPayload() {
+                // Índice para resolver el tipo de las preguntas referenciadas por condiciones.
+                var porLinkId = {};
+                groups.value.forEach(function (g) {
+                    g.questions.forEach(function (q) { if (q.linkId) porLinkId[q.linkId] = q; });
+                });
+
+                var recurso = {
+                    resourceType: 'Questionnaire',
+                    status: 'active',
+                    title: qTitle.value,
+                    name: qTitle.value,
+                    subjectType: ['Patient'],
+                    item: groups.value.map(function (g, gi) {
+                        return {
+                            linkId: g.linkId || ('seccion-' + (gi + 1)),
+                            text: g.title,
+                            type: 'group',
+                            item: g.questions.map(function (q) { return buildItem(q, porLinkId); })
+                        };
+                    })
+                };
+
+                if (specialtyCode.value) {
+                    recurso.useContext = [{
+                        code: { system: 'http://terminology.hl7.org/CodeSystem/usage-context-type', code: 'focus' },
+                        valueCodeableConcept: {
+                            coding: [{ system: SPECIALTY_SYSTEM, code: specialtyCode.value }]
+                        }
+                    }];
+                }
+
+                return recurso;
+            }
+
+            // Los errores de la API son OperationOutcome: el detalle legible vive en
+            // issue[].diagnostics. Con varios issues (validación contra perfil emite uno por
+            // regla incumplida) se muestran todos, que es la diferencia entre "arreglá esto"
+            // y "arreglá algo de esta lista".
+            function diagnostico(body, porOmision) {
+                var issues = body && body.issue;
+                if (!issues || !issues.length) return porOmision;
+                var textos = issues
+                    .map(function (i) { return i.diagnostics; })
+                    .filter(Boolean);
+                return textos.length ? textos.join(' ') : porOmision;
             }
 
             // explicit = lo pidió el usuario (botón Guardar) -> confirmamos con un toast.
@@ -604,7 +713,7 @@
                     : '/fhir/r5/Questionnaire/' + currentId.value;
 
                 var headers = {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/fhir+json',
                     'Authorization': 'Bearer ' + token
                 };
                 // If-Match sólo al actualizar: al crear todavía no hay nada con qué chocar.
@@ -619,7 +728,7 @@
                 }).then(function (res) {
                     if (res.status === 409) {
                         return res.json().catch(function () { return null; }).then(function (body) {
-                            var err = new Error((body && body.error) || 'Conflicto de edición');
+                            var err = new Error(diagnostico(body, 'Conflicto de edición'));
                             err.isConflict = true;
                             throw err;
                         });
@@ -627,10 +736,9 @@
                     if (!res.ok) { throw new Error('HTTP ' + res.status); }
                     return res.status === 204 ? null : res.json().catch(function () { return null; });
                 }).then(function (data) {
-                    // El server puede devolver "id" o "Id" según el endpoint (ver mismo
-                    // problema con concurrencyVersion más abajo): sin este fallback, crear
-                    // dejaba currentId sin setear y "Publicar" apuntaba a un id inexistente.
-                    var newId = data && (data.id !== undefined ? data.id : data.Id);
+                    // FHIR normaliza en "id" minúscula, así que ya no hace falta el fallback
+                    // a "Id" que existía cuando viajaba la entidad serializada por .NET.
+                    var newId = data && data.id;
                     if (creating && newId) {
                         currentId.value = newId;
                         isNew.value = false;
@@ -639,13 +747,11 @@
                             window.history.replaceState(null, '', '/Questionnaires/Edit/' + newId);
                         }
                     }
-                    // El server devuelve la entidad con su ConcurrencyVersion nueva; sin
-                    // esto el segundo guardado seguido chocaría contra nuestro propio cambio.
-                    if (data) {
-                        var v = data.concurrencyVersion;
-                        if (v === undefined) v = data.ConcurrencyVersion;
-                        if (typeof v === 'number') recordVersion.value = v;
-                    }
+                    // La versión del registro viaja en meta.versionId, que es el mecanismo
+                    // nativo del estándar (y el mismo número que el ETag). Sin refrescarla,
+                    // el segundo guardado seguido chocaría contra nuestro propio cambio.
+                    var v = data && data.meta && parseInt(data.meta.versionId, 10);
+                    if (typeof v === 'number' && !isNaN(v)) recordVersion.value = v;
                     lastSaved.value = new Date().toLocaleTimeString();
                     dirty.value = false;
                     // Se guardó un cambio sobre un publicado: a partir de ahora hay que
@@ -722,9 +828,10 @@
                     body: '{}'
                 }).then(function (res) {
                     if (res.ok) return null;
-                    // El API devuelve 422 con {error} cuando la publicación no es válida.
+                    // El API devuelve 422 con OperationOutcome cuando la publicación no es
+                    // válida (una regla de negocio, o el perfil de conformidad).
                     return res.json().catch(function () { return null; }).then(function (body) {
-                        throw new Error((body && body.error) || ('HTTP ' + res.status));
+                        throw new Error(diagnostico(body, 'HTTP ' + res.status));
                     });
                 }).then(function () {
                     dirty.value = false;

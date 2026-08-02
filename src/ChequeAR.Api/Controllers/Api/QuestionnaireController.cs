@@ -80,55 +80,49 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
-        public async Task<IHttpActionResult> Create([FromBody] Questionnaire q)
+        public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
-            if (q == null) return BadRequest("body required");
+            var q = FhirQuestionnaireParser.ToDomain(body);
+            if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
+
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
-            var response = Request.CreateResponse(HttpStatusCode.Created, created);
+            var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
             response.Headers.ETag = ETagFor(created);
             return ResponseMessage(response);
         }
 
         [HttpPut, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
-        public async Task<IHttpActionResult> Update(Guid id, [FromBody] Questionnaire patch)
+        public async Task<IHttpActionResult> Update(Guid id, [FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
-            if (patch == null) return BadRequest("body required");
+            var patch = FhirQuestionnaireParser.ToDomain(body);
+            if (patch == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
 
             // If-Match obligatorio: sin él no hay forma de saber si el cliente vio la última
             // versión, y una edición concurrente pisaría el trabajo ajeno en silencio.
             // 428 Precondition Required (RFC 6585) existe justamente para este caso.
             var expectedVersion = ParseIfMatch(Request);
             if (!expectedVersion.HasValue)
-            {
-                return Content((HttpStatusCode)428, new
-                {
-                    error = "Falta el header If-Match con la versión del cuestionario (ej: If-Match: W/\"3\")."
-                });
-            }
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             try
             {
                 var updated = await _service.UpdateAsync(id, patch, userId, expectedVersion);
-                var response = Request.CreateResponse(HttpStatusCode.OK, updated);
+                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(updated));
                 response.Headers.ETag = ETagFor(updated);
                 return ResponseMessage(response);
             }
             catch (ConcurrencyConflictException ex)
             {
-                return Content(HttpStatusCode.Conflict, new
-                {
-                    error = ex.Message,
-                    expectedVersion = ex.ExpectedVersion,
-                    actualVersion = ex.ActualVersion
-                });
+                return Content(HttpStatusCode.Conflict,
+                    OperationOutcomes.Conflict(ex.ExpectedVersion, ex.ActualVersion));
             }
             catch (InvalidOperationException ex)
             {
                 // Mismo criterio que Publish: "no existe" y "no se puede editar en este
                 // estado" (ej. archivado) son ambos errores del cliente, no del server.
-                return Content((HttpStatusCode)422, new { error = ex.Message });
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
             }
         }
 
@@ -139,11 +133,11 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 var q = await _service.PublishAsync(id, body?.FhirJson, userId, body?.ChangeNote);
-                return Ok(q);
+                return Ok(ToFhir(q));
             }
             catch (InvalidOperationException ex)
             {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
             }
         }
 
@@ -162,13 +156,13 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 var copy = await _service.CloneAsync(id, body?.Title, userId);
-                var response = Request.CreateResponse(HttpStatusCode.Created, copy);
+                var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(copy));
                 response.Headers.ETag = ETagFor(copy);
                 return ResponseMessage(response);
             }
             catch (InvalidOperationException)
             {
-                return NotFound();
+                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             }
         }
 
@@ -182,17 +176,14 @@ namespace ChequeAR.Api.Controllers.Api
                 // Un 204 acá sería mentira: el recurso sigue existiendo, archivado.
                 if (outcome == DeleteOutcome.ArchivedBecauseInUse)
                 {
-                    return Ok(new
-                    {
-                        outcome = "archived",
-                        message = "El cuestionario tiene respuestas cargadas: se archivó en vez de eliminarse."
-                    });
+                    return Ok(OperationOutcomes.Informational(
+                        "El cuestionario tiene respuestas cargadas: se archivó en vez de eliminarse."));
                 }
                 return StatusCode(HttpStatusCode.NoContent);
             }
             catch (InvalidOperationException)
             {
-                return NotFound();
+                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             }
         }
 

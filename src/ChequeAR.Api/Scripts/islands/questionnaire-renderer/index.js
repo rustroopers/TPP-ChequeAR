@@ -89,8 +89,10 @@
                 var m = document.querySelector('meta[name="cq-token"]');
                 return m ? m.getAttribute('content') : null;
             }
+            // Las escrituras de esta isla van todas a la interfaz FHIR, así que el tipo de
+            // contenido es el del estándar. La subida de adjuntos usa su propio fetch.
             function authHeaders() {
-                var h = { 'Content-Type': 'application/json' };
+                var h = { 'Content-Type': 'application/fhir+json' };
                 var t = token();
                 if (t) h['Authorization'] = 'Bearer ' + t;
                 return h;
@@ -282,38 +284,43 @@
             // QuestionnaireResponseItem en el backend.
             // Devuelve una LISTA porque una opción múltiple genera un item por opción
             // marcada (linkId repetido), que es como FHIR modela las respuestas repetidas.
-            function toItems(q) {
+            // Traduce la respuesta de una pregunta a item[].answer[] de FHIR.
+            //
+            // Un linkId con varias answer es como el estándar modela la opción múltiple;
+            // el backend lo vuelve a separar en un registro por opción marcada.
+            // Sin responder se emite el item SIN answer: un answer vacío es inválido en FHIR
+            // y además afirma algo que el clínico no dijo.
+            function toItem(q) {
                 var v = answers[q.linkId];
-                var base = function () { return { LinkId: q.linkId, QuestionType: q.type }; };
-                if (v === undefined || v === '' || v === null) return [base()];
+                var item = { linkId: q.linkId, text: q.text };
+                if (v === undefined || v === '' || v === null) return item;
 
                 if (q.type === 'openChoice') {
                     var selectedOpts = Array.isArray(v) ? v : [v];
-                    if (!selectedOpts.length) return [base()];
-                    return selectedOpts.map(function (opt) {
-                        var it = base();
-                        it.ValueCode = String(opt);
-                        return it;
+                    if (!selectedOpts.length) return item;
+                    item.answer = selectedOpts.map(function (opt) {
+                        return { valueCoding: { code: String(opt), display: String(opt) } };
                     });
+                    return item;
                 }
 
-                var item = base();
+                var answer;
                 switch (q.type) {
-                    case 'boolean':  item.ValueBoolean = !!v; break;
-                    case 'integer':  item.ValueInteger = parseNumeric(v); break;
+                    case 'boolean':  answer = { valueBoolean: !!v }; break;
+                    case 'integer':  answer = { valueInteger: parseNumeric(v) }; break;
                     case 'decimal':
-                    case 'scale':    item.ValueDecimal = parseNumeric(v); break;
+                    case 'scale':    answer = { valueDecimal: parseNumeric(v) }; break;
                     case 'date':
-                    case 'dateTime': item.ValueDate = v; break;
-                    case 'choice':   item.ValueCode = String(v); break;
+                    case 'dateTime': answer = { valueDateTime: v }; break;
+                    case 'choice':   answer = { valueCoding: { code: String(v), display: String(v) } }; break;
                     // El adjunto se guarda por referencia: el archivo ya está subido.
                     case 'attachment':
-                        item.AttachmentId = v.attachmentId;
-                        item.ValueString = v.fileName;
+                        answer = { valueAttachment: { url: '/api/attachments/' + v.attachmentId, title: v.fileName } };
                         break;
-                    default:         item.ValueString = String(v); break;
+                    default:         answer = { valueString: String(v) }; break;
                 }
-                return [item];
+                item.answer = [answer];
+                return item;
             }
 
             function submit() {
@@ -326,7 +333,7 @@
                         if (!isVisible(q)) return;
                         validate(q, answers[q.linkId]);
                         if (errors[q.linkId]) allErrors.push(q.text + ': ' + errors[q.linkId]);
-                        toItems(q).forEach(function (it) { items.push(it); });
+                        items.push(toItem(q));
                     });
                 });
                 if (allErrors.length) {
@@ -347,18 +354,30 @@
                     method: 'POST',
                     headers: authHeaders(),
                     body: JSON.stringify({
-                        QuestionnaireId: props.questionnaireId,
+                        resourceType: 'QuestionnaireResponse',
+                        status: 'in-progress',
+                        questionnaire: 'https://chequear.garrahan/Questionnaire/' + props.questionnaireId,
+                        subject: {
+                            identifier: {
+                                system: 'https://chequear.garrahan/patient-hospital-id',
+                                value: props.patientId
+                            }
+                        },
                         // Ancla la ficha a la version que se rendrizo, no a la que este
-                        // publicada al momento de guardar.
-                        QuestionnaireVersionId: props.questionnaireVersionId,
-                        PatientHospitalId: props.patientId,
-                        Items: items
+                        // publicada al momento de guardar. No tiene lugar nativo en FHIR:
+                        // el dominio ancla por identificador de version, no por numero.
+                        extension: [{
+                            url: 'https://chequear.garrahan/StructureDefinition/questionnaire-version-id',
+                            valueString: props.questionnaireVersionId
+                        }],
+                        item: items
                     })
                 }).then(function (r) {
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     return r.json();
                 }).then(function (created) {
-                    var id = created.Id || created.id;
+                    // FHIR normaliza en "id" minúscula.
+                    var id = created.id;
                     return fetch('/fhir/r5/QuestionnaireResponse/' + id + '/$finalize', {
                         method: 'POST',
                         headers: authHeaders()
