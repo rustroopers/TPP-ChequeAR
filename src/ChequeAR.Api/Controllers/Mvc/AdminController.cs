@@ -29,7 +29,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Select(r => new CapResource
                     {
                         Type = r.Type,
-                        Interactions = string.Join(" · ", r.Interactions)
+                        Interactions = r.Interactions.Count > 0
+                            ? string.Join(" · ", r.Interactions)
+                            : "—",
+                        Soportado = r.Interactions.Count > 0,
+                        Nota = r.Documentation
                     })
                     .ToList()
             });

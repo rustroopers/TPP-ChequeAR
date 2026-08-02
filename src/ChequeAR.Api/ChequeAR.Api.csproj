@@ -122,6 +122,7 @@
     <Compile Include="Controllers\Api\AuditEventController.cs" />
     <Compile Include="Controllers\Api\ReportsController.cs" />
     <Compile Include="Controllers\Api\PatientController.cs" />
+    <Compile Include="Controllers\Api\EncounterController.cs" />
     <Compile Include="Controllers\Api\UserController.cs" />
     <Compile Include="Controllers\Api\IntegrationStatusController.cs" />
     <Compile Include="Controllers\Api\SavedReportController.cs" />

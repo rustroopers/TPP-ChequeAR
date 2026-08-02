@@ -158,6 +158,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
             Register<Controllers.Api.TerminologyController>(() => new Controllers.Api.TerminologyController(Resolve<ITerminologyClient>()));
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
+            Register<Controllers.Api.EncounterController>(() => new Controllers.Api.EncounterController(Resolve<PatientService>()));
             Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<IUserRepository>()));
             Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));
             Register<Controllers.Api.SavedReportController>(() => new Controllers.Api.SavedReportController(Resolve<ISavedReportRepository>(), Resolve<IQuestionnaireRepository>()));

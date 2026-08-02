@@ -227,18 +227,18 @@ validar ambas respuestas en el validador oficial.
 
 ### Tests for User Story 5
 
-- [ ] T064 [P] [US5] Crear `src/ChequeAR.Tests/Application/PatientProjectionTests.cs`: `PatientSearchHit` → `Patient` con `identifier` de historia clínica, `name` y `birthDate` cuando está disponible
+- [X] T064 [P] [US5] Crear `src/ChequeAR.Tests/Application/PatientProjectionTests.cs`: `PatientSearchHit` → `Patient` con `identifier` de historia clínica, `name` y `birthDate` cuando está disponible
 
 ### Implementation for User Story 5
 
-- [ ] T065 [US5] Mover `src/ChequeAR.Api/Controllers/Api/PatientController.cs` de `/api/patients` a `/fhir/r5/Patient`, devolviendo `Bundle` de `Patient` en la búsqueda y `Patient` en la lectura. Sin consumidores JS actuales, el movimiento es seguro
-- [ ] T066 [P] [US5] Crear `src/ChequeAR.Api/Controllers/Api/EncounterController.cs` en `/fhir/r5/Encounter` con `?subject=`, reusando `PatientService.GetEncountersAsync`. Reemplaza `/api/patients/{id}/encounters`
-- [ ] T067 [US5] Agregar `Patient` (`read`, `search-type`) y `Encounter` (**sólo `search-type`** — un encuentro derivado no tiene identidad propia estable, ver `contracts/fhir-api.md`) a `src/ChequeAR.Api/Fhir/CapabilityCatalog.cs`
-- [ ] T068 [US5] Declarar `Observation` como **no soportado** en `CapabilityCatalog.cs` (FR-013) — el sistema no las produce
-- [ ] T069 [US5] Extender `CapResource` en `src/ChequeAR.Api/Models/AdminViewModels.cs:96` con el estado de soporte, y `src/ChequeAR.Api/Views/Admin/Capability.cshtml:27` para distinguirlo. Sin esto, `Observation` se renderizaría en la pantalla F2 como un recurso soportado sin interacciones, que es engañoso
-- [ ] T070 [US5] Registrar `EncounterController` en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` junto a los demás controllers de API
-- [ ] T071 [US5] Verificar el modo degradado de FR-016: detener el listener de Oracle y confirmar que la búsqueda de pacientes sigue derivando de las fichas propias, sin datos inventados
-- [ ] T072 [US5] Actualizar `specs/009-conformidad-fhir-capas/contracts/fhir-api.md` si alguna ruta o parámetro terminó distinto de lo contratado
+- [X] T065 [US5] Mover `src/ChequeAR.Api/Controllers/Api/PatientController.cs` de `/api/patients` a `/fhir/r5/Patient`, devolviendo `Bundle` de `Patient` en la búsqueda y `Patient` en la lectura. Sin consumidores JS actuales, el movimiento es seguro
+- [X] T066 [P] [US5] Crear `src/ChequeAR.Api/Controllers/Api/EncounterController.cs` en `/fhir/r5/Encounter` con `?subject=`, reusando `PatientService.GetEncountersAsync`. Reemplaza `/api/patients/{id}/encounters`
+- [X] T067 [US5] Agregar `Patient` (`read`, `search-type`) y `Encounter` (**sólo `search-type`** — un encuentro derivado no tiene identidad propia estable, ver `contracts/fhir-api.md`) a `src/ChequeAR.Api/Fhir/CapabilityCatalog.cs`
+- [X] T068 [US5] Declarar `Observation` como **no soportado** en `CapabilityCatalog.cs` (FR-013) — el sistema no las produce
+- [X] T069 [US5] Extender `CapResource` en `src/ChequeAR.Api/Models/AdminViewModels.cs:96` con el estado de soporte, y `src/ChequeAR.Api/Views/Admin/Capability.cshtml:27` para distinguirlo. Sin esto, `Observation` se renderizaría en la pantalla F2 como un recurso soportado sin interacciones, que es engañoso
+- [X] T070 [US5] Registrar `EncounterController` en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` junto a los demás controllers de API
+- [X] T071 [US5] Verificar el modo degradado de FR-016: detener el listener de Oracle y confirmar que la búsqueda de pacientes sigue derivando de las fichas propias, sin datos inventados
+- [X] T072 [US5] Actualizar `specs/009-conformidad-fhir-capas/contracts/fhir-api.md` si alguna ruta o parámetro terminó distinto de lo contratado
 
 **Checkpoint**: las cinco historias de FHIR completas.
 
