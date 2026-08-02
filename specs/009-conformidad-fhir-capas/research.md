@@ -338,6 +338,67 @@ tabla de mapeo de `data-model.md` guiando hacia el error.
 
 ---
 
+## R9 — No existe validador de perfiles de Firely para .NET Framework
+
+**Hallazgo que contradice R5.** Apareció al implementar el validador real (T059).
+
+**Lo que R5 daba por sentado**: que `Hl7.Fhir.Specification.R5` traía la clase `Validator`,
+como en la línea 4.x del SDK.
+
+**Lo que pasa realmente**:
+
+- `Hl7.Fhir.Specification.R5` 5.13.4 **no contiene ningún DLL**: es un metapaquete que sólo
+  arrastra `Hl7.Fhir.R5` y `Hl7.Fhir.Specification.Data.R5`. Verificado inspeccionando el
+  paquete restaurado en la caché de NuGet.
+- La documentación del paquete lo dice: *"The profile validator has been split off into its
+  own repository"*.
+- El motor separado es `Firely.Fhir.Validation.R5`. **Ninguna versión targetea
+  `netstandard2.0`**: la 2.7.3 declara `netstandard2.1` y `net8.0`; la 3.x además exige
+  `Hl7.Fhir.R5 >= 6.3.0`, que tampoco corre en net471.
+
+**Conclusión**: sobre .NET Framework 4.7.1 **no hay forma de interpretar automáticamente un
+StructureDefinition**. No es una limitación de esta implementación sino del ecosistema, y no
+se resuelve eligiendo otra versión.
+
+**Lo que SÍ está disponible en `netstandard2.0`** y es lo que se usa:
+
+| Pieza | Qué aporta |
+|---|---|
+| `FhirJsonParser` estricto | Conformidad estructural con R5: tipos, cardinalidades, vocabularios cerrados, formas de `value[x]`. **No es poco**: es exactamente lo que detectó el problema de R8 |
+| `ZipSource` + `DirectorySource` + `CachedResolver` | Carga de la especificación oficial y de los artefactos propios |
+
+**Diseño resultante**:
+
+- Las **reglas** de los perfiles viven en `ChequeAR.Application.Fhir.ProfileRules` — son
+  decisiones del dominio, y ahí se prueban sin levantar infraestructura (FR-020, FR-021).
+- El **adaptador** `FhirValidatorService` aporta lo que sí es infraestructura: parseo estricto
+  y carga de artefactos. Los tipos permitidos se leen del **ValueSet publicado**, no de una
+  lista en código, para que el artefacto siga siendo la fuente de verdad.
+- Los perfiles se publican igual como artefactos versionados (FR-011): el sistema los declara
+  en `meta.profile` y alguien puede pedir verlos. Que el runtime no los interprete solo no los
+  vuelve decorativos — son el contrato, y la verificación cruzada contra el validador oficial
+  de HL7 está en `quickstart.md`.
+
+**Costo honesto y explícito**: `ProfileRules` y los `StructureDefinition` deben mantenerse
+sincronizados **a mano**. Está anotado como advertencia en ambos archivos. Si el proyecto
+migra a .NET moderno, el reemplazo es directo: `Firely.Fhir.Validation.R5` pasa a interpretar
+los perfiles y `ProfileRules` se borra.
+
+**Alternativas consideradas**:
+
+| Alternativa | Rechazada porque |
+|---|---|
+| Migrar a .NET 8 para usar el validador | Fuera de alcance declarado de la feature; implicaría reescribir Web API 2 + MVC 5 + Razor + OWIN |
+| Escribir un intérprete propio de StructureDefinition | Desproporcionado. Es un motor complejo y sutil, y equivocarse ahí es peor que no tenerlo: daría falsa confianza |
+| Dejar la validación como estaba | Es lo que produjo el problema de R8 |
+
+**Impacto sobre lo declarado en la spec**: FR-010 y FR-012 se cumplen (se valida y se rechaza
+lo que no cumple, con una regla por mensaje). Lo que no se cumple literalmente es que la
+validación esté *dirigida por* el perfil; la equivalencia entre reglas y perfil la sostiene una
+convención documentada, no el runtime. Vale decirlo así en la tesis.
+
+---
+
 ## Resumen de decisiones
 
 | # | Decisión |
@@ -350,3 +411,4 @@ tabla de mapeo de `data-model.md` guiando hacia el error.
 | R6 | Formateador de medios dedicado del SDK, registrado primero y por omisión |
 | R7 | Constitución sin ratificar: compuerta evaluada contra principios de facto |
 | R8 | El vocabulario de opción era R4: `Choice`/`OpenChoice` → `coding` + `answerConstraint`. Lectura permisiva de lo congelado, escritura estricta |
+| R9 | **Corrige R5**: no hay validador de perfiles de Firely para net471. Parseo estricto + reglas explícitas en la capa de negocio; los perfiles siguen siendo artefactos publicados |

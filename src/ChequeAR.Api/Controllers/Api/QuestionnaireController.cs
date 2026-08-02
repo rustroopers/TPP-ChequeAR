@@ -135,6 +135,12 @@ namespace ChequeAR.Api.Controllers.Api
                 var q = await _service.PublishAsync(id, body?.FhirJson, userId, body?.ChangeNote);
                 return Ok(ToFhir(q));
             }
+            catch (ValidationFailedException ex)
+            {
+                // UN issue por regla incumplida. Con un mensaje concatenado, quien publica
+                // arregla la primera regla, vuelve a intentar y descubre la segunda.
+                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
+            }
             catch (InvalidOperationException ex)
             {
                 return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
@@ -157,7 +158,7 @@ namespace ChequeAR.Application.Services
             if (!validation.IsValid)
             {
                 r.Status = ResponseStatus.InProgress;   // no se finaliza nada inválido
-                throw new InvalidOperationException("Validation failed: " + string.Join("; ", validation.Errors));
+                throw new ValidationFailedException(validation.Errors);
             }
 
             r.LastSavedAt = DateTime.UtcNow;

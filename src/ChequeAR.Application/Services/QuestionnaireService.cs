@@ -159,7 +159,7 @@ namespace ChequeAR.Application.Services
 
             var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
             if (!validation.IsValid)
-                throw new InvalidOperationException("FHIR validation failed: " + string.Join("; ", validation.Errors));
+                throw new ValidationFailedException(validation.Errors);
 
             // Un único timestamp para la versión y para el cuestionario: no lo necesita
             // HasPendingChanges (que es explícito), pero deja coherente el "última

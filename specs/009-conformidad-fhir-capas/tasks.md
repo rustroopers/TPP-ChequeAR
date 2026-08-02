@@ -184,7 +184,7 @@ que T040-T043. Van después de T043.
 - [X] T050 [P] [US3] Devolver `OperationOutcome` con `code = "forbidden"` en `src/ChequeAR.Api/Controllers/Api/SavedReportController.cs` líneas 66 y 79
 - [X] T051 [US3] Leer `body.issue[0].diagnostics` en lugar de `body.error` en `src/ChequeAR.Api/Scripts/islands/questionnaire-editor/index.js` líneas 622 (conflicto 409) y 726 (fallo de `$publish`) — **después de T042**
 - [X] T052 [US3] Leer `issue[0].diagnostics` en el manejo de errores de `src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/index.js` — **después de T043**
-- [ ] T053 [US3] Recorrer manualmente la tabla completa del paso 4 de `quickstart.md`, verificando que ninguna pantalla degrada a mensaje genérico (FR-009)
+- [X] T053 [US3] Recorrer manualmente la tabla completa del paso 4 de `quickstart.md`, verificando que ninguna pantalla degrada a mensaje genérico (FR-009)
 
 **Checkpoint**: las tres historias P1 completas. La afirmación central del documento de
 arquitectura ya es verificable.
@@ -200,19 +200,19 @@ publicar contenido correcto → pasa y valida contra el validador oficial.
 
 ### Tests for User Story 4
 
-- [ ] T054 [P] [US4] Crear `src/ChequeAR.Tests/Application/ProfileValidationTests.cs` con casos: `linkId` duplicado falla, falta de especialidad falla, cuestionario correcto pasa
-- [ ] T055 [P] [US4] Agregar a `ProfileValidationTests.cs` el caso de FR-014: un recurso publicado **antes** de esta feature que no cumple el perfil vigente se sigue pudiendo leer sin error
+- [X] T054 [P] [US4] Crear `src/ChequeAR.Tests/Application/ProfileValidationTests.cs` con casos: `linkId` duplicado falla, falta de especialidad falla, cuestionario correcto pasa
+- [X] T055 [P] [US4] Agregar a `ProfileValidationTests.cs` el caso de FR-014: un recurso publicado **antes** de esta feature que no cumple el perfil vigente se sigue pudiendo leer sin error
 
 ### Implementation for User Story 4
 
-- [ ] T056 [P] [US4] Escribir `src/ChequeAR.Infrastructure/Fhir/Profiles/ChequeARQuestionnaire.StructureDefinition.json` con las restricciones de §5 de `data-model.md`: `title` y `status` presentes, `subjectType = Patient`, `useContext` de especialidad obligatorio, `item.linkId` obligatorio y **único**, e `item.type` acotado al subconjunto que el renderizador sabe dibujar — usando **vocabulario R5** (`coding`, no `choice`; ver §1.2 de `data-model.md`)
-- [ ] T057 [P] [US4] Escribir `src/ChequeAR.Infrastructure/Fhir/Profiles/ChequeARQuestionnaireResponse.StructureDefinition.json`: `subject.identifier` obligatorio, `questionnaire` obligatorio, extensión de versión anclada obligatoria
-- [ ] T058 [US4] Configurar `CopyToOutputDirectory=PreserveNewest` para `Fhir/Profiles/*.json` en `src/ChequeAR.Infrastructure/ChequeAR.Infrastructure.csproj`, siguiendo el patrón de `Oracle/allowlist.yaml`
-- [ ] T059 [US4] Reemplazar el sustituto de `src/ChequeAR.Infrastructure/Fhir/FhirValidatorService.cs` por el `Validator` de Firely con `CachedResolver(new MultiResolver(ZipSource.CreateValidationSource(), new DirectorySource(profilesDir)))`, mapeando su `OperationOutcome` al `ValidationResult` del contrato existente para no tocar a sus dos consumidores
-- [ ] T060 [US4] Resolver la ruta de perfiles desde `AppDomain.CurrentDomain.BaseDirectory` con comportamiento de reserva si el directorio falta, en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` (mismo patrón que líneas 91-95)
-- [ ] T061 [US4] Agregar calentamiento del validador al arrancar la aplicación en `src/ChequeAR.Api/App_Start/ServiceComposition.cs`, para que la primera publicación real no pague la carga de la especificación
-- [ ] T062 [US4] Emitir un `issue` por cada regla incumplida al fallar la validación en `$publish` y `$finalize`, en lugar de un único mensaje concatenado (`QuestionnaireService.cs:160-162`, `QuestionnaireResponseService.cs:156-161`)
-- [ ] T063 [US4] Verificar el paso 5 completo de `quickstart.md`, incluida la lectura de una versión publicada anterior a la feature
+- [X] T056 [P] [US4] Escribir `src/ChequeAR.Infrastructure/Fhir/Profiles/ChequeARQuestionnaire.StructureDefinition.json` con las restricciones de §5 de `data-model.md`: `title` y `status` presentes, `subjectType = Patient`, `useContext` de especialidad obligatorio, `item.linkId` obligatorio y **único**, e `item.type` acotado al subconjunto que el renderizador sabe dibujar — usando **vocabulario R5** (`coding`, no `choice`; ver §1.2 de `data-model.md`)
+- [X] T057 [P] [US4] Escribir `src/ChequeAR.Infrastructure/Fhir/Profiles/ChequeARQuestionnaireResponse.StructureDefinition.json`: `subject.identifier` obligatorio, `questionnaire` obligatorio, extensión de versión anclada obligatoria
+- [X] T058 [US4] Configurar `CopyToOutputDirectory=PreserveNewest` para `Fhir/Profiles/*.json` en `src/ChequeAR.Infrastructure/ChequeAR.Infrastructure.csproj`, siguiendo el patrón de `Oracle/allowlist.yaml`
+- [X] T059 [US4] Reemplazar el sustituto de `src/ChequeAR.Infrastructure/Fhir/FhirValidatorService.cs` por el `Validator` de Firely con `CachedResolver(new MultiResolver(ZipSource.CreateValidationSource(), new DirectorySource(profilesDir)))`, mapeando su `OperationOutcome` al `ValidationResult` del contrato existente para no tocar a sus dos consumidores
+- [X] T060 [US4] Resolver la ruta de perfiles desde `AppDomain.CurrentDomain.BaseDirectory` con comportamiento de reserva si el directorio falta, en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` (mismo patrón que líneas 91-95)
+- [X] T061 [US4] Agregar calentamiento del validador al arrancar la aplicación en `src/ChequeAR.Api/App_Start/ServiceComposition.cs`, para que la primera publicación real no pague la carga de la especificación
+- [X] T062 [US4] Emitir un `issue` por cada regla incumplida al fallar la validación en `$publish` y `$finalize`, en lugar de un único mensaje concatenado (`QuestionnaireService.cs:160-162`, `QuestionnaireResponseService.cs:156-161`)
+- [X] T063 [US4] Verificar el paso 5 completo de `quickstart.md`, incluida la lectura de una versión publicada anterior a la feature
 
 **Checkpoint**: el perfil que el sistema declaraba cumplir existe y se aplica de verdad.
 

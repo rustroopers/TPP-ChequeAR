@@ -36,6 +36,15 @@
     <None Update="Oracle\allowlist.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!--
+      Perfiles de conformidad propios. Mismo patrón que allowlist.yaml: viajan como
+      archivos junto al ensamblado y el validador los carga al arrancar. Que sean
+      artefactos versionados y no constantes en código es parte del requisito: el
+      sistema declara cumplirlos en meta.profile y alguien puede pedir verlos.
+    -->
+    <None Update="Fhir\Profiles\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!--

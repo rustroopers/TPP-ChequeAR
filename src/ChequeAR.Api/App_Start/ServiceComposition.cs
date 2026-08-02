@@ -61,11 +61,32 @@ namespace ChequeAR.Api.App_Start
 
             // ===== Singletons =====
             _jwt = new JwtIssuer(jwtIssuer, jwtAudience, jwtSecret, jwtTtlMinutes);
-            // Instancia única, no transitoria: el validador de perfiles lee y cachea la
-            // especificación FHIR completa (~10 MB de definiciones). Crear uno por request
-            // sería inviable. Mientras fue un sustituto que no hacía nada, ser transitorio
-            // no costaba nada; con el validador real sí.
-            _fhirValidator = new FhirValidatorService();
+
+            // Instancia única, no transitoria: el validador lee y cachea la especificación
+            // FHIR completa (~10 MB de definiciones). Crear uno por request sería inviable.
+            // Mientras fue un sustituto que no hacía nada, ser transitorio no costaba nada.
+            //
+            // Los perfiles propios se copian a la salida de compilación, igual que la
+            // allowlist de vistas: la ubicación en runtime es bin/Fhir/Profiles.
+            var profilesPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "Fhir", "Profiles");
+            // El arranque NO se puede caer por el validador: una excepción acá viaja como
+            // HttpException desde Application_Start y deja TODA la aplicación en 500, con el
+            // detalle sólo visible en el registro de eventos de Windows. Ya pasó una vez.
+            try
+            {
+                var validador = new FhirValidatorService(profilesPath);
+                // Calentamiento: sin esto la primera publicación del día paga la carga de
+                // toda la especificación y parece que el sistema se colgó.
+                validador.Warmup();
+                _fhirValidator = validador;
+            }
+            catch (Exception)
+            {
+                // Degradado: sin especificación ni perfiles, las reglas del dominio se siguen
+                // aplicando con el conjunto de tipos por omisión.
+                _fhirValidator = new FhirValidatorService();
+            }
             // Un HttpClient singleton por integración, con su Timeout fijado una sola vez.
             // Los clients NO mutan estas instancias (evita InvalidOperationException).
             _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };

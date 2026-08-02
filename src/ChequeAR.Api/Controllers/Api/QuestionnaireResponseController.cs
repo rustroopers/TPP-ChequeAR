@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
@@ -92,6 +93,10 @@ namespace ChequeAR.Api.Controllers.Api
             {
                 var r = await _service.FinalizeAsync(id, userId);
                 return Ok(ToFhir(r));
+            }
+            catch (ValidationFailedException ex)
+            {
+                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
             }
             catch (InvalidOperationException ex)
             {

@@ -111,8 +111,12 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
                       .Returns(TestHelpers.ValidFail("missing title"));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            // Tipo especifico: no se publico por VALIDACION, no por una regla de negocio.
+            // El controller responde distinto —un issue por regla incumplida— y esa
+            // distincion tiene que quedar fijada acá.
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(
                 () => _sut.PublishAsync(id, "{}", "u"));
+            Assert.Contains("missing title", ex.Errors);
 
             _repo.Verify(r => r.PublishAsync(It.IsAny<Questionnaire>(), It.IsAny<QuestionnaireVersion>()), Times.Never);
         }
