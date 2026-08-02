@@ -8,7 +8,6 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using ChequeAR.Application.Services;
-using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
@@ -190,52 +189,41 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .ToList()
             };
 
-            // min/max/unidad viajan dentro de ValidationJson; el editor las necesita de
-            // vuelta como campos sueltos para poder mostrarlas en el panel de propiedades.
-            var validation = ParseValidation(qq.ValidationJson);
+            // Desarmar los contratos JSON es conocimiento del dominio y vive en la capa de
+            // negocio; acá sólo queda pasarlos al ViewModel, que sí es presentación.
+            var validation = QuestionMetadataReader.ReadValidation(qq.ValidationJson);
             if (validation != null)
             {
-                view.Min = (decimal?)validation["min"];
-                view.Max = (decimal?)validation["max"];
-                view.Unit = (string)validation["unit"];
-                view.Accept = (string)validation["accept"];
-                view.MaxLength = (int?)validation["maxLength"];
-                view.Pattern = (string)validation["pattern"];
+                view.Min = validation.Min;
+                view.Max = validation.Max;
+                view.Unit = validation.Unit;
+                view.Accept = validation.Accept;
+                view.MaxLength = validation.MaxLength;
+                view.Pattern = validation.Pattern;
             }
 
-            var enableWhen = ParseValidation(qq.EnableWhenJson);
-            if (enableWhen != null && enableWhen["question"] != null)
+            var enableWhen = QuestionMetadataReader.ReadCondition(qq.EnableWhenJson);
+            if (enableWhen != null)
             {
                 view.EnableWhen = new EnableWhenView
                 {
-                    Question = (string)enableWhen["question"],
-                    Op = (string)enableWhen["op"] ?? "=",
-                    Value = ((JValue)enableWhen["value"])?.Value
+                    Question = enableWhen.Question,
+                    Op = enableWhen.Op,
+                    Value = enableWhen.Value
                 };
             }
 
-            var coding = ParseValidation(qq.CodingJson);
+            var coding = QuestionMetadataReader.ReadCoding(qq.CodingJson);
             if (coding != null)
             {
-                view.CodeSystem = (string)coding["system"];
-                view.Code = (string)coding["code"];
-                view.CodeDisplay = (string)coding["display"];
-                // Las preguntas codificadas antes de que existiera el término explícito no
-                // tienen "term": se cae al display del concepto elegido, que es la mejor
-                // aproximación disponible y evita que el campo aparezca vacío al reabrirlas.
-                view.Term = (string)coding["term"] ?? (string)coding["display"];
+                view.CodeSystem = coding.System;
+                view.Code = coding.Code;
+                view.CodeDisplay = coding.Display;
+                view.Term = coding.Term;
             }
             return view;
         }
 
-        // Un ValidationJson corrupto no debe tumbar la pantalla: se ignora y la pregunta
-        // se muestra sin restricciones.
-        private static JObject ParseValidation(string json)
-        {
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            try { return JObject.Parse(json); }
-            catch (JsonException) { return null; }
-        }
 
         // Q5 — Vista previa
         public async Task<ActionResult> Preview(Guid id)

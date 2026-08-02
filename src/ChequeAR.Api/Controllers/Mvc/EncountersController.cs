@@ -7,7 +7,6 @@ using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
-using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;

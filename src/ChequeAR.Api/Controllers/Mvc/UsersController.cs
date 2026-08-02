@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Services;
-using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
