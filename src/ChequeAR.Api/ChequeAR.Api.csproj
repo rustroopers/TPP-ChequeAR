@@ -69,9 +69,16 @@
     <PackageReference Include="Microsoft.Owin.Security.OAuth" Version="4.2.2" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="6.35.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- 13.0.4 es el minimo que exige Hl7.Fhir.Base; con 13.0.3 el restore falla (NU1605). -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Owin" Version="1.0" />
     <PackageReference Include="WebGrease" Version="1.6.0" />
+    <!--
+      Necesario para el MediaTypeFormatter que serializa recursos FHIR.
+      Los POCOs de Firely NO se pueden serializar con Newtonsoft: hay que usar
+      FhirJsonSerializer/FhirJsonParser. Misma version pinneada (research.md R1).
+    -->
+    <PackageReference Include="Hl7.Fhir.R5" Version="5.13.4" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App_Start\RouteConfig.cs" />
@@ -99,6 +106,7 @@
     <Compile Include="Controllers\Mvc\UsersController.cs" />
     <Compile Include="Controllers\Mvc\AdminController.cs" />
     <Compile Include="Fhir\CapabilityCatalog.cs" />
+    <Compile Include="Fhir\FhirMediaTypeFormatter.cs" />
     <Compile Include="Models\HomeViewModel.cs" />
     <Compile Include="Models\QuestionnaireListItem.cs" />
     <Compile Include="Models\QuestionnaireStatusMap.cs" />

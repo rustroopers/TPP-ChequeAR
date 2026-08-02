@@ -18,6 +18,13 @@
     <PackageReference Include="EntityFramework" Version="6.5.1" />
     <PackageReference Include="Oracle.ManagedDataAccess" Version="21.17.0" />
     <PackageReference Include="Oracle.ManagedDataAccess.EntityFramework" Version="21.17.0" />
+    <!--
+      Validacion contra perfiles. .Specification trae el Validator; .Specification.Data
+      trae el specification.zip con las definiciones oficiales R5 que consume ZipSource.
+      Misma version pinneada que Hl7.Fhir.R5 (ver research.md R1).
+    -->
+    <PackageReference Include="Hl7.Fhir.Specification.R5" Version="5.13.4" />
+    <PackageReference Include="Hl7.Fhir.Specification.Data.R5" Version="5.13.4" />
   </ItemGroup>
 
   <ItemGroup>

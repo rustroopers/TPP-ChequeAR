@@ -19,8 +19,16 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="6.35.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- 13.0.4 es el minimo que exige Hl7.Fhir.Base; con 13.0.3 el restore falla (NU1605). -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Oracle.ManagedDataAccess" Version="21.17.0" />
+    <!--
+      SDK FHIR. Version PINNEADA a 5.13.4 a proposito: es la ultima linea que
+      publica un grupo de dependencias netstandard2.0, que es lo unico consumible
+      desde net471. La linea 6.x targetea netstandard2.1/net8.0 y NO sirve aca.
+      Ver specs/009-conformidad-fhir-capas/research.md (R1).
+    -->
+    <PackageReference Include="Hl7.Fhir.R5" Version="5.13.4" />
   </ItemGroup>
 
   <ItemGroup>
