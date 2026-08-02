@@ -52,8 +52,13 @@ declarado del proyecto. Sin esto, no hay interoperabilidad: sólo direcciones co
 sugerentes.
 
 **Independent Test**: Consultar un cuestionario y una ficha, y pegar cada respuesta en el
-validador oficial del estándar. Debe pasar sin errores. No requiere que ninguna otra historia
-esté implementada.
+validador oficial del estándar. Debe pasar sin errores **contra la especificación base**. No
+requiere que ninguna otra historia esté implementada.
+
+> La validación contra el **perfil de conformidad propio** es criterio de la historia 4, no de
+> ésta: el perfil no existe como artefacto hasta entonces, y un validador externo no puede
+> resolver una referencia a algo que todavía no se publicó. Separarlas evita leer como fallo de
+> esta historia algo que simplemente todavía no se construyó.
 
 **Acceptance Scenarios**:
 

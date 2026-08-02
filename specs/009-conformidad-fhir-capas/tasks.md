@@ -22,6 +22,17 @@ verificación independientes.
 > FHIR / REST propio) y se corrigió la nota de paralelismo entre US2 y US3 (hallazgo F1), que
 > declaraba un paralelismo imposible sobre los mismos archivos JavaScript.
 
+> **Revisión tras la Fase 2 (hallazgo R8)**: medir los recursos ya congelados contra el parser
+> del SDK reveló que el sistema **declara `fhirVersion: 5.0.0` pero emite vocabulario R4**
+> (`choice` / `open-choice`, que R5 eliminó). Se agregaron **T018b** (mapeo correcto a
+> `coding` + `answerConstraint`), **T023b** (lectura permisiva de lo ya publicado, o 9
+> cuestionarios dejan de renderizarse) y **T023c** (prueba de regresión), y se ajustó T056.
+>
+> Esas tres llevan sufijo en vez de renumerar las 88 tareas posteriores por segunda vez:
+> el churn de una renumeración masiva —y romper toda referencia previa— cuesta más que la
+> desprolijidad de `T018b`. Ordenan igual y señalan con claridad que se insertaron después.
+> **Total: 109 tareas.**
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Puede correr en paralelo (archivos distintos, sin dependencias pendientes)
@@ -94,11 +105,14 @@ en <https://validator.fhir.org/>. Cero errores. No requiere ninguna otra histori
 ### Implementation for User Story 1
 
 - [ ] T018 [US1] Reescribir `src/ChequeAR.Application/Fhir/FhirQuestionnaireBuilder.cs` para construir `Hl7.Fhir.Model.Questionnaire`, exponiendo `ToResource(Questionnaire, int versionNumber)` y conservando `Build(...)` → `string` (lo consume `QuestionnaireService.cs:158`) vía `FhirJsonSerializer`. Preservar: `useContext` de especialidad, `scale` → `integer` + itemControl `slider`, extensiones `minValue`/`maxValue`/`regex`/`mimeType`/`questionnaire-unit`, `maxLength` nativo, y el índice `linkId → Question` para tipar `enableWhen`
+- [ ] T018b [US1] **Corregir el mapeo de tipos de opción a vocabulario R5** en `FhirQuestionnaireBuilder.cs`: `Choice` → `coding` + `answerConstraint = optionsOnly`, `OpenChoice` → `coding` + `answerConstraint = optionsOrString`. El builder actual emite `choice` / `open-choice`, que son de **R4 y no existen en R5** — el sistema venía declarando conformidad 5.0.0 sobre vocabulario inválido. Ver §1.2 de `data-model.md`
 - [ ] T019 [US1] Emitir `meta.versionId` desde `ConcurrencyVersion` y `meta.profile` en `FhirQuestionnaireBuilder.cs` (FR-007)
 - [ ] T020 [US1] Emitir la extensión `question-term` desde `CodingJson.term` en `FhirQuestionnaireBuilder.cs` — hoy se omite a propósito; con superficie única FHIR su ausencia pierde el dato (§1.5 de `data-model.md`)
 - [ ] T021 [P] [US1] Reescribir `src/ChequeAR.Application/Fhir/FhirQuestionnaireResponseBuilder.cs` sobre `Hl7.Fhir.Model.QuestionnaireResponse`, conservando el agrupado por `linkId`, el `Patient` contenido y los textos tomados de la versión anclada
 - [ ] T022 [US1] Emitir la extensión `questionnaire-version-id` en `FhirQuestionnaireResponseBuilder.cs`
 - [ ] T023 [US1] Reescribir `src/ChequeAR.Application/Fhir/FhirQuestionnaireReader.cs` sobre `FhirJsonParser`, **manteniendo intacto** el contrato de salida `RenderableQuestionnaire` / `RenderableGroup` / `RenderableQuestion`. Si el contrato no cambia, la hidratación del renderizador y `QuestionnaireResponseService` no se tocan
+- [ ] T023b [US1] **Compatibilidad hacia atrás con las versiones ya congeladas** (FR-014, FR-023): el reader usa `ParserSettings` permisivo (`AllowUnrecognizedEnums`, `AcceptUnknownMembers`, `PermissiveParsing`) y normaliza el vocabulario legado `choice` / `open-choice` → `coding`. Medido sobre la base real: de 55 recursos congelados, **9 sólo parsean en modo permisivo** y 0 fallan del todo. Sin esto, 9 cuestionarios publicados dejan de renderizarse para los clínicos. La escritura sigue siendo estricta — permisivo al leer lo viejo, estricto al escribir lo nuevo. Ver §2.1 de `data-model.md`
+- [ ] T023c [P] [US1] Prueba de regresión en `src/ChequeAR.Tests/Application/FhirLegacyReadTests.cs`: un recurso congelado con `item.type = "choice"` se lee sin excepción y devuelve una pregunta de tipo `choice` en el contrato `Renderable*`. Es la red que evita romper lo ya publicado
 - [ ] T024 [US1] Adaptar `FlattenForHumans` de `src/ChequeAR.Api/Helpers/AuditPresentation.cs:106` al recurso reescrito: hoy parsea el JSON almacenado con `JObject` para mostrar el detalle de auditoría, y las tareas T018-T022 cambian ese JSON. Verificar `value[x]`, `contained` y la ubicación de extensiones. **Sin esta tarea el fallo sería silencioso y sólo visible en la pantalla de auditoría**
 - [ ] T025 [US1] Convertir las lecturas de `src/ChequeAR.Api/Controllers/Api/QuestionnaireController.cs` (`Search` línea 31, `Get` línea 39) para devolver `Bundle` vía `FhirBundles` y `Questionnaire` POCO, conservando el `ETag`
 - [ ] T026 [US1] Convertir las lecturas de `src/ChequeAR.Api/Controllers/Api/QuestionnaireResponseController.cs` (`Search` línea 27, `Get` línea 35)
@@ -191,7 +205,7 @@ publicar contenido correcto → pasa y valida contra el validador oficial.
 
 ### Implementation for User Story 4
 
-- [ ] T056 [P] [US4] Escribir `src/ChequeAR.Infrastructure/Fhir/Profiles/ChequeARQuestionnaire.StructureDefinition.json` con las restricciones de §5 de `data-model.md`: `title` y `status` presentes, `subjectType = Patient`, `useContext` de especialidad obligatorio, `item.linkId` obligatorio y **único**, `item.type` acotado a los 11 tipos
+- [ ] T056 [P] [US4] Escribir `src/ChequeAR.Infrastructure/Fhir/Profiles/ChequeARQuestionnaire.StructureDefinition.json` con las restricciones de §5 de `data-model.md`: `title` y `status` presentes, `subjectType = Patient`, `useContext` de especialidad obligatorio, `item.linkId` obligatorio y **único**, e `item.type` acotado al subconjunto que el renderizador sabe dibujar — usando **vocabulario R5** (`coding`, no `choice`; ver §1.2 de `data-model.md`)
 - [ ] T057 [P] [US4] Escribir `src/ChequeAR.Infrastructure/Fhir/Profiles/ChequeARQuestionnaireResponse.StructureDefinition.json`: `subject.identifier` obligatorio, `questionnaire` obligatorio, extensión de versión anclada obligatoria
 - [ ] T058 [US4] Configurar `CopyToOutputDirectory=PreserveNewest` para `Fhir/Profiles/*.json` en `src/ChequeAR.Infrastructure/ChequeAR.Infrastructure.csproj`, siguiendo el patrón de `Oracle/allowlist.yaml`
 - [ ] T059 [US4] Reemplazar el sustituto de `src/ChequeAR.Infrastructure/Fhir/FhirValidatorService.cs` por el `Validator` de Firely con `CachedResolver(new MultiResolver(ZipSource.CreateValidationSource(), new DirectorySource(profilesDir)))`, mapeando su `OperationOutcome` al `ValidationResult` del contrato existente para no tocar a sus dos consumidores

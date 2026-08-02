@@ -62,7 +62,20 @@ desapareció.
 
 ### 1.2 Tipos de pregunta (los 11 de SC-004)
 
-| `QuestionType` | `item.type` | Ida y vuelta |
+> ### 🔴 `choice` y `open-choice` NO EXISTEN en R5
+>
+> Son vocabulario de **R4**. R5 los eliminó y los reemplazó por `coding` + `answerConstraint`.
+> Verificado contra el enum del SDK: los únicos `item.type` válidos en R5 son
+> `attachment, boolean, coding, date, dateTime, decimal, display, group, integer, quantity,
+> question, reference, string, text, time, url`.
+>
+> **El builder artesanal venía emitiendo `choice` mientras declaraba `fhirVersion: 5.0.0`.**
+> Nadie lo detectó porque el validador era un sustituto que sólo verificaba la presencia de la
+> cadena `"resourceType"` — es exactamente el agujero que cierra esta feature, y ya produjo
+> datos inválidos: **9 de las 20 versiones publicadas en la base de desarrollo** no son R5
+> válido. Ver §2.1 para qué hacer con ellas.
+
+| `QuestionType` | `item.type` en R5 | Ida y vuelta |
 |---|---|---|
 | `Decimal` | `decimal` | directo |
 | `Integer` | `integer` | directo |
@@ -71,13 +84,19 @@ desapareció.
 | `Date` | `date` | directo |
 | `DateTime` | `dateTime` | ⚠️ camelCase, no `datetime` |
 | `Boolean` | `boolean` | directo |
-| `Choice` | `choice` | directo |
-| `OpenChoice` | `open-choice` | ⚠️ con guion en FHIR; `openChoice` en la interfaz de usuario |
+| `Choice` | **`coding`** + `answerConstraint = optionsOnly` | ⚠️ **NO `choice`** |
+| `OpenChoice` | **`coding`** + `answerConstraint = optionsOrString` | ⚠️ **NO `open-choice`**. El `answerConstraint` es lo único que distingue esta pregunta de una `Choice`: sin él, al releer una opción abierta vuelve como opción cerrada |
 | `Attachment` | `attachment` | directo |
 | `Scale` | `integer` + extensión `questionnaire-itemControl` con código `slider` | ⚠️ **FHIR no tiene tipo escala**. Sin el marcador de control, al releer una escala vuelve como número común |
 
+En el SDK: `Questionnaire.ItemComponent.AnswerConstraint`, de tipo
+`Questionnaire.QuestionnaireAnswerConstraint?`, con literales `optionsOnly`, `optionsOrType`
+y `optionsOrString`.
+
 > El vocabulario que hablan las islas Vue lo fija `QuestionTypeMap.ToUi` y **no cambia**:
-> `openChoice`, `dateTime`, `scale`. La traducción a FHIR ocurre en la capa de negocio.
+> `choice`, `openChoice`, `dateTime`, `scale`. Es el vocabulario interno de ChequeAR y no
+> tiene por qué coincidir con el del estándar; la traducción ocurre en la capa de negocio.
+> No hay que "arreglar" el front para que diga `coding`.
 
 ### 1.3 Validaciones → extensiones estándar
 
@@ -148,6 +167,30 @@ feature (caso borde de la spec).
   cumplan el perfil vigente. **No se revalidan ni se migran.**
 - Es distinto de `Questionnaire.ConcurrencyVersion`: aquélla es la versión del **registro**
   (equivale a `meta.versionId`); ésta es una **instantánea publicada**.
+
+### 2.1 Compatibilidad hacia atrás con lo ya congelado
+
+Medición real sobre la base de desarrollo (20 versiones publicadas + 35 fichas):
+
+| Resultado | Cantidad |
+|---|---|
+| Parsea con el parser **estricto** | 46 |
+| Parsea **sólo con el permisivo** | 9 |
+| No parsea con ninguno | **0** |
+
+Los 9 son cuestionarios con preguntas de opción: emiten `choice`, que R5 no acepta (§1.2).
+
+**Decisión**: `FhirQuestionnaireReader` usa `FhirJsonParser` con `ParserSettings` permisivo
+(`AllowUnrecognizedEnums`, `AcceptUnknownMembers`, `PermissiveParsing`) y **normaliza el
+vocabulario legado** al leer: `choice` y `open-choice` se interpretan como `coding`.
+
+No es una concesión de calidad: es lo que exige FR-014. Esas versiones están congeladas, hay
+fichas clínicas que las referencian, y son inmutables por diseño. Si el reader nuevo las
+rechazara, **9 cuestionarios publicados dejarían de renderizarse para los clínicos** — una
+regresión directa de FR-023.
+
+La escritura, en cambio, va estricta: todo lo que se publique de acá en adelante es R5 válido.
+La asimetría es deliberada — permisivo al leer lo viejo, estricto al escribir lo nuevo.
 
 ---
 

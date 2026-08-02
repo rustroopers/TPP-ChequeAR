@@ -281,6 +281,63 @@ facto son consistentes y esta feature los refuerza en lugar de violarlos.
 
 ---
 
+---
+
+## R8 — El sistema declara R5 pero emite vocabulario R4
+
+**Hallazgo**, no decisión previa. Apareció al medir si el JSON ya congelado sobrevive al
+parser estricto de Firely, antes de reescribir el reader (T023).
+
+**Método**: se exportaron los 55 recursos reales de la base de desarrollo (20 versiones
+publicadas + 35 fichas) y se parsearon con `FhirJsonParser` estricto y permisivo.
+
+```
+estricto = 46    solo-permisivo = 9    falla-ambos = 0
+
+[SOLO PERMISIVO] Literal 'choice' is not a valid value
+                 for enumeration 'QuestionnaireItemType'
+```
+
+**Causa**: `choice` y `open-choice` son vocabulario de **R4**. **R5 los eliminó** y los
+reemplazó por `coding` + `answerConstraint`. Verificado contra el enum del SDK — los únicos
+`item.type` válidos en R5 son:
+
+```
+attachment, boolean, coding, date, dateTime, decimal, display, group,
+integer, quantity, question, reference, string, text, time, url
+```
+
+En el SDK: `Questionnaire.ItemComponent.AnswerConstraint`, de tipo
+`Questionnaire.QuestionnaireAnswerConstraint?`, con literales `optionsOnly`, `optionsOrType`,
+`optionsOrString`.
+
+**Por qué nadie lo vio**: el validador era un sustituto que sólo verificaba la presencia de la
+cadena `"resourceType"` (`FhirValidatorService.cs:6`). Es exactamente el agujero que esta
+feature cierra — y resulta que ya había dejado pasar datos inválidos a producción de
+desarrollo. **Refuerza el caso de US4**: la validación real no es una mejora cosmética, es lo
+que evita seguir acumulando esto.
+
+**Decisiones derivadas**:
+
+| Qué | Decisión |
+|---|---|
+| Escritura (T018b) | `Choice` → `coding` + `optionsOnly`; `OpenChoice` → `coding` + `optionsOrString` |
+| Lectura de lo congelado (T023b) | Parser permisivo + normalización `choice`/`open-choice` → `coding`. **Asimetría deliberada**: permisivo al leer lo viejo, estricto al escribir lo nuevo |
+| Datos existentes | **No se migran** (FR-014). Son inmutables y hay fichas que los referencian |
+| Perfil (T056) | Restringe `item.type` con vocabulario R5 |
+| Front | **No se toca**. `choice`/`openChoice` es el vocabulario interno de ChequeAR (`QuestionTypeMap.ToUi`) y no tiene por qué coincidir con el del estándar |
+
+**Alternativa considerada**: migrar las 9 versiones congeladas al vocabulario correcto.
+**Rechazada**: reescribir una versión publicada rompe la garantía de inmutabilidad sobre la
+que se apoya el anclaje de fichas — el médico firmó lo que leyó, y eso no se reescribe
+retroactivamente ni para corregirlo.
+
+**Costo de no haberlo detectado ahora**: la prueba de aceptación del MVP (US1, validación en
+validator.fhir.org) habría fallado sin explicación aparente, con el builder ya reescrito y la
+tabla de mapeo de `data-model.md` guiando hacia el error.
+
+---
+
 ## Resumen de decisiones
 
 | # | Decisión |
@@ -292,3 +349,4 @@ facto son consistentes y esta feature los refuerza en lugar de violarlos.
 | R5 | Validador con resolución cacheada como instancia única; 2 perfiles nuevos; sin migración |
 | R6 | Formateador de medios dedicado del SDK, registrado primero y por omisión |
 | R7 | Constitución sin ratificar: compuerta evaluada contra principios de facto |
+| R8 | El vocabulario de opción era R4: `Choice`/`OpenChoice` → `coding` + `answerConstraint`. Lectura permisiva de lo congelado, escritura estricta |
