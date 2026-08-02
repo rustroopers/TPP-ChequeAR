@@ -21,7 +21,6 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
     <!-- 13.0.4 es el minimo que exige Hl7.Fhir.Base; con 13.0.3 el restore falla (NU1605). -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Oracle.ManagedDataAccess" Version="21.17.0" />
     <!--
       SDK FHIR. Version PINNEADA a 5.13.4 a proposito: es la ultima linea que
       publica un grupo de dependencias netstandard2.0, que es lo unico consumible

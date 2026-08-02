@@ -136,7 +136,9 @@ namespace ChequeAR.Api.App_Start
                 Resolve<IFhirValidator>(), _audit));
             Register<PrefillService>(() => new PrefillService(Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>()));
             Register<QueryBuilder>(() => new QueryBuilder());
-            Register<ReportExecutor>(() => new ReportExecutor(sqlConn, Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>()));
+            Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
+            Register<ReportExecutor>(() => new ReportExecutor(
+                Resolve<IReportQueryRunner>(), Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>()));
 
             Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), hospitalAuthUrl));

@@ -255,21 +255,21 @@ vacío, y las 11 pruebas de reportes siguen pasando.
 
 ### Tests for User Story 6
 
-- [ ] T073 [P] [US6] Crear `src/ChequeAR.Tests/Architecture/LayerDependencyTests.cs` que asserte sobre `typeof(QueryBuilder).Assembly.GetReferencedAssemblies()` que `ChequeAR.Application` no referencia `Oracle.ManagedDataAccess` ni `EntityFramework` (FR-022). **Debe fallar antes de T075-T081 y pasar después**
+- [X] T073 [P] [US6] Crear `src/ChequeAR.Tests/Architecture/LayerDependencyTests.cs` que asserte sobre `typeof(QueryBuilder).Assembly.GetReferencedAssemblies()` que `ChequeAR.Application` no referencia `Oracle.ManagedDataAccess` ni `EntityFramework` (FR-022). **Debe fallar antes de T075-T081 y pasar después**
 
 ### Implementation for User Story 6
 
-- [ ] T074 [P] [US6] Crear `src/ChequeAR.Application/Reports/QueryParameter.cs`: parámetro neutro con `Name`, `Value` y un enum de tipo propio (`Int32`, `Raw16`, `Date`, `String`, `Decimal`) que cubra los casos donde hoy se necesita el tipo del driver
-- [ ] T075 [US6] Cambiar `BuiltQuery.Parameters` de `List<OracleParameter>` a `List<QueryParameter>` y eliminar `using Oracle.*` y `using System.Data` de `src/ChequeAR.Application/Reports/QueryBuilder.cs` (líneas 4, 8, 9 y los ~15 sitios que construyen parámetros). **El archivo se queda en Application**: decidir qué columna consultar por tipo de pregunta y cómo se traduce cada operador es lógica de negocio
-- [ ] T076 [US6] Convertir `GuidParameter` (línea 223 de `QueryBuilder.cs`) para emitir un `QueryParameter` de tipo `Raw16` con los bytes, en lugar de construir el tipo del driver
-- [ ] T077 [P] [US6] Crear `src/ChequeAR.Application/Interfaces/IReportQueryRunner.cs` con `Task<QueryRunResult> RunAsync(BuiltQuery query, bool paginate)` devolviendo filas y total
-- [ ] T078 [US6] Crear `src/ChequeAR.Infrastructure/Oracle/OracleReportQueryRunner.cs` con todo lo específico del driver que hoy vive en `ReportExecutor.cs:78-115`: conexión, comandos, `BindByName`, traducción `QueryParameter` → parámetro del driver, el clonado entre comandos (`CloneParameters`, línea 128) y la normalización de 16 bytes → identificador (`OracleValue.Normalize`, línea 147). **Mover con sus comentarios**: explican fallos reales y no obvios
-- [ ] T079 [US6] Convertir `src/ChequeAR.Application/Reports/ReportExecutor.cs` para orquestar contra `IReportQueryRunner`: resolver cuestionario, armar esquema, construir, delegar, pivotear. Conserva la regla `MaxSyncRows` (línea 17) y deja de recibir la cadena de conexión
-- [ ] T080 [US6] Actualizar el registro de `ReportExecutor` y agregar `IReportQueryRunner` → `OracleReportQueryRunner` en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` (línea 112)
-- [ ] T081 [US6] Quitar `PackageReference Include="Oracle.ManagedDataAccess"` de `src/ChequeAR.Application/ChequeAR.Application.csproj` (FR-018)
-- [ ] T082 [US6] Ajustar las 11 pruebas de `src/ChequeAR.Tests/Application/ReportQueryTests.cs` (líneas 152-273) al nuevo tipo de parámetro. **Todas deben seguir pasando, en particular la de inyección SQL de la línea 212** (SC-009)
-- [ ] T083 [US6] Verificar que `LayerDependencyTests` (T073) ahora pasa
-- [ ] T084 [US6] Verificar el paso 9 completo de `quickstart.md`: filtros de cada clase, exportación a Excel sin `System.Byte[]` en los identificadores, estadísticas sobre la cohorte completa, y rehidratación de una consulta guardada
+- [X] T074 [P] [US6] Crear `src/ChequeAR.Application/Reports/QueryParameter.cs`: parámetro neutro con `Name`, `Value` y un enum de tipo propio (`Int32`, `Raw16`, `Date`, `String`, `Decimal`) que cubra los casos donde hoy se necesita el tipo del driver
+- [X] T075 [US6] Cambiar `BuiltQuery.Parameters` de `List<OracleParameter>` a `List<QueryParameter>` y eliminar `using Oracle.*` y `using System.Data` de `src/ChequeAR.Application/Reports/QueryBuilder.cs` (líneas 4, 8, 9 y los ~15 sitios que construyen parámetros). **El archivo se queda en Application**: decidir qué columna consultar por tipo de pregunta y cómo se traduce cada operador es lógica de negocio
+- [X] T076 [US6] Convertir `GuidParameter` (línea 223 de `QueryBuilder.cs`) para emitir un `QueryParameter` de tipo `Raw16` con los bytes, en lugar de construir el tipo del driver
+- [X] T077 [P] [US6] Crear `src/ChequeAR.Application/Interfaces/IReportQueryRunner.cs` con `Task<QueryRunResult> RunAsync(BuiltQuery query, bool paginate)` devolviendo filas y total
+- [X] T078 [US6] Crear `src/ChequeAR.Infrastructure/Oracle/OracleReportQueryRunner.cs` con todo lo específico del driver que hoy vive en `ReportExecutor.cs:78-115`: conexión, comandos, `BindByName`, traducción `QueryParameter` → parámetro del driver, el clonado entre comandos (`CloneParameters`, línea 128) y la normalización de 16 bytes → identificador (`OracleValue.Normalize`, línea 147). **Mover con sus comentarios**: explican fallos reales y no obvios
+- [X] T079 [US6] Convertir `src/ChequeAR.Application/Reports/ReportExecutor.cs` para orquestar contra `IReportQueryRunner`: resolver cuestionario, armar esquema, construir, delegar, pivotear. Conserva la regla `MaxSyncRows` (línea 17) y deja de recibir la cadena de conexión
+- [X] T080 [US6] Actualizar el registro de `ReportExecutor` y agregar `IReportQueryRunner` → `OracleReportQueryRunner` en `src/ChequeAR.Api/App_Start/ServiceComposition.cs` (línea 112)
+- [X] T081 [US6] Quitar `PackageReference Include="Oracle.ManagedDataAccess"` de `src/ChequeAR.Application/ChequeAR.Application.csproj` (FR-018)
+- [X] T082 [US6] Ajustar las 11 pruebas de `src/ChequeAR.Tests/Application/ReportQueryTests.cs` (líneas 152-273) al nuevo tipo de parámetro. **Todas deben seguir pasando, en particular la de inyección SQL de la línea 212** (SC-009)
+- [X] T083 [US6] Verificar que `LayerDependencyTests` (T073) ahora pasa
+- [X] T084 [US6] Verificar el paso 9 completo de `quickstart.md`: filtros de cada clase, exportación a Excel sin `System.Byte[]` en los identificadores, estadísticas sobre la cohorte completa, y rehidratación de una consulta guardada
 
 **Checkpoint**: la afirmación sobre aislamiento de la persistencia queda respaldada por una
 prueba automática.
