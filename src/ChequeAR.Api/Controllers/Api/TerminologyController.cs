@@ -4,6 +4,7 @@ using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json.Linq;
@@ -49,14 +50,16 @@ namespace ChequeAR.Api.Controllers.Api
             catch (TerminologyException ex)
             {
                 // El client ya decidió el status (429 rate limit, 503 sin configurar, 502 otro).
-                // retryAfter viaja en el body para que el front sepa cuánto esperar.
+                // El tiempo de espera va DENTRO del diagnostics: OperationOutcome no tiene un
+                // campo para eso, y perderlo dejaría al front reintentando a ciegas.
                 return Content((HttpStatusCode)ex.StatusCode,
-                    new { error = ex.Message, retryAfter = ex.RetryAfterSeconds });
+                    OperationOutcomes.Transient(ex.Message, ex.RetryAfterSeconds));
             }
             catch (Exception ex)
             {
                 // Timeout / server caído / respuesta ilegible: el front lo muestra amable.
-                return Content((HttpStatusCode)502, new { error = "No se pudo consultar SNOMED CT: " + ex.Message });
+                return Content((HttpStatusCode)502,
+                    OperationOutcomes.Transient("No se pudo consultar SNOMED CT: " + ex.Message));
             }
         }
     }

@@ -174,16 +174,16 @@ que T040-T043. Van después de T043.
 
 ### Tests for User Story 3
 
-- [ ] T046 [P] [US3] Extender `src/ChequeAR.Tests/Application/OperationOutcomeTests.cs` con un caso por cada regla de negocio que hoy devuelve 422: publicar sin preguntas, editar un archivado, responder un cuestionario retirado
+- [X] T046 [P] [US3] Extender `src/ChequeAR.Tests/Application/OperationOutcomeTests.cs` con un caso por cada regla de negocio que hoy devuelve 422: publicar sin preguntas, editar un archivado, responder un cuestionario retirado
 
 ### Implementation for User Story 3
 
 - [X] T047 [US3] Reemplazar por `OperationOutcome` los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireController.cs` líneas 88, 104, 115 y 130, y el mensaje informativo de archivado-en-lugar-de-borrado de la línea 169
-- [ ] T048 [P] [US3] Reemplazar los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireResponseController.cs` líneas 54 y 68
-- [ ] T049 [P] [US3] Reemplazar los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/TerminologyController.cs` líneas 53 y 59, mapeando 429/502/503 a `code = "transient"` y conservando el dato de cuánto esperar antes de reintentar
-- [ ] T050 [P] [US3] Devolver `OperationOutcome` con `code = "forbidden"` en `src/ChequeAR.Api/Controllers/Api/SavedReportController.cs` líneas 66 y 79
+- [X] T048 [P] [US3] Reemplazar los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/QuestionnaireResponseController.cs` líneas 54 y 68
+- [X] T049 [P] [US3] Reemplazar los retornos `{ error }` de `src/ChequeAR.Api/Controllers/Api/TerminologyController.cs` líneas 53 y 59, mapeando 429/502/503 a `code = "transient"` y conservando el dato de cuánto esperar antes de reintentar
+- [X] T050 [P] [US3] Devolver `OperationOutcome` con `code = "forbidden"` en `src/ChequeAR.Api/Controllers/Api/SavedReportController.cs` líneas 66 y 79
 - [X] T051 [US3] Leer `body.issue[0].diagnostics` en lugar de `body.error` en `src/ChequeAR.Api/Scripts/islands/questionnaire-editor/index.js` líneas 622 (conflicto 409) y 726 (fallo de `$publish`) — **después de T042**
-- [ ] T052 [US3] Leer `issue[0].diagnostics` en el manejo de errores de `src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/index.js` — **después de T043**
+- [X] T052 [US3] Leer `issue[0].diagnostics` en el manejo de errores de `src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/index.js` — **después de T043**
 - [ ] T053 [US3] Recorrer manualmente la tabla completa del paso 4 de `quickstart.md`, verificando que ninguna pantalla degrada a mensaje genérico (FR-009)
 
 **Checkpoint**: las tres historias P1 completas. La afirmación central del documento de

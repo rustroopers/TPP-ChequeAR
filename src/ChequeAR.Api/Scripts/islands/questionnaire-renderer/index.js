@@ -323,6 +323,17 @@
                 return item;
             }
 
+            // Los errores de la API son OperationOutcome: el detalle legible vive en
+            // issue[].diagnostics. Mostrarlo importa mas aca que en el editor — el medico
+            // necesita saber POR QUE no se guardo la ficha que acaba de completar, no un
+            // "HTTP 422" que no le dice nada.
+            function diagnostico(body, porOmision) {
+                var issues = body && body.issue;
+                if (!issues || !issues.length) return porOmision;
+                var textos = issues.map(function (i) { return i.diagnostics; }).filter(Boolean);
+                return textos.length ? textos.join(' ') : porOmision;
+            }
+
             function submit() {
                 if (submitting.value) return;
 
@@ -373,8 +384,10 @@
                         item: items
                     })
                 }).then(function (r) {
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    return r.json();
+                    if (r.ok) return r.json();
+                    return r.json().catch(function () { return null; }).then(function (body) {
+                        throw new Error(diagnostico(body, 'HTTP ' + r.status));
+                    });
                 }).then(function (created) {
                     // FHIR normaliza en "id" minúscula.
                     var id = created.id;
@@ -382,8 +395,10 @@
                         method: 'POST',
                         headers: authHeaders()
                     }).then(function (r) {
-                        if (!r.ok) throw new Error('HTTP ' + r.status + ' al finalizar');
-                        return id;
+                        if (r.ok) return id;
+                        return r.json().catch(function () { return null; }).then(function (body) {
+                            throw new Error(diagnostico(body, 'HTTP ' + r.status + ' al finalizar'));
+                        });
                     });
                 }).then(function (id) {
                     savingState.value = 'idle';

@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 
@@ -58,7 +59,9 @@ namespace ChequeAR.Api.Controllers.Api
             var existing = await _repo.GetAsync(id);
             if (existing == null) return NotFound();
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            if (existing.CreatedBy != userId) return StatusCode(HttpStatusCode.Forbidden);
+            if (existing.CreatedBy != userId)
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "Sólo quien creó la consulta guardada puede modificarla o eliminarla."));
 
             existing.Name = body.Name ?? existing.Name;
             existing.Scope = body.Scope ?? existing.Scope;
@@ -75,7 +78,9 @@ namespace ChequeAR.Api.Controllers.Api
             var existing = await _repo.GetAsync(id);
             if (existing == null) return NotFound();
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            if (existing.CreatedBy != userId) return StatusCode(HttpStatusCode.Forbidden);
+            if (existing.CreatedBy != userId)
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "Sólo quien creó la consulta guardada puede modificarla o eliminarla."));
             await _repo.DeleteAsync(id);
             return StatusCode(HttpStatusCode.NoContent);
         }

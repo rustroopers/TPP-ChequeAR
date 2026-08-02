@@ -428,6 +428,15 @@
                 snomedDebounce = setTimeout(searchSnomed, 600);
             });
 
+            // Mismo criterio que diagnostico(): el detalle legible de un OperationOutcome
+            // vive en issue[].diagnostics. Se declara aparte porque este bloque corre antes
+            // de que diagnostico() este definido en el scope.
+            function diagnosticoTerminologia(body, porOmision) {
+                var issues = body && body.issue;
+                if (!issues || !issues.length) return porOmision;
+                return issues[0].diagnostics || porOmision;
+            }
+
             function searchSnomed() {
                 var q = selected.value && selected.value.question;
                 var term = q ? (q.term || '').trim() : '';
@@ -452,12 +461,15 @@
                     return res.json().catch(function () { return null; }).then(function (body) {
                         if (res.status === 429) {
                             // El server nos limita: entramos en cooldown y frenamos el autosugerir.
-                            var secs = (body && body.retryAfter) || 8;
-                            snomedCooldownUntil = Date.now() + secs * 1000;
-                            throw new Error((body && body.error) ||
+                            // El tiempo de espera viene dentro del diagnostics del
+                            // OperationOutcome: el estandar no tiene un campo para eso.
+                            var texto = diagnosticoTerminologia(body,
                                 'Demasiadas consultas a SNOMED. Reintentá en unos segundos.');
+                            var m = /(\d+)\s*segundos/.exec(texto);
+                            snomedCooldownUntil = Date.now() + ((m ? parseInt(m[1], 10) : 8) * 1000);
+                            throw new Error(texto);
                         }
-                        if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+                        if (!res.ok) throw new Error(diagnosticoTerminologia(body, 'HTTP ' + res.status));
                         return body;
                     });
                 }).then(function (data) {

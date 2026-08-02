@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Application.Fhir;
 using Hl7.Fhir.Model;
@@ -116,6 +117,44 @@ namespace ChequeAR.Tests.Application
 
             Assert.Contains("\"resourceType\":\"OperationOutcome\"", json);
             Assert.Contains("\"not-found\"", json);
+        }
+
+        /// <summary>
+        /// TODAS las fábricas tienen que producir recursos que sobrevivan el parser ESTRICTO.
+        /// Un error mal formado es peor que no tener detalle: rompe al cliente justo cuando
+        /// algo ya salió mal, y el problema real queda tapado por el problema del error.
+        /// </summary>
+        [Fact]
+        public void TodasLasFabricas_ProducenRecursosQueSobrevivenElParserEstricto()
+        {
+            var casos = new Dictionary<string, OperationOutcome>
+            {
+                ["NotFound"] = OperationOutcomes.NotFound(),
+                ["Forbidden"] = OperationOutcomes.Forbidden(),
+                ["Invalid"] = OperationOutcomes.Invalid(),
+                ["Unprocessable"] = OperationOutcomes.Unprocessable("El cuestionario no tiene preguntas."),
+                ["PreconditionRequired"] = OperationOutcomes.PreconditionRequired(),
+                ["Conflict"] = OperationOutcomes.Conflict(3, 5),
+                ["Transient"] = OperationOutcomes.Transient("Servicio no disponible.", 30),
+                ["Informational"] = OperationOutcomes.Informational("Se archivó en vez de eliminarse."),
+                ["Validación"] = OperationOutcomes.ForValidationErrors(new[] { "regla 1", "regla 2" })
+            };
+
+            var serializer = new FhirJsonSerializer();
+            var parser = new FhirJsonParser();   // estricto, sin ParserSettings permisivo
+
+            foreach (var caso in casos)
+            {
+                var json = serializer.SerializeToString(caso.Value);
+                var vuelta = parser.Parse<OperationOutcome>(json);
+
+                Assert.True(vuelta.Issue.Count > 0, caso.Key + " quedó sin issues");
+                Assert.All(vuelta.Issue, i =>
+                {
+                    Assert.NotNull(i.Code);
+                    Assert.False(string.IsNullOrWhiteSpace(i.Diagnostics), caso.Key + " sin diagnostics");
+                });
+            }
         }
 
         private static OperationOutcome.IssueComponent Único(OperationOutcome outcome)
