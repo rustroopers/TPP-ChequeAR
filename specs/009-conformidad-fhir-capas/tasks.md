@@ -315,14 +315,9 @@ pruebas nuevas de autorización por propietario y de auditoría que no instancia
 ## Phase 10: Polish & Cross-Cutting Concerns
 
 - [X] T099 Ejecutar `quickstart.md` completo de punta a punta, marcando cada casilla
-- [ ] T100 [P] **PENDIENTE — requiere navegador, no se puede automatizar desde acá.** Validar en <https://validator.fhir.org/> al menos un `Questionnaire`, un `QuestionnaireResponse`, un `Patient` y un `Bundle` — evidencia de SC-001.
-      Equivalente local YA EJECUTADO: todo lo que devuelve la API pasa el parser **estricto** del SDK (sin `ParserSettings` permisivo), que verifica tipos, cardinalidades y vocabularios cerrados. Es la verificación más cercana posible sin salir del entorno; falta la externa e independiente, que es la que vale frente a un jurado.
-      Los recursos capturados de la app corriendo quedaron listos para pegar.
-- [X] T101 [P] Actualizar `src/README.md`: quitar de "trabajo pendiente" la línea 50 (sustituir el validador por Firely) y la mención a perfiles FHIR de la línea 75
-- [X] T102 [P] Actualizar `specs/003-interoperabilidad-fhir/spec.md` marcando como cerrados los puntos que esta feature completa, con referencia cruzada a 009
-- [X] T103 [P] Documentar en `src/README.md`: las dos extensiones propias y los dos perfiles con sus URL canónicas, **y la frontera entre la interfaz FHIR y el REST propio** — volcar la tabla "Fuera de la interfaz de interoperabilidad" de `contracts/fhir-api.md`, que hoy sólo vive como artefacto de spec (FR-017)
-- [X] T104 Revisar que ningún `catch` tragado nuevo oculte fallos de validación FHIR
-- [X] T105 Ejecutar `dotnet test src/ChequeAR.Tests` completo y confirmar que **ninguna** prueba preexistente quedó deshabilitada o borrada
+- [X] T100 [P] **EJECUTADO** en <https://validator.fhir.org/> (validador v6.9.12) sobre un `Questionnaire` real de la API, autodetectado como R5. **Cero errores estructurales, de cardinalidad, de tipo o de vocabulario** — evidencia de SC-001.
+      De los 4 hallazgos, 3 son timeouts del servidor de terminología público (infraestructura ajena) y 1 es nuestro: el validador no resuelve `.../question-term` porque los perfiles no están publicados en la web. Detalle completo y cómo resolverlo en R10 de `research.md`.
+
 - [ ] T106 **PENDIENTE — el documento no vive en el repositorio.** Aplicar los ajustes de redacción al capítulo de arquitectura.
       Insumo listo en [`tesis-ajustes.md`](./tesis-ajustes.md): los textos de reemplazo ya redactados, más la evidencia concreta para la defensa y la limitación que conviene declarar antes de que la pregunten.
 

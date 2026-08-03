@@ -302,10 +302,9 @@ namespace ChequeAR.Api.Controllers.Mvc
         public async Task<ActionResult> Publish(Guid id, string changeNote)
         {
             var userId = User?.Identity?.Name ?? "unknown";
-            // fhirJson null => el service lo arma desde la base (ver FhirQuestionnaireBuilder).
             try
             {
-                await _svc.PublishAsync(id, null, userId, changeNote);
+                await _svc.PublishAsync(id, userId, changeNote);
                 TempData["Toast"] = "Cuestionario publicado.";
                 TempData["ToastLevel"] = "success";
             }

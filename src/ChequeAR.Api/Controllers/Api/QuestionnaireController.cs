@@ -131,7 +131,7 @@ namespace ChequeAR.Api.Controllers.Api
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             try
             {
-                var q = await _service.PublishAsync(id, body?.FhirJson, userId, body?.ChangeNote);
+                var q = await _service.PublishAsync(id, userId, body?.ChangeNote);
                 return Ok(ToFhir(q));
             }
             catch (ValidationFailedException ex)
@@ -192,7 +192,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        public class PublishBody { public string FhirJson { get; set; } public string ChangeNote { get; set; } }
+        public class PublishBody { public string ChangeNote { get; set; } }
         public class CloneBody { public string Title { get; set; } }
     }
 }

@@ -167,7 +167,16 @@ namespace ChequeAR.Application.Services
             return q;
         }
 
-        public async Task<Questionnaire> PublishAsync(Guid id, string fhirJson, string userId, string changeNote = null)
+        /// <summary>
+        /// Congela una versión. El recurso se arma SIEMPRE desde la base.
+        ///
+        /// Antes aceptába también un JSON del cliente, con prioridad sobre lo construido:
+        /// tenía sentido cuando el editor mantenía su propia representación. Con una sola
+        /// superficie FHIR ningún cliente lo manda, y dejarlo abierto permitía congelar una
+        /// versión cuyo contenido no se corresponde con la entidad — es decir, mentirle a
+        /// quien después responda esa ficha.
+        /// </summary>
+        public async Task<Questionnaire> PublishAsync(Guid id, string userId, string changeNote = null)
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
@@ -175,10 +184,7 @@ namespace ChequeAR.Application.Services
 
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
 
-            // Publicar desde el listado (Q1/Q6) no manda JSON: lo armamos desde la base.
-            // El editor, en cambio, puede mandar el suyo y ese tiene prioridad.
-            if (string.IsNullOrWhiteSpace(fhirJson))
-                fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber);
+            var fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber);
 
             var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
             if (!validation.IsValid)

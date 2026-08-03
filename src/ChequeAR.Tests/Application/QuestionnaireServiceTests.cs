@@ -84,7 +84,7 @@ namespace ChequeAR.Tests.Application
             _repo.Setup(r => r.GetAsync(It.IsAny<Guid>())).ReturnsAsync((Questionnaire)null);
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => _sut.PublishAsync(Guid.NewGuid(), "{}", "u"));
+                () => _sut.PublishAsync(Guid.NewGuid(), "u"));
         }
 
         // No se puede publicar si el cuestionario no está en un estado publicable
@@ -97,7 +97,7 @@ namespace ChequeAR.Tests.Application
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, Status = QuestionnaireStatus.Active });
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => _sut.PublishAsync(id, "{}", "u"));
+                () => _sut.PublishAsync(id, "u"));
         }
 
         // Si el JSON FHIR no pasa la validación, publicar falla y NO se crea ninguna versión
@@ -115,7 +115,7 @@ namespace ChequeAR.Tests.Application
             // El controller responde distinto —un issue por regla incumplida— y esa
             // distincion tiene que quedar fijada acá.
             var ex = await Assert.ThrowsAsync<ValidationFailedException>(
-                () => _sut.PublishAsync(id, "{}", "u"));
+                () => _sut.PublishAsync(id, "u"));
             Assert.Contains("missing title", ex.Errors);
 
             _repo.Verify(r => r.PublishAsync(It.IsAny<Questionnaire>(), It.IsAny<QuestionnaireVersion>()), Times.Never);
@@ -132,7 +132,7 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
                       .Returns(TestHelpers.ValidOk());
 
-            var result = await _sut.PublishAsync(id, "{\"resourceType\":\"Questionnaire\"}", "u");
+            var result = await _sut.PublishAsync(id, "u");
 
             Assert.Equal(QuestionnaireStatus.Active, result.Status);
             Assert.NotNull(result.CurrentVersionId);
@@ -159,7 +159,7 @@ namespace ChequeAR.Tests.Application
                  .Callback<Questionnaire, QuestionnaireVersion>((_, v) => saved = v)
                  .Returns(Task.CompletedTask);
 
-            var result = await _sut.PublishAsync(id, null, "u");
+            var result = await _sut.PublishAsync(id, "u");
 
             Assert.Equal(QuestionnaireStatus.Active, result.Status);
             Assert.NotNull(saved);
@@ -228,7 +228,7 @@ namespace ChequeAR.Tests.Application
                  .Callback<Questionnaire, QuestionnaireVersion>((_, v) => saved = v)
                  .Returns(Task.CompletedTask);
 
-            var result = await _sut.PublishAsync(id, null, "u");
+            var result = await _sut.PublishAsync(id, "u");
 
             Assert.False(result.HasPendingChanges);
             Assert.False(result.HasUnpublishedChanges());
@@ -323,7 +323,7 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
                       .Returns(TestHelpers.ValidOk());
 
-            var result = await _sut.PublishAsync(id, null, "u");
+            var result = await _sut.PublishAsync(id, "u");
 
             Assert.Equal(4, result.ConcurrencyVersion);
         }

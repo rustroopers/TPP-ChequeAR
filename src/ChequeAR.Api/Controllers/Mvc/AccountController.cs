@@ -71,7 +71,10 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View();
         }
 
-        public ActionResult Profile() { ViewBag.Title = "Mi perfil"; return View(); }
+        // 'new' explícito: Controller expone una propiedad Profile (perfil de ASP.NET, que el
+        // proyecto no usa). Esta acción la oculta a propósito — sin la palabra clave el
+        // compilador avisa que podría ser un descuido.
+        public new ActionResult Profile() { ViewBag.Title = "Mi perfil"; return View(); }
 
         [HttpPost, ValidateAntiForgeryToken]
         public ActionResult SaveProfile()

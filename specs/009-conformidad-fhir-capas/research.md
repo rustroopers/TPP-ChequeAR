@@ -399,6 +399,58 @@ convención documentada, no el runtime. Vale decirlo así en la tesis.
 
 ---
 
+## R10 — Resultado del validador oficial de HL7
+
+**Ejecutado** en <https://validator.fhir.org/> (validator-wrapper 1.0.81, validador v6.9.12)
+sobre un `Questionnaire` real devuelto por la API. El validador **autodetectó R5**.
+
+### Resultado: cero errores estructurales
+
+| # | Severidad | Mensaje | Origen |
+|---|---|---|---|
+| 1 | Error | `Error performing tx5 operation 'validate-code: timeout'` | Servidor de terminología público (`tx.fhir.org`) |
+| 2 | **Error** | **`The extension .../question-term could not be found so is not allowed here`** | **Nuestro** |
+| 3 | Warning | `validate-code: timeout` | Servidor de terminología |
+| 4 | Warning | `validate-code: timeout` | Servidor de terminología |
+
+**Ni un solo error de estructura, cardinalidad, tipo ni vocabulario.** Es exactamente lo que
+había que demostrar: el recurso es R5 válido. Comparar con el estado previo a la feature, donde
+el mismo validador habría rechazado `item.type = "choice"` (R8).
+
+Tres de los cuatro hallazgos son **timeouts del servidor de terminología público**, que es
+infraestructura compartida y ajena: no puede resolver los códigos SNOMED en el tiempo
+disponible. No dicen nada sobre el recurso.
+
+### El hallazgo que sí es nuestro
+
+El validador no puede resolver `https://chequear.garrahan/StructureDefinition/question-term`
+porque **ese canonical no existe públicamente**: los perfiles viven en el repositorio y se
+copian a la salida de compilación, no están publicados en la web.
+
+Consecuencia concreta: **un integrador externo que valide nuestros recursos va a ver ese
+error.** No es un defecto del recurso, pero sí un límite de lo que hoy podemos afirmar sobre
+validación por terceros.
+
+Se resuelve de dos formas, ninguna urgente y ambas fuera del alcance de esta feature:
+
+1. Publicar los artefactos de conformidad en el dominio del hospital, de modo que el canonical
+   resuelva. Es la solución correcta y depende de infraestructura del hospital.
+2. Distribuirlos como paquete FHIR (formato NPM) para que el validador los cargue junto al
+   recurso.
+
+### Nota metodológica
+
+El primer intento **con** `meta.profile` declarado dio *timeout* del servicio completo, dos
+veces: el validador intenta descargar el perfil declarado y se queda esperando. Quitando esa
+declaración —que es justamente lo que pide el criterio de aceptación de US1, validar contra
+**R5 base**— la validación completó.
+
+Es la misma causa raíz que el hallazgo de arriba: nuestros canonical no resuelven
+públicamente. Vale registrarlo porque cualquiera que repita la verificación se va a topar con
+el mismo timeout y puede confundirlo con un problema del recurso.
+
+---
+
 ## Resumen de decisiones
 
 | # | Decisión |
@@ -412,3 +464,4 @@ convención documentada, no el runtime. Vale decirlo así en la tesis.
 | R7 | Constitución sin ratificar: compuerta evaluada contra principios de facto |
 | R8 | El vocabulario de opción era R4: `Choice`/`OpenChoice` → `coding` + `answerConstraint`. Lectura permisiva de lo congelado, escritura estricta |
 | R9 | **Corrige R5**: no hay validador de perfiles de Firely para net471. Parseo estricto + reglas explícitas en la capa de negocio; los perfiles siguen siendo artefactos publicados |
+| R10 | Validador oficial de HL7: **cero errores estructurales**. Lo único propio es que nuestros canonical no resuelven públicamente — falta publicar los perfiles en el dominio del hospital |
