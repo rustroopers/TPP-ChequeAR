@@ -20,6 +20,12 @@ namespace ChequeAR.Application.Interfaces
         /// mencionados no se tocan, así se preserva lo respondido en llamadas anteriores.
         /// </summary>
         Task SaveProgressAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> replacementItems);
+        /// <summary>
+        /// Re-anclaje a otra versión: guarda la cabecera (r ya trae la nueva versión/FhirJson/
+        /// ConcurrencyVersion) y borra, en la misma transacción, los items cuyo LinkId ya no
+        /// existe en la versión nueva (<paramref name="keepLinkIds"/> = los que se conservan).
+        /// </summary>
+        Task RetargetAsync(QuestionnaireResponse r, ICollection<string> keepLinkIds);
         /// <summary>¿Hay respuestas cargadas contra este cuestionario? Decide si se puede borrar.</summary>
         Task<bool> HasResponsesAsync(Guid questionnaireId);
     }

@@ -514,6 +514,259 @@ namespace ChequeAR.Tests.Application
             Assert.True(saved.IsAutosave);
         }
 
+        // El autosave NO audita: si lo hiciera, cada pocos segundos habría un evento nuevo.
+        [Fact]
+        public async Task SaveProgressAsync_DoesNotAudit()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+
+            var captured = CapturingAudit(out var events);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+
+            await sut.SaveProgressAsync(id, "u", token, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "peso", ValueDecimal = 70 } });
+            await captured.FlushAsync();
+
+            Assert.Empty(events);
+        }
+
+        // El diff de "lo completado" se registra UNA vez, al cerrar la sesión deliberadamente
+        // (Guardar avance): compara el baseline con el que se abrió contra lo que quedó.
+        [Fact]
+        public async Task ReleaseLockAsync_WithBaseline_AuditsNetSessionDiff()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                // Estado actual guardado (lo que dejó el último autosave de la sesión).
+                Items =
+                {
+                    new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "peso", ValueDecimal = 75 },
+                    new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "presion", ValueString = "120/80" }
+                }
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            var fhir = "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+                       "{\"linkId\":\"peso\",\"text\":\"Peso (kg)\",\"type\":\"decimal\"}," +
+                       "{\"linkId\":\"presion\",\"text\":\"Presión arterial\",\"type\":\"string\"}]}";
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId, fhir));
+
+            var captured = CapturingAudit(out var events);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+
+            // Baseline: al abrir la sesión el peso era 70 y no había presión.
+            var baseline = new List<QuestionnaireResponseItem>
+            {
+                new QuestionnaireResponseItem { LinkId = "peso", ValueDecimal = 70 }
+            };
+            await sut.ReleaseLockAsync(id, "u", token, baseline);
+            await captured.FlushAsync();
+
+            var save = events.Single(e => (e.EntityRef ?? "").Contains("$save"));
+            var changes = Newtonsoft.Json.JsonConvert.DeserializeObject<List<ResponseFieldChange>>(save.FhirJson);
+            var peso = changes.Single(c => c.LinkId == "peso");
+            Assert.Equal("Peso (kg)", peso.Text);
+            Assert.Equal("70", peso.Before);
+            Assert.Equal("75", peso.After);
+            var presion = changes.Single(c => c.LinkId == "presion");
+            Assert.Equal("—", presion.Before);
+            Assert.Equal("120/80", presion.After);
+        }
+
+        // Cierre pasivo (sin baseline, ej. cerrar la pestaña): sólo libera el lock, no audita.
+        [Fact]
+        public async Task ReleaseLockAsync_WithoutBaseline_DoesNotAudit()
+        {
+            var id = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            var captured = CapturingAudit(out var events);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+
+            await sut.ReleaseLockAsync(id, "u", token);   // sin baseline
+            await captured.FlushAsync();
+
+            Assert.Empty(events);
+            Assert.Null(response.LockToken);   // igual liberó el lock
+        }
+
+        // Al finalizar, el evento lleva la foto COMPLETA de la ficha (todas las preguntas con
+        // su respuesta final), no sólo lo que cambió en la última sesión.
+        [Fact]
+        public async Task FinalizeAsync_AttachesFullSnapshot()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                Items = { new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "peso", ValueDecimal = 80 } }
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            // Dos preguntas: una respondida (peso) y una sin responder (altura) -> debe salir "—".
+            var fhir = "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+                       "{\"linkId\":\"g1\",\"text\":\"Antropometría\",\"type\":\"group\",\"item\":[" +
+                       "{\"linkId\":\"peso\",\"text\":\"Peso (kg)\",\"type\":\"decimal\"}," +
+                       "{\"linkId\":\"altura\",\"text\":\"Altura (cm)\",\"type\":\"decimal\"}]}]}";
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId, fhir));
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
+
+            var captured = CapturingAudit(out var events);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+
+            await sut.FinalizeAsync(id, "u", token);
+            await captured.FlushAsync();
+
+            var fin = events.Single(e => (e.EntityRef ?? "").Contains("$finalize"));
+            var sections = Newtonsoft.Json.JsonConvert.DeserializeObject<List<ResponseSnapshotSection>>(fin.FhirJson);
+            var answers = sections.SelectMany(s => s.Answers).ToList();
+            Assert.Equal("80", answers.Single(a => a.Text == "Peso (kg)").Answer);
+            Assert.Equal("—", answers.Single(a => a.Text == "Altura (cm)").Answer);   // sin responder
+        }
+
+        // --- Pasar a la versión vigente (retarget) -------------------------------------
+
+        // v1: [edad, rigidez]   v2 (vigente): [edad (enunciado cambiado), score]
+        private const string RetargetV1 =
+            "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+            "{\"linkId\":\"edad\",\"text\":\"Edad\",\"type\":\"integer\"}," +
+            "{\"linkId\":\"rigidez\",\"text\":\"Rigidez matutina\",\"type\":\"boolean\"}]}";
+        private const string RetargetV2 =
+            "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+            "{\"linkId\":\"edad\",\"text\":\"Edad (años)\",\"type\":\"integer\"}," +
+            "{\"linkId\":\"score\",\"text\":\"Score BVAS\",\"type\":\"integer\"}]}";
+
+        private static Questionnaire TwoVersions(Guid id, out Guid v1Id, out Guid v2Id)
+        {
+            v1Id = Guid.NewGuid();
+            v2Id = Guid.NewGuid();
+            var q = new Questionnaire { Id = id, Status = QuestionnaireStatus.Active, CurrentVersionId = v2Id };
+            q.Versions.Add(new QuestionnaireVersion { Id = v1Id, VersionNumber = 1, FhirJson = RetargetV1 });
+            q.Versions.Add(new QuestionnaireVersion { Id = v2Id, VersionNumber = 2, FhirJson = RetargetV2 });
+            return q;
+        }
+
+        private QuestionnaireResponse PinnedToV1(Guid id, Guid questionnaireId, Guid v1Id, Guid lockToken = default)
+        {
+            return new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                QuestionnaireVersionId = v1Id,
+                Status = ResponseStatus.InProgress,
+                LockToken = lockToken == default ? (Guid?)null : lockToken,
+                LockedByUserId = lockToken == default ? null : "u",
+                LockExpiresAt = lockToken == default ? (DateTime?)null : DateTime.UtcNow.AddMinutes(10),
+                Items =
+                {
+                    new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "edad", ValueInteger = 40 },
+                    new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "rigidez", ValueBoolean = true }
+                }
+            };
+        }
+
+        [Fact]
+        public async Task BuildRetargetPreviewAsync_ClassifiesCarriedAddedDropped()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var q = TwoVersions(questionnaireId, out var v1Id, out _);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(q);
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(PinnedToV1(id, questionnaireId, v1Id));
+
+            var preview = await _sut.BuildRetargetPreviewAsync(id);
+
+            Assert.False(preview.AlreadyCurrent);
+            Assert.Equal(1, preview.FromVersion);
+            Assert.Equal(2, preview.ToVersion);
+            var carried = Assert.Single(preview.Carried);
+            Assert.Equal("edad", carried.LinkId);
+            Assert.True(carried.Changed);                       // "Edad" -> "Edad (años)"
+            Assert.Equal("score", Assert.Single(preview.Added).LinkId);
+            var dropped = Assert.Single(preview.Dropped);       // rigidez ya no existe en v2 y tenía respuesta
+            Assert.Equal("rigidez", dropped.LinkId);
+            Assert.Equal("Sí", dropped.Answer);
+        }
+
+        [Fact]
+        public async Task RetargetToCurrentVersionAsync_RepinsKeepsMatchingDropsRemovedAndAudits()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var q = TwoVersions(questionnaireId, out var v1Id, out var v2Id);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(q);
+            var response = PinnedToV1(id, questionnaireId, v1Id, token);
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            ICollection<string> keep = null;
+            _repo.Setup(r => r.RetargetAsync(response, It.IsAny<ICollection<string>>()))
+                 .Callback<QuestionnaireResponse, ICollection<string>>((_, k) => keep = k)
+                 .Returns(Task.CompletedTask);
+
+            var captured = CapturingAudit(out var events);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+
+            var result = await sut.RetargetToCurrentVersionAsync(id, "u", token);
+            await captured.FlushAsync();
+
+            Assert.Equal(v2Id, result.QuestionnaireVersionId);          // re-anclada a la vigente
+            Assert.Contains("edad", keep);                              // conservadas: las de v2
+            Assert.Contains("score", keep);
+            Assert.DoesNotContain("rigidez", keep);                     // descartada: no está en v2
+            var evt = events.Single(e => (e.EntityRef ?? "").Contains("$retarget"));
+            var dropped = Newtonsoft.Json.JsonConvert.DeserializeObject<List<ResponseFieldChange>>(evt.FhirJson);
+            Assert.Equal("rigidez", Assert.Single(dropped).LinkId);
+        }
+
+        /// <summary>Dispatcher que acumula lo que se persiste, para poder inspeccionar el diff adjunto.</summary>
+        private static AuditDispatcher CapturingAudit(out List<AuditEvent> events)
+        {
+            var sink = new List<AuditEvent>();
+            events = sink;
+            var repo = new Mock<IAuditRepository>();
+            repo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
+                .Callback<IEnumerable<AuditEvent>>(batch => sink.AddRange(batch))
+                .Returns(Task.CompletedTask);
+            return new AuditDispatcher(repo.Object, flushIntervalMs: 600000);
+        }
+
         [Fact]
         public async Task SaveProgressAsync_AssignsIdsAndResponseIdToIncomingItems()
         {

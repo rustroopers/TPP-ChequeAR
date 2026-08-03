@@ -71,6 +71,22 @@ namespace ChequeAR.Infrastructure.Repositories
             await SaveAsync();
         }
 
+        public async Task RetargetAsync(QuestionnaireResponse r, ICollection<string> keepLinkIds)
+        {
+            var keep = new HashSet<string>(keepLinkIds ?? new List<string>());
+            // Se materializan y filtran en memoria: EF6 no traduce bien `!keep.Contains(...)`
+            // sobre una colección local dentro del WHERE. Se borran los items cuyo linkId ya no
+            // existe en la versión nueva (las respuestas descartadas del re-anclaje).
+            var current = await _ctx.QuestionnaireResponseItems
+                .Where(i => i.ResponseId == r.Id).ToListAsync();
+            var drop = current.Where(i => !keep.Contains(i.LinkId)).ToList();
+            if (drop.Count > 0) _ctx.QuestionnaireResponseItems.RemoveRange(drop);
+
+            // Cabecera (nueva versión anclada + FhirJson + ConcurrencyVersion) y borrado de
+            // items en el mismo SaveChanges, por el mismo motivo que SaveProgressAsync.
+            await SaveAsync();
+        }
+
         // Traduce el choque de concurrencia de EF al lenguaje de la aplicación, igual que
         // QuestionnaireRepository.SaveAsync: salta cuando el UPDATE afecta 0 filas porque
         // el ConcurrencyVersion del WHERE ya no coincide (alguien más guardó/tomó el lock

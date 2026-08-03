@@ -179,6 +179,16 @@ namespace ChequeAR.Api.Controllers.Mvc
                 if (av.Operation == AuditPresentation.Op.Publish && av.ResourceId.HasValue)
                     await FillVersionDiffAsync(detail, av.ResourceId.Value, e.Recorded);
 
+                // Para una ficha: al finalizar se guardó la foto COMPLETA (todas las
+                // respuestas); en un guardado de avance, sólo el diff de esa sesión.
+                if (av.ResourceType == "QuestionnaireResponse" && !string.IsNullOrWhiteSpace(e.FhirJson))
+                {
+                    if (av.Operation == AuditPresentation.Op.Finalize)
+                        FillResponseSnapshot(detail, e.FhirJson);
+                    else
+                        FillResponseDiff(detail, e.FhirJson);
+                }
+
                 return View(detail);
             }
             catch (Exception ex)
@@ -217,6 +227,42 @@ namespace ChequeAR.Api.Controllers.Mvc
                 out var beforeMarked, out var afterMarked);
             detail.BeforeLines = beforeMarked;
             detail.AfterLines = afterMarked;
+        }
+
+        /// <summary>
+        /// Lee el diff de una sesión de guardado (lista de <see cref="Application.Services.ResponseFieldChange"/>
+        /// serializada en el evento) y lo carga en el detalle. Si el JSON no es interpretable
+        /// se ignora en silencio: es un extra de presentación, no un dato crítico.
+        /// </summary>
+        private static void FillResponseDiff(AuditDetailViewModel detail, string fhirJson)
+        {
+            try
+            {
+                var changes = Newtonsoft.Json.JsonConvert
+                    .DeserializeObject<List<Application.Services.ResponseFieldChange>>(fhirJson);
+                if (changes == null || changes.Count == 0) return;
+                detail.HasResponseDiff = true;
+                detail.ResponseChanges = changes;
+            }
+            catch (Newtonsoft.Json.JsonException) { /* payload viejo o ilegible: sin diff */ }
+        }
+
+        /// <summary>
+        /// Lee la foto completa de una ficha finalizada (lista de
+        /// <see cref="Application.Services.ResponseSnapshotSection"/> serializada) y la carga en
+        /// el detalle. Si el JSON no es interpretable se ignora en silencio.
+        /// </summary>
+        private static void FillResponseSnapshot(AuditDetailViewModel detail, string fhirJson)
+        {
+            try
+            {
+                var sections = Newtonsoft.Json.JsonConvert
+                    .DeserializeObject<List<Application.Services.ResponseSnapshotSection>>(fhirJson);
+                if (sections == null || sections.Count == 0) return;
+                detail.HasResponseSnapshot = true;
+                detail.ResponseSnapshot = sections;
+            }
+            catch (Newtonsoft.Json.JsonException) { /* payload viejo o ilegible: sin foto */ }
         }
 
         private async Task<IReadOnlyDictionary<Guid, string>> ResolveTitlesAsync(IEnumerable<AuditEvent> events)

@@ -28,8 +28,9 @@
 }
 else
 {
-    @* La ficha viene de la versión congelada, servida por el controller. Si alguien
-       publica un cambio mientras se completa, esto no se mueve. *@
+    @* La ficha viene de la versión congelada, servida por el controller. Si alguien publica
+       un cambio mientras se completa, esto no se mueve; el renderer ofrece pasar a la versión
+       nueva (con preview del merge) cuando corresponde. *@
     <div id="qRenderer" data-vue-island="questionnaire-renderer" data-props="@rendererProps">
         <div class="cq-card">
             <div class="cq-loading">

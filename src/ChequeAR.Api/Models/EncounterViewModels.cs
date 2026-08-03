@@ -62,6 +62,8 @@ namespace ChequeAR.Api.Models
         public Guid? QuestionnaireFilter { get; set; }
         public string SpecialtyFilter { get; set; }
         public string AuthorFilter { get; set; }
+        /// <summary>"pendiente" (InProgress), "finalizada" (Completed), o null = todas.</summary>
+        public string StatusFilter { get; set; }
         public string From { get; set; }
         public string To { get; set; }
 

@@ -117,16 +117,21 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var q = await _qRepo.GetAsync(questionnaireId);
                 ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
 
-                // La ficha se arma desde la VERSIÓN CONGELADA, no desde la entidad viva: si
-                // alguien publica un cambio mientras el médico completa, lo que está
-                // respondiendo no se puede mover. La respuesta queda anclada a este id.
-                var version = CurrentVersion(q);
-                if (version == null)
+                var current = CurrentVersion(q);
+                if (current == null)
                 {
                     ViewBag.Version = 0;
                     ViewBag.LoadError = "El cuestionario no tiene una versión publicada. No se puede cargar una ficha.";
                     return View();
                 }
+
+                // Si ya hay una ficha InProgress para este paciente+cuestionario, se retoma en
+                // LA VERSIÓN CON LA QUE SE INICIÓ (la congelada), no en la vigente: cambiar las
+                // preguntas a mitad de completado reinterpretaría respuestas ya dadas, y como
+                // el guardado y la finalización siguen ancladas a esa versión, el formulario
+                // quedaría fuera de sincronía con lo que efectivamente se persiste/valida. La
+                // versión nueva rige para fichas nuevas. Sin borrador previo, se usa la vigente.
+                var version = await ResolveResumeVersionAsync(q, patientId, questionnaireId) ?? current;
 
                 ViewBag.Version = version.VersionNumber;
                 var renderable = FhirQuestionnaireReader.Read(version.FhirJson);
@@ -143,6 +148,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                         questionnaireId,
                         questionnaireVersionId = version.Id,
                         version = version.VersionNumber,
+                        // Si esta ficha se está completando en una versión anterior a la
+                        // vigente, el número de la vigente; 0 si ya está en la última. Habilita
+                        // en el renderer la opción de pasar a la versión nueva.
+                        newerVersion = version.VersionNumber < current.VersionNumber ? current.VersionNumber : 0,
                         title = q.Title,
                         groups = renderable.Groups
                     },
@@ -170,6 +179,32 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             if (q?.Versions == null || versionId == Guid.Empty) return 0;
             return q.Versions.FirstOrDefault(v => v.Id == versionId)?.VersionNumber ?? 0;
+        }
+
+        /// <summary>
+        /// Versión a la que hay que anclar el editor al reabrir: la de la ficha InProgress ya
+        /// existente para este paciente+cuestionario, si la hay. Devuelve null cuando no hay
+        /// borrador que retomar (ficha nueva), cuando la ficha es anterior al anclaje de
+        /// versión (VersionId vacío) o cuando la base no responde: en todos esos casos el
+        /// llamador cae a la versión vigente. Usa el mismo criterio que el renderer para elegir
+        /// la ficha (la InProgress más reciente), así ambos resuelven la misma.
+        /// </summary>
+        private async Task<ChequeAR.Domain.Entities.QuestionnaireVersion> ResolveResumeVersionAsync(
+            ChequeAR.Domain.Entities.Questionnaire q, string patientId, Guid questionnaireId)
+        {
+            if (q?.Versions == null || q.Versions.Count == 0) return null;
+            IReadOnlyList<ChequeAR.Domain.Entities.QuestionnaireResponse> drafts;
+            try
+            {
+                drafts = await _qrRepo.SearchAsync(patientId, questionnaireId, ResponseStatus.InProgress, 0, 1);
+            }
+            catch
+            {
+                return null;   // sin base no se puede resumir: se cae a la versión vigente
+            }
+            var draft = drafts.FirstOrDefault();
+            if (draft == null || draft.QuestionnaireVersionId == Guid.Empty) return null;
+            return q.Versions.FirstOrDefault(v => v.Id == draft.QuestionnaireVersionId);
         }
 
         /// <summary>Versión viva del cuestionario, o null si nunca se publicó.</summary>
@@ -315,7 +350,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // R7 — Timeline
-        public async Task<ActionResult> Timeline(string patientId, Guid? cuestionario = null, string especialidad = null, string autor = null, string from = null, string to = null)
+        public async Task<ActionResult> Timeline(string patientId, Guid? cuestionario = null, string especialidad = null, string autor = null, string estado = null, string from = null, string to = null)
         {
             NormalizeDateRange(ref from, ref to);
             ViewBag.Title = "Historial del paciente";
@@ -328,7 +363,8 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             var model = new PatientTimelineViewModel
             {
-                QuestionnaireFilter = cuestionario, SpecialtyFilter = especialidad, AuthorFilter = autor, From = from, To = to
+                QuestionnaireFilter = cuestionario, SpecialtyFilter = especialidad, AuthorFilter = autor,
+                StatusFilter = NormalizeStatus(estado), From = from, To = to
             };
             try
             {
@@ -377,10 +413,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var fromUtc = ParseArgDateToUtc(from, endOfDay: false);
                 var toUtc = ParseArgDateToUtc(to, endOfDay: true);
 
+                var status = model.StatusFilter;
                 model.Entries.AddRange(all.Where(x =>
                     (cuestionario == null || x.QuestionnaireId == cuestionario.Value) &&
                     (string.IsNullOrEmpty(especialidad) || x.SpecialtyCode == especialidad) &&
                     (string.IsNullOrEmpty(autor) || x.Author == autor) &&
+                    (status == null || StatusMatches(x.Status, status)) &&
                     (fromUtc == null || x.RawDate >= fromUtc.Value) &&
                     (toUtc == null || x.RawDate < toUtc.Value)));
 
@@ -401,6 +439,21 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
                 return null;
             return ChequeAR.Api.Helpers.ArgentinaTime.ToUtc(endOfDay ? d.Date.AddDays(1) : d.Date);
+        }
+
+        /// <summary>Normaliza el filtro de estado a "pendiente"/"finalizada"; cualquier otra cosa = sin filtro.</summary>
+        private static string NormalizeStatus(string estado)
+        {
+            var v = (estado ?? string.Empty).Trim().ToLowerInvariant();
+            return v == "pendiente" || v == "finalizada" ? v : null;
+        }
+
+        /// <summary>El estado crudo de la ficha ("inprogress"/"completed"…) contra el filtro legible.</summary>
+        private static bool StatusMatches(string rawStatus, string filter)
+        {
+            if (filter == "pendiente") return rawStatus == "inprogress";
+            if (filter == "finalizada") return rawStatus == "completed";
+            return true;
         }
 
         /// <summary>

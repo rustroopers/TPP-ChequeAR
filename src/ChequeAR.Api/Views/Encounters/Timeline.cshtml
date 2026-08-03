@@ -44,6 +44,14 @@
                 }
             </select>
         </div>
+        <div class="col-md-2">
+            <label class="form-label cq-text-sm">Estado</label>
+            <select class="form-select" name="estado">
+                <option value="">Todos</option>
+                <option value="pendiente" selected="@(Model.StatusFilter == "pendiente")">Pendiente</option>
+                <option value="finalizada" selected="@(Model.StatusFilter == "finalizada")">Finalizada</option>
+            </select>
+        </div>
         <div class="col-md-4">
             <label class="form-label cq-text-sm">Período</label>
             <cq-date-range name-from="from" name-to="to" value-from="@Model.From" value-to="@Model.To"></cq-date-range>
@@ -88,9 +96,23 @@
                                 <span class="cq-text-xs cq-text-muted" title="Versión con la que se completó">v@(e.QuestionnaireVersion)</span>
                             }
                             <span class="cq-chip cq-chip--@e.SpecialtyCode">@e.SpecialtyLabel</span>
-                            @if (e.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
+                            @if (e.Status == "completed")
+                            {
+                                <span class="cq-badge cq-badge--published">Finalizada</span>
+                            }
+                            else
+                            {
+                                <span class="cq-badge cq-badge--info">Pendiente</span>
+                            }
                         </div>
-                        <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
+                        @if (e.Status == "completed")
+                        {
+                            <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
+                        }
+                        else
+                        {
+                            <a href="@Url.Action("Load", new { patientId = Model.Patient.HC, questionnaireId = e.QuestionnaireId })" class="btn btn-sm btn-primary"><i class="bi bi-pencil-square me-1"></i>Continuar edición</a>
+                        }
                     </div>
                     <div class="cq-text-sm cq-text-muted mt-1">por @e.Author</div>
                 </div>

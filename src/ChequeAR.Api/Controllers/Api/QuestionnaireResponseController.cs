@@ -155,14 +155,17 @@ namespace ChequeAR.Api.Controllers.Api
         // Cierra la sesión de edición (fin de la llamada, o navegación fuera de la página).
         // Idempotente: sin token, o con un token que ya no es el vigente, no hay nada que
         // liberar y no es un error -- evita que un cierre tardío rompa la sesión de otro.
+        // El body (opcional) lleva el baseline de la sesión: las respuestas como estaban al
+        // abrirla. Sólo lo manda el "Guardar avance" deliberado; con él, ReleaseLock audita un
+        // único evento con el diff de lo completado. El cierre pasivo de pestaña no lo manda.
         [HttpPost, Route("{id:guid}/$unlock"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
-        public async Task<IHttpActionResult> Unlock(Guid id)
+        public async Task<IHttpActionResult> Unlock(Guid id, [FromBody] SaveProgressBody body)
         {
             var token = ParseLockToken(Request);
             if (!token.HasValue) return Ok();
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            await _service.ReleaseLockAsync(id, userId, token.Value);
+            await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items);
             return Ok();
         }
 
@@ -234,6 +237,50 @@ namespace ChequeAR.Api.Controllers.Api
             catch (LockConflictException ex)
             {
                 return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Content((HttpStatusCode)422, new { error = ex.Message });
+            }
+        }
+
+        // Vista previa de "pasar a la versión vigente": qué se conserva / se agrega / se
+        // descartaría. Sólo lectura, no toca la ficha ni exige el lock.
+        [HttpGet, Route("{id:guid}/$retarget-preview"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        public async Task<IHttpActionResult> RetargetPreview(Guid id)
+        {
+            try
+            {
+                return Ok(await _service.BuildRetargetPreviewAsync(id));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Content((HttpStatusCode)422, new { error = ex.Message });
+            }
+        }
+
+        // Re-ancla la ficha a la versión vigente (descarta lo que la versión nueva eliminó).
+        // Exige el lock, igual que finalizar: es una escritura sobre una sesión de edición.
+        [HttpPost, Route("{id:guid}/$retarget-version"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        public async Task<IHttpActionResult> RetargetVersion(Guid id)
+        {
+            var lockToken = ParseLockToken(Request);
+            if (!lockToken.HasValue)
+                return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
+
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            try
+            {
+                var r = await _service.RetargetToCurrentVersionAsync(id, userId, lockToken.Value);
+                return Ok(r);
+            }
+            catch (LockConflictException ex)
+            {
+                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
+            }
+            catch (ConcurrencyConflictException ex)
+            {
+                return Content(HttpStatusCode.Conflict, new { error = ex.Message, expectedVersion = ex.ExpectedVersion, actualVersion = ex.ActualVersion });
             }
             catch (InvalidOperationException ex)
             {
