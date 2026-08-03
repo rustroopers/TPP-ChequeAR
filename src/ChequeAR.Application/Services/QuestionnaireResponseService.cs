@@ -530,12 +530,7 @@ namespace ChequeAR.Application.Services
             HashSet<string> touchedLinkIds,
             RenderableQuestionnaire structure)
         {
-            var texts = new Dictionary<string, string>();
-            if (structure != null)
-                foreach (var g in structure.Groups)
-                    foreach (var question in g.Questions)
-                        if (!string.IsNullOrEmpty(question.LinkId) && !texts.ContainsKey(question.LinkId))
-                            texts[question.LinkId] = question.Text;
+            var texts = FlattenTexts(structure);
 
             var beforeByLink = previousItems.GroupBy(i => i.LinkId)
                 .ToDictionary(gr => gr.Key ?? string.Empty, gr => gr.ToList());
