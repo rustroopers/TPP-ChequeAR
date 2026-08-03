@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -108,22 +110,75 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             var questionnaireId = Guid.NewGuid();
+            var lockToken = Guid.NewGuid();
             var response = new QuestionnaireResponse
             {
                 Id = id,
                 QuestionnaireId = questionnaireId,
                 PatientHospitalId = "PAC-1",
                 Status = ResponseStatus.InProgress,
-                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"status\":\"in-progress\"}"
+                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"status\":\"in-progress\"}",
+                LockToken = lockToken,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
             };
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
             _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
-            var finalized = await _sut.FinalizeAsync(id, "u");
+            var finalized = await _sut.FinalizeAsync(id, "u", lockToken);
 
             Assert.Equal(ResponseStatus.Completed, finalized.Status);
             Assert.Equal("completed", (string)JObject.Parse(finalized.FhirJson)["status"]);
+        }
+
+        // Al finalizar con éxito se libera el lock: ya no queda nada más que editar, y
+        // deja de tener sentido que siga bloqueando a otros.
+        [Fact]
+        public async Task FinalizeAsync_ClearsLockOnSuccess()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var lockToken = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                PatientHospitalId = "PAC-1",
+                Status = ResponseStatus.InProgress,
+                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"status\":\"in-progress\"}",
+                LockToken = lockToken,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
+
+            var finalized = await _sut.FinalizeAsync(id, "u", lockToken);
+
+            Assert.Null(finalized.LockToken);
+            Assert.Null(finalized.LockedByUserId);
+        }
+
+        // Si el lock lo tiene otro usuario, finalizar no puede cerrarle la sesión: se
+        // rechaza igual que un guardado parcial.
+        [Fact]
+        public async Task FinalizeAsync_LockedByAnotherUser_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<LockConflictException>(
+                () => _sut.FinalizeAsync(id, "u", Guid.NewGuid()));
         }
 
         // Si el recurso no valida, la ficha NO queda finalizada a medias.
@@ -131,13 +186,21 @@ namespace ChequeAR.Tests.Application
         public async Task FinalizeAsync_Invalid_KeepsInProgress()
         {
             var id = Guid.NewGuid();
-            var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.InProgress };
+            var lockToken = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = lockToken,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
             _qRepo.Setup(r => r.GetAsync(It.IsAny<Guid>())).ReturnsAsync((Questionnaire)null);
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
                       .Returns(TestHelpers.ValidFail("algo falta"));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.FinalizeAsync(id, "u"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.FinalizeAsync(id, "u", lockToken));
 
             Assert.Equal(ResponseStatus.InProgress, response.Status);
         }
@@ -239,6 +302,7 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             var questionnaireId = Guid.NewGuid();
+            var lockToken = Guid.NewGuid();
             var response = new QuestionnaireResponse
             {
                 Id = id,
@@ -247,13 +311,16 @@ namespace ChequeAR.Tests.Application
                 Status = ResponseStatus.InProgress,
                 // Recurso tal como lo deja CreateAsync cuando el hospital resuelve al
                 // paciente: sin contained, con la HC como display.
-                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"subject\":{\"display\":\"PAC-000001\"}}"
+                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"subject\":{\"display\":\"PAC-000001\"}}",
+                LockToken = lockToken,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
             };
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
             _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
-            var finalized = await _sut.FinalizeAsync(id, "u");
+            var finalized = await _sut.FinalizeAsync(id, "u", lockToken);
 
             Assert.Null(JObject.Parse(finalized.FhirJson)["contained"]);
         }
@@ -269,6 +336,325 @@ namespace ChequeAR.Tests.Application
             await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateAsync(
                 new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "HC-1" }, "u"));
         }
+        // --- Lock de sesión de edición -----------------------------------------------
+
+        [Fact]
+        public async Task AcquireLockAsync_FreeLock_Succeeds()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.InProgress };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            var locked = await _sut.AcquireLockAsync(id, "u");
+
+            Assert.NotNull(locked.LockToken);
+            Assert.Equal("u", locked.LockedByUserId);
+            Assert.True(locked.LockExpiresAt > DateTime.UtcNow);
+        }
+
+        [Fact]
+        public async Task AcquireLockAsync_HeldByAnotherUserAndStillValid_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            var ex = await Assert.ThrowsAsync<LockConflictException>(() => _sut.AcquireLockAsync(id, "u"));
+            Assert.Equal("otro-medico", ex.LockedByUserId);
+        }
+
+        // El TTL protege contra OTRO usuario pisando el trabajo, no bloquea el cuestionario
+        // para siempre si el que lo tenía nunca volvió (llamada cortada, pestaña cerrada).
+        [Fact]
+        public async Task AcquireLockAsync_ExpiredLock_CanBeRetakenByAnotherUser()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(-1)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            var locked = await _sut.AcquireLockAsync(id, "u");
+
+            Assert.Equal("u", locked.LockedByUserId);
+        }
+
+        [Fact]
+        public async Task AcquireLockAsync_NotInProgress_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.Completed };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AcquireLockAsync(id, "u"));
+        }
+
+        [Fact]
+        public async Task RenewLockAsync_ExtendsExpiry()
+        {
+            var id = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddSeconds(30)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            var renewed = await _sut.RenewLockAsync(id, "u", token);
+
+            Assert.True(renewed.LockExpiresAt > DateTime.UtcNow.AddMinutes(10));
+        }
+
+        [Fact]
+        public async Task RenewLockAsync_OtherUsersLock_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<LockConflictException>(() => _sut.RenewLockAsync(id, "u", Guid.NewGuid()));
+        }
+
+        [Fact]
+        public async Task ReleaseLockAsync_OwnLock_Clears()
+        {
+            var id = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await _sut.ReleaseLockAsync(id, "u", token);
+
+            Assert.Null(response.LockToken);
+            Assert.Null(response.LockedByUserId);
+        }
+
+        // Idempotente a propósito: liberar un lock que ya no es tuyo (te lo ganaron, o ya
+        // estaba libre) no debe ser un error para quien perdió la sesión.
+        [Fact]
+        public async Task ReleaseLockAsync_NotOwner_IsNoop()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await _sut.ReleaseLockAsync(id, "u", Guid.NewGuid());
+
+            Assert.Equal("otro-medico", response.LockedByUserId);
+        }
+
+        // --- Guardado parcial ----------------------------------------------------------
+
+        // El corazón del completado asincrónico: una llamada de seguimiento sólo manda las
+        // respuestas de ESA llamada, y lo respondido en llamadas anteriores no puede
+        // desaparecer del recurso.
+        [Fact]
+        public async Task SaveProgressAsync_MergesByLinkId_PreservesUntouchedAnswers()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                Items = { new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "peso", ValueDecimal = 70 } }
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+
+            var saved = await _sut.SaveProgressAsync(id, "u", token, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "presion", ValueString = "120/80" } });
+
+            var fhirLinkIds = JObject.Parse(saved.FhirJson)["item"].Select(i => (string)i["linkId"]).ToList();
+            Assert.Contains("peso", fhirLinkIds);
+            Assert.Contains("presion", fhirLinkIds);
+            Assert.Equal(ResponseStatus.InProgress, saved.Status);
+            Assert.True(saved.IsAutosave);
+        }
+
+        [Fact]
+        public async Task SaveProgressAsync_AssignsIdsAndResponseIdToIncomingItems()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+
+            ICollection<QuestionnaireResponseItem> persisted = null;
+            _repo.Setup(r => r.SaveProgressAsync(response, It.IsAny<ICollection<QuestionnaireResponseItem>>()))
+                 .Callback<QuestionnaireResponse, ICollection<QuestionnaireResponseItem>>((_, items) => persisted = items)
+                 .Returns(Task.CompletedTask);
+
+            await _sut.SaveProgressAsync(id, "u", token, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "presion", ValueString = "120/80" } });
+
+            Assert.NotNull(persisted);
+            Assert.All(persisted, i => Assert.NotEqual(Guid.Empty, i.Id));
+            Assert.All(persisted, i => Assert.Equal(id, i.ResponseId));
+        }
+
+        [Fact]
+        public async Task SaveProgressAsync_WithoutAnyLockTaken_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.InProgress };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => _sut.SaveProgressAsync(id, "u", Guid.NewGuid(), null, new List<QuestionnaireResponseItem>()));
+        }
+
+        [Fact]
+        public async Task SaveProgressAsync_LockedByAnotherUser_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<LockConflictException>(
+                () => _sut.SaveProgressAsync(id, "u", Guid.NewGuid(), null, new List<QuestionnaireResponseItem>()));
+        }
+
+        // EL CASO DEL GRACE PERIOD: al médico se le venció el TTL a mitad de la llamada,
+        // pero nadie más tomó el cuestionario en el medio. El guardado tiene que entrar
+        // igual y renovar en silencio, en vez de tirar todo lo que estaba tipeando.
+        [Fact]
+        public async Task SaveProgressAsync_OwnExpiredLock_NobodyElseTookIt_SucceedsAndRenews()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(-5)   // venció, pero sigue siendo EL MISMO token/usuario
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+
+            var saved = await _sut.SaveProgressAsync(id, "u", token, null, new List<QuestionnaireResponseItem>());
+
+            Assert.True(saved.LockExpiresAt > DateTime.UtcNow);
+        }
+
+        // Si en cambio otro usuario YA tomó el lock (token distinto), no hay grace period
+        // que valga: se rechaza, aunque el que llega tarde crea que todavía es su sesión.
+        [Fact]
+        public async Task SaveProgressAsync_ExpiredLockButTakenByAnotherUser_Throws()
+        {
+            var id = Guid.NewGuid();
+            var oldToken = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),   // otro usuario ya lo re-tomó con un token nuevo
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<LockConflictException>(
+                () => _sut.SaveProgressAsync(id, "u", oldToken, null, new List<QuestionnaireResponseItem>()));
+        }
+
+        [Fact]
+        public async Task SaveProgressAsync_StaleConcurrencyVersion_Throws()
+        {
+            var id = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                ConcurrencyVersion = 5
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            var ex = await Assert.ThrowsAsync<ConcurrencyConflictException>(
+                () => _sut.SaveProgressAsync(id, "u", token, 3, new List<QuestionnaireResponseItem>()));
+
+            Assert.Equal(3, ex.ExpectedVersion);
+            Assert.Equal(5, ex.ActualVersion);
+        }
+
+        [Fact]
+        public async Task SaveProgressAsync_NotInProgress_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.Completed };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => _sut.SaveProgressAsync(id, "u", Guid.NewGuid(), null, new List<QuestionnaireResponseItem>()));
+        }
+
         /// Cuestionario activo con una version publicada, que es lo minimo para responderlo.
         private static Questionnaire Published(Guid id, string fhirJson = null, Guid? versionId = null)
         {

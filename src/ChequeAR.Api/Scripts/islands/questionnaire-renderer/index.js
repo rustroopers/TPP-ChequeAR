@@ -85,6 +85,25 @@
             var savingState = Vue.ref('idle'); // idle | dirty | saving | error
             var submitting = Vue.ref(false);
 
+            // --- Completado asincrónico: guardado parcial + lock de sesión -------------
+            // La ficha puede quedar InProgress durante semanas (ej. seguimiento telefónico).
+            // responseId/concurrencyVersion identifican la ficha que se está completando;
+            // lockToken es la credencial de ESTA sesión de edición (la devuelve $lock),
+            // exigida en cada guardado para que dos médicos no puedan completarla a la vez.
+            var responseId = Vue.ref(null);
+            var concurrencyVersion = Vue.ref(null);
+            var lockToken = Vue.ref(null);
+            var lockExpiresAt = Vue.ref(null);
+            // Alguien más tiene el lock: {userId, expiresAt}. Mientras esté seteado, el
+            // formulario queda de solo lectura.
+            var lockedByOther = Vue.ref(null);
+            var showRenewPrompt = Vue.ref(false);
+            var lockSecondsLeft = Vue.ref(null);
+            var autosaveTimer = null;
+            var lockCountdownTimer = null;
+            var AUTOSAVE_DEBOUNCE_MS = 2500;
+            var LOCK_WARNING_MS = 60000;
+
             function token() {
                 var m = document.querySelector('meta[name="cq-token"]');
                 return m ? m.getAttribute('content') : null;
@@ -196,6 +215,7 @@
             }
 
             function onChange(q, value) {
+                if (lockedByOther.value) return;   // solo lectura: alguien más lo está completando
                 answers[q.linkId] = value;
                 validate(q, value);
                 // re-validar campos dependientes
@@ -253,13 +273,250 @@
                 onChange(q, current);
             }
 
-            // El backend todavia no expone un endpoint de update para
-            // QuestionnaireResponse (solo POST y $finalize), asi que no hay
-            // autosave posible. Se marca el estado como 'dirty' para que la UI
-            // diga la verdad: hay cambios sin guardar hasta que se finalice.
+            // Autosave real, debounced: cada cambio reprograma el guardado un poco más
+            // adelante en vez de mandar un PUT por tecla. Con esto la ventana de "algo
+            // tipeado que todavía no llegó al server" es de segundos, no de toda la llamada.
             function triggerAutosave() {
                 savingState.value = 'dirty';
+                if (lockedByOther.value) return;
+                if (autosaveTimer) clearTimeout(autosaveTimer);
+                autosaveTimer = setTimeout(doSave, AUTOSAVE_DEBOUNCE_MS);
             }
+
+            function collectItems() {
+                var items = [];
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        if (!isVisible(q)) return;
+                        toItems(q).forEach(function (it) { items.push(it); });
+                    });
+                });
+                return items;
+            }
+
+            // Reconstruye `answers` a partir de los items ya guardados, al resumir una
+            // ficha en progreso. Es el inverso de toItems(): agrupa por linkId porque una
+            // opción múltiple llega como varios items con el mismo linkId.
+            function applyExistingItems(items) {
+                var byLinkId = {};
+                (items || []).forEach(function (it) {
+                    var linkId = it.LinkId || it.linkId;
+                    if (!linkId) return;
+                    (byLinkId[linkId] = byLinkId[linkId] || []).push(it);
+                });
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        var its = byLinkId[q.linkId];
+                        if (!its || !its.length) return;
+                        var value = valueFromItems(q, its);
+                        if (value !== undefined) answers[q.linkId] = value;
+                    });
+                });
+            }
+
+            function valueFromItems(q, its) {
+                if (q.type === 'openChoice') return its.map(function (i) { return i.ValueCode || i.valueCode; });
+                var it = its[0];
+                var vb = it.ValueBoolean !== undefined ? it.ValueBoolean : it.valueBoolean;
+                if (vb !== null && vb !== undefined) return vb;
+                var vi = it.ValueInteger !== undefined ? it.ValueInteger : it.valueInteger;
+                if (vi !== null && vi !== undefined) return vi;
+                var vd = it.ValueDecimal !== undefined ? it.ValueDecimal : it.valueDecimal;
+                if (vd !== null && vd !== undefined) return vd;
+                var vdt = it.ValueDate || it.valueDate;
+                if (vdt) return vdt;
+                var vc = it.ValueCode || it.valueCode;
+                if (vc) return vc;
+                var attId = it.AttachmentId || it.attachmentId;
+                if (attId) return { attachmentId: attId, fileName: it.ValueString || it.valueString };
+                var vs = it.ValueString !== undefined ? it.ValueString : it.valueString;
+                if (vs !== null && vs !== undefined) return vs;
+                return undefined;
+            }
+
+            function formatTime(iso) {
+                try { return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }); }
+                catch (e) { return ''; }
+            }
+
+            // Crea la ficha (InProgress) la primera vez que hay algo para guardar. Llamadas
+            // siguientes son no-op: ya existe.
+            function ensureResponse() {
+                if (responseId.value) return Promise.resolve();
+                return fetch('/fhir/r5/QuestionnaireResponse', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        QuestionnaireId: props.questionnaireId,
+                        QuestionnaireVersionId: props.questionnaireVersionId,
+                        PatientHospitalId: props.patientId,
+                        Items: []
+                    })
+                }).then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' al crear la ficha');
+                    return r.json();
+                }).then(function (created) {
+                    responseId.value = created.Id || created.id;
+                    concurrencyVersion.value = created.ConcurrencyVersion;
+                });
+            }
+
+            // Toma (o reutiliza) el lock de esta sesión de edición. Si otro usuario lo
+            // tiene vigente, deja el formulario en solo lectura en vez de reintentar solo.
+            function ensureLock() {
+                if (lockToken.value && lockExpiresAt.value && lockExpiresAt.value.getTime() > Date.now()) {
+                    return Promise.resolve();
+                }
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$lock', {
+                    method: 'POST',
+                    headers: authHeaders()
+                }).then(function (r) {
+                    if (r.status === 409) {
+                        return r.json().then(function (body) {
+                            lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
+                            throw new Error(body.error || 'Lo está completando otro usuario.');
+                        });
+                    }
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' al tomar el lock');
+                    return r.json();
+                }).then(function (body) {
+                    lockToken.value = body.lockToken;
+                    lockExpiresAt.value = new Date(body.expiresAt);
+                    lockedByOther.value = null;
+                    // $lock también incrementa ConcurrencyVersion del lado del server (es una
+                    // escritura más); sin actualizar acá, el próximo guardado manda un
+                    // If-Match viejo y choca con un 409 que no es un conflicto real.
+                    if (body.concurrencyVersion !== undefined) concurrencyVersion.value = body.concurrencyVersion;
+                    scheduleLockCountdown();
+                });
+            }
+
+            // Guardado parcial: manda TODO lo respondido hasta ahora (no sólo lo nuevo de
+            // esta sesión). Es idempotente -- volver a mandar una respuesta ya guardada no
+            // hace nada -- y así no hace falta llevar un registro aparte de "qué cambió
+            // desde el último autosave".
+            function putProgress() {
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, {
+                    method: 'PUT',
+                    headers: Object.assign({}, authHeaders(), {
+                        'If-Match': 'W/"' + concurrencyVersion.value + '"',
+                        'X-Lock-Token': lockToken.value
+                    }),
+                    body: JSON.stringify({ Items: collectItems() })
+                }).then(function (r) {
+                    if (r.status === 409) {
+                        return r.json().then(function (body) {
+                            if (body.lockedBy) {
+                                lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
+                            } else if (body.actualVersion !== undefined) {
+                                concurrencyVersion.value = body.actualVersion;
+                            }
+                            throw new Error(body.error || 'conflicto al guardar');
+                        });
+                    }
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' al guardar');
+                    return r.json();
+                }).then(function (updated) {
+                    concurrencyVersion.value = updated.ConcurrencyVersion;
+                    if (updated.LockExpiresAt) {
+                        lockExpiresAt.value = new Date(updated.LockExpiresAt);
+                        showRenewPrompt.value = false;
+                    }
+                    savingState.value = 'idle';
+                });
+            }
+
+            function doSave() {
+                if (lockedByOther.value || !token()) return;
+                ensureResponse()
+                    .then(ensureLock)
+                    .then(putProgress)
+                    .catch(function (err) {
+                        savingState.value = 'error';
+                        window.cqToast && window.cqToast('No se pudo guardar: ' + err.message, 'error');
+                    });
+            }
+
+            // Timer de 1s para el aviso de "1 minuto para que se cierre". No vence el lock
+            // del lado del cliente: eso lo decide el server en el próximo guardado (con el
+            // grace period si nadie más lo tomó mientras tanto).
+            function scheduleLockCountdown() {
+                if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                lockCountdownTimer = setInterval(function () {
+                    if (!lockExpiresAt.value) return;
+                    var msLeft = lockExpiresAt.value.getTime() - Date.now();
+                    lockSecondsLeft.value = Math.max(0, Math.round(msLeft / 1000));
+                    showRenewPrompt.value = msLeft <= LOCK_WARNING_MS;
+                }, 1000);
+            }
+
+            function renewLock() {
+                if (!responseId.value || !lockToken.value) return;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$renew-lock', {
+                    method: 'POST',
+                    headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
+                }).then(function (r) { return r.ok ? r.json() : null; })
+                  .then(function (body) {
+                      if (body && body.expiresAt) {
+                          lockExpiresAt.value = new Date(body.expiresAt);
+                          showRenewPrompt.value = false;
+                          if (body.concurrencyVersion !== undefined) concurrencyVersion.value = body.concurrencyVersion;
+                      }
+                  });
+            }
+
+            function retryLock() {
+                lockedByOther.value = null;
+                if (!responseId.value) { initSession(); return; }
+                ensureLock().catch(function () { /* sigue tomado: ensureLock ya reseteó lockedByOther */ });
+            }
+
+            // Best-effort: si esto no llega a salir (pestaña cerrada de golpe), el TTL
+            // libera el lock solo unos minutos después. keepalive (no sendBeacon) porque
+            // hace falta mandar el header de auth y el X-Lock-Token, que sendBeacon no permite.
+            function releaseLock() {
+                if (!responseId.value || !lockToken.value) return;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$unlock', {
+                    method: 'POST',
+                    headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
+                    keepalive: true
+                }).catch(function () { /* nada que hacer del lado del cliente */ });
+                lockToken.value = null;
+                if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+            }
+
+            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
+            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
+            // si no hay ninguna, se crea recién en el primer autosave.
+            function initSession() {
+                // No bloquea el render con `loading`: el formulario ya es usable de
+                // entrada (ficha nueva) y, si había algo para resumir, se completa solo
+                // un instante después sin parpadeo de spinner.
+                var query = '/fhir/r5/QuestionnaireResponse?subject=' + encodeURIComponent(props.patientId) +
+                    '&questionnaire=' + encodeURIComponent(props.questionnaireId) + '&status=InProgress&_count=1';
+                fetch(query, { headers: authHeaders() }).then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(function (bundle) {
+                    var existing = (bundle.entry || [])[0];
+                    if (!existing) return;
+                    responseId.value = existing.Id || existing.id;
+                    concurrencyVersion.value = existing.ConcurrencyVersion;
+                    applyExistingItems(existing.Items || existing.items);
+                    return ensureLock();
+                }).catch(function () { /* no se pudo resumir: sigue como ficha nueva */ });
+            }
+
+            Vue.onMounted(function () {
+                if (blockedByBack.value || !token()) return;
+                initSession();
+            });
+            Vue.onUnmounted(function () {
+                window.removeEventListener('beforeunload', releaseLock);
+                if (autosaveTimer) clearTimeout(autosaveTimer);
+                releaseLock();
+            });
+            window.addEventListener('beforeunload', releaseLock);
 
             function totalQuestions() {
                 var n = 0;
@@ -318,15 +575,17 @@
 
             function submit() {
                 if (submitting.value) return;
+                if (lockedByOther.value) {
+                    window.cqToast && window.cqToast('Esta ficha la está completando otro usuario.', 'error');
+                    return;
+                }
 
                 var allErrors = [];
-                var items = [];
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (q) {
                         if (!isVisible(q)) return;
                         validate(q, answers[q.linkId]);
                         if (errors[q.linkId]) allErrors.push(q.text + ': ' + errors[q.linkId]);
-                        toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });
                 if (allErrors.length) {
@@ -340,49 +599,40 @@
 
                 submitting.value = true;
                 savingState.value = 'saving';
+                if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
 
-                // Se crea la respuesta y recien despues se finaliza: son dos
-                // endpoints distintos y $finalize necesita el id.
-                fetch('/fhir/r5/QuestionnaireResponse', {
-                    method: 'POST',
-                    headers: authHeaders(),
-                    body: JSON.stringify({
-                        QuestionnaireId: props.questionnaireId,
-                        // Ancla la ficha a la version que se rendrizo, no a la que este
-                        // publicada al momento de guardar.
-                        QuestionnaireVersionId: props.questionnaireVersionId,
-                        PatientHospitalId: props.patientId,
-                        Items: items
-                    })
-                }).then(function (r) {
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    return r.json();
-                }).then(function (created) {
-                    var id = created.Id || created.id;
-                    return fetch('/fhir/r5/QuestionnaireResponse/' + id + '/$finalize', {
-                        method: 'POST',
-                        headers: authHeaders()
+                // Crea/toma el lock si hace falta y guarda todo antes de finalizar: mismo
+                // camino que el autosave, así $finalize siempre corre sobre lo último.
+                ensureResponse()
+                    .then(ensureLock)
+                    .then(putProgress)
+                    .then(function () {
+                        return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$finalize', {
+                            method: 'POST',
+                            headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
+                        });
                     }).then(function (r) {
                         if (!r.ok) throw new Error('HTTP ' + r.status + ' al finalizar');
-                        return id;
+                        return responseId.value;
+                    }).then(function (id) {
+                        savingState.value = 'idle';
+                        lockToken.value = null;   // $finalize ya liberó el lock del lado del server
+                        if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                        window.cqToast && window.cqToast('Ficha finalizada', 'success');
+                        // Marca esta entrada del historial ANTES de redirigir: si la persona
+                        // vuelve con "atrás", el renderer la lee y muestra el aviso en vez de
+                        // dejar re-finalizar. Se guarda el id para poder linkear a la ficha.
+                        try {
+                            window.history.replaceState(
+                                { cqFinalized: true, responseId: id }, '', window.location.href);
+                        } catch (e) { /* history bloqueado: el aviso no aparecerá, pero la ficha ya se guardó */ }
+                        window.location.href = '/Encounters/View/' + id;
+                    }).catch(function (err) {
+                        savingState.value = 'error';
+                        window.cqToast && window.cqToast('No se pudo guardar la ficha: ' + err.message, 'error');
+                    }).then(function () {
+                        submitting.value = false;
                     });
-                }).then(function (id) {
-                    savingState.value = 'idle';
-                    window.cqToast && window.cqToast('Ficha finalizada', 'success');
-                    // Marca esta entrada del historial ANTES de redirigir: si la persona
-                    // vuelve con "atrás", el renderer la lee y muestra el aviso en vez de
-                    // dejar re-finalizar. Se guarda el id para poder linkear a la ficha.
-                    try {
-                        window.history.replaceState(
-                            { cqFinalized: true, responseId: id }, '', window.location.href);
-                    } catch (e) { /* history bloqueado: el aviso no aparecerá, pero la ficha ya se guardó */ }
-                    window.location.href = '/Encounters/View/' + id;
-                }).catch(function (err) {
-                    savingState.value = 'error';
-                    window.cqToast && window.cqToast('No se pudo guardar la ficha: ' + err.message, 'error');
-                }).then(function () {
-                    submitting.value = false;
-                });
             }
 
             return {
@@ -393,7 +643,10 @@
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
                 totalQuestions: totalQuestions, answeredCount: answeredCount,
-                submit: submit
+                submit: submit,
+                lockedByOther: lockedByOther, showRenewPrompt: showRenewPrompt,
+                lockSecondsLeft: lockSecondsLeft, renewLock: renewLock,
+                retryLock: retryLock, formatTime: formatTime
             };
         },
         template: '\
@@ -415,6 +668,22 @@
     <div class="small">{{ loadError }}</div>\
 </div>\
 <div v-else class="row g-3">\
+    <div v-if="lockedByOther" class="col-12">\
+        <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">\
+            <i class="bi bi-lock-fill"></i>\
+            <div class="flex-grow-1">Lo está completando <strong>{{ lockedByOther.userId }}</strong>\
+                <span v-if="lockedByOther.expiresAt"> hasta las {{ formatTime(lockedByOther.expiresAt) }}</span>.\
+            </div>\
+            <button class="btn btn-sm btn-outline-secondary" @click="retryLock">Reintentar</button>\
+        </div>\
+    </div>\
+    <div v-else-if="showRenewPrompt" class="col-12">\
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
+            <i class="bi bi-clock-history"></i>\
+            <div class="flex-grow-1">Tu sesión de edición se cierra en {{ lockSecondsLeft }}s por inactividad.</div>\
+            <button class="btn btn-sm btn-primary" @click="renewLock">Seguir completando</button>\
+        </div>\
+    </div>\
     <aside class="col-lg-3">\
         <div class="cq-card" style="position:sticky; top:84px;">\
             <h3 class="cq-section-title" style="margin-top:0;">Índice</h3>\
@@ -436,7 +705,7 @@
     </aside>\
 \
     <div class="col-lg-9">\
-        <div class="cq-card">\
+        <div class="cq-card" :style="lockedByOther ? { pointerEvents: \'none\', opacity: 0.6 } : {}">\
             <section v-for="g in questionnaire.groups" :key="g.linkId" :id="g.linkId" class="mb-4">\
                 <h2 class="cq-section-title" style="margin-top:0;">{{ g.title }}</h2>\
                 <template v-for="q in g.questions" :key="q.linkId">\
@@ -513,7 +782,7 @@
             </section>\
 \
             <div class="d-flex justify-content-end border-top pt-3 mt-3">\
-                <button class="btn btn-primary" :disabled="submitting" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
+                <button class="btn btn-primary" :disabled="submitting || lockedByOther" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
             </div>\
         </div>\
     </div>\

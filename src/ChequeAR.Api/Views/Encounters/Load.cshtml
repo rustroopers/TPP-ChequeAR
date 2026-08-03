@@ -10,8 +10,9 @@
         <h1 class="cq-page-header__title">@ViewBag.QuestionnaireTitle <span class="cq-text-sm cq-text-muted">v@(ViewBag.Version)</span></h1>
         <p class="cq-page-header__subtitle">@ViewBag.PatientName</p>
     </div>
-    @* Sin autosave todavia: el backend solo expone POST + $finalize para
-       QuestionnaireResponse, no hay endpoint de update. *@
+    @* La ficha puede completarse de forma asincrónica (ej. seguimiento telefónico
+       semana a semana): el renderer resume una ficha InProgress existente, toma un
+       lock de sesión y autoguarda con PUT + $lock/$renew-lock/$unlock. *@
 </header>
 
 @if (!string.IsNullOrEmpty(loadError))
