@@ -21,7 +21,7 @@ que lo decida la persona.
 
 - Con argumento archivo/carpeta → ese objetivo.
 - Argumento `branch` → el diff contra `main` (`git diff main...HEAD --name-only`).
-- Sin argumento → los cambios sin commitear (`git status`, tracked + untracked propios).
+- Sin argumento → todo el sistema
 
 **Solo tocar código dentro del alcance.** No refactorizar de paso archivos que nadie pidió.
 Leé cada archivo completo antes de editarlo (no parchees a ciegas).
