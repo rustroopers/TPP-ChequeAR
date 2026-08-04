@@ -924,7 +924,7 @@
             <div class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
                     <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther || isComplete()" :title="isComplete() ? \'Ya respondiste todo: usá Finalizar y enviar\' : null" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
-                    <button class="btn btn-primary" :disabled="submitting || lockedByOther" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
+                    <button class="btn btn-primary" :disabled="submitting || lockedByOther || !isComplete()" :title="!isComplete() ? \'Respondé todas las preguntas para poder finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
                 </div>\
                 <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Ya respondiste todas las preguntas: finalizá para dejar la ficha completa.\' : \'Guardá lo cargado y retomá esta ficha más tarde desde el historial del paciente, o finalizá para dejarla completa.\' }}</p>\
             </div>\

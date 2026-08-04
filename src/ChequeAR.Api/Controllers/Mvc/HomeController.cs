@@ -53,15 +53,42 @@ namespace ChequeAR.Api.Controllers.Mvc
                     if (!titleCache.ContainsKey(r.QuestionnaireId))
                         titleCache[r.QuestionnaireId] = await _qRepo.GetAsync(r.QuestionnaireId);
                     var q = titleCache[r.QuestionnaireId];
+
+                    // El estado de una QuestionnaireResponse no es "borrador vs publicado"
+                    // (eso es del ciclo de vida de Questionnaire); acá reflejamos el ciclo de
+                    // vida real de la ficha: InProgress se sigue completando con el tiempo
+                    // (no es un borrador descartable), y solo esa va a "Continuar edición".
+                    string status;
+                    string openUrl;
+                    switch (r.Status)
+                    {
+                        case ChequeAR.Domain.Enums.ResponseStatus.InProgress:
+                            status = "pending";
+                            openUrl = Url.Action("Load", "Encounters", new { patientId = r.PatientHospitalId, questionnaireId = r.QuestionnaireId });
+                            break;
+                        case ChequeAR.Domain.Enums.ResponseStatus.Amended:
+                            status = "amended";
+                            openUrl = Url.Action("View", "Encounters", new { id = r.Id });
+                            break;
+                        case ChequeAR.Domain.Enums.ResponseStatus.EnteredInError:
+                            status = "error";
+                            openUrl = Url.Action("View", "Encounters", new { id = r.Id });
+                            break;
+                        default:
+                            status = "completed";
+                            openUrl = Url.Action("View", "Encounters", new { id = r.Id });
+                            break;
+                    }
+
                     model.RecentEncounters.Add(new RecentEncounter
                     {
                         PatientName = ChequeAR.Application.Services.FhirPatientReader.ReadName(r.FhirJson) ?? r.PatientHospitalId,
                         QuestionnaireTitle = q?.Title ?? r.QuestionnaireId.ToString(),
                         SpecialtyCode = q?.SpecialtyCode ?? "general",
                         SpecialtyLabel = SpecialtyMap.Label(q?.SpecialtyCode, q?.SpecialtyDisplay),
-                        Status = r.Status == ChequeAR.Domain.Enums.ResponseStatus.Completed ? "published" : "draft",
+                        Status = status,
                         UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(r.LastSavedAt),
-                        OpenUrl = Url.Action("View", "Encounters", new { id = r.Id })
+                        OpenUrl = openUrl
                     });
                 }
 
