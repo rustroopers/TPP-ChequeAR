@@ -147,6 +147,13 @@ namespace ChequeAR.Api.App_Start
             Register<ReportExecutor>(() => new ReportExecutor(
                 Resolve<IReportQueryRunner>(), Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>()));
 
+            // Evolución longitudinal de parámetros (spec 010): consulta dedicada contra
+            // vw_FlatResponses (misma conexión Oracle que los reportes) + service que arma las
+            // series desde la definición del cuestionario.
+            Register<IPatientTrendRepository>(() => new PatientTrendRepository(sqlConn));
+            Register<PatientTrendService>(() => new PatientTrendService(
+                Resolve<IQuestionnaireRepository>(), Resolve<IPatientTrendRepository>()));
+
             Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), hospitalAuthUrl));
             Register<PatientService>(() => new PatientService(
@@ -167,6 +174,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
             Register<Controllers.Api.TerminologyController>(() => new Controllers.Api.TerminologyController(Resolve<ITerminologyClient>()));
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
+            Register<Controllers.Api.PatientTrendController>(() => new Controllers.Api.PatientTrendController(Resolve<PatientTrendService>()));
             Register<Controllers.Api.EncounterController>(() => new Controllers.Api.EncounterController(Resolve<PatientService>()));
             Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<UserService>()));
             Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));

@@ -1,0 +1,83 @@
+@model ChequeAR.Api.Models.PatientTrendViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = "Evolución de parámetros";
+    var selected = Model.SelectedQuestionnaireId?.ToString();
+    var islandProps = Newtonsoft.Json.JsonConvert.SerializeObject(new
+    {
+        patientId = Model.Patient?.HC,
+        questionnaireId = selected
+    });
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">Evolución de parámetros@(Model.Patient != null && !string.IsNullOrEmpty(Model.Patient.FullName) ? " · " + Model.Patient.FullName : "")</h1>
+        <p class="cq-page-header__subtitle">Cómo cambian los valores de un paciente a lo largo de sus fichas finalizadas</p>
+    </div>
+    @if (Model.Patient != null)
+    {
+        <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i> Volver al historial</a>
+    }
+</header>
+
+@if (!string.IsNullOrEmpty(ViewBag.DataError as string))
+{
+    <div class="alert alert-danger" role="alert">
+        <strong>No se pudieron cargar los datos.</strong>
+        <div class="small">@ViewBag.DataError</div>
+    </div>
+}
+else if (!Model.HasAnyCompleted)
+{
+    <div class="cq-card">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-graph-up"></i></div>
+            <div class="cq-empty__title">Sin fichas finalizadas</div>
+            <div class="cq-empty__desc">La evolución se arma con las fichas finalizadas del paciente. Todavía no hay ninguna para graficar.</div>
+        </div>
+    </div>
+}
+else
+{
+    @using (Html.BeginForm("Trend", "Encounters", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "patient-trend" }))
+    {
+        @Html.Hidden("patientId", Model.Patient.HC)
+        <div class="row g-2 align-items-end" style="max-width:520px;">
+            <div class="col-md-8">
+                <label class="form-label cq-text-sm">Cuestionario</label>
+                <select class="form-select" name="questionnaireId">
+                    <option value="">Seleccione un cuestionario…</option>
+                    @foreach (var opt in Model.AvailableQuestionnaires)
+                    {
+                        <option value="@opt.Value" selected="@(selected == opt.Value)">@opt.Label</option>
+                    }
+                </select>
+            </div>
+        </div>
+    }
+
+    if (Model.SelectedQuestionnaireId == null)
+    {
+        <div class="cq-card cq-text-sm cq-text-muted">
+            Seleccione un cuestionario para ver qué parámetros se pueden graficar.
+        </div>
+    }
+    else
+    {
+        <div data-vue-island="patient-trend" data-props='@Html.Raw(islandProps)'>
+            <div class="cq-card">
+                <div class="cq-loading">
+                    <div class="cq-spinner cq-spinner--lg"></div>
+                    <div class="cq-loading__label">Cargando parámetros…</div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@section scripts {
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js"></script>
+<script src="~/Scripts/islands/bootstrap.js"></script>
+<script src="~/Scripts/islands/patient-trend/index.js"></script>
+}

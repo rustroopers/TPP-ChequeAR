@@ -122,6 +122,7 @@
     <Compile Include="Controllers\Api\AuditEventController.cs" />
     <Compile Include="Controllers\Api\ReportsController.cs" />
     <Compile Include="Controllers\Api\PatientController.cs" />
+    <Compile Include="Controllers\Api\PatientTrendController.cs" />
     <Compile Include="Controllers\Api\EncounterController.cs" />
     <Compile Include="Controllers\Api\UserController.cs" />
     <Compile Include="Controllers\Api\IntegrationStatusController.cs" />
@@ -154,6 +155,7 @@
     <Content Include="Views\Encounters\Load.cshtml" />
     <Content Include="Views\Encounters\View.cshtml" />
     <Content Include="Views\Encounters\Timeline.cshtml" />
+    <Content Include="Views\Encounters\Trend.cshtml" />
     <Content Include="Views\Reports\Index.cshtml" />
     <Content Include="Views\Reports\Build.cshtml" />
     <Content Include="Views\Reports\Preview.cshtml" />
@@ -170,6 +172,7 @@
     <Content Include="Scripts\islands\questionnaire-editor\index.js" />
     <Content Include="Scripts\islands\questionnaire-renderer\index.js" />
     <Content Include="Scripts\islands\report-builder\index.js" />
+    <Content Include="Scripts\islands\patient-trend\index.js" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ChequeAR.Domain\ChequeAR.Domain.csproj">

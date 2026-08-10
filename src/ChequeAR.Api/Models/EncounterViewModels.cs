@@ -73,6 +73,17 @@ namespace ChequeAR.Api.Models
         public List<string> AvailableAuthors { get; set; } = new List<string>();
     }
 
+    public class PatientTrendViewModel
+    {
+        public PatientSearchItem Patient { get; set; }
+        /// <summary>El cuestionario elegido en el selector (null si todavía no eligió ninguno).</summary>
+        public Guid? SelectedQuestionnaireId { get; set; }
+        /// <summary>Cuestionarios que el paciente completó al menos una vez: los únicos con datos para graficar.</summary>
+        public List<TimelineFilterOption> AvailableQuestionnaires { get; set; } = new List<TimelineFilterOption>();
+        /// <summary>Si el paciente tiene alguna ficha finalizada (distingue "sin historial" de "no eligió cuestionario").</summary>
+        public bool HasAnyCompleted { get; set; }
+    }
+
     public class EncounterReadonlyViewModel
     {
         public Guid EncounterId { get; set; }

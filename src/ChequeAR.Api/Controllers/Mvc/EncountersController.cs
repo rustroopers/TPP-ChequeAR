@@ -431,6 +431,57 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
         }
 
+        // Evolución de parámetros (spec 010) — pantalla nueva, accesible desde el Historial.
+        public async Task<ActionResult> Trend(string patientId, Guid? questionnaireId = null)
+        {
+            ViewBag.Title = "Evolución de parámetros";
+            ViewBag.PageId = "encounters";
+            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
+            {
+                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
+                System.Tuple.Create("Pacientes", Url.Action("Search")),
+                System.Tuple.Create("Historial", Url.Action("Timeline", new { patientId })),
+                System.Tuple.Create("Evolución", (string)null)
+            };
+
+            var model = new PatientTrendViewModel { SelectedQuestionnaireId = questionnaireId };
+            try
+            {
+                var p = await _patients.GetAsync(patientId);
+                model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" };
+
+                // El selector ofrece SOLO los cuestionarios que el paciente completó al menos una
+                // vez: son los únicos que pueden producir una serie. Un cuestionario con fichas
+                // en progreso, pero ninguna finalizada, no aporta datos y no tiene sentido ofrecerlo.
+                var encs = await _patients.GetEncountersAsync(patientId, 500);
+                var completed = encs.Where(e => e.Status == ResponseStatus.Completed).ToList();
+                model.HasAnyCompleted = completed.Count > 0;
+
+                var titleCache = new Dictionary<Guid, string>();
+                foreach (var qId in completed.Select(e => e.QuestionnaireId).Distinct())
+                {
+                    if (!titleCache.ContainsKey(qId))
+                        titleCache[qId] = (await _questionnaires.GetAsync(qId))?.Title ?? qId.ToString();
+                }
+                model.AvailableQuestionnaires = completed
+                    .GroupBy(e => e.QuestionnaireId)
+                    .Select(g => new TimelineFilterOption { Value = g.Key.ToString(), Label = titleCache[g.Key] })
+                    .OrderBy(x => x.Label).ToList();
+
+                // Si el cuestionario elegido no está entre los que el paciente completó, se ignora
+                // (no habría datos): la vista queda como si no se hubiera elegido nada.
+                if (questionnaireId.HasValue &&
+                    !model.AvailableQuestionnaires.Any(o => o.Value == questionnaireId.Value.ToString()))
+                    model.SelectedQuestionnaireId = null;
+            }
+            catch (Exception ex)
+            {
+                ViewBag.DataError = ex.Message;
+                model.Patient = model.Patient ?? new PatientSearchItem { HC = patientId };
+            }
+            return View(model);
+        }
+
         /// <summary>Fecha "yyyy-MM-dd" (local ARG) a límite UTC. endOfDay=true toma el día siguiente (cota superior exclusiva).</summary>
         private static DateTime? ParseArgDateToUtc(string date, bool endOfDay)
         {
