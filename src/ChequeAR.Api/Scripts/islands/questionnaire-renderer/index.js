@@ -94,12 +94,17 @@
             // lockToken es la credencial de ESTA sesión de edición (la devuelve $lock),
             // exigida en cada guardado para que dos médicos no puedan completarla a la vez.
             var responseId = Vue.ref(null);
+            // Espejo de meta.versionId del recurso FHIR: es el reemplazo FHIR-idiomático del
+            // viejo ConcurrencyVersion crudo, mismo mecanismo ETag/If-Match ya usado para
+            // Questionnaire.
             var concurrencyVersion = Vue.ref(null);
             var lockToken = Vue.ref(null);
             var lockExpiresAt = Vue.ref(null);
             // Respuestas tal como estaban al ABRIR esta sesión (lo resumido, o [] si la ficha
-            // es nueva). Se manda al cerrar deliberadamente (guardar avance / finalizar) para
-            // que el server audite UN solo evento con el diff de lo completado en la sesión.
+            // es nueva), en forma interna (LinkId/ValueXxx). Se manda al cerrar
+            // deliberadamente (guardar avance / finalizar) para que el server audite UN solo
+            // evento con el diff de lo completado en la sesión. No es la representación FHIR
+            // del recurso -- $unlock sigue esperando el formato interno de guardado parcial.
             var sessionBaseline = Vue.ref([]);
             // Alguien más tiene el lock: {userId, expiresAt}. Mientras esté seteado, el
             // formulario queda de solo lectura.
@@ -301,44 +306,78 @@
                 return items;
             }
 
-            // Reconstruye `answers` a partir de los items ya guardados, al resumir una
-            // ficha en progreso. Es el inverso de toItems(): agrupa por linkId porque una
-            // opción múltiple llega como varios items con el mismo linkId.
-            function applyExistingItems(items) {
+            // Reconstruye `answers` a partir del item[] del recurso FHIR, al resumir una
+            // ficha en progreso. Un item con varias answer (opción múltiple) ya viene
+            // agrupado por linkId -- a diferencia del formato interno, FHIR no lo separa en
+            // varios registros.
+            function applyExistingItems(fhirItems) {
                 var byLinkId = {};
-                (items || []).forEach(function (it) {
-                    var linkId = it.LinkId || it.linkId;
-                    if (!linkId) return;
-                    (byLinkId[linkId] = byLinkId[linkId] || []).push(it);
+                (fhirItems || []).forEach(function (it) {
+                    if (it.linkId && it.answer && it.answer.length) byLinkId[it.linkId] = it;
                 });
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (q) {
-                        var its = byLinkId[q.linkId];
-                        if (!its || !its.length) return;
-                        var value = valueFromItems(q, its);
+                        var it = byLinkId[q.linkId];
+                        if (!it) return;
+                        var value = valueFromFhirItem(q, it);
                         if (value !== undefined) answers[q.linkId] = value;
                     });
                 });
             }
 
-            function valueFromItems(q, its) {
-                if (q.type === 'openChoice') return its.map(function (i) { return i.ValueCode || i.valueCode; });
-                var it = its[0];
-                var vb = it.ValueBoolean !== undefined ? it.ValueBoolean : it.valueBoolean;
-                if (vb !== null && vb !== undefined) return vb;
-                var vi = it.ValueInteger !== undefined ? it.ValueInteger : it.valueInteger;
-                if (vi !== null && vi !== undefined) return vi;
-                var vd = it.ValueDecimal !== undefined ? it.ValueDecimal : it.valueDecimal;
-                if (vd !== null && vd !== undefined) return vd;
-                var vdt = it.ValueDate || it.valueDate;
-                if (vdt) return vdt;
-                var vc = it.ValueCode || it.valueCode;
-                if (vc) return vc;
-                var attId = it.AttachmentId || it.attachmentId;
-                if (attId) return { attachmentId: attId, fileName: it.ValueString || it.valueString };
-                var vs = it.ValueString !== undefined ? it.ValueString : it.valueString;
-                if (vs !== null && vs !== undefined) return vs;
+            function valueFromFhirItem(q, it) {
+                if (q.type === 'openChoice') {
+                    return it.answer
+                        .map(function (a) { return a.valueCoding && a.valueCoding.code; })
+                        .filter(function (c) { return !!c; });
+                }
+                var a = it.answer[0];
+                if (a.valueBoolean !== undefined) return a.valueBoolean;
+                if (a.valueInteger !== undefined) return a.valueInteger;
+                if (a.valueDecimal !== undefined) return a.valueDecimal;
+                if (a.valueDateTime !== undefined) {
+                    // El server serializa fecha y fecha-hora igual (FhirDateTime); acá se
+                    // recorta según lo que espera cada control HTML nativo.
+                    if (q.type === 'date') return a.valueDateTime.slice(0, 10);
+                    if (q.type === 'dateTime') return a.valueDateTime.slice(0, 16);
+                    return a.valueDateTime;
+                }
+                if (a.valueCoding) return a.valueCoding.code;
+                if (a.valueAttachment) {
+                    return { attachmentId: attachmentIdFromUrl(a.valueAttachment.url), fileName: a.valueAttachment.title };
+                }
+                if (a.valueString !== undefined) return a.valueString;
                 return undefined;
+            }
+
+            function attachmentIdFromUrl(url) {
+                if (!url) return null;
+                var sinBarra = url.replace(/\/+$/, '');
+                return sinBarra.substring(sinBarra.lastIndexOf('/') + 1) || null;
+            }
+
+            // Convierte item[] FHIR al formato interno (LinkId/ValueXxx) que espera $unlock
+            // para el baseline de la sesión. No es la representación canónica del recurso,
+            // es sólo el formato del diff de auditoría de guardado parcial.
+            function fhirItemsToDomain(fhirItems) {
+                var result = [];
+                (fhirItems || []).forEach(function (it) {
+                    if (!it.answer || !it.answer.length) { result.push({ LinkId: it.linkId }); return; }
+                    it.answer.forEach(function (a) {
+                        var d = { LinkId: it.linkId };
+                        if (a.valueBoolean !== undefined) d.ValueBoolean = a.valueBoolean;
+                        else if (a.valueInteger !== undefined) d.ValueInteger = a.valueInteger;
+                        else if (a.valueDecimal !== undefined) d.ValueDecimal = a.valueDecimal;
+                        else if (a.valueDateTime !== undefined) d.ValueDate = a.valueDateTime;
+                        else if (a.valueCoding) d.ValueCode = a.valueCoding.code;
+                        else if (a.valueAttachment) {
+                            d.AttachmentId = attachmentIdFromUrl(a.valueAttachment.url);
+                            d.ValueString = a.valueAttachment.title;
+                        } else if (a.valueString !== undefined) d.ValueString = a.valueString;
+                        result.push(d);
+                    });
+                });
+                return result;
             }
 
             function formatTime(iso) {
@@ -347,24 +386,38 @@
             }
 
             // Crea la ficha (InProgress) la primera vez que hay algo para guardar. Llamadas
-            // siguientes son no-op: ya existe.
+            // siguientes son no-op: ya existe. El body es un recurso FHIR QuestionnaireResponse
+            // real -- Create habla FHIR igual que Search/Get/$finalize.
             function ensureResponse() {
                 if (responseId.value) return Promise.resolve();
                 return fetch('/fhir/r5/QuestionnaireResponse', {
                     method: 'POST',
                     headers: authHeaders(),
                     body: JSON.stringify({
-                        QuestionnaireId: props.questionnaireId,
-                        QuestionnaireVersionId: props.questionnaireVersionId,
-                        PatientHospitalId: props.patientId,
-                        Items: []
+                        resourceType: 'QuestionnaireResponse',
+                        status: 'in-progress',
+                        questionnaire: 'https://chequear.garrahan/Questionnaire/' + props.questionnaireId,
+                        subject: {
+                            identifier: {
+                                system: 'https://chequear.garrahan/patient-hospital-id',
+                                value: props.patientId
+                            }
+                        },
+                        // Ancla la ficha a la version que se rendrizo, no a la que este
+                        // publicada al momento de guardar. No tiene lugar nativo en FHIR:
+                        // el dominio ancla por identificador de version, no por numero.
+                        extension: [{
+                            url: 'https://chequear.garrahan/StructureDefinition/questionnaire-version-id',
+                            valueString: props.questionnaireVersionId
+                        }],
+                        item: []
                     })
                 }).then(function (r) {
                     if (!r.ok) throw new Error('HTTP ' + r.status + ' al crear la ficha');
                     return r.json();
                 }).then(function (created) {
-                    responseId.value = created.Id || created.id;
-                    concurrencyVersion.value = created.ConcurrencyVersion;
+                    responseId.value = created.id;
+                    concurrencyVersion.value = created.meta && created.meta.versionId;
                 });
             }
 
@@ -401,7 +454,9 @@
             // Guardado parcial: manda TODO lo respondido hasta ahora (no sólo lo nuevo de
             // esta sesión). Es idempotente -- volver a mandar una respuesta ya guardada no
             // hace nada -- y así no hace falta llevar un registro aparte de "qué cambió
-            // desde el último autosave".
+            // desde el último autosave". La respuesta SÍ es el recurso FHIR completo (con
+            // meta.versionId); el vencimiento del lock, sin lugar nativo en FHIR, viaja en
+            // un header propio.
             function putProgress() {
                 return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, {
                     method: 'PUT',
@@ -422,14 +477,15 @@
                         });
                     }
                     if (!r.ok) throw new Error('HTTP ' + r.status + ' al guardar');
-                    return r.json();
-                }).then(function (updated) {
-                    concurrencyVersion.value = updated.ConcurrencyVersion;
-                    if (updated.LockExpiresAt) {
-                        lockExpiresAt.value = new Date(updated.LockExpiresAt);
-                        showRenewPrompt.value = false;
-                    }
-                    savingState.value = 'idle';
+                    var lockExpiresHeader = r.headers.get('X-Lock-Expires-At');
+                    return r.json().then(function (updated) {
+                        concurrencyVersion.value = updated.meta && updated.meta.versionId;
+                        if (lockExpiresHeader) {
+                            lockExpiresAt.value = new Date(lockExpiresHeader);
+                            showRenewPrompt.value = false;
+                        }
+                        savingState.value = 'idle';
+                    });
                 });
             }
 
@@ -499,7 +555,9 @@
 
             // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
             // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
-            // si no hay ninguna, se crea recién en el primer autosave.
+            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
+            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
+            // cliente estándar esperaría.
             function initSession() {
                 // No bloquea el render con `loading`: el formulario ya es usable de
                 // entrada (ficha nueva) y, si había algo para resumir, se completa solo
@@ -510,13 +568,14 @@
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     return r.json();
                 }).then(function (bundle) {
-                    var existing = (bundle.entry || [])[0];
+                    var entry = (bundle.entry || [])[0];
+                    var existing = entry && entry.resource;
                     if (!existing) return;   // ficha nueva: el baseline queda [] (nada previo)
-                    responseId.value = existing.Id || existing.id;
-                    concurrencyVersion.value = existing.ConcurrencyVersion;
-                    var existingItems = existing.Items || existing.items || [];
+                    responseId.value = existing.id;
+                    concurrencyVersion.value = existing.meta && existing.meta.versionId;
+                    var existingItems = existing.item || [];
                     // Foto del punto de partida para el diff de auditoría de esta sesión.
-                    sessionBaseline.value = existingItems.slice();
+                    sessionBaseline.value = fhirItemsToDomain(existingItems);
                     applyExistingItems(existingItems);
                     return ensureLock();
                 }).catch(function () { /* no se pudo resumir: sigue como ficha nueva */ });
@@ -562,7 +621,8 @@
             }
 
             // Un valor del formulario -> la columna tipada que espera
-            // QuestionnaireResponseItem en el backend.
+            // QuestionnaireResponseItem en el backend (formato interno de guardado parcial,
+            // no el recurso FHIR -- ver comentario en putProgress/collectItems).
             // Devuelve una LISTA porque una opción múltiple genera un item por opción
             // marcada (linkId repetido), que es como FHIR modela las respuestas repetidas.
             function toItems(q) {

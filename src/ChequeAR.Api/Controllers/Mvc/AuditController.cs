@@ -6,7 +6,7 @@ using System.Web.Mvc;
 using ChequeAR.Api.Helpers;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Exporters;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Application.Reports;
 using ChequeAR.Domain.Entities;
 
@@ -15,12 +15,12 @@ namespace ChequeAR.Api.Controllers.Mvc
     // TODO: re-habilitar [Authorize(Roles = Role.Administrador + "," + Role.Jefe)] cuando FormsAuth esté wired.
     public class AuditController : Controller
     {
-        private readonly IAuditRepository _repo;
-        private readonly IQuestionnaireRepository _questionnaires;
+        private readonly AuditQueryService _audit;
+        private readonly QuestionnaireService _questionnaires;
 
-        public AuditController(IAuditRepository repo, IQuestionnaireRepository questionnaires)
+        public AuditController(AuditQueryService audit, QuestionnaireService questionnaires)
         {
-            _repo = repo;
+            _audit = audit;
             _questionnaires = questionnaires;
         }
 
@@ -70,7 +70,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             var fromUtc = ParseArgDateToUtc(from, endOfDay: false);
             var toUtc = ParseArgDateToUtc(to, endOfDay: true);
 
-            var items = await _repo.SearchAsync(user, act, fromUtc, toUtc, 5000);
+            // El tope y el filtrado los decide el servicio: acá sólo se arma la pantalla.
+            var items = (await _audit.SearchAsync(user, act, fromUtc: fromUtc, toUtc: toUtc,
+                                                 skip: 0, take: AuditQueryService.MaxFilas)).Items;
             var titles = await ResolveTitlesAsync(items);
 
             var res = (resource ?? string.Empty).Trim();
@@ -156,12 +158,11 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
-                var all = await _repo.SearchAsync(null, null, null, null, 5000);
-                var e = all.FirstOrDefault(x => x.Id == id);
+                var e = await _audit.GetAsync(id);
                 if (e == null) return HttpNotFound();
 
                 var av = AuditPresentation.Describe(e.EntityRef, e.Action);
-                var titles = await ResolveTitlesAsync(new[] { e });
+                var titles = await ResolveTitlesAsync(new List<ChequeAR.Domain.Entities.AuditEvent> { e });
 
                 var detail = new AuditDetailViewModel
                 {

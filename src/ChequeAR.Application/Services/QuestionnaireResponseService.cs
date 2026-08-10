@@ -35,6 +35,16 @@ namespace ChequeAR.Application.Services
             _audit = audit;
         }
 
+        // ── Lecturas ──────────────────────────────────────────────────────────────────
+
+        public Task<QuestionnaireResponse> GetAsync(Guid id) => _repo.GetAsync(id);
+
+        public Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(
+            string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take)
+            => _repo.SearchAsync(patientHospitalId, questionnaireId, status, skip, take);
+
+        public Task<bool> HasResponsesAsync(Guid questionnaireId) => _repo.HasResponsesAsync(questionnaireId);
+
         public async Task<QuestionnaireResponse> CreateAsync(QuestionnaireResponse r, string userId)
         {
             if (string.IsNullOrEmpty(r.PatientHospitalId))
@@ -173,7 +183,7 @@ namespace ChequeAR.Application.Services
             if (!validation.IsValid)
             {
                 r.Status = ResponseStatus.InProgress;   // no se finaliza nada inválido
-                throw new InvalidOperationException("Validation failed: " + string.Join("; ", validation.Errors));
+                throw new ValidationFailedException(validation.Errors);
             }
 
             // Foto completa de la ficha terminada (todas las preguntas + su respuesta final):

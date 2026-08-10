@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using Hl7.Fhir.Model;
+using Hl7.Fhir.Serialization;
+using FhirQuestionnaire = Hl7.Fhir.Model.Questionnaire;
 
 namespace ChequeAR.Application.Fhir
 {
@@ -10,9 +11,13 @@ namespace ChequeAR.Application.Fhir
     /// Inverso de <see cref="FhirQuestionnaireBuilder"/>: reconstruye la ficha a partir del
     /// JSON congelado de una versión publicada.
     ///
-    /// Existe para que quien responde vea EXACTAMENTE la versión con la que empezó. Antes
-    /// el renderer leía la entidad viva, así que una edición o una publicación en el medio
+    /// Existe para que quien responde vea EXACTAMENTE la versión con la que empezó. Antes el
+    /// renderizador leía la entidad viva, así que una edición o una publicación en el medio
     /// le cambiaba las preguntas abajo de los pies.
+    ///
+    /// El contrato de salida (Renderable*) NO cambia con la feature 009: lo consumen la
+    /// hidratación del renderizador y QuestionnaireResponseService, y mantenerlo intacto es
+    /// lo que evita tocar esas rutas.
     /// </summary>
     public static class FhirQuestionnaireReader
     {
@@ -23,125 +28,174 @@ namespace ChequeAR.Application.Fhir
         private const string RegexUrl = "http://hl7.org/fhir/StructureDefinition/regex";
         private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
 
+        /// <summary>
+        /// Parser PERMISIVO, a propósito. Las versiones publicadas antes de la feature 009
+        /// llevan vocabulario R4 ('choice', 'open-choice') que R5 eliminó, y son inmutables:
+        /// hay fichas clínicas que las referencian. Con un parser estricto, 9 de las 20
+        /// versiones publicadas dejarían de renderizarse — regresión de FR-014 y FR-023.
+        ///
+        /// La asimetría es deliberada: permisivo al LEER lo viejo, estricto al ESCRIBIR lo
+        /// nuevo. Nada de lo que se publique de acá en adelante depende de esta tolerancia.
+        /// </summary>
+        private static readonly FhirJsonParser Parser = new FhirJsonParser(new ParserSettings
+        {
+            AcceptUnknownMembers = true,
+            AllowUnrecognizedEnums = true,
+            PermissiveParsing = true
+        });
+
         public static RenderableQuestionnaire Read(string fhirJson)
         {
             if (string.IsNullOrWhiteSpace(fhirJson)) return null;
 
-            JObject root;
-            try { root = JObject.Parse(fhirJson); }
-            catch (JsonException) { return null; }
+            FhirQuestionnaire resource;
+            try { resource = Parser.Parse<FhirQuestionnaire>(fhirJson); }
+            catch (Exception) { return null; }   // recurso ilegible: la pantalla se degrada, no se cae
+            if (resource == null) return null;
 
             var result = new RenderableQuestionnaire
             {
-                Title = (string)root["title"],
-                Version = (string)root["version"]
+                Title = resource.Title,
+                Version = resource.Version
             };
 
-            var loose = new List<RenderableQuestion>();
-            foreach (var item in (root["item"] as JArray) ?? new JArray())
+            var sueltas = new List<RenderableQuestion>();
+            foreach (var item in resource.Item ?? new List<FhirQuestionnaire.ItemComponent>())
             {
-                if ((string)item["type"] == "group")
+                if (TypeLiteral(item) == "group")
                 {
-                    var group = new RenderableGroup { LinkId = (string)item["linkId"], Title = (string)item["text"] };
-                    foreach (var child in (item["item"] as JArray) ?? new JArray())
-                        group.Questions.Add(ReadQuestion(child));
-                    if (group.Questions.Count > 0) result.Groups.Add(group);
+                    var grupo = new RenderableGroup { LinkId = item.LinkId, Title = item.Text };
+                    foreach (var hija in item.Item ?? new List<FhirQuestionnaire.ItemComponent>())
+                        grupo.Questions.Add(ReadQuestion(hija));
+                    if (grupo.Questions.Count > 0) result.Groups.Add(grupo);
                 }
                 else
                 {
-                    loose.Add(ReadQuestion(item));
+                    sueltas.Add(ReadQuestion(item));
                 }
             }
 
-            if (loose.Count > 0)
+            if (sueltas.Count > 0)
             {
                 result.Groups.Add(new RenderableGroup
                 {
                     LinkId = "sin-grupo",
                     Title = result.Title ?? "Preguntas",
-                    Questions = loose
+                    Questions = sueltas
                 });
             }
             return result;
         }
 
-        private static RenderableQuestion ReadQuestion(JToken item)
+        private static RenderableQuestion ReadQuestion(FhirQuestionnaire.ItemComponent item)
         {
             var question = new RenderableQuestion
             {
-                LinkId = (string)item["linkId"],
-                Text = (string)item["text"],
+                LinkId = item.LinkId,
+                Text = item.Text,
                 Type = ReadType(item),
-                Required = (bool?)item["required"] ?? false,
-                // maxLength es un campo nativo del item, no una extensión.
-                MaxLength = (int?)item["maxLength"]
+                Required = item.Required ?? false,
+                MaxLength = item.MaxLength   // campo nativo del item, no extensión
             };
 
-            foreach (var ext in (item["extension"] as JArray) ?? new JArray())
+            foreach (var ext in item.Extension ?? new List<Extension>())
             {
-                switch ((string)ext["url"])
+                switch (ext.Url)
                 {
-                    case MinValueUrl: question.Min = NumericValue(ext); break;
-                    case MaxValueUrl: question.Max = NumericValue(ext); break;
-                    case UnitUrl: question.Unit = (string)ext.SelectToken("valueCoding.code"); break;
-                    case MimeTypeUrl: question.Accept = (string)ext["valueCode"]; break;
-                    case RegexUrl: question.Pattern = (string)ext["valueString"]; break;
+                    case MinValueUrl: question.Min = Numeric(ext.Value); break;
+                    case MaxValueUrl: question.Max = Numeric(ext.Value); break;
+                    case UnitUrl: question.Unit = (ext.Value as Coding)?.Code; break;
+                    case MimeTypeUrl: question.Accept = (ext.Value as Code)?.Value; break;
+                    case RegexUrl: question.Pattern = (ext.Value as FhirString)?.Value; break;
                 }
             }
 
-            foreach (var option in (item["answerOption"] as JArray) ?? new JArray())
+            foreach (var opcion in item.AnswerOption ?? new List<FhirQuestionnaire.AnswerOptionComponent>())
             {
-                var display = (string)option.SelectToken("valueCoding.display")
-                           ?? (string)option.SelectToken("valueCoding.code");
+                var coding = opcion.Value as Coding;
+                var display = coding?.Display ?? coding?.Code;
                 if (!string.IsNullOrEmpty(display)) question.Options.Add(display);
             }
 
-            var condition = (item["enableWhen"] as JArray)?.FirstOrDefault();
-            if (condition != null)
+            var condicion = (item.EnableWhen ?? new List<FhirQuestionnaire.EnableWhenComponent>()).FirstOrDefault();
+            if (condicion != null)
             {
                 question.EnableWhen = new RenderableCondition
                 {
-                    Question = (string)condition["question"],
-                    Op = (string)condition["operator"] ?? "=",
-                    Value = ConditionValue(condition)
+                    Question = condicion.Question,
+                    Op = OperatorLiteral(condicion) ?? "=",
+                    Value = ConditionValue(condicion.Answer)
                 };
             }
             return question;
         }
 
-        // FHIR no tiene un tipo "scale": se modela como integer + itemControl slider.
-        private static string ReadType(JToken item)
+        /// <summary>
+        /// Devuelve el vocabulario que hablan las islas Vue, que NO es el de FHIR y no tiene
+        /// por qué serlo (ver QuestionTypeMap). Absorbe además el vocabulario R4 de lo ya
+        /// congelado.
+        /// </summary>
+        private static string ReadType(FhirQuestionnaire.ItemComponent item)
         {
-            var type = (string)item["type"] ?? "string";
-            if (type == "integer" && HasItemControl(item, "slider")) return "scale";
-            if (type == "open-choice") return "openChoice";
-            return type;
+            var tipo = TypeLiteral(item) ?? "string";
+
+            // R5: 'coding' cubre opción cerrada y abierta; las separa answerConstraint.
+            if (tipo == "coding")
+                return ConstraintLiteral(item) == "optionsOrString" ? "openChoice" : "choice";
+
+            // Legado R4 de las versiones congeladas antes de la feature 009.
+            if (tipo == "choice") return "choice";
+            if (tipo == "open-choice") return "openChoice";
+
+            // FHIR no tiene tipo escala: se modela como integer + itemControl slider.
+            if (tipo == "integer" && HasItemControl(item, "slider")) return "scale";
+
+            return tipo;
         }
 
-        private static bool HasItemControl(JToken item, string code)
+        /// <summary>
+        /// Lee el literal crudo y no la propiedad tipada: con un valor que el enum de R5 no
+        /// reconoce (como 'choice'), la propiedad viene en null pero el string original sigue
+        /// disponible en el elemento. Es lo que hace legible lo ya publicado.
+        /// </summary>
+        private static string TypeLiteral(FhirQuestionnaire.ItemComponent item)
+            => item?.TypeElement?.ObjectValue as string;
+
+        private static string ConstraintLiteral(FhirQuestionnaire.ItemComponent item)
+            => item?.AnswerConstraintElement?.ObjectValue as string;
+
+        private static string OperatorLiteral(FhirQuestionnaire.EnableWhenComponent c)
+            => c?.OperatorElement?.ObjectValue as string;
+
+        private static bool HasItemControl(FhirQuestionnaire.ItemComponent item, string code)
         {
-            foreach (var ext in (item["extension"] as JArray) ?? new JArray())
+            foreach (var ext in item.Extension ?? new List<Extension>())
             {
-                if ((string)ext["url"] != ItemControlUrl) continue;
-                foreach (var coding in (ext.SelectToken("valueCodeableConcept.coding") as JArray) ?? new JArray())
-                    if ((string)coding["code"] == code) return true;
+                if (ext.Url != ItemControlUrl) continue;
+                var concept = ext.Value as CodeableConcept;
+                if (concept?.Coding?.Any(c => c.Code == code) == true) return true;
             }
             return false;
         }
 
-        private static decimal? NumericValue(JToken ext)
+        private static decimal? Numeric(DataType value)
         {
-            return (decimal?)ext["valueInteger"] ?? (decimal?)ext["valueDecimal"];
+            if (value is Integer i) return i.Value;
+            if (value is FhirDecimal d) return d.Value;
+            return null;
         }
 
-        private static object ConditionValue(JToken condition)
+        private static object ConditionValue(DataType answer)
         {
-            if (condition["answerBoolean"] != null) return (bool)condition["answerBoolean"];
-            if (condition["answerInteger"] != null) return (long)condition["answerInteger"];
-            if (condition["answerDecimal"] != null) return (decimal)condition["answerDecimal"];
-            if (condition["answerCoding"] != null)
-                return (string)condition.SelectToken("answerCoding.display") ?? (string)condition.SelectToken("answerCoding.code");
-            return (string)condition["answerString"];
+            switch (answer)
+            {
+                case FhirBoolean b: return b.Value ?? false;
+                case Integer i: return (long?)i.Value ?? 0L;
+                case FhirDecimal d: return d.Value ?? 0m;
+                case Coding c: return c.Display ?? c.Code;
+                case FhirString s: return s.Value;
+                default: return null;
+            }
         }
     }
 

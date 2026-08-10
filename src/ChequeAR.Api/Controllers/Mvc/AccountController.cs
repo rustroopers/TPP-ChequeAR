@@ -4,18 +4,19 @@ using System.Web;
 using System.Web.Mvc;
 using System.Web.Security;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
     public class AccountController : Controller
     {
         private readonly IHospitalAuthClient _hospitalAuth;
-        private readonly IUserRepository _userRepo;
+        private readonly UserService _users;
 
-        public AccountController(IHospitalAuthClient hospitalAuth, IUserRepository userRepo)
+        public AccountController(IHospitalAuthClient hospitalAuth, UserService users)
         {
             _hospitalAuth = hospitalAuth;
-            _userRepo = userRepo;
+            _users = users;
         }
 
         [HttpGet, AllowAnonymous]
@@ -70,7 +71,10 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View();
         }
 
-        public ActionResult Profile() { ViewBag.Title = "Mi perfil"; return View(); }
+        // 'new' explícito: Controller expone una propiedad Profile (perfil de ASP.NET, que el
+        // proyecto no usa). Esta acción la oculta a propósito — sin la palabra clave el
+        // compilador avisa que podría ser un descuido.
+        public new ActionResult Profile() { ViewBag.Title = "Mi perfil"; return View(); }
 
         [HttpPost, ValidateAntiForgeryToken]
         public ActionResult SaveProfile()

@@ -1,0 +1,38 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "questionnaire-version-id",
+  "url": "https://chequear.garrahan/StructureDefinition/questionnaire-version-id",
+  "version": "1.0.0",
+  "name": "QuestionnaireVersionId",
+  "title": "Versión congelada a la que se ancla una ficha",
+  "status": "active",
+  "publisher": "Hospital Garrahan",
+  "description": "Identificador de la versión publicada con la que se completó la ficha. FHIR permitiría referenciar por canonical versionado (Questionnaire/{id}|{n}), pero el dominio ancla por identificador de la versión y no por su número: traducir de ida y vuelta agregaría una búsqueda y un modo de fallo en cada lectura de ficha.",
+  "fhirVersion": "5.0.0",
+  "kind": "complex-type",
+  "abstract": false,
+  "context": [{ "type": "element", "expression": "QuestionnaireResponse" }],
+  "type": "Extension",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Extension",
+        "path": "Extension",
+        "max": "1"
+      },
+      {
+        "id": "Extension.url",
+        "path": "Extension.url",
+        "fixedUri": "https://chequear.garrahan/StructureDefinition/questionnaire-version-id"
+      },
+      {
+        "id": "Extension.value[x]",
+        "path": "Extension.value[x]",
+        "min": 1,
+        "type": [{ "code": "string" }]
+      }
+    ]
+  }
+}

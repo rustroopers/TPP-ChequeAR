@@ -1,0 +1,38 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "question-term",
+  "url": "https://chequear.garrahan/StructureDefinition/question-term",
+  "version": "1.0.0",
+  "name": "QuestionTerm",
+  "title": "Término clínico de autoría de la pregunta",
+  "status": "active",
+  "publisher": "Hospital Garrahan",
+  "description": "El concepto en palabras que escribe quien diseña la pregunta. No es lo mismo que item.code.display: ése es el término preferido del concepto SNOMED elegido; éste es lo que la persona quiso decir, y existe aunque todavía no haya código. Se conserva para poder retomar la codificación después.",
+  "fhirVersion": "5.0.0",
+  "kind": "complex-type",
+  "abstract": false,
+  "context": [{ "type": "element", "expression": "Questionnaire.item" }],
+  "type": "Extension",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Extension",
+        "path": "Extension",
+        "max": "1"
+      },
+      {
+        "id": "Extension.url",
+        "path": "Extension.url",
+        "fixedUri": "https://chequear.garrahan/StructureDefinition/question-term"
+      },
+      {
+        "id": "Extension.value[x]",
+        "path": "Extension.value[x]",
+        "min": 1,
+        "type": [{ "code": "string" }]
+      }
+    ]
+  }
+}

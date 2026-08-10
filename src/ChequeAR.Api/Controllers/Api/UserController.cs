@@ -1,7 +1,7 @@
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 
@@ -13,23 +13,22 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("api/users")]
     public class UserController : ApiController
     {
-        private readonly IUserRepository _repo;
-        public UserController(IUserRepository repo) { _repo = repo; }
+        private readonly UserService _users;
+        public UserController(UserService users) { _users = users; }
 
         [HttpGet, Route(""), Authorize(Roles = Role.Administrador)]
         public async Task<IHttpActionResult> List(
             [FromUri] string q = null, [FromUri] string role = null, [FromUri] string specialty = null,
             [FromUri] bool? active = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
-            var items = await _repo.ListAsync(q, role, specialty, active, _offset, _count);
-            var total = await _repo.CountAsync(q, role, specialty, active);
-            return Ok(new { total = total, results = items });
+            var pagina = await _users.ListAsync(q, role, specialty, active, _offset, _count);
+            return Ok(new { total = pagina.Total, results = pagina.Items });
         }
 
         [HttpGet, Route("{id}"), Authorize(Roles = Role.Administrador)]
         public async Task<IHttpActionResult> Get(string id)
         {
-            var u = await _repo.GetAsync(id);
+            var u = await _users.GetAsync(id);
             if (u == null) return NotFound();
             return Ok(u);
         }
@@ -39,7 +38,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             if (user == null) return BadRequest("body required");
             user.Id = id;
-            await _repo.UpsertAsync(user);
+            await _users.UpsertAsync(user);
             return StatusCode(HttpStatusCode.NoContent);
         }
     }

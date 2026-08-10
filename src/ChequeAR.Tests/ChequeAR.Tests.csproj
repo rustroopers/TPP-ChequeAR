@@ -18,8 +18,16 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Moq" Version="4.20.70" />
+    <!-- Para assertear sobre POCOs de Firely en vez de sobre JSON crudo. -->
+    <PackageReference Include="Hl7.Fhir.R5" Version="5.13.4" />
   </ItemGroup>
 
+  <!--
+    NO agregar ProjectReference a ChequeAR.Infrastructure ni ChequeAR.Api.
+    Que este proyecto no compile contra esas capas es la evidencia del aislamiento
+    que afirma el documento de arquitectura (FR-021). Si una prueba parece
+    necesitarlas, la que esta mal ubicada es la logica, no la prueba.
+  -->
   <ItemGroup>
     <ProjectReference Include="..\ChequeAR.Domain\ChequeAR.Domain.csproj" />
     <ProjectReference Include="..\ChequeAR.Application\ChequeAR.Application.csproj" />

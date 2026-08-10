@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -19,12 +19,10 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("fhir/r5/QuestionnaireResponse")]
     public class QuestionnaireResponseController : ApiController
     {
-        private readonly IQuestionnaireResponseRepository _repo;
         private readonly QuestionnaireResponseService _service;
 
-        public QuestionnaireResponseController(IQuestionnaireResponseRepository repo, QuestionnaireResponseService service)
+        public QuestionnaireResponseController(QuestionnaireResponseService service)
         {
-            _repo = repo;
             _service = service;
         }
 
@@ -33,31 +31,45 @@ namespace ChequeAR.Api.Controllers.Api
         {
             ResponseStatus? st = null;
             if (Enum.TryParse(status, true, out ResponseStatus s)) st = s;
-            var items = await _repo.SearchAsync(subject, questionnaire, st, _offset, _count);
-            var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            foreach (var r in items) HideLockTokenFromOthers(r, userId);
-            return Ok(new { resourceType = "Bundle", type = "searchset", total = items.Count, entry = items });
+            var items = await _service.SearchAsync(subject, questionnaire, st, _offset, _count);
+
+            var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)ToFhir(r));
+            return Ok(FhirBundles.SearchSet(recursos, items.Count, FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var r = await _repo.GetAsync(id);
-            if (r == null) return NotFound();
+            var r = await _service.GetAsync(id);
+            if (r == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
 
-            var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            HideLockTokenFromOthers(r, userId);
-
-            var response = Request.CreateResponse(HttpStatusCode.OK, r);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
             response.Headers.ETag = ETagFor(r);
             return ResponseMessage(response);
         }
 
-        // El token es la credencial de la sesión de edición: mostrárselo a otro usuario le
-        // permitiría suplantar al que tiene el lock. Sólo su dueño lo ve.
-        private static void HideLockTokenFromOthers(QuestionnaireResponse r, string userId)
+        /// <summary>
+        /// Devuelve el recurso ALMACENADO, no uno regenerado: FhirJson es la representación
+        /// canónica de la ficha —es lo que validó $finalize y lo que conserva los textos de la
+        /// versión anclada y el paciente embebido—. Regenerarlo acá, sin la versión a mano,
+        /// perdería los textos que el médico leyó.
+        ///
+        /// Sólo se reconstruye si el guardado está vacío o ilegible, para que una fila corrupta
+        /// degrade en vez de tumbar la búsqueda entera.
+        ///
+        /// La versión de concurrencia SIEMPRE sale fresca de la entidad viva (no de lo
+        /// guardado): el FhirJson persistido se re-arma en cada escritura ANTES de incrementar
+        /// ConcurrencyVersion (ver QuestionnaireResponseService), así que el valor embebido ahí
+        /// quedaría atrasado. meta.versionId es, para el cliente, el reemplazo FHIR-idiomático
+        /// del viejo campo ConcurrencyVersion: mismo mecanismo de "Managing Resource
+        /// Contention" que ya se usa con ETag/If-Match, expuesto también en el cuerpo.
+        /// </summary>
+        private static Hl7.Fhir.Model.QuestionnaireResponse ToFhir(QuestionnaireResponse r)
         {
-            if (r.LockedByUserId != userId) r.LockToken = null;
+            var almacenado = FhirResourceReader.ReadResponse(r.FhirJson);
+            var resource = almacenado ?? FhirQuestionnaireResponseBuilder.ToResource(r, null);
+            resource.Meta = new Hl7.Fhir.Model.Meta { VersionId = r.ConcurrencyVersion.ToString() };
+            return resource;
         }
 
         private static EntityTagHeaderValue ETagFor(QuestionnaireResponse r)
@@ -80,18 +92,29 @@ namespace ChequeAR.Api.Controllers.Api
             return Guid.TryParse(values.FirstOrDefault(), out var token) ? token : (Guid?)null;
         }
 
+        private string FhirBaseUrl()
+            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
+
         [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
-        public async Task<IHttpActionResult> Create([FromBody] QuestionnaireResponse r)
+        public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.QuestionnaireResponse body)
         {
-            if (r == null) return BadRequest("body required");
+            var r = FhirQuestionnaireResponseParser.ToDomain(body);
+            if (r == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
+
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             try
             {
                 var created = await _service.CreateAsync(r, userId);
-                return Content(HttpStatusCode.Created, created);
+                return Content(HttpStatusCode.Created, ToFhir(created));
             }
-            catch (ArgumentException ex) { return BadRequest(ex.Message); }
-            catch (InvalidOperationException ex) { return Content((HttpStatusCode)422, new { error = ex.Message }); }
+            catch (ArgumentException ex)
+            {
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
+            }
         }
 
         // Toma la sesión de edición exclusiva. Sin esto, dos médicos podrían completar el
@@ -173,6 +196,10 @@ namespace ChequeAR.Api.Controllers.Api
         // además del If-Match de siempre, porque acá se protegen dos cosas distintas -- que
         // nadie más esté en medio de la misma sesión de edición, y que nadie haya guardado
         // una versión más nueva desde la última lectura de este cliente.
+        //
+        // El body sigue siendo la forma interna (LinkId/ValueXxx) y no un recurso FHIR: es el
+        // formato de guardado incremental, no la representación canónica de la ficha -- esa
+        // sigue siendo GET/Search/$finalize, que sí devuelven el recurso FHIR completo.
         [HttpPut, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
         public async Task<IHttpActionResult> SaveProgress(Guid id, [FromBody] SaveProgressBody body)
         {
@@ -198,8 +225,13 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 var r = await _service.SaveProgressAsync(id, userId, lockToken.Value, expectedVersion, body?.Items);
-                var response = Request.CreateResponse(HttpStatusCode.OK, r);
+                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
                 response.Headers.ETag = ETagFor(r);
+                // El vencimiento del lock no tiene lugar nativo en FHIR (no es parte del
+                // recurso canónico): viaja en un header propio, igual que X-Lock-Token en el
+                // request. El cliente lo usa para reprogramar el aviso de "1 minuto".
+                if (r.LockExpiresAt.HasValue)
+                    response.Headers.Add("X-Lock-Expires-At", r.LockExpiresAt.Value.ToString("o"));
                 return ResponseMessage(response);
             }
             catch (ConcurrencyConflictException ex)
@@ -232,7 +264,13 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 var r = await _service.FinalizeAsync(id, userId, lockToken.Value);
-                return Ok(r);
+                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+                response.Headers.ETag = ETagFor(r);
+                return ResponseMessage(response);
+            }
+            catch (ValidationFailedException ex)
+            {
+                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
             }
             catch (LockConflictException ex)
             {
@@ -272,7 +310,9 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 var r = await _service.RetargetToCurrentVersionAsync(id, userId, lockToken.Value);
-                return Ok(r);
+                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+                response.Headers.ETag = ETagFor(r);
+                return ResponseMessage(response);
             }
             catch (LockConflictException ex)
             {

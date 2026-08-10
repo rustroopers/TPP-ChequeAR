@@ -3,185 +3,282 @@ using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
+using Hl7.Fhir.Model;
+using Hl7.Fhir.Serialization;
+using Hl7.Fhir.Utility;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using DomainQuestionnaire = ChequeAR.Domain.Entities.Questionnaire;
+using FhirQuestionnaire = Hl7.Fhir.Model.Questionnaire;
 
 namespace ChequeAR.Application.Fhir
 {
     /// <summary>
-    /// Serializa un Questionnaire de dominio al recurso FHIR R5 que se congela en cada
-    /// versión publicada. La UI publica desde el listado (sin pasar por el editor), así
-    /// que el JSON tiene que poder armarse enteramente desde la base.
+    /// Traduce un Questionnaire de dominio al recurso FHIR R5.
+    ///
+    /// Lo consumen dos caminos: la publicación, que congela el JSON en la versión, y la API,
+    /// que devuelve el recurso vivo. Por eso expone las dos formas — POCO y texto.
+    ///
+    /// La UI publica desde el listado (sin pasar por el editor), así que el recurso tiene que
+    /// poder armarse enteramente desde la base.
     /// </summary>
     public static class FhirQuestionnaireBuilder
     {
         public const string ProfileUrl = "https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaire";
+        public const string SpecialtySystem = "https://chequear.garrahan/CodeSystem/specialty";
+        private const string BaseUrl = "https://chequear.garrahan/Questionnaire/";
 
-        // Índice linkId -> pregunta, para resolver el tipo del answer[x] de enableWhen.
-        // [ThreadStatic] porque la clase es estática y Build puede correr en paralelo.
-        [ThreadStatic] private static Dictionary<string, Question> _questionsByLinkId;
+        private const string MinValueUrl = "http://hl7.org/fhir/StructureDefinition/minValue";
+        private const string MaxValueUrl = "http://hl7.org/fhir/StructureDefinition/maxValue";
+        private const string RegexUrl = "http://hl7.org/fhir/StructureDefinition/regex";
+        private const string MimeTypeUrl = "http://hl7.org/fhir/StructureDefinition/mimeType";
+        private const string UnitUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit";
+        private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
+        private const string ItemControlSystem = "http://hl7.org/fhir/questionnaire-item-control";
 
-        public static string Build(Questionnaire q, int versionNumber)
+        /// <summary>JSON del recurso, que es lo que se congela en cada versión publicada.</summary>
+        public static string Build(DomainQuestionnaire q, int versionNumber)
+            => new FhirJsonSerializer().SerializeToString(ToResource(q, versionNumber));
+
+        public static FhirQuestionnaire ToResource(DomainQuestionnaire q, int versionNumber)
         {
             if (q == null) throw new ArgumentNullException(nameof(q));
 
-            var resource = new JObject
+            var resource = new FhirQuestionnaire
             {
-                ["resourceType"] = "Questionnaire",
-                ["id"] = q.Id.ToString(),
-                ["meta"] = new JObject { ["profile"] = new JArray(ProfileUrl) },
-                ["url"] = "https://chequear.garrahan/Questionnaire/" + q.Id,
-                ["version"] = versionNumber.ToString(),
-                ["title"] = q.Title,
-                ["name"] = q.Title,
-                ["status"] = "active",
-                ["subjectType"] = new JArray("Patient"),
-                ["date"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                ["publisher"] = "Hospital Garrahan"
-            };
-            if (!string.IsNullOrWhiteSpace(q.Description)) resource["description"] = q.Description;
-            if (!string.IsNullOrWhiteSpace(q.SpecialtyCode))
-            {
-                resource["useContext"] = new JArray(new JObject
+                Id = q.Id.ToString(),
+                Meta = new Meta
                 {
-                    ["code"] = new JObject { ["system"] = "http://terminology.hl7.org/CodeSystem/usage-context-type", ["code"] = "focus" },
-                    ["valueCodeableConcept"] = new JObject
-                    {
-                        ["coding"] = new JArray(new JObject
-                        {
-                            ["system"] = "https://chequear.garrahan/CodeSystem/specialty",
-                            ["code"] = q.SpecialtyCode,
-                            ["display"] = q.SpecialtyDisplay ?? q.SpecialtyCode
-                        })
-                    }
-                });
-            }
+                    Profile = new[] { ProfileUrl },
+                    // La versión del REGISTRO (contador de escrituras para concurrencia
+                    // optimista), no el número de versión publicada. Es el mecanismo nativo
+                    // del estándar y viaja además en el ETag.
+                    VersionId = q.ConcurrencyVersion.ToString()
+                },
+                Url = BaseUrl + q.Id,
+                Version = versionNumber.ToString(),
+                Title = q.Title,
+                Name = q.Title,
+                Status = PublicationStatus.Active,
+                SubjectType = new ResourceType?[] { ResourceType.Patient },
+                Date = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
+                Publisher = "Hospital Garrahan"
+            };
 
-            _questionsByLinkId = (q.Questions ?? new List<Question>())
+            if (!string.IsNullOrWhiteSpace(q.Description)) resource.Description = new Markdown(q.Description);
+            if (!string.IsNullOrWhiteSpace(q.SpecialtyCode)) resource.UseContext.Add(SpecialtyContext(q));
+
+            // Índice linkId -> pregunta: enableWhen tipa su answer[x] según la pregunta
+            // REFERENCIADA, no según la que declara la condición. Sin este índice no hay
+            // forma de saber qué tipo corresponde.
+            var byLinkId = (q.Questions ?? new List<Question>())
                 .Where(x => !string.IsNullOrWhiteSpace(x.LinkId))
                 .GroupBy(x => x.LinkId)
                 .ToDictionary(g => g.Key, g => g.First());
 
-            resource["item"] = BuildItems(q);
-            return JsonConvert.SerializeObject(resource, Formatting.None);
+            foreach (var item in BuildItems(q, byLinkId)) resource.Item.Add(item);
+            return resource;
         }
 
-        private static JArray BuildItems(Questionnaire q)
+        private static UsageContext SpecialtyContext(DomainQuestionnaire q)
         {
-            var items = new JArray();
-            var grouped = new HashSet<Guid>();
+            return new UsageContext
+            {
+                Code = new Coding("http://terminology.hl7.org/CodeSystem/usage-context-type", "focus"),
+                Value = new CodeableConcept(SpecialtySystem, q.SpecialtyCode, q.SpecialtyDisplay ?? q.SpecialtyCode, null)
+            };
+        }
 
-            var groups = (q.Groups ?? new List<QuestionGroup>()).OrderBy(g => g.OrderIndex);
-            foreach (var g in groups)
+        private static List<FhirQuestionnaire.ItemComponent> BuildItems(
+            DomainQuestionnaire q, IDictionary<string, Question> byLinkId)
+        {
+            var items = new List<FhirQuestionnaire.ItemComponent>();
+            var agrupadas = new HashSet<Guid>();
+
+            foreach (var g in (q.Groups ?? new List<QuestionGroup>()).OrderBy(x => x.OrderIndex))
             {
                 // Las preguntas llegan por Questionnaire.Questions (con GroupId), no por
-                // Group.Questions: el repo sólo hace Include de la colección plana.
-                var children = (q.Questions ?? new List<Question>())
+                // Group.Questions: el repositorio sólo hace Include de la colección plana.
+                var hijas = (q.Questions ?? new List<Question>())
                     .Where(x => x.GroupId == g.Id)
                     .OrderBy(x => x.OrderIndex)
                     .ToList();
-                foreach (var c in children) grouped.Add(c.Id);
+                foreach (var c in hijas) agrupadas.Add(c.Id);
 
-                items.Add(new JObject
+                var grupo = new FhirQuestionnaire.ItemComponent
                 {
-                    ["linkId"] = string.IsNullOrWhiteSpace(g.LinkId) ? g.Id.ToString() : g.LinkId,
-                    ["text"] = g.Title,
-                    ["type"] = "group",
-                    ["item"] = new JArray(children.Select(BuildQuestion).Cast<object>().ToArray())
-                });
+                    LinkId = string.IsNullOrWhiteSpace(g.LinkId) ? g.Id.ToString() : g.LinkId,
+                    Text = g.Title,
+                    Type = FhirQuestionnaire.QuestionnaireItemType.Group
+                };
+                foreach (var h in hijas) grupo.Item.Add(BuildQuestion(h, byLinkId));
+                items.Add(grupo);
             }
 
-            var loose = (q.Questions ?? new List<Question>())
-                .Where(x => !grouped.Contains(x.Id))
+            var sueltas = (q.Questions ?? new List<Question>())
+                .Where(x => !agrupadas.Contains(x.Id))
                 .OrderBy(x => x.OrderIndex);
-            foreach (var question in loose) items.Add(BuildQuestion(question));
+            foreach (var s in sueltas) items.Add(BuildQuestion(s, byLinkId));
 
             return items;
         }
 
-        private static JObject BuildQuestion(Question question)
+        private static FhirQuestionnaire.ItemComponent BuildQuestion(
+            Question question, IDictionary<string, Question> byLinkId)
         {
-            var item = new JObject
+            var item = new FhirQuestionnaire.ItemComponent
             {
-                ["linkId"] = string.IsNullOrWhiteSpace(question.LinkId) ? question.Id.ToString() : question.LinkId,
-                ["text"] = question.Text,
-                ["type"] = FhirType(question.Type),
-                ["required"] = question.Required
+                LinkId = string.IsNullOrWhiteSpace(question.LinkId) ? question.Id.ToString() : question.LinkId,
+                Text = question.Text,
+                Type = FhirType(question.Type),
+                Required = question.Required
             };
-            if (question.RepeatsAllowed) item["repeats"] = true;
-            AddValidationExtensions(item, question);
-            AddCoding(item, question);
-            AddEnableWhen(item, question);
 
-            var options = (question.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex).ToList();
-            if (options.Count > 0)
+            // Sólo las preguntas de opción llevan answerConstraint. Es lo ÚNICO que distingue
+            // una opción cerrada de una abierta en R5, donde ambas son type = coding.
+            var constraint = AnswerConstraintFor(question.Type);
+            if (constraint.HasValue) item.AnswerConstraint = constraint.Value;
+
+            if (question.RepeatsAllowed) item.Repeats = true;
+
+            AddValidation(item, question);
+            AddCoding(item, question);
+            AddEnableWhen(item, question, byLinkId);
+
+            foreach (var o in (question.Options ?? new List<AnswerOption>()).OrderBy(x => x.OrderIndex))
             {
-                item["answerOption"] = new JArray(options.Select(o => (object)new JObject
+                item.AnswerOption.Add(new FhirQuestionnaire.AnswerOptionComponent
                 {
-                    ["valueCoding"] = new JObject
-                    {
-                        ["code"] = o.Code ?? o.Value ?? o.Display,
-                        ["display"] = o.Display ?? o.Value
-                    }
-                }).ToArray());
+                    Value = new Coding(null, o.Code ?? o.Value ?? o.Display, o.Display ?? o.Value)
+                });
             }
+
             return item;
         }
 
-        /// <summary>Metadata clínica (CIE-10 / SNOMED / LOINC) como Questionnaire.item.code.</summary>
-        private static void AddCoding(JObject item, Question question)
+        /// <summary>
+        /// Metadata clínica (SNOMED CT) como item.code, más el término de autoría como
+        /// extensión propia. Son cosas distintas: el code es el concepto elegido; el término
+        /// es lo que quiso decir quien diseñó la pregunta, y existe aunque no haya código.
+        /// </summary>
+        private static void AddCoding(FhirQuestionnaire.ItemComponent item, Question question)
         {
             var coding = TryParse(question.CodingJson);
             if (coding == null) return;
-            var code = (string)coding["code"];
-            if (string.IsNullOrWhiteSpace(code)) return;
 
-            item["code"] = new JArray(new JObject
-            {
-                ["system"] = (string)coding["system"],
-                ["code"] = code,
-                ["display"] = (string)coding["display"]
-            });
+            var code = (string)coding["code"];
+            if (!string.IsNullOrWhiteSpace(code))
+                item.Code.Add(new Coding((string)coding["system"], code, (string)coding["display"]));
+
+            ChequeARExtensions.SetQuestionTerm(item, (string)coding["term"]);
         }
 
         /// <summary>
-        /// Lógica condicional como Questionnaire.item.enableWhen. El tipo del answer[x]
-        /// tiene que corresponder al de la pregunta referenciada, no al de esta.
+        /// Lógica condicional. El tipo del answer[x] corresponde a la pregunta REFERENCIADA:
+        /// si la condición dice "cuando 'fuma' sea verdadero", el answer es un boolean porque
+        /// 'fuma' es boolean, no por el tipo de la pregunta que se está condicionando.
         /// </summary>
-        private static void AddEnableWhen(JObject item, Question question)
+        private static void AddEnableWhen(
+            FhirQuestionnaire.ItemComponent item, Question question, IDictionary<string, Question> byLinkId)
         {
             var condition = TryParse(question.EnableWhenJson);
             if (condition == null) return;
+
             var sourceLinkId = (string)condition["question"];
             if (string.IsNullOrWhiteSpace(sourceLinkId)) return;
 
-            var entry = new JObject
-            {
-                ["question"] = sourceLinkId,
-                ["operator"] = (string)condition["op"] ?? "="
-            };
+            Question source;
+            byLinkId.TryGetValue(sourceLinkId, out source);
 
-            var value = condition["value"];
-            Question source = null;
-            _questionsByLinkId?.TryGetValue(sourceLinkId, out source);
-            switch (source?.Type)
+            item.EnableWhen.Add(new FhirQuestionnaire.EnableWhenComponent
             {
-                case QuestionType.Boolean: entry["answerBoolean"] = (bool?)value ?? false; break;
-                case QuestionType.Integer:
-                case QuestionType.Scale:   entry["answerInteger"] = (long?)value ?? 0; break;
-                case QuestionType.Decimal: entry["answerDecimal"] = (decimal?)value ?? 0m; break;
-                case QuestionType.Choice:
-                case QuestionType.OpenChoice:
-                    entry["answerCoding"] = new JObject { ["code"] = (string)value, ["display"] = (string)value };
-                    break;
-                default: entry["answerString"] = (string)value; break;
-            }
-
-            item["enableWhen"] = new JArray(entry);
+                Question = sourceLinkId,
+                Operator = ParseOperator((string)condition["op"]),
+                Answer = AnswerFor(source?.Type, condition["value"])
+            });
             // Con una sola condición el behavior es irrelevante, pero declararlo deja el
             // recurso listo para cuando se soporte más de una.
-            item["enableBehavior"] = "all";
+            item.EnableBehavior = FhirQuestionnaire.EnableWhenBehavior.All;
         }
+
+        private static DataType AnswerFor(QuestionType? sourceType, JToken value)
+        {
+            switch (sourceType)
+            {
+                case QuestionType.Boolean:
+                    return new FhirBoolean((bool?)value ?? false);
+                case QuestionType.Integer:
+                case QuestionType.Scale:
+                    return new Integer((int?)(long?)value ?? 0);
+                case QuestionType.Decimal:
+                    return new FhirDecimal((decimal?)value ?? 0m);
+                case QuestionType.Choice:
+                case QuestionType.OpenChoice:
+                    var code = (string)value;
+                    return new Coding(null, code, code);
+                default:
+                    return new FhirString((string)value);
+            }
+        }
+
+        private static FhirQuestionnaire.QuestionnaireItemOperator ParseOperator(string op)
+        {
+            if (string.IsNullOrWhiteSpace(op)) return FhirQuestionnaire.QuestionnaireItemOperator.Equal;
+            var parsed = EnumUtility.ParseLiteral<FhirQuestionnaire.QuestionnaireItemOperator>(op);
+            return parsed ?? FhirQuestionnaire.QuestionnaireItemOperator.Equal;
+        }
+
+        /// <summary>
+        /// Rango, unidad, patrón y formatos aceptados como extensiones ESTÁNDAR, en vez de un
+        /// formato propio: así la versión congelada sigue siendo interpretable por otro
+        /// sistema. maxLength es campo nativo del item, no extensión.
+        /// </summary>
+        private static void AddValidation(FhirQuestionnaire.ItemComponent item, Question question)
+        {
+            // Un ValidationJson ausente o corrupto se publica sin restricciones, pero el
+            // marcador de escala se emite igual: hace al TIPO, no a la validación.
+            var v = TryParse(question.ValidationJson) ?? new JObject();
+            var esEntero = question.Type == QuestionType.Integer || question.Type == QuestionType.Scale;
+
+            var min = v["min"];
+            if (min != null && min.Type != JTokenType.Null)
+                item.Extension.Add(new Extension(MinValueUrl, Numeric(min, esEntero)));
+
+            var max = v["max"];
+            if (max != null && max.Type != JTokenType.Null)
+                item.Extension.Add(new Extension(MaxValueUrl, Numeric(max, esEntero)));
+
+            // FHIR no tiene tipo "escala": se publica como integer + itemControl slider. Sin
+            // esto, al releer la versión congelada una escala vuelve como número común.
+            if (question.Type == QuestionType.Scale)
+            {
+                item.Extension.Add(new Extension(ItemControlUrl,
+                    new CodeableConcept(ItemControlSystem, "slider")));
+            }
+
+            var accept = (string)v["accept"];
+            if (!string.IsNullOrWhiteSpace(accept))
+                item.Extension.Add(new Extension(MimeTypeUrl, new Code(accept)));
+
+            var maxLength = v["maxLength"];
+            if (maxLength != null && maxLength.Type != JTokenType.Null)
+            {
+                var n = (long)maxLength;
+                if (n > 0) item.MaxLength = (int)n;
+            }
+
+            var pattern = (string)v["pattern"];
+            if (!string.IsNullOrWhiteSpace(pattern))
+                item.Extension.Add(new Extension(RegexUrl, new FhirString(pattern)));
+
+            var unit = (string)v["unit"];
+            if (!string.IsNullOrWhiteSpace(unit))
+                item.Extension.Add(new Extension(UnitUrl, new Coding("http://unitsofmeasure.org", unit, unit)));
+        }
+
+        // El tipo del value[x] tiene que acompañar al de la pregunta.
+        private static DataType Numeric(JToken value, bool esEntero)
+            => esEntero ? (DataType)new Integer((int)(long)value) : new FhirDecimal((decimal)value);
 
         private static JObject TryParse(string json)
         {
@@ -191,113 +288,42 @@ namespace ChequeAR.Application.Fhir
         }
 
         /// <summary>
-        /// Rango y unidad como extensiones estándar de FHIR, en vez de inventar un formato
-        /// propio: así la versión congelada sigue siendo interpretable por otro sistema.
+        /// ⚠️ R5 ELIMINÓ los tipos 'choice' y 'open-choice' de R4: ambos son 'coding', y lo
+        /// que los distingue es answerConstraint (ver AnswerConstraintFor). El builder
+        /// artesanal seguía emitiendo el vocabulario viejo mientras declaraba fhirVersion
+        /// 5.0.0, y nadie lo notó porque el validador era un sustituto que no validaba nada.
         /// </summary>
-        private static void AddValidationExtensions(JObject item, Question question)
-        {
-            // ValidationJson ausente o corrupto: se publica sin restricciones, pero el
-            // marcador de escala se emite igual porque hace al TIPO, no a la validación.
-            var validation = TryParse(question.ValidationJson) ?? new JObject();
-
-            var extensions = new JArray();
-            var isInteger = question.Type == QuestionType.Integer || question.Type == QuestionType.Scale;
-
-            var min = validation["min"];
-            if (min != null && min.Type != JTokenType.Null)
-                extensions.Add(ValueExtension("http://hl7.org/fhir/StructureDefinition/minValue", min, isInteger));
-
-            var max = validation["max"];
-            if (max != null && max.Type != JTokenType.Null)
-                extensions.Add(ValueExtension("http://hl7.org/fhir/StructureDefinition/maxValue", max, isInteger));
-
-            // FHIR no tiene tipo "scale": se publica como integer + itemControl slider, que
-            // es la forma estándar. Sin esto, al releer la versión congelada una escala
-            // volvía como un número común.
-            if (question.Type == QuestionType.Scale)
-            {
-                extensions.Add(new JObject
-                {
-                    ["url"] = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl",
-                    ["valueCodeableConcept"] = new JObject
-                    {
-                        ["coding"] = new JArray(new JObject
-                        {
-                            ["system"] = "http://hl7.org/fhir/questionnaire-item-control",
-                            ["code"] = "slider"
-                        })
-                    }
-                });
-            }
-
-            // Formatos aceptados de un adjunto.
-            var accept = (string)validation["accept"];
-            if (!string.IsNullOrWhiteSpace(accept))
-            {
-                extensions.Add(new JObject
-                {
-                    ["url"] = "http://hl7.org/fhir/StructureDefinition/mimeType",
-                    ["valueCode"] = accept
-                });
-            }
-
-            // Largo máximo de una respuesta de texto: maxLength es un campo NATIVO del
-            // item FHIR, no una extensión. Se emite en la propia pregunta.
-            var maxLength = validation["maxLength"];
-            if (maxLength != null && maxLength.Type != JTokenType.Null)
-            {
-                var n = (long)maxLength;
-                if (n > 0) item["maxLength"] = n;
-            }
-
-            // Patrón (regex) como extensión estándar: preserva la validación en la versión
-            // congelada sin inventar un formato propio.
-            var pattern = (string)validation["pattern"];
-            if (!string.IsNullOrWhiteSpace(pattern))
-            {
-                extensions.Add(new JObject
-                {
-                    ["url"] = "http://hl7.org/fhir/StructureDefinition/regex",
-                    ["valueString"] = pattern
-                });
-            }
-
-            var unit = (string)validation["unit"];
-            if (!string.IsNullOrWhiteSpace(unit))
-            {
-                extensions.Add(new JObject
-                {
-                    ["url"] = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit",
-                    ["valueCoding"] = new JObject
-                    {
-                        ["system"] = "http://unitsofmeasure.org",
-                        ["code"] = unit,
-                        ["display"] = unit
-                    }
-                });
-            }
-
-            if (extensions.Count > 0) item["extension"] = extensions;
-        }
-
-        private static JObject ValueExtension(string url, JToken value, bool isInteger)
-        {
-            var ext = new JObject { ["url"] = url };
-            // El tipo del value[x] tiene que acompañar al de la pregunta: valueInteger para
-            // integer, valueDecimal para decimal.
-            if (isInteger) ext["valueInteger"] = (long)value;
-            else ext["valueDecimal"] = (decimal)value;
-            return ext;
-        }
-
-        private static string FhirType(QuestionType type)
+        public static FhirQuestionnaire.QuestionnaireItemType FhirType(QuestionType type)
         {
             switch (type)
             {
-                case QuestionType.DateTime: return "dateTime";
-                case QuestionType.OpenChoice: return "open-choice";
-                case QuestionType.Scale: return "integer";   // FHIR no tiene "scale": se modela como integer
-                default: return type.ToString().ToLowerInvariant();
+                case QuestionType.Decimal:    return FhirQuestionnaire.QuestionnaireItemType.Decimal;
+                case QuestionType.Integer:    return FhirQuestionnaire.QuestionnaireItemType.Integer;
+                case QuestionType.String:     return FhirQuestionnaire.QuestionnaireItemType.String;
+                case QuestionType.Text:       return FhirQuestionnaire.QuestionnaireItemType.Text;
+                case QuestionType.Date:       return FhirQuestionnaire.QuestionnaireItemType.Date;
+                case QuestionType.DateTime:   return FhirQuestionnaire.QuestionnaireItemType.DateTime;
+                case QuestionType.Boolean:    return FhirQuestionnaire.QuestionnaireItemType.Boolean;
+                case QuestionType.Attachment: return FhirQuestionnaire.QuestionnaireItemType.Attachment;
+                case QuestionType.Choice:
+                case QuestionType.OpenChoice: return FhirQuestionnaire.QuestionnaireItemType.Coding;
+                case QuestionType.Scale:      return FhirQuestionnaire.QuestionnaireItemType.Integer;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(type), type, "Tipo de pregunta sin mapeo a FHIR R5.");
+            }
+        }
+
+        /// <summary>
+        /// Lo único que separa una opción cerrada de una abierta en R5. Sin esto, al releer
+        /// la versión congelada una pregunta de opción abierta vuelve como cerrada.
+        /// </summary>
+        public static FhirQuestionnaire.QuestionnaireAnswerConstraint? AnswerConstraintFor(QuestionType type)
+        {
+            switch (type)
+            {
+                case QuestionType.Choice:     return FhirQuestionnaire.QuestionnaireAnswerConstraint.OptionsOnly;
+                case QuestionType.OpenChoice: return FhirQuestionnaire.QuestionnaireAnswerConstraint.OptionsOrString;
+                default: return null;
             }
         }
     }

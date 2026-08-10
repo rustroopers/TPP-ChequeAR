@@ -6,7 +6,6 @@ using System.Web;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Fhir;
-using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
@@ -18,14 +17,14 @@ namespace ChequeAR.Api.Controllers.Mvc
     public class EncountersController : Controller
     {
         private readonly PatientService _patients;
-        private readonly IQuestionnaireResponseRepository _qrRepo;
-        private readonly IQuestionnaireRepository _qRepo;
+        private readonly QuestionnaireResponseService _responses;
+        private readonly QuestionnaireService _questionnaires;
 
-        public EncountersController(PatientService patients, IQuestionnaireResponseRepository qrRepo, IQuestionnaireRepository qRepo)
+        public EncountersController(PatientService patients, QuestionnaireResponseService responses, QuestionnaireService questionnaires)
         {
             _patients = patients;
-            _qrRepo = qrRepo;
-            _qRepo = qRepo;
+            _responses = responses;
+            _questionnaires = questionnaires;
         }
 
         // R1
@@ -45,7 +44,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // habilitado para uso clínico y uno archivado ya no se usa.
             try
             {
-                var published = await _qRepo.SearchAsync(QuestionnaireStatus.Active, null, null, 0, 200);
+                var published = await _questionnaires.SearchAsync(QuestionnaireStatus.Active, null, null, 0, 200);
                 foreach (var pq in published.OrderBy(x => x.Title))
                 {
                     model.Questionnaires.Add(new SelectableQuestionnaire
@@ -114,7 +113,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var p = await _patients.GetAsync(patientId);
                 ViewBag.PatientName = p != null ? (p.FullName + " (HC " + p.HospitalId + ")") : ("HC " + patientId);
 
-                var q = await _qRepo.GetAsync(questionnaireId);
+                var q = await _questionnaires.GetAsync(questionnaireId);
                 ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
 
                 var current = CurrentVersion(q);
@@ -196,7 +195,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             IReadOnlyList<ChequeAR.Domain.Entities.QuestionnaireResponse> drafts;
             try
             {
-                drafts = await _qrRepo.SearchAsync(patientId, questionnaireId, ResponseStatus.InProgress, 0, 1);
+                drafts = await _responses.SearchAsync(patientId, questionnaireId, ResponseStatus.InProgress, 0, 1);
             }
             catch
             {
@@ -232,9 +231,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
-                var qr = await _qrRepo.GetAsync(id);
+                var qr = await _responses.GetAsync(id);
                 if (qr == null) return HttpNotFound();
-                var q = await _qRepo.GetAsync(qr.QuestionnaireId);
+                var q = await _questionnaires.GetAsync(qr.QuestionnaireId);
                 var p = await _patients.GetAsync(qr.PatientHospitalId);
                 var model = new EncounterReadonlyViewModel
                 {
@@ -380,7 +379,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 foreach (var e in encs)
                 {
                     if (!titleCache.ContainsKey(e.QuestionnaireId))
-                        titleCache[e.QuestionnaireId] = await _qRepo.GetAsync(e.QuestionnaireId);
+                        titleCache[e.QuestionnaireId] = await _questionnaires.GetAsync(e.QuestionnaireId);
                     var q = titleCache[e.QuestionnaireId];
                     all.Add(new EncounterTimelineItem
                     {

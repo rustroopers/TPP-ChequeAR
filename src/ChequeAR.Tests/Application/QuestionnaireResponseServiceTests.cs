@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -200,7 +201,11 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>()))
                       .Returns(TestHelpers.ValidFail("algo falta"));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.FinalizeAsync(id, "u", lockToken));
+            // Tipo especifico: la ficha no se finalizo por VALIDACION, no por una regla de
+            // negocio. La distincion importa porque el controller responde distinto —un
+            // issue por regla incumplida en lugar de un unico mensaje.
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.FinalizeAsync(id, "u", lockToken));
+            Assert.Contains("algo falta", ex.Errors);
 
             Assert.Equal(ResponseStatus.InProgress, response.Status);
         }

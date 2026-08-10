@@ -20,11 +20,24 @@
     </dl>
 </div>
 
-<h2>Recursos soportados</h2>
-<table class="cq-table mb-3" style="max-width:760px;">
-    <thead><tr><th>Recurso</th><th>Operaciones</th></tr></thead>
+<h2>Recursos</h2>
+@* Un recurso sin interacciones se declara a propósito para comunicar que NO se soporta.
+   Mostrarlo igual que a uno soportado, con la columna vacía, se leía como un error de esta
+   pantalla en vez de como una decisión del sistema. *@
+<table class="cq-table mb-3" style="max-width:900px;">
+    <thead><tr><th>Recurso</th><th>Operaciones</th><th>Detalle</th></tr></thead>
     <tbody>
-        @foreach (var r in Model.Resources) { <tr><td><code>@r.Type</code></td><td class="cq-text-sm">@r.Interactions</td></tr> }
+        @foreach (var r in Model.Resources)
+        {
+            <tr>
+                <td>
+                    <code>@r.Type</code>
+                    @if (!r.Soportado) { <span class="cq-badge cq-badge-muted ms-1">no soportado</span> }
+                </td>
+                <td class="cq-text-sm">@r.Interactions</td>
+                <td class="cq-text-sm">@r.Nota</td>
+            </tr>
+        }
     </tbody>
 </table>
 
