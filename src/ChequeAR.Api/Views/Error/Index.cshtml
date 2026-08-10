@@ -4,9 +4,9 @@
     string title, desc, icon;
     switch (code)
     {
-        case 401: title = "Tu sesión expiró"; desc = "Iniciá sesión otra vez para continuar."; icon = "bi-shield-lock"; break;
-        case 403: title = "No tenés permisos"; desc = "Tu rol no habilita esta sección."; icon = "bi-slash-circle"; break;
-        case 500: title = "Algo salió mal"; desc = "Tuvimos un problema procesando tu pedido. Reintentá en unos segundos."; icon = "bi-bug"; break;
+        case 401: title = "Tu sesión expiró"; desc = "Volver a iniciar sesión."; icon = "bi-shield-lock"; break;
+        case 403: title = "No tiene permisos"; desc = "Su rol no habilita esta sección."; icon = "bi-slash-circle"; break;
+        case 500: title = "Algo salió mal"; desc = "Hubo un problema procesando su pedido. Reintente en unos segundos."; icon = "bi-bug"; break;
         default:  title = "Página no encontrada"; desc = "La sección que buscás no existe o se movió."; icon = "bi-compass"; break;
     }
 }

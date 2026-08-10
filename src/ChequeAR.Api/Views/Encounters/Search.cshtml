@@ -26,7 +26,6 @@
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-search"></i></div>
-            <div class="cq-empty__title">@Cq.T("r1.empty.title")</div>
             <div class="cq-empty__desc">@Cq.T("r1.empty.desc")</div>
         </div>
     </div>
@@ -77,7 +76,7 @@ else
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title h3" id="selectQTitle">¿Qué ficha cargás hoy?</h2>
+                <h2 class="modal-title h3" id="selectQTitle">Seleccionar ficha clínica</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
@@ -87,7 +86,7 @@ else
                     <div class="cq-empty">
                         <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
                         <div class="cq-empty__title">No hay cuestionarios publicados</div>
-                        <div class="cq-empty__desc">Sólo se pueden cargar fichas de cuestionarios publicados. Creá uno y publicalo para empezar.</div>
+                        <div class="cq-empty__desc">Solo se pueden cargar fichas de cuestionarios publicados.</div>
                         <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-primary">Ir a Cuestionarios</a>
                     </div>
                 }
@@ -144,7 +143,7 @@ else
         loadLastEntries(pid);
         document.getElementById("selectQStartBtn").onclick = function () {
             var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
-            if (!qid) { window.cqToast && cqToast("Elegí un cuestionario", "warning"); return; }
+            if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "warning"); return; }
             location.href = "@Url.Action("Load", "Encounters")" + "?patientId=" + pid + "&questionnaireId=" + qid;
         };
     });
