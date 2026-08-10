@@ -171,6 +171,25 @@ DECLARE
   v_n_episodios_tot  NUMBER := 0;
   v_n_obs_tot        NUMBER := 0;
 
+  -- Scratch para los valores sorteados. Una sentencia SQL no puede invocar
+  -- funciones locales del bloque (pick/pick_idx -> PLS-00231) ni evaluar
+  -- metodos de coleccion como .COUNT (-> PLS-00425), asi que cada valor se
+  -- resuelve en PL/SQL y recien despues se bindea en el INSERT.
+  v_nombre           VARCHAR2(200);
+  v_apellido         VARCHAR2(200);
+  v_tipo_doc         VARCHAR2(200);
+  v_sexo             VARCHAR2(200);
+  v_cobertura        VARCHAR2(200);
+  v_tipo_epi         VARCHAR2(200);
+  v_motivo           VARCHAR2(200);
+  v_esp_sel          VARCHAR2(200);
+  v_prof_sel         VARCHAR2(200);
+  v_sustancia        VARCHAR2(200);
+  v_severidad        VARCHAR2(200);
+  v_estado_ale       VARCHAR2(200);
+  v_estado_tur       VARCHAR2(200);
+  v_fecha_turno      TIMESTAMP(0);
+
   FUNCTION pick (a IN t_str_arr) RETURN VARCHAR2 IS
   BEGIN
     RETURN a(TRUNC(DBMS_RANDOM.VALUE(1, a.COUNT + 1)));
@@ -194,14 +213,17 @@ BEGIN
   -- =================================================================
   FOR i IN 1 .. 12 LOOP
     v_id_profesional := 'PROF-' || LPAD(i, 6, '0');
+    v_nombre   := pick(v_nombres);
+    v_apellido := pick(v_apellidos);
+    v_esp_sel  := v_esp_cod(MOD(i - 1, v_esp_cod.COUNT) + 1);
     INSERT INTO HOSPITAL_MOCK.HOSP_PROFESIONAL
       (ID_PROFESIONAL, MATRICULA, NOMBRE, APELLIDO, COD_ESPECIALIDAD)
     VALUES
       (v_id_profesional,
        'MN-' || LPAD(10000 + i, 5, '0'),
-       pick(v_nombres),
-       pick(v_apellidos),
-       v_esp_cod(MOD(i - 1, v_esp_cod.COUNT) + 1));
+       v_nombre,
+       v_apellido,
+       v_esp_sel);
   END LOOP;
 
   -- =================================================================
@@ -215,6 +237,12 @@ BEGIN
     v_fecha_nac  := ADD_MONTHS(c_anclaje, -v_edad_meses)
                     - TRUNC(DBMS_RANDOM.VALUE(0, 28));
 
+    v_tipo_doc  := pick(v_tipos_doc);
+    v_nombre    := pick(v_nombres);
+    v_apellido  := pick(v_apellidos);
+    v_sexo      := pick(v_sexos);
+    v_cobertura := pick(v_coberturas);
+
     INSERT INTO HOSPITAL_MOCK.HOSP_PACIENTE (
       ID_PACIENTE, DOCUMENTO, TIPO_DOCUMENTO, NOMBRE, APELLIDO,
       FECHA_NACIMIENTO, SEXO, COBERTURA, FECHA_ALTA_ADM, ID_INTERNO
@@ -222,12 +250,12 @@ BEGIN
       v_id_paciente,
       CASE WHEN DBMS_RANDOM.VALUE < 0.10 THEN NULL
            ELSE TO_CHAR(40000000 + i * 7919 + TRUNC(DBMS_RANDOM.VALUE(0, 9999))) END,
-      pick(v_tipos_doc),
-      pick(v_nombres),
-      pick(v_apellidos),
+      v_tipo_doc,
+      v_nombre,
+      v_apellido,
       v_fecha_nac,
-      pick(v_sexos),
-      pick(v_coberturas),
+      v_sexo,
+      v_cobertura,
       v_fecha_nac + TRUNC(DBMS_RANDOM.VALUE(1, 365)),
       i
     );
@@ -253,9 +281,9 @@ BEGIN
       -- Fecha en los ultimos min(edad, 5) anios y siempre >= fecha_nac
       v_fecha_episodio := CAST(
         v_fecha_nac + TRUNC(DBMS_RANDOM.VALUE(30, GREATEST(31, (c_anclaje - v_fecha_nac))))
-        AS TIMESTAMP(0));
-      IF v_fecha_episodio > CAST(c_anclaje AS TIMESTAMP(0)) THEN
-        v_fecha_episodio := CAST(c_anclaje - TRUNC(DBMS_RANDOM.VALUE(1, 30)) AS TIMESTAMP(0));
+        AS TIMESTAMP);
+      IF v_fecha_episodio > CAST(c_anclaje AS TIMESTAMP) THEN
+        v_fecha_episodio := CAST(c_anclaje - TRUNC(DBMS_RANDOM.VALUE(1, 30)) AS TIMESTAMP);
       END IF;
 
       -- ~10% episodios "abiertos" (FECHA_FIN NULL)
@@ -265,18 +293,23 @@ BEGIN
         v_fecha_fin := v_fecha_episodio + NUMTODSINTERVAL(TRUNC(DBMS_RANDOM.VALUE(1, 14)), 'DAY');
       END IF;
 
+      v_tipo_epi := pick(v_tipos_epi);
+      v_motivo   := pick(v_motivos);
+      v_esp_sel  := pick(v_esp_cod);
+      v_prof_sel := 'PROF-' || LPAD(TRUNC(DBMS_RANDOM.VALUE(1, 13)), 6, '0');
+
       INSERT INTO HOSPITAL_MOCK.HOSP_EPISODIO (
         ID_EPISODIO, ID_PACIENTE, TIPO, COD_ESPECIALIDAD,
         ID_PROFESIONAL_RESP, FECHA_INICIO, FECHA_FIN, MOTIVO_CONSULTA
       ) VALUES (
         v_id_episodio,
         v_id_paciente,
-        pick(v_tipos_epi),
-        v_esp_cod(TRUNC(DBMS_RANDOM.VALUE(1, v_esp_cod.COUNT + 1))),
-        'PROF-' || LPAD(TRUNC(DBMS_RANDOM.VALUE(1, 13)), 6, '0'),
+        v_tipo_epi,
+        v_esp_sel,
+        v_prof_sel,
         v_fecha_episodio,
         v_fecha_fin,
-        pick(v_motivos)
+        v_motivo
       );
 
       -- Diagnostico principal (siempre 1)
@@ -431,17 +464,22 @@ BEGIN
     ELSIF DBMS_RANDOM.VALUE < 0.90 THEN
       FOR a IN 1 .. TRUNC(DBMS_RANDOM.VALUE(1, 3)) LOOP
         v_seq_ale := v_seq_ale + 1;
+        v_sustancia  := pick(v_alerg);
+        v_severidad  := pick(v_severidades);
+        -- CONFIRMADA o SOSPECHADA (los dos primeros del catalogo)
+        v_estado_ale := v_estados_ale(TRUNC(DBMS_RANDOM.VALUE(1, 3)));
+
         INSERT INTO HOSPITAL_MOCK.HOSP_ALERGIA (
           ID_ALERGIA, ID_PACIENTE, SUSTANCIA, REACCION, SEVERIDAD, ESTADO, FECHA_REGISTRO
         ) VALUES (
           v_seq_ale, v_id_paciente,
-          pick(v_alerg),
+          v_sustancia,
           CASE TRUNC(DBMS_RANDOM.VALUE(1, 4))
             WHEN 1 THEN 'Erupcion cutanea'
             WHEN 2 THEN 'Edema'
             ELSE        'Prurito' END,
-          pick(v_severidades),
-          v_estados_ale(TRUNC(DBMS_RANDOM.VALUE(1, 3))), -- CONFIRMADA o SOSPECHADA
+          v_severidad,
+          v_estado_ale,
           v_fecha_nac + TRUNC(DBMS_RANDOM.VALUE(1, 365))
         );
       END LOOP;
@@ -452,20 +490,26 @@ BEGIN
     -- =================================================================
     IF v_n_episodios > 0 THEN
       FOR t IN 1 .. TRUNC(DBMS_RANDOM.VALUE(1, 4)) LOOP
-        v_id_turno := 'TRN-' || LPAD(i * 10 + t, 6, '0');
+        v_id_turno   := 'TRN-' || LPAD(i * 10 + t, 6, '0');
+        v_prof_sel   := 'PROF-' || LPAD(TRUNC(DBMS_RANDOM.VALUE(1, 13)), 6, '0');
+        v_esp_sel    := pick(v_esp_cod);
+        v_estado_tur := pick(v_estados_tur);
+        -- El primer turno del paciente 2 (cronico) se fuerza al futuro (FR-023)
+        IF i = 2 AND t = 1 THEN
+          v_fecha_turno := CAST(c_anclaje + 14 AS TIMESTAMP);
+        ELSE
+          v_fecha_turno := CAST(c_anclaje + TRUNC(DBMS_RANDOM.VALUE(-180, 60)) AS TIMESTAMP);
+        END IF;
+
         INSERT INTO HOSPITAL_MOCK.HOSP_TURNO (
           ID_TURNO, ID_PACIENTE, ID_PROFESIONAL, COD_ESPECIALIDAD, FECHA_HORA, ESTADO
         ) VALUES (
           v_id_turno,
           v_id_paciente,
-          'PROF-' || LPAD(TRUNC(DBMS_RANDOM.VALUE(1, 13)), 6, '0'),
-          v_esp_cod(TRUNC(DBMS_RANDOM.VALUE(1, v_esp_cod.COUNT + 1))),
-          -- El primer turno del paciente 2 (cronico) se fuerza al futuro (FR-023)
-          CASE WHEN i = 2 AND t = 1
-               THEN CAST(c_anclaje + 14 AS TIMESTAMP(0))
-               ELSE CAST(c_anclaje + TRUNC(DBMS_RANDOM.VALUE(-180, 60)) AS TIMESTAMP(0))
-          END,
-          pick(v_estados_tur)
+          v_prof_sel,
+          v_esp_sel,
+          v_fecha_turno,
+          v_estado_tur
         );
       END LOOP;
     END IF;

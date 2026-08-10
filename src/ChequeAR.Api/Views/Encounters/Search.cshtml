@@ -1,4 +1,5 @@
 @model ChequeAR.Api.Models.PatientSearchViewModel
+@using System.Linq
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("sidebar.patients");
@@ -11,12 +12,12 @@
     </div>
 </header>
 
-@using (Html.BeginForm("Search", "Encounters", FormMethod.Get, new { @class = "mb-4" }))
+@using (Html.BeginForm("Search", "Encounters", FormMethod.Get, new { @class = "mb-4", data_cq_autofilter = "patients" }))
 {
     <div class="input-group" style="max-width:640px;">
-        <input type="search" name="q" value="@Model.Query" class="form-control form-control-lg"
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="search" name="q" value="@Model.Query" class="form-control"
                placeholder="@Cq.T("r1.placeholder")" aria-label="@Cq.T("r1.title")" autofocus />
-        <button class="btn btn-primary" type="submit"><i class="bi bi-search me-1"></i> @Cq.T("common.search")</button>
     </div>
 }
 
@@ -48,7 +49,6 @@ else
                 <th>HC</th>
                 <th>Nombre</th>
                 <th>Edad</th>
-                <th>Especialidad</th>
                 <th class="text-end">Acciones</th>
             </tr>
         </thead>
@@ -59,7 +59,6 @@ else
                     <td><code>@p.HC</code></td>
                     <td>@p.FullName</td>
                     <td class="cq-text-sm">@p.AgeLabel</td>
-                    <td><span class="cq-chip cq-chip--@p.SpecialtyCode">@p.SpecialtyLabel</span></td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#selectQModal"
                                 data-patient-id="@p.HC" data-patient-name="@p.FullName" data-patient-hc="@p.HC">
@@ -83,37 +82,47 @@ else
             </div>
             <div class="modal-body">
                 <p class="cq-text-sm cq-text-muted mb-3" id="selectQSubtitle"></p>
-                <div class="row g-2 mb-3">
-                    <div class="col-md-8">
-                        <input type="search" class="form-control" placeholder="Buscar cuestionario…" />
+                @if (Model.Questionnaires.Count == 0)
+                {
+                    <div class="cq-empty">
+                        <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
+                        <div class="cq-empty__title">No hay cuestionarios publicados</div>
+                        <div class="cq-empty__desc">Sólo se pueden cargar fichas de cuestionarios publicados. Creá uno y publicalo para empezar.</div>
+                        <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-primary">Ir a Cuestionarios</a>
                     </div>
-                    <div class="col-md-4">
-                        <select class="form-select">
-                            <option>Todas las especialidades</option>
-                            <option>Cardiología</option>
-                            <option>Neumonología</option>
-                            <option>Oncología</option>
-                        </select>
+                }
+                else
+                {
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-8">
+                            <input type="search" id="qFilterText" class="form-control" placeholder="Buscar cuestionario…" />
+                        </div>
+                        <div class="col-md-4">
+                            <select id="qFilterSpecialty" class="form-select">
+                                <option value="">Todas las especialidades</option>
+                                @foreach (var sp in Model.Questionnaires.Select(x => new { x.SpecialtyCode, x.SpecialtyLabel }).Distinct().OrderBy(x => x.SpecialtyLabel))
+                                {
+                                    <option value="@sp.SpecialtyCode">@sp.SpecialtyLabel</option>
+                                }
+                            </select>
+                        </div>
                     </div>
-                </div>
-                <div class="list-group">
-                    <label class="list-group-item d-flex align-items-center gap-3">
-                        <input class="form-check-input me-2" type="radio" name="qchoice" value="1" />
-                        <div class="flex-fill">
-                            <div class="fw-semibold">Cardio basal <span class="cq-text-xs cq-text-muted ms-1">v3</span></div>
-                            <div class="cq-text-sm cq-text-muted">Última carga para este paciente: 2026-05</div>
-                        </div>
-                        <span class="cq-chip cq-chip--cardio">Cardiología</span>
-                    </label>
-                    <label class="list-group-item d-flex align-items-center gap-3">
-                        <input class="form-check-input me-2" type="radio" name="qchoice" value="2" />
-                        <div class="flex-fill">
-                            <div class="fw-semibold">Cardio seguimiento <span class="cq-text-xs cq-text-muted ms-1">v1</span></div>
-                            <div class="cq-text-sm cq-text-muted">Nunca cargado</div>
-                        </div>
-                        <span class="cq-chip cq-chip--cardio">Cardiología</span>
-                    </label>
-                </div>
+                    <div class="list-group" id="qList">
+                        @foreach (var sq in Model.Questionnaires)
+                        {
+                            <label class="list-group-item d-flex align-items-center gap-3 cq-q-option"
+                                   data-title="@sq.Title.ToLowerInvariant()" data-specialty="@sq.SpecialtyCode">
+                                <input class="form-check-input me-2" type="radio" name="qchoice" value="@sq.Id" />
+                                <div class="flex-fill">
+                                    <div class="fw-semibold">@sq.Title <span class="cq-text-xs cq-text-muted ms-1">v@(sq.Version)</span></div>
+                                    <div class="cq-text-sm cq-text-muted cq-q-last" data-qid="@sq.Id"></div>
+                                </div>
+                                <span class="cq-chip cq-chip--@sq.SpecialtyCode">@sq.SpecialtyLabel</span>
+                            </label>
+                        }
+                    </div>
+                    <p id="qNoMatch" class="cq-text-sm cq-text-muted mt-2 d-none">Ningún cuestionario coincide con el filtro.</p>
+                }
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -132,11 +141,70 @@ else
         var name = trigger.getAttribute("data-patient-name");
         var hc = trigger.getAttribute("data-patient-hc");
         document.getElementById("selectQSubtitle").textContent = "Paciente: " + name + " (HC " + hc + ")";
+        loadLastEntries(pid);
         document.getElementById("selectQStartBtn").onclick = function () {
             var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
             if (!qid) { window.cqToast && cqToast("Elegí un cuestionario", "warning"); return; }
             location.href = "@Url.Action("Load", "Encounters")" + "?patientId=" + pid + "&questionnaireId=" + qid;
         };
     });
+
+    // "Última carga para este paciente": se consulta al abrir el modal. Si la consulta
+    // falla no se escribe nada — es preferible el silencio a inventar una fecha.
+    function loadLastEntries(patientId) {
+        var labels = document.querySelectorAll(".cq-q-last");
+        Array.prototype.forEach.call(labels, function (el) { el.textContent = ""; });
+        var meta = document.querySelector('meta[name="cq-token"]');
+        if (!meta) return;
+        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200", {
+            headers: { "Authorization": "Bearer " + meta.getAttribute("content") }
+        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
+            if (!bundle) return;
+            // Bundle conforme: los resultados vienen en entry[].resource, y el cuestionario
+            // se referencia por su canonical (.../Questionnaire/{id}), no por un campo propio.
+            var entries = bundle.entry || [];
+            var lastByQ = {};
+            entries.forEach(function (e) {
+                var r = e.resource;
+                if (!r) return;
+                var canonical = r.questionnaire || "";
+                var qid = canonical.substring(canonical.lastIndexOf("/") + 1).toLowerCase();
+                var when = r.authored;
+                if (!qid || !when) return;
+                if (!lastByQ[qid] || when > lastByQ[qid]) lastByQ[qid] = when;
+            });
+            Array.prototype.forEach.call(labels, function (el) {
+                var when = lastByQ[(el.getAttribute("data-qid") || "").toLowerCase()];
+                el.textContent = when
+                    ? "Última carga para este paciente: " + String(when).slice(0, 10)
+                    : "Nunca cargado";
+            });
+        }).catch(function () { /* sin dato: se deja vacío */ });
+    }
+
+    // Filtros del selector, sobre la lista real.
+    document.addEventListener("input", function (e) {
+        if (e.target.id !== "qFilterText" && e.target.id !== "qFilterSpecialty") return;
+        applyQFilter();
+    });
+    document.addEventListener("change", function (e) {
+        if (e.target.id === "qFilterSpecialty") applyQFilter();
+    });
+    function applyQFilter() {
+        var textEl = document.getElementById("qFilterText");
+        var spEl = document.getElementById("qFilterSpecialty");
+        if (!textEl || !spEl) return;
+        var text = textEl.value.trim().toLowerCase();
+        var sp = spEl.value;
+        var visible = 0;
+        Array.prototype.forEach.call(document.querySelectorAll(".cq-q-option"), function (el) {
+            var okText = !text || (el.getAttribute("data-title") || "").indexOf(text) >= 0;
+            var okSp = !sp || el.getAttribute("data-specialty") === sp;
+            var show = okText && okSp;
+            el.classList.toggle("d-none", !show);
+            if (show) visible++;
+        });
+        document.getElementById("qNoMatch").classList.toggle("d-none", visible > 0);
+    }
 </script>
 }

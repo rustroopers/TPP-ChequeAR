@@ -32,6 +32,13 @@ CREATE TABLE HOSPITAL_MOCK.HOSP_PACIENTE (
 );
 CREATE INDEX IDX_HOSP_PAC_DOC ON HOSPITAL_MOCK.HOSP_PACIENTE (DOCUMENTO);
 
+-- Indices funcionales para el buscador de pacientes, que hace
+-- UPPER(col) LIKE UPPER('%texto%') sobre estas columnas.
+-- Un LIKE con comodin al inicio no puede usar un B-tree para el prefijo, pero
+-- el indice funcional evita el full scan de la tabla base al resolver UPPER().
+CREATE INDEX IDX_HOSP_PAC_APELLIDO_UP ON HOSPITAL_MOCK.HOSP_PACIENTE (UPPER(APELLIDO));
+CREATE INDEX IDX_HOSP_PAC_NOMBRE_UP   ON HOSPITAL_MOCK.HOSP_PACIENTE (UPPER(NOMBRE));
+
 CREATE TABLE HOSPITAL_MOCK.HOSP_ESPECIALIDAD (
   COD_ESPECIALIDAD  VARCHAR2(8)   NOT NULL,
   NOMBRE            VARCHAR2(120) NOT NULL,

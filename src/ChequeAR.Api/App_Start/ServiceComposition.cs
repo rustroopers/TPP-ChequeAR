@@ -33,8 +33,10 @@ namespace ChequeAR.Api.App_Start
 
         private static AuditDispatcher _audit;
         private static JwtIssuer _jwt;
+        private static IFhirValidator _fhirValidator;
         private static System.Net.Http.HttpClient _fhirHttp;
         private static System.Net.Http.HttpClient _authHttp;
+        private static System.Net.Http.HttpClient _termHttp;
 
         public static void Configure()
         {
@@ -47,16 +49,51 @@ namespace ChequeAR.Api.App_Start
 
             var hospitalAuthUrl = ConfigurationManager.AppSettings["HospitalAuth:LoginUrl"] ?? "";
             var hospitalFhirUrl = ConfigurationManager.AppSettings["HospitalFhir:BaseUrl"] ?? "";
+            // Servidor terminológico SNOMED CT (Snowstorm). Vacío en config => el endpoint
+            // de autocomplete responde 503 sin romper el resto de la app. ECL opcional acota
+            // el dominio de sugerencias; displayLanguage por defecto 'es'.
+            var terminologyUrl = ConfigurationManager.AppSettings["Terminology:BaseUrl"] ?? "";
+            var terminologyEcl = ConfigurationManager.AppSettings["Terminology:Ecl"] ?? "";
+            var terminologyLang = ConfigurationManager.AppSettings["Terminology:DisplayLanguage"] ?? "es";
             var oracleConn = ConfigurationManager.AppSettings["Oracle:ConnectionString"] ?? "";
             var attachmentsRoot = ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments";
             var sqlConn = ConfigurationManager.ConnectionStrings["ChequeAR"]?.ConnectionString ?? "";
 
             // ===== Singletons =====
             _jwt = new JwtIssuer(jwtIssuer, jwtAudience, jwtSecret, jwtTtlMinutes);
+
+            // Instancia única, no transitoria: el validador lee y cachea la especificación
+            // FHIR completa (~10 MB de definiciones). Crear uno por request sería inviable.
+            // Mientras fue un sustituto que no hacía nada, ser transitorio no costaba nada.
+            //
+            // Los perfiles propios se copian a la salida de compilación, igual que la
+            // allowlist de vistas: la ubicación en runtime es bin/Fhir/Profiles.
+            var profilesPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "Fhir", "Profiles");
+            // El arranque NO se puede caer por el validador: una excepción acá viaja como
+            // HttpException desde Application_Start y deja TODA la aplicación en 500, con el
+            // detalle sólo visible en el registro de eventos de Windows. Ya pasó una vez.
+            try
+            {
+                var validador = new FhirValidatorService(profilesPath);
+                // Calentamiento: sin esto la primera publicación del día paga la carga de
+                // toda la especificación y parece que el sistema se colgó.
+                validador.Warmup();
+                _fhirValidator = validador;
+            }
+            catch (Exception)
+            {
+                // Degradado: sin especificación ni perfiles, las reglas del dominio se siguen
+                // aplicando con el conjunto de tipos por omisión.
+                _fhirValidator = new FhirValidatorService();
+            }
             // Un HttpClient singleton por integración, con su Timeout fijado una sola vez.
             // Los clients NO mutan estas instancias (evita InvalidOperationException).
             _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             _authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            // El terminológico puede ser un server externo (más lento que el hospital local):
+            // le damos algo más de aire.
+            _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
 
             // AuditDispatcher requiere repo; usamos una factory que crea su propio contexto.
             _audit = new AuditDispatcher(NewAuditRepository(), 1000);
@@ -73,6 +110,7 @@ namespace ChequeAR.Api.App_Start
 
             Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
             Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            Register<ITerminologyClient>(() => new TerminologyClient(_termHttp, terminologyUrl, terminologyEcl, terminologyLang));
 
             // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.
             // El archivo se copia a la salida con CopyToOutputDirectory=PreserveNewest;
@@ -83,7 +121,7 @@ namespace ChequeAR.Api.App_Start
                 ? AllowlistLoader.Load(allowlistPath)
                 : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
             Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
-            Register<IFhirValidator>(() => new FhirValidatorService());
+            Register<IFhirValidator>(() => _fhirValidator);
             Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot));
 
             Register<JwtIssuer>(() => _jwt);
@@ -91,13 +129,23 @@ namespace ChequeAR.Api.App_Start
             Register<RefreshTokenService>(() => new RefreshTokenService(Resolve<IRefreshTokenRepository>(), refreshTtlHours));
 
             Register<QuestionnaireService>(() => new QuestionnaireService(
-                Resolve<IQuestionnaireRepository>(), Resolve<IFhirValidator>(), _audit));
+                Resolve<IQuestionnaireRepository>(), Resolve<IQuestionnaireResponseRepository>(),
+                Resolve<IFhirValidator>(), _audit));
             Register<QuestionnaireResponseService>(() => new QuestionnaireResponseService(
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
                 Resolve<IFhirValidator>(), _audit));
+            Register<AuditQueryService>(() => new AuditQueryService(Resolve<IAuditRepository>()));
+            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>()));
+            Register<UserService>(() => new UserService(Resolve<IUserRepository>()));
+            Register<TerminologyService>(() => new TerminologyService(Resolve<ITerminologyClient>()));
+            Register<HomeDashboardService>(() => new HomeDashboardService(
+                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
+                Resolve<IUserRepository>()));
             Register<PrefillService>(() => new PrefillService(Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>()));
             Register<QueryBuilder>(() => new QueryBuilder());
-            Register<ReportExecutor>(() => new ReportExecutor(sqlConn, Resolve<QueryBuilder>()));
+            Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
+            Register<ReportExecutor>(() => new ReportExecutor(
+                Resolve<IReportQueryRunner>(), Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>()));
 
             Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), hospitalAuthUrl));
@@ -108,34 +156,36 @@ namespace ChequeAR.Api.App_Start
             // Controllers de Web API: SimpleInjector los registra automáticamente;
             // nosotros declaramos los pocos que tenemos.
             Register<Controllers.Api.QuestionnaireController>(() => new Controllers.Api.QuestionnaireController(
-                Resolve<IQuestionnaireRepository>(), Resolve<QuestionnaireService>()));
+                Resolve<QuestionnaireService>()));
             Register<Controllers.Api.QuestionnaireResponseController>(() => new Controllers.Api.QuestionnaireResponseController(
-                Resolve<IQuestionnaireResponseRepository>(), Resolve<QuestionnaireResponseService>()));
+                Resolve<QuestionnaireResponseService>()));
             Register<Controllers.Api.AuthController>(() => new Controllers.Api.AuthController(
                 Resolve<IHospitalAuthClient>(), Resolve<JwtIssuer>(), Resolve<RefreshTokenService>()));
-            Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<IAuditRepository>()));
+            Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<AuditQueryService>()));
             Register<Controllers.Api.AttachmentController>(() => new Controllers.Api.AttachmentController(Resolve<IAttachmentStore>()));
-            Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>(), Resolve<IQuestionnaireRepository>()));
+            Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>()));
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
+            Register<Controllers.Api.TerminologyController>(() => new Controllers.Api.TerminologyController(Resolve<ITerminologyClient>()));
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
-            Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<IUserRepository>()));
+            Register<Controllers.Api.EncounterController>(() => new Controllers.Api.EncounterController(Resolve<PatientService>()));
+            Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<UserService>()));
             Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));
-            Register<Controllers.Api.SavedReportController>(() => new Controllers.Api.SavedReportController(Resolve<ISavedReportRepository>(), Resolve<IQuestionnaireRepository>()));
+            Register<Controllers.Api.SavedReportController>(() => new Controllers.Api.SavedReportController(Resolve<SavedReportService>(), Resolve<QuestionnaireService>()));
 
             // Controllers MVC
-            Register<Controllers.Mvc.HomeController>(() => new Controllers.Mvc.HomeController(
-                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(), Resolve<IUserRepository>()));
+            Register<Controllers.Mvc.HomeController>(() => new Controllers.Mvc.HomeController(Resolve<HomeDashboardService>()));
             Register<Controllers.Mvc.AccountController>(() => new Controllers.Mvc.AccountController(
-                Resolve<IHospitalAuthClient>(), Resolve<IUserRepository>()));
+                Resolve<IHospitalAuthClient>(), Resolve<UserService>()));
             Register<Controllers.Mvc.QuestionnairesController>(() => new Controllers.Mvc.QuestionnairesController(
-                Resolve<IQuestionnaireRepository>(), Resolve<QuestionnaireService>()));
+                Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(
-                Resolve<PatientService>(), Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>()));
+                Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.ReportsController>(() => new Controllers.Mvc.ReportsController(
-                Resolve<ISavedReportRepository>(), Resolve<ReportExecutor>()));
-            Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(Resolve<IAuditRepository>()));
-            Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<IUserRepository>()));
-            Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController(Resolve<IntegrationHealthService>()));
+                Resolve<SavedReportService>(), Resolve<ReportExecutor>(), Resolve<QuestionnaireService>()));
+            Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(
+                Resolve<AuditQueryService>(), Resolve<QuestionnaireService>()));
+            Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<UserService>()));
+            Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController());
             Register<Controllers.Mvc.ErrorController>(() => new Controllers.Mvc.ErrorController());
         }
 

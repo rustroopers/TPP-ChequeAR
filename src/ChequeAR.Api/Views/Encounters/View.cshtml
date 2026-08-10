@@ -7,8 +7,20 @@
 <header class="cq-page-header">
     <div>
         <span class="cq-badge cq-badge--archived"><i class="bi bi-lock me-1"></i> Solo lectura</span>
-        <h1 class="cq-page-header__title mt-2">@Model.QuestionnaireTitle <span class="cq-text-sm cq-text-muted">v@(Model.QuestionnaireVersion)</span></h1>
-        <p class="cq-page-header__subtitle">@Model.Patient.FullName (HC @Model.Patient.HC) · cargada por @Model.Author · @Model.FinalizedAt</p>
+        @* Version 0 = ficha anterior al anclaje de version: no se sabe con cuál se cargó,
+           y decir "v0" sería inventar un dato. *@
+        <h1 class="cq-page-header__title mt-2">
+            @Model.Patient.FullName
+            @if (Model.QuestionnaireVersion > 0)
+            {
+                <span class="cq-text-sm cq-text-muted" title="Versión con la que se completó esta ficha">v@(Model.QuestionnaireVersion)</span>
+            }
+            else
+            {
+                <span class="cq-text-sm cq-text-muted" title="Ficha anterior al registro de versión">versión no registrada</span>
+            }
+        </h1>
+        <p class="cq-page-header__subtitle">cargada por @Model.Author · @Model.FinalizedAt</p>
     </div>
     <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-outline-secondary">Ver historial</a>
 </header>

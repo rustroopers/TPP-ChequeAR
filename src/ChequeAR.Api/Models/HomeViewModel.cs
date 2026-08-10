@@ -14,7 +14,11 @@ namespace ChequeAR.Api.Models
     {
         public string PatientName { get; set; }
         public string QuestionnaireTitle { get; set; }
+        // El código es para el modificador del chip (cq-chip--cardio); lo que se muestra es
+        // siempre el label. Misma convención que QuestionnaireListItem y los view models de
+        // encuentros: la UI nunca imprime el código crudo.
         public string SpecialtyCode { get; set; }
+        public string SpecialtyLabel { get; set; }
         public string Status { get; set; }
         public string UpdatedAt { get; set; }
         public string OpenUrl { get; set; }

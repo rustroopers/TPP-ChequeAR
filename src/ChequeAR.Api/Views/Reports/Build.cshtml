@@ -1,12 +1,12 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Consulta";
+    ViewBag.Title = "Reporte";
 }
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">@(ViewBag.ReportId != null ? "Editar consulta" : "Nueva consulta")</h1>
-        <p class="cq-page-header__subtitle">Filtrá respuestas por preguntas, fechas y especialidad</p>
+        <h1 class="cq-page-header__title">@(ViewBag.ReportId != null ? "Editar reporte" : "Nuevo reporte")</h1>
+        <p class="cq-page-header__subtitle">Elegí un cuestionario y filtrá las fichas por sus respuestas y fechas</p>
     </div>
 </header>
 
@@ -20,8 +20,14 @@
     </div>
 </div>
 
+@* Estadísticas del grupo de fichas que se acaba de armar. Isla aparte: escucha el
+   evento cq:report-query que emite el constructor, así los números son siempre los de
+   las condiciones que están en pantalla. *@
+<div class="mt-3" data-vue-island="report-stats"></div>
+
 @section scripts {
 <script src="https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js"></script>
 <script src="~/Scripts/islands/bootstrap.js"></script>
 <script src="~/Scripts/islands/report-builder/index.js"></script>
+<script src="~/Scripts/islands/report-stats/index.js"></script>
 }

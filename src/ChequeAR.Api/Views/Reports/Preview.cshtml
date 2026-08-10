@@ -2,12 +2,13 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Preview";
+    var pageSize = Model.PageSize > 0 ? Model.PageSize : 50;
+    var totalPages = (int)Math.Ceiling((double)Model.Total / pageSize);
 }
 
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">@Model.ReportName</h1>
-        <p class="cq-page-header__subtitle">@Model.Total registros · página @Model.Page</p>
     </div>
     <div class="d-flex gap-2">
         <a href="@Url.Action("Build", new { id = ViewBag.ReportId })" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i> Volver</a>
@@ -27,16 +28,17 @@
     </tbody>
 </table>
 <div class="d-flex justify-content-between align-items-center mt-3 cq-text-sm cq-text-muted">
-    <span>Mostrando 1-@Model.Rows.Count de @Model.Total</span>
-    <nav>
-        <ul class="pagination pagination-sm mb-0">
-            <li class="page-item disabled"><span class="page-link">‹</span></li>
-            <li class="page-item active"><span class="page-link">1</span></li>
-            <li class="page-item"><a class="page-link" href="#">2</a></li>
-            <li class="page-item"><a class="page-link" href="#">3</a></li>
-            <li class="page-item"><a class="page-link" href="#">›</a></li>
-        </ul>
-    </nav>
+    <span>Mostrando @(Model.Rows.Count == 0 ? 0 : (Model.Page - 1) * pageSize + 1)-@((Model.Page - 1) * pageSize + Model.Rows.Count) de @Model.Total</span>
+    @if (totalPages > 1)
+    {
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Preview", new { id = ViewBag.ReportId, page = Model.Page - 1 })">‹</a></li>
+                <li class="page-item active"><span class="page-link">@Model.Page</span></li>
+                <li class="page-item @(Model.Page >= totalPages ? "disabled" : "")"><a class="page-link" href="@Url.Action("Preview", new { id = ViewBag.ReportId, page = Model.Page + 1 })">›</a></li>
+            </ul>
+        </nav>
+    }
 </div>
 
 @* E4 — Modal exportar *@

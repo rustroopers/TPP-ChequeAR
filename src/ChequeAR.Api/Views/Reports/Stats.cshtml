@@ -1,48 +1,58 @@
+@model ChequeAR.Api.Models.ReportStatsViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Estadísticas";
 }
 
+@* Esta pantalla era una maqueta: los numeros estaban escritos a mano en el .cshtml
+   ('0-2','3-5', [12,23,41,...]) y los graficos venian de Chart.js por CDN. Ahora los
+   calcula el backend sobre el grupo de fichas real del reporte guardado. *@
+
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Estadísticas · HTA pediátrica 2026</h1>
-        <p class="cq-page-header__subtitle">Gráficos sobre la cohorte filtrada</p>
+        <h1 class="cq-page-header__title">Estadísticas@(string.IsNullOrEmpty(Model.ReportName) ? "" : " · " + Model.ReportName)</h1>
+        <p class="cq-page-header__subtitle">Completitud y distribución sobre el grupo de fichas</p>
     </div>
+    @if (Model.ReportId.HasValue)
+    {
+        <div class="d-flex gap-2">
+            <a href="@Url.Action("Preview", new { id = Model.ReportId })" class="btn btn-outline-secondary"><i class="bi bi-table me-1"></i> Ver tabla</a>
+        </div>
+    }
 </header>
 
-<div class="cq-grid cq-grid--3">
-    <div class="cq-card"><h3>Distribución por edad</h3><canvas id="chartAge" height="180"></canvas></div>
-    <div class="cq-card"><h3>HTA Sí vs No</h3><canvas id="chartHta" height="180"></canvas></div>
-    <div class="cq-card" style="grid-column: span 2;"><h3>TA sistólica · histograma</h3><canvas id="chartTa" height="180"></canvas></div>
-</div>
+@if (!string.IsNullOrEmpty(ViewBag.DataError as string))
+{
+    <div class="alert alert-danger" role="alert">
+        <strong>No se pudieron cargar los datos.</strong>
+        <div class="small">@ViewBag.DataError</div>
+    </div>
+}
+else if (string.IsNullOrEmpty(Model.QueryJson))
+{
+    <div class="cq-card">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-graph-up"></i></div>
+            <div class="cq-empty__title">No hay ningún reporte que analizar</div>
+            <div class="cq-empty__desc">Las estadísticas se calculan sobre un grupo de fichas. Armá un reporte y pedí las estadísticas desde ahí.</div>
+            <a href="@Url.Action("Build")" class="btn btn-primary">Nuevo reporte</a>
+        </div>
+    </div>
+}
+else
+{
+    <div data-vue-island="report-stats" data-props='@Html.Raw("{\"autoQuery\":" + Model.QueryJson + "}")'>
+        <div class="cq-card">
+            <div class="cq-loading">
+                <div class="cq-spinner cq-spinner--lg"></div>
+                <div class="cq-loading__label">Calculando estadísticas…</div>
+            </div>
+        </div>
+    </div>
+}
 
 @section scripts {
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script>
-    var brandColor = getComputedStyle(document.documentElement).getPropertyValue('--cq-primary').trim() || '#6f5fa5';
-    var accentColor = getComputedStyle(document.documentElement).getPropertyValue('--cq-accent').trim() || '#73C4A4';
-
-    new Chart(document.getElementById('chartAge'), {
-        type: 'bar',
-        data: {
-            labels: ['0-2','3-5','6-8','9-11','12-14','15-17'],
-            datasets: [{ label: 'Pacientes', data: [12, 23, 41, 34, 22, 10], backgroundColor: brandColor }]
-        },
-        options: { plugins: { legend: { display: false } } }
-    });
-
-    new Chart(document.getElementById('chartHta'), {
-        type: 'doughnut',
-        data: { labels: ['Sí','No'], datasets: [{ data: [62, 80], backgroundColor: [brandColor, accentColor] }] }
-    });
-
-    new Chart(document.getElementById('chartTa'), {
-        type: 'bar',
-        data: {
-            labels: ['<100','100-110','110-120','120-130','130-140','>140'],
-            datasets: [{ label: 'Pacientes', data: [8, 22, 41, 38, 25, 8], backgroundColor: brandColor }]
-        },
-        options: { plugins: { legend: { display: false } } }
-    });
-</script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js"></script>
+<script src="~/Scripts/islands/bootstrap.js"></script>
+<script src="~/Scripts/islands/report-stats/index.js"></script>
 }

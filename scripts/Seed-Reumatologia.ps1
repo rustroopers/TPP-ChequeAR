@@ -1,14 +1,14 @@
 ﻿<#
 .SYNOPSIS
     Seed de datos de demo para ChequeAR: cuestionarios de reumatología pediátrica
-    y pacientes/respuestas simulados del Hospital Garrahan.
+    y fichas cargadas sobre los pacientes reales del Hospital Garrahan.
 
 .DESCRIPTION
     Llama a la API REST del server (misma que usa el front) para:
       1. Crear 5 cuestionarios de reumatología (no muy complejos) y publicarlos.
-      2. Crear respuestas (encuentros) para 17 pacientes pediátricos simulados,
-         finalizando algunas.
-      3. Crear la vista SQL vw_FlatResponses (reportería / exportación a Excel).
+      2. Crear fichas sobre los pacientes REALES del hospital (VW_PACIENTE),
+         eligiendo para cada patología pacientes de la edad adecuada y
+         finalizando la mayoría.
 
     Idempotente: si un cuestionario con el mismo título ya existe, no lo recrea.
 
@@ -103,7 +103,13 @@ function New-Question {
     if ($Options) {
         $opts = @()
         $i = 0
-        foreach ($o in $Options) { $opts += [ordered]@{ value = $o; display = $o; code = ($o.ToLower() -replace '[^a-z0-9]+', '_'); orderIndex = $i }; $i++ }
+        # code = value = display, igual que lo que manda el editor de cuestionarios.
+        # Antes se generaba un slug (minusculas, no-alfanumerico -> '_') que perdia
+        # informacion y colisionaba: 'Poliarticular FR+' y 'Poliarticular FR-' daban los dos
+        # 'poliarticular_fr_', o sea dos subtipos clinicamente distintos bajo el mismo codigo,
+        # imposibles de separar en un reporte. Los acentos tambien se perdian
+        # ('Sistemica' -> 'sist_mica').
+        foreach ($o in $Options) { $opts += [ordered]@{ value = $o; display = $o; code = $o; orderIndex = $i }; $i++ }
         $q.options = $opts
     }
     return $q
@@ -178,30 +184,26 @@ $questionnaires = @(
 )
 
 # ---------------------------------------------------------------------------
-# 4) Pacientes pediátricos simulados del Garrahan
+# 4) Pacientes: los REALES del hospital (VW_PACIENTE), no una lista inventada
 # ---------------------------------------------------------------------------
-$patients = @(
-    [ordered]@{ hc = '458821'; name = 'Gómez, Martina';       dni = '54231987'; sex = 'F'; birth = '2016-03-12' },
-    [ordered]@{ hc = '461203'; name = 'Fernández, Thiago';    dni = '51120345'; sex = 'M'; birth = '2013-09-01' },
-    [ordered]@{ hc = '449517'; name = 'Rodríguez, Valentina'; dni = '55780112'; sex = 'F'; birth = '2018-07-25' },
-    [ordered]@{ hc = '470655'; name = 'Sosa, Benjamín';       dni = '49903221'; sex = 'M'; birth = '2011-01-18' },
-    [ordered]@{ hc = '455390'; name = 'Díaz, Catalina';       dni = '56612009'; sex = 'F'; birth = '2019-11-30' },
-    [ordered]@{ hc = '462818'; name = 'Ramírez, Joaquín';     dni = '52014477'; sex = 'M'; birth = '2014-05-22' },
-    [ordered]@{ hc = '451077'; name = 'Torres, Emma';         dni = '55329064'; sex = 'F'; birth = '2017-02-08' },
-    [ordered]@{ hc = '473500'; name = 'Acosta, Lautaro';      dni = '48870512'; sex = 'M'; birth = '2010-08-14' },
-    [ordered]@{ hc = '459940'; name = 'Molina, Renata';       dni = '54990318'; sex = 'F'; birth = '2016-12-03' },
-    [ordered]@{ hc = '466231'; name = 'Silva, Bautista';      dni = '50662190'; sex = 'M'; birth = '2012-06-27' },
-    [ordered]@{ hc = '448319'; name = 'Romero, Isabella';     dni = '56100845'; sex = 'F'; birth = '2019-04-11' },
-    [ordered]@{ hc = '471884'; name = 'Herrera, Dante';       dni = '49215703'; sex = 'M'; birth = '2011-10-05' },
-    [ordered]@{ hc = '453662'; name = 'Castro, Olivia';       dni = '55471229'; sex = 'F'; birth = '2017-09-19' },
-    [ordered]@{ hc = '468075'; name = 'Vega, Ciro';           dni = '50338816'; sex = 'M'; birth = '2013-03-30' },
-    [ordered]@{ hc = '457413'; name = 'Ríos, Mía';            dni = '55884471'; sex = 'F'; birth = '2018-01-24' },
-    [ordered]@{ hc = '464590'; name = 'Núñez, Felipe';        dni = '50079924'; sex = 'M'; birth = '2012-11-16' },
-    [ordered]@{ hc = '452201'; name = 'Ferreyra, Delfina';    dni = '55602138'; sex = 'F'; birth = '2017-07-02' }
-)
+# Se consultan por la misma API que usa el front, asi el seed ejercita el camino
+# real de integracion. Antes el script traia 17 pacientes propios que no existian
+# en VW_PACIENTE: sobrevivian solo como Patient "contained" dentro de cada
+# respuesta (modo degradado), y convivian con los del hospital como dos
+# poblaciones separadas.
+function Get-HospitalPatients {
+    $resp = Invoke-Api 'GET' '/api/patients?q=a'
+    $list = @()
+    foreach ($r in $resp.results) {
+        $edad = 0
+        if ($r.AgeLabel -match '^(\d+)') { $edad = [int]$Matches[1] }
+        $list += [ordered]@{ hc = $r.HospitalId; name = $r.FullName; age = $edad }
+    }
+    return $list
+}
 
 # ---------------------------------------------------------------------------
-# 5) Respuestas (encuentros) por paciente. Cada answer usa el linkId del cuestionario.
+# 5) Respuestas (encuentros). Cada answer usa el linkId del cuestionario.
 #    tipos: int / bool / choice(string+code)
 # ---------------------------------------------------------------------------
 function New-Item {
@@ -211,33 +213,74 @@ function New-Item {
         'integer' { $it.valueInteger = [int]$Value }
         'decimal' { $it.valueDecimal = [decimal]$Value }
         'boolean' { $it.valueBoolean = [bool]$Value }
-        'choice'  { $it.valueString = [string]$Value; $it.valueCode = ($Value.ToLower() -replace '[^a-z0-9]+', '_') }
+        # El renderer guarda la opcion elegida tal cual en valueCode y no escribe
+        # valueString. El seed hacia las dos cosas y ademas slugificaba el codigo, asi que la
+        # misma categoria quedaba con dos etiquetas distintas segun quien hubiera cargado la
+        # ficha, y la distribucion de un reporte se partia en dos barras.
+        'choice'  { $it.valueCode = [string]$Value }
         default   { $it.valueString = [string]$Value }
     }
     return $it
 }
 
-# Plan de encuentros: patientIndex, questionnaireKey (title), answers(linkId->value), finalize
-$encounters = @(
-    @{ p = 0; q = 'AIJ - Evaluación inicial';                        finalize = $true;  a = @{ edad = 9;  nro_artic = 3; rigidez_am = $true;  eva_dolor = 6; subtipo = 'Oligoarticular' } },
-    @{ p = 1; q = 'AIJ - Evaluación inicial';                        finalize = $true;  a = @{ edad = 12; nro_artic = 7; rigidez_am = $true;  eva_dolor = 8; subtipo = 'Poliarticular FR-' } },
-    @{ p = 2; q = 'LES juvenil - Seguimiento';                       finalize = $true;  a = @{ fatiga = $true; rash_malar = $true; artralgias = $true; proteinuria = 'Leve'; sledai = 8 } },
-    @{ p = 3; q = 'LES juvenil - Seguimiento';                       finalize = $false; a = @{ fatiga = $true; rash_malar = $false; artralgias = $true; proteinuria = 'Moderada'; sledai = 12 } },
-    @{ p = 4; q = 'Dolor musculoesquelético - Triaje reumatológico'; finalize = $true;  a = @{ localizacion = 'Rodilla'; duracion = '6-12 semanas'; inflamacion = $true; antec_fam = $true; impacto = 5 } },
-    @{ p = 0; q = 'Dolor musculoesquelético - Triaje reumatológico'; finalize = $false; a = @{ localizacion = 'Tobillo'; duracion = '< 6 semanas'; inflamacion = $false; antec_fam = $false; impacto = 2 } },
-    @{ p = 5;  q = 'AIJ - Evaluación inicial';                        finalize = $true;  a = @{ edad = 11; nro_artic = 2; rigidez_am = $false; eva_dolor = 4; subtipo = 'Oligoarticular' } },
-    @{ p = 6;  q = 'AIJ - Evaluación inicial';                        finalize = $true;  a = @{ edad = 8;  nro_artic = 5; rigidez_am = $true;  eva_dolor = 7; subtipo = 'Poliarticular FR+' } },
-    @{ p = 7;  q = 'AIJ - Evaluación inicial';                        finalize = $false; a = @{ edad = 14; nro_artic = 1; rigidez_am = $false; eva_dolor = 3; subtipo = 'Entesitis' } },
-    @{ p = 8;  q = 'LES juvenil - Seguimiento';                       finalize = $true;  a = @{ fatiga = $true;  rash_malar = $true;  artralgias = $false; proteinuria = 'Severa';  sledai = 16 } },
-    @{ p = 9;  q = 'LES juvenil - Seguimiento';                       finalize = $true;  a = @{ fatiga = $false; rash_malar = $false; artralgias = $true;  proteinuria = 'Ausente'; sledai = 2 } },
-    @{ p = 10; q = 'Dolor musculoesquelético - Triaje reumatológico'; finalize = $true;  a = @{ localizacion = 'Cadera';   duracion = '> 12 semanas'; inflamacion = $true;  antec_fam = $false; impacto = 6 } },
-    @{ p = 11; q = 'Dolor musculoesquelético - Triaje reumatológico'; finalize = $false; a = @{ localizacion = 'Columna';  duracion = '6-12 semanas'; inflamacion = $false; antec_fam = $true;  impacto = 4 } },
-    @{ p = 12; q = 'Esclerodermia juvenil - Evaluación';              finalize = $true;  a = @{ tipo = 'Localizada (morfea)'; rodnan = 4;  raynaud = $false; ulceras = $false; disfagia = $false } },
-    @{ p = 13; q = 'Esclerodermia juvenil - Evaluación';              finalize = $true;  a = @{ tipo = 'Sistémica';           rodnan = 18; raynaud = $true;  ulceras = $true;  disfagia = $true } },
-    @{ p = 14; q = 'Vasculitis (Kawasaki/PAN) - Seguimiento';         finalize = $true;  a = @{ entidad = 'Kawasaki'; fiebre_dias = 6; pcr = 82.5; compromiso = $true;  tratamiento = 'IGIV' } },
-    @{ p = 15; q = 'Vasculitis (Kawasaki/PAN) - Seguimiento';         finalize = $false; a = @{ entidad = 'Púrpura de Schönlein-Henoch'; fiebre_dias = 0; pcr = 12.3; compromiso = $false; tratamiento = 'Ninguno' } },
-    @{ p = 16; q = 'AIJ - Evaluación inicial';                        finalize = $true;  a = @{ edad = 7;  nro_artic = 4; rigidez_am = $true;  eva_dolor = 5; subtipo = 'Sistémica' } }
-)
+# Perfil etario de cada patologia, para que la ficha sea clinicamente verosimil:
+# Kawasaki es sobre todo del lactante/preescolar y el LES juvenil del adolescente.
+$agePreference = @{
+    'AIJ - Evaluación inicial'                        = @{ min = 2;  max = 16 }
+    'LES juvenil - Seguimiento'                       = @{ min = 10; max = 17 }
+    'Dolor musculoesquelético - Triaje reumatológico' = @{ min = 5;  max = 17 }
+    'Esclerodermia juvenil - Evaluación'              = @{ min = 6;  max = 17 }
+    'Vasculitis (Kawasaki/PAN) - Seguimiento'         = @{ min = 1;  max = 8 }
+}
+
+# Respuestas por cuestionario. La edad no se inventa: sale del paciente real.
+function New-Answers {
+    param([string]$Title, [int]$Age, [int]$Seed)
+    $rnd = [Random]::new($Seed)
+    switch ($Title) {
+        'AIJ - Evaluación inicial' {
+            $subtipos = @('Oligoarticular', 'Poliarticular FR+', 'Poliarticular FR-', 'Sistémica', 'Entesitis', 'Psoriásica')
+            $sub = $subtipos[$rnd.Next(0, $subtipos.Count)]
+            # La oligoarticular afecta <=4 articulaciones por definicion; la poli, mas.
+            $artic = if ($sub -eq 'Oligoarticular') { $rnd.Next(1, 5) } else { $rnd.Next(5, 12) }
+            return @{ edad = $Age; nro_artic = $artic; rigidez_am = ($rnd.Next(0,10) -lt 7); eva_dolor = $rnd.Next(2, 9); subtipo = $sub }
+        }
+        'LES juvenil - Seguimiento' {
+            $prot = @('Ausente', 'Leve', 'Moderada', 'Severa')[$rnd.Next(0,4)]
+            # SLEDAI acompana al compromiso renal: a mayor proteinuria, mas actividad.
+            $sledai = switch ($prot) { 'Ausente' { $rnd.Next(0,5) } 'Leve' { $rnd.Next(4,10) } 'Moderada' { $rnd.Next(8,16) } default { $rnd.Next(14,25) } }
+            return @{ fatiga = ($rnd.Next(0,10) -lt 7); rash_malar = ($rnd.Next(0,10) -lt 5); artralgias = ($rnd.Next(0,10) -lt 8); proteinuria = $prot; sledai = $sledai }
+        }
+        'Dolor musculoesquelético - Triaje reumatológico' {
+            $loc = @('Rodilla', 'Cadera', 'Muñeca', 'Tobillo', 'Columna', 'Generalizado')[$rnd.Next(0,6)]
+            $dur = @('< 6 semanas', '6-12 semanas', '> 12 semanas')[$rnd.Next(0,3)]
+            $infl = ($rnd.Next(0,10) -lt 5)
+            # Con inflamacion el impacto funcional suele ser mayor.
+            $imp = if ($infl) { $rnd.Next(4, 10) } else { $rnd.Next(1, 6) }
+            return @{ localizacion = $loc; duracion = $dur; inflamacion = $infl; antec_fam = ($rnd.Next(0,10) -lt 4); impacto = $imp }
+        }
+        'Esclerodermia juvenil - Evaluación' {
+            $sistemica = ($rnd.Next(0,10) -lt 4)
+            $tipo = if ($sistemica) { 'Sistémica' } else { 'Localizada (morfea)' }
+            # Rodnan alto, Raynaud, ulceras y disfagia son propios de la forma sistemica.
+            return @{ tipo = $tipo
+                      rodnan   = if ($sistemica) { $rnd.Next(12, 28) } else { $rnd.Next(1, 8) }
+                      raynaud  = $sistemica
+                      ulceras  = ($sistemica -and ($rnd.Next(0,10) -lt 6))
+                      disfagia = ($sistemica -and ($rnd.Next(0,10) -lt 5)) }
+        }
+        default {
+            # Vasculitis: Kawasaki en los mas chicos, con fiebre prolongada y PCR alta.
+            $entidad = if ($Age -le 5) { 'Kawasaki' } else { @('PAN', 'Púrpura de Schönlein-Henoch', 'Takayasu')[$rnd.Next(0,3)] }
+            $kawa = ($entidad -eq 'Kawasaki')
+            return @{ entidad = $entidad
+                      fiebre_dias = if ($kawa) { $rnd.Next(5, 12) } else { $rnd.Next(0, 4) }
+                      pcr         = [Math]::Round($(if ($kawa) { $rnd.Next(600, 1600) / 10.0 } else { $rnd.Next(20, 400) / 10.0 }), 1)
+                      compromiso  = ($rnd.Next(0,10) -lt 5)
+                      tratamiento = if ($kawa) { 'IGIV' } else { @('Corticoides', 'Inmunosupresor', 'Ninguno')[$rnd.Next(0,3)] } }
+        }
+    }
+}
 
 # ---------------------------------------------------------------------------
 # EJECUCIÓN
@@ -270,109 +313,81 @@ foreach ($def in $questionnaires) {
     $created = Invoke-Api 'POST' '/fhir/r5/Questionnaire' $def
     Write-Host ("  + Creado: {0} (id {1}, {2} preguntas)" -f $created.title, $created.id, $created.questions.Count) -ForegroundColor Green
 
-    # publicar (el validador es laxo: alcanza con resourceType)
-    $publishBody = @{ fhirJson = ('{"resourceType":"Questionnaire","title":"' + $def.title + '"}') }
+    # Publicar SIN mandar fhirJson: el server serializa el cuestionario completo desde la
+    # base (FhirQuestionnaireBuilder). Antes se mandaba un recurso mínimo con sólo
+    # resourceType para saltear el validador, pero eso congelaba una versión sin preguntas
+    # y la ficha se renderizaba vacía: la carga lee de la versión, no de la entidad viva.
+    $publishBody = @{ changeNote = 'Versión inicial (seed de reumatología)' }
     $published = Invoke-Api 'POST' ("/fhir/r5/Questionnaire/$($created.id)/`$publish") $publishBody
     Write-Host ("    -> publicado, status={0}, versionId={1}" -f $published.status, $published.currentVersionId) -ForegroundColor DarkGreen
     $qByTitle[$def.title] = @{ id = $created.id; versionId = $published.currentVersionId }
 }
 
-# --- Respuestas / encuentros ---
-$respCount = 0
-foreach ($enc in $encounters) {
-    $pat = $patients[$enc.p]
-    $q = $qByTitle[$enc.q]
-    if (-not $q) { Write-Host ("  ! Sin cuestionario para: {0}" -f $enc.q) -ForegroundColor Red; continue }
+# --- Respuestas / encuentros sobre pacientes REALES del hospital ---
+$patients = Get-HospitalPatients
+if ($patients.Count -eq 0) {
+    Write-Host "  ! El hospital no devolvio pacientes: no se pueden cargar fichas." -ForegroundColor Red
+    Write-Host "    Revisa VW_PACIENTE y Oracle:ConnectionString en el Web.config." -ForegroundColor Red
+    return
+}
+Write-Host ("  Pacientes del hospital disponibles: {0}" -f $patients.Count) -ForegroundColor DarkCyan
 
-    # tipo por linkId, tomado de la definición del cuestionario
-    $def = $questionnaires | Where-Object { $_.title -eq $enc.q } | Select-Object -First 1
+# NO se manda Patient "contained": estos pacientes existen de verdad en VW_PACIENTE y
+# el sistema los resuelve contra el hospital. Embeberlos enmascararia una caida de esa
+# integracion, que es justo lo que queremos poder ver.
+$respCount = 0
+$seedN = 0
+$usadas = @{}   # HC|titulo ya cargado, para no repetir la misma ficha al mismo paciente
+
+foreach ($def in $questionnaires) {
+    $q = $qByTitle[$def.title]
+    if (-not $q) { Write-Host ("  ! Sin cuestionario para: {0}" -f $def.title) -ForegroundColor Red; continue }
+
     $typeByLink = @{}
     foreach ($qq in $def.questions) { $typeByLink[$qq.linkId] = $qq.type }
 
-    $items = @()
-    foreach ($k in $enc.a.Keys) {
-        $items += (New-Item $k $typeByLink[$k] $enc.a[$k])
-    }
+    # Pacientes cuya edad real encaja con la patologia.
+    $rango = $agePreference[$def.title]
+    $candidatos = @($patients | Where-Object { $_.age -ge $rango.min -and $_.age -le $rango.max })
+    if ($candidatos.Count -eq 0) { $candidatos = @($patients) }
 
-    # FHIR con Patient "contained": el sistema (modo degradado) lee de acá
-    # nombre / fecha de nacimiento / sexo cuando el hospital no está disponible.
-    $gender = switch ($pat.sex) { 'F' { 'female' } 'M' { 'male' } default { 'unknown' } }
-    $fhir = @{
-        resourceType = 'QuestionnaireResponse'
-        status       = ($(if ($enc.finalize) { 'completed' } else { 'in-progress' }))
-        contained    = @(
-            @{
-                resourceType = 'Patient'
-                id           = 'p'
-                name         = @(@{ text = $pat.name })
-                birthDate    = $pat.birth
-                gender       = $gender
-                identifier   = @(@{ system = 'urn:garrahan:hc'; value = $pat.hc }, @{ system = 'urn:garrahan:dni'; value = $pat.dni })
-            }
-        )
-        subject      = @{ reference = '#p'; display = $pat.name }
-        authored     = (Get-Date).ToString('o')
-    } | ConvertTo-Json -Depth 8 -Compress
+    # 4 fichas por cuestionario, alternando finalizadas y en curso.
+    $cuantas = [Math]::Min(4, $candidatos.Count)
+    for ($i = 0; $i -lt $cuantas; $i++) {
+        $pat = $candidatos[($seedN * 3 + $i * 7) % $candidatos.Count]
+        $clave = "$($pat.hc)|$($def.title)"
+        if ($usadas.ContainsKey($clave)) { continue }
+        $usadas[$clave] = $true
 
-    $body = [ordered]@{
-        questionnaireId        = $q.id
-        questionnaireVersionId = ($(if ($q.versionId) { $q.versionId } else { [Guid]::Empty.ToString() }))
-        patientHospitalId      = $pat.hc
-        encounterId            = ("ENC-" + $pat.hc + "-" + (Get-Random -Minimum 1000 -Maximum 9999))
-        status                 = ($(if ($enc.finalize) { 'InProgress' } else { 'InProgress' }))
-        fhirJson               = $fhir
-        items                  = $items
-    }
+        $seedN++
+        $answers = New-Answers $def.title $pat.age $seedN
+        $finalize = ($i -lt 3)   # 3 de cada 4 quedan finalizadas
 
-    $resp = Invoke-Api 'POST' '/fhir/r5/QuestionnaireResponse' $body
-    $respCount++
-    $tag = ''
-    if ($enc.finalize) {
-        Invoke-Api 'POST' ("/fhir/r5/QuestionnaireResponse/$($resp.id)/`$finalize") @{} | Out-Null
-        $tag = ' [finalizada]'
+        $items = @()
+        foreach ($k in $answers.Keys) { $items += (New-Item $k $typeByLink[$k] $answers[$k]) }
+
+        $body = [ordered]@{
+            questionnaireId        = $q.id
+            questionnaireVersionId = $q.versionId
+            patientHospitalId      = $pat.hc
+            encounterId            = ("ENC-" + $pat.hc + "-" + (Get-Random -Minimum 1000 -Maximum 9999))
+            items                  = $items
+        }
+
+        $resp = Invoke-Api 'POST' '/fhir/r5/QuestionnaireResponse' $body
+        $respCount++
+        $tag = ''
+        if ($finalize) {
+            Invoke-Api 'POST' ("/fhir/r5/QuestionnaireResponse/$($resp.id)/`$finalize") @{} | Out-Null
+            $tag = ' [finalizada]'
+        }
+        Write-Host ("  + {0} ({1}, {2} anios) <- {3}{4}" -f $pat.name, $pat.hc, $pat.age, $def.title, $tag) -ForegroundColor Green
     }
-    Write-Host ("  + Respuesta: {0} <- {1}{2}" -f $pat.name, $enc.q, $tag) -ForegroundColor Green
 }
 
-# --- Vista de reportería vw_FlatResponses (para /Reports y exportación) ---
-# EF Code First crea las tablas pero no esta vista; la (re)creamos acá.
-try {
-    [xml]$cfgXml = Get-Content -Path $WebConfig -Raw
-    $connStr = ($cfgXml.configuration.connectionStrings.add | Where-Object { $_.name -eq 'ChequeAR' }).connectionString
-    $createView = @'
-CREATE VIEW dbo.vw_FlatResponses AS
-SELECT
-    r.Id               AS ResponseId,
-    r.QuestionnaireId,
-    r.PatientHospitalId,
-    r.AuthoredAt,
-    i.LinkId,
-    COALESCE(i.ValueDecimal, CAST(i.ValueInteger AS decimal(18,4))) AS ValueDecimal,
-    i.ValueString,
-    i.ValueDate,
-    i.ValueBoolean,
-    i.ValueCode,
-    COALESCE(
-        i.ValueString,
-        i.ValueCode,
-        CAST(i.ValueInteger AS nvarchar(50)),
-        CONVERT(nvarchar(50), i.ValueDecimal),
-        CONVERT(nvarchar(30), i.ValueDate, 23),
-        CASE WHEN i.ValueBoolean IS NULL THEN NULL WHEN i.ValueBoolean = 1 THEN N'Sí' ELSE N'No' END
-    ) AS ValueText
-FROM dbo.QuestionnaireResponse r
-INNER JOIN dbo.QuestionnaireResponseItems i ON i.ResponseId = r.Id;
-'@
-    $conn = New-Object System.Data.SqlClient.SqlConnection $connStr
-    $conn.Open()
-    $drop = $conn.CreateCommand(); $drop.CommandText = "IF OBJECT_ID('dbo.vw_FlatResponses','V') IS NOT NULL DROP VIEW dbo.vw_FlatResponses;"; [void]$drop.ExecuteNonQuery()
-    $cr = $conn.CreateCommand(); $cr.CommandText = $createView; [void]$cr.ExecuteNonQuery()
-    $conn.Close()
-    Write-Host "  + Vista vw_FlatResponses creada." -ForegroundColor Green
-}
-catch {
-    Write-Host ("  ! No pude crear vw_FlatResponses: {0}" -f $_.Exception.Message) -ForegroundColor Red
-}
+# La vista vw_FlatResponses la crea la migración AddFlatResponsesView, no este script.
+# Antes se creaba acá con sintaxis SQL Server (dbo., SqlConnection) contra una base
+# Oracle, así que fallaba siempre y el reporte quedaba sin vista.
 
 Write-Host ""
 Write-Host ("Listo. Cuestionarios: {0} | Respuestas creadas: {1}" -f $qByTitle.Count, $respCount) -ForegroundColor Cyan

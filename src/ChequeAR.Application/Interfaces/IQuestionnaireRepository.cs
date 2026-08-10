@@ -13,8 +13,23 @@ namespace ChequeAR.Application.Interfaces
         Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode);
         Task AddAsync(Questionnaire q);
         Task UpdateAsync(Questionnaire q);
+
+        /// <summary>
+        /// Cabecera + reemplazo de secciones/preguntas/opciones, en una sola transacción y
+        /// con la cabecera primero: si hay conflicto de concurrencia, aborta antes de haber
+        /// borrado nada.
+        /// </summary>
+        Task UpdateWithStructureAsync(Questionnaire q, ICollection<QuestionGroup> groups, ICollection<Question> questions);
+
+        /// <summary>Versión congelada + cabecera en una sola transacción.</summary>
+        Task PublishAsync(Questionnaire q, QuestionnaireVersion version);
         Task SoftDeleteAsync(Guid id);
-        Task AddVersionAsync(QuestionnaireVersion v);
         Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber);
+
+        /// <summary>Títulos por id, para resolver referencias sin traer el agregado completo.</summary>
+        Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids);
+
+        /// <summary>Códigos de especialidad realmente presentes en los cuestionarios (para poblar el filtro).</summary>
+        Task<IReadOnlyList<string>> GetSpecialtyCodesAsync();
     }
 }

@@ -1,9 +1,14 @@
-using System;
+﻿using System;
+using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
+using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -14,12 +19,11 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("fhir/r5/Questionnaire")]
     public class QuestionnaireController : ApiController
     {
-        private readonly IQuestionnaireRepository _repo;
+        
         private readonly QuestionnaireService _service;
 
-        public QuestionnaireController(IQuestionnaireRepository repo, QuestionnaireService service)
+        public QuestionnaireController(QuestionnaireService service)
         {
-            _repo = repo;
             _service = service;
         }
 
@@ -28,33 +32,97 @@ namespace ChequeAR.Api.Controllers.Api
         {
             QuestionnaireStatus? st = null;
             if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
-            var items = await _repo.SearchAsync(st, titleContains, specialty, _offset, _count);
-            return Ok(new { resourceType = "Bundle", type = "searchset", total = items.Count, entry = items });
+            var items = await _service.SearchAsync(st, titleContains, specialty, _offset, _count);
+
+            var total = await _service.CountAsync(st, titleContains, specialty);
+            var recursos = items.Select(q => (Hl7.Fhir.Model.Resource)ToFhir(q));
+            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var q = await _repo.GetAsync(id);
-            if (q == null) return NotFound();
-            return Ok(q);
+            var q = await _service.GetAsync(id);
+            if (q == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+
+            // ETag = versión del registro. El cliente la devuelve en If-Match al escribir.
+            // Viaja además en meta.versionId, que es el mecanismo nativo del estándar.
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(q));
+            response.Headers.ETag = ETagFor(q);
+            return ResponseMessage(response);
+        }
+
+        /// <summary>
+        /// El número de versión publicada que se declara en el recurso. 0 = nunca se publicó;
+        /// es correcto que un borrador diga 0 y no invente una versión que no existe.
+        /// </summary>
+        private static Hl7.Fhir.Model.Questionnaire ToFhir(Questionnaire q)
+            => FhirQuestionnaireBuilder.ToResource(q, q.Versions?.Count ?? 0);
+
+        /// <summary>Base del servidor FHIR, para el fullUrl de cada entrada del Bundle.</summary>
+        private string FhirBaseUrl()
+            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
+
+        private static EntityTagHeaderValue ETagFor(Questionnaire q)
+        {
+            // Weak ETag: identifica la versión del recurso, no una representación byte a byte.
+            return new EntityTagHeaderValue("\"" + q.ConcurrencyVersion + "\"", true);
+        }
+
+        // Acepta W/"3" y "3". Devuelve null si no hay un número adentro.
+        private static int? ParseIfMatch(HttpRequestMessage request)
+        {
+            var tag = request.Headers.IfMatch?.FirstOrDefault();
+            if (tag == null) return null;
+            var raw = (tag.Tag ?? string.Empty).Trim('"');
+            return int.TryParse(raw, out var version) ? version : (int?)null;
         }
 
         [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
-        public async Task<IHttpActionResult> Create([FromBody] Questionnaire q)
+        public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
-            if (q == null) return BadRequest("body required");
+            var q = FhirQuestionnaireParser.ToDomain(body);
+            if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
+
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
-            return Content(HttpStatusCode.Created, created);
+            var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
+            response.Headers.ETag = ETagFor(created);
+            return ResponseMessage(response);
         }
 
         [HttpPut, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
-        public async Task<IHttpActionResult> Update(Guid id, [FromBody] Questionnaire patch)
+        public async Task<IHttpActionResult> Update(Guid id, [FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
+            var patch = FhirQuestionnaireParser.ToDomain(body);
+            if (patch == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
+
+            // If-Match obligatorio: sin él no hay forma de saber si el cliente vio la última
+            // versión, y una edición concurrente pisaría el trabajo ajeno en silencio.
+            // 428 Precondition Required (RFC 6585) existe justamente para este caso.
+            var expectedVersion = ParseIfMatch(Request);
+            if (!expectedVersion.HasValue)
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
+
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            var updated = await _service.UpdateAsync(id, patch, userId);
-            return Ok(updated);
+            try
+            {
+                var updated = await _service.UpdateAsync(id, patch, userId, expectedVersion);
+                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(updated));
+                response.Headers.ETag = ETagFor(updated);
+                return ResponseMessage(response);
+            }
+            catch (ConcurrencyConflictException ex)
+            {
+                return Content(HttpStatusCode.Conflict,
+                    OperationOutcomes.Conflict(ex.ExpectedVersion, ex.ActualVersion));
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Mismo criterio que Publish: "no existe" y "no se puede editar en este
+                // estado" (ej. archivado) son ambos errores del cliente, no del server.
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
+            }
         }
 
         [HttpPost, Route("{id:guid}/$publish"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
@@ -63,12 +131,18 @@ namespace ChequeAR.Api.Controllers.Api
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             try
             {
-                var q = await _service.PublishAsync(id, body?.FhirJson, userId);
-                return Ok(q);
+                var q = await _service.PublishAsync(id, userId, body?.ChangeNote);
+                return Ok(ToFhir(q));
+            }
+            catch (ValidationFailedException ex)
+            {
+                // UN issue por regla incumplida. Con un mensaje concatenado, quien publica
+                // arregla la primera regla, vuelve a intentar y descubre la segunda.
+                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
             }
             catch (InvalidOperationException ex)
             {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
             }
         }
 
@@ -80,13 +154,45 @@ namespace ChequeAR.Api.Controllers.Api
             return Ok();
         }
 
+        [HttpPost, Route("{id:guid}/$clone"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        public async Task<IHttpActionResult> Clone(Guid id, [FromBody] CloneBody body)
+        {
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            try
+            {
+                var copy = await _service.CloneAsync(id, body?.Title, userId);
+                var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(copy));
+                response.Headers.ETag = ETagFor(copy);
+                return ResponseMessage(response);
+            }
+            catch (InvalidOperationException)
+            {
+                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            }
+        }
+
         [HttpDelete, Route("{id:guid}"), Authorize(Roles = Role.Administrador)]
         public async Task<IHttpActionResult> Delete(Guid id)
         {
-            await _repo.SoftDeleteAsync(id);
-            return StatusCode(HttpStatusCode.NoContent);
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            try
+            {
+                var outcome = await _service.DeleteAsync(id, userId);
+                // Un 204 acá sería mentira: el recurso sigue existiendo, archivado.
+                if (outcome == DeleteOutcome.ArchivedBecauseInUse)
+                {
+                    return Ok(OperationOutcomes.Informational(
+                        "El cuestionario tiene respuestas cargadas: se archivó en vez de eliminarse."));
+                }
+                return StatusCode(HttpStatusCode.NoContent);
+            }
+            catch (InvalidOperationException)
+            {
+                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            }
         }
 
-        public class PublishBody { public string FhirJson { get; set; } }
+        public class PublishBody { public string ChangeNote { get; set; } }
+        public class CloneBody { public string Title { get; set; } }
     }
 }

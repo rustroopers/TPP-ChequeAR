@@ -69,9 +69,16 @@
     <PackageReference Include="Microsoft.Owin.Security.OAuth" Version="4.2.2" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="6.35.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- 13.0.4 es el minimo que exige Hl7.Fhir.Base; con 13.0.3 el restore falla (NU1605). -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Owin" Version="1.0" />
     <PackageReference Include="WebGrease" Version="1.6.0" />
+    <!--
+      Necesario para el MediaTypeFormatter que serializa recursos FHIR.
+      Los POCOs de Firely NO se pueden serializar con Newtonsoft: hay que usar
+      FhirJsonSerializer/FhirJsonParser. Misma version pinneada (research.md R1).
+    -->
+    <PackageReference Include="Hl7.Fhir.R5" Version="5.13.4" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App_Start\RouteConfig.cs" />
@@ -85,6 +92,8 @@
     <Compile Include="Auth\ChequeARSpecialtyAttribute.cs" />
     <Compile Include="Auth\CurrentUser.cs" />
     <Compile Include="Auth\DevToken.cs" />
+    <Compile Include="Helpers\ArgentinaTime.cs" />
+    <Compile Include="Helpers\AuditPresentation.cs" />
     <Compile Include="Helpers\CqLocalizer.cs" />
     <Compile Include="Middleware\AuditMiddleware.cs" />
     <Compile Include="Controllers\Mvc\HomeController.cs" />
@@ -96,20 +105,24 @@
     <Compile Include="Controllers\Mvc\AuditController.cs" />
     <Compile Include="Controllers\Mvc\UsersController.cs" />
     <Compile Include="Controllers\Mvc\AdminController.cs" />
-    <Compile Include="Controllers\Mvc\MockSeed.cs" />
+    <Compile Include="Fhir\CapabilityCatalog.cs" />
+    <Compile Include="Fhir\FhirMediaTypeFormatter.cs" />
     <Compile Include="Models\HomeViewModel.cs" />
     <Compile Include="Models\QuestionnaireListItem.cs" />
+    <Compile Include="Models\QuestionnaireStatusMap.cs" />
     <Compile Include="Models\EncounterViewModels.cs" />
     <Compile Include="Models\ReportsViewModels.cs" />
     <Compile Include="Models\AdminViewModels.cs" />
     <Compile Include="Controllers\Api\AuthController.cs" />
     <Compile Include="Controllers\Api\MetadataController.cs" />
+    <Compile Include="Controllers\Api\TerminologyController.cs" />
     <Compile Include="Controllers\Api\QuestionnaireController.cs" />
     <Compile Include="Controllers\Api\QuestionnaireResponseController.cs" />
     <Compile Include="Controllers\Api\AttachmentController.cs" />
     <Compile Include="Controllers\Api\AuditEventController.cs" />
     <Compile Include="Controllers\Api\ReportsController.cs" />
     <Compile Include="Controllers\Api\PatientController.cs" />
+    <Compile Include="Controllers\Api\EncounterController.cs" />
     <Compile Include="Controllers\Api\UserController.cs" />
     <Compile Include="Controllers\Api\IntegrationStatusController.cs" />
     <Compile Include="Controllers\Api\SavedReportController.cs" />
@@ -123,7 +136,6 @@
     <Content Include="Views\Shared\_Layout.cshtml" />
     <Content Include="Views\Shared\_Navbar.cshtml" />
     <Content Include="Views\Shared\_Sidebar.cshtml" />
-    <Content Include="Views\Shared\_LanguageSwitcher.cshtml" />
     <Content Include="Views\Shared\_Toasts.cshtml" />
     <Content Include="Views\Shared\_Breadcrumbs.cshtml" />
     <Content Include="Views\Shared\_ProgressBar.cshtml" />
@@ -152,6 +164,8 @@
     <Content Include="Views\Users\Details.cshtml" />
     <Content Include="Views\Admin\Integrations.cshtml" />
     <Content Include="Views\Admin\Capability.cshtml" />
+    <Content Include="Scripts\cq-date-range.js" />
+    <Content Include="Scripts\cq-autofilter.js" />
     <Content Include="Scripts\islands\bootstrap.js" />
     <Content Include="Scripts\islands\questionnaire-editor\index.js" />
     <Content Include="Scripts\islands\questionnaire-renderer\index.js" />

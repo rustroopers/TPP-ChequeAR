@@ -50,6 +50,7 @@ namespace ChequeAR.Infrastructure.EF
             mb.Properties<string>().Configure(p => p.HasMaxLength(2000).IsUnicode(false));
 
             mb.Configurations.Add(new QuestionnaireConfig());
+            mb.Configurations.Add(new QuestionnaireVersionConfig());
             mb.Configurations.Add(new QuestionnaireResponseConfig());
             mb.Configurations.Add(new AuditEventConfig());
 
@@ -70,16 +71,19 @@ namespace ChequeAR.Infrastructure.EF
             mb.Entity<Specialty>().Property(x => x.Code).HasMaxLength(64);
             mb.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
 
-            // Campos JSON / texto largo → CLOB.
-            mb.Entity<QuestionnaireVersion>().Property(x => x.FhirJson).HasColumnType("CLOB");
-            mb.Entity<QuestionnaireResponse>().Property(x => x.FhirJson).HasColumnType("CLOB");
-            mb.Entity<AuditEvent>().Property(x => x.FhirJson).HasColumnType("CLOB");
-            mb.Entity<Question>().Property(x => x.ValidationJson).HasColumnType("CLOB");
-            mb.Entity<Question>().Property(x => x.EnableWhenJson).HasColumnType("CLOB");
-            mb.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB");
-            mb.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB");
-            mb.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB");
-            mb.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB");
+            // Campos JSON / texto largo → CLOB. HasMaxLength(null) suelta el límite de 2000
+            // que impone la convención de arriba: sin esto, EF valida client-side contra
+            // 2000 caracteres y un FHIR Questionnaire real (mayor a eso) revienta al publicar
+            // con "Validation failed for one or more entities", aunque la columna CLOB lo acepte.
+            mb.Entity<QuestionnaireVersion>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<QuestionnaireResponse>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<AuditEvent>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<Question>().Property(x => x.ValidationJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<Question>().Property(x => x.EnableWhenJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
 
             base.OnModelCreating(mb);
         }

@@ -1,8 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
@@ -10,8 +11,8 @@ namespace ChequeAR.Api.Controllers.Mvc
     // TODO: re-habilitar [Authorize(Roles = Role.Administrador)] cuando FormsAuth esté wired.
     public class UsersController : Controller
     {
-        private readonly IUserRepository _repo;
-        public UsersController(IUserRepository repo) { _repo = repo; }
+        private readonly UserService _users;
+        public UsersController(UserService users) { _users = users; }
 
         public async Task<ActionResult> Index()
         {
@@ -25,7 +26,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new UserListViewModel();
             try
             {
-                var items = await _repo.ListAsync(null, null, null, null, 0, 100);
+                var items = (await _users.ListAsync(null, null, null, null, 0, 100)).Items;
                 foreach (var u in items)
                 {
                     var role = "—"; var spec = "—";
@@ -33,7 +34,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     if (u.Specialties != null && u.Specialties.Count > 0)
                     {
                         var e = u.Specialties.GetEnumerator();
-                        if (e.MoveNext()) spec = e.Current.SpecialtyCode;
+                        // Nombre legible, no el código: la tabla mostraba "reuma" donde
+                        // debía decir "Reumatología". Se mapea acá y no en la vista para
+                        // no dejar el "—" (sin especialidad) a merced del default de Label.
+                        if (e.MoveNext()) spec = SpecialtyMap.Label(e.Current.SpecialtyCode);
                     }
                     model.Users.Add(new UserListItem
                     {
@@ -42,10 +46,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                model.Users = MockSeed.Users();
-                ViewBag.DataMode = "demo";
+                model.Users.Clear();
+                ViewBag.DataError = ex.Message;
             }
             return View(model);
         }
@@ -62,7 +66,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
-                var u = await _repo.GetAsync(username);
+                var u = await _users.GetAsync(username);
                 if (u == null) return HttpNotFound();
                 var model = new UserDetailViewModel
                 {
@@ -83,10 +87,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return View(model);
             }
-            catch
+            catch (Exception ex)
             {
-                ViewBag.DataMode = "demo";
-                return View(MockSeed.UserDetail(username));
+                ViewBag.DataError = ex.Message;
+                return View(new UserDetailViewModel { Username = username });
             }
         }
 
@@ -95,11 +99,11 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             try
             {
-                var existing = await _repo.GetAsync(model.Username);
+                var existing = await _users.GetAsync(model.Username);
                 if (existing == null) return HttpNotFound();
                 existing.DisplayName = model.FullName ?? existing.DisplayName;
                 existing.IsActive = model.Active;
-                await _repo.UpsertAsync(existing);
+                await _users.UpsertAsync(existing);
                 TempData["Toast"] = "Cambios guardados.";
             }
             catch (System.Exception ex)

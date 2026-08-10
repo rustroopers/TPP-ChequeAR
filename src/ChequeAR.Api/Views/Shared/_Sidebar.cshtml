@@ -4,14 +4,15 @@
     Func<string, string> cls = id => active == id ? "cq-sidebar__item is-active" : "cq-sidebar__item";
 }
 <nav class="cq-sidebar" aria-label="@Cq.T("navbar.brand")">
-    <div class="cq-sidebar__group-label">@Cq.T("sidebar.group.work")</div>
-    <a class="@cls("home")" href="@Url.Action("Index", "Home")"><i class="bi bi-house-door"></i> @Cq.T("sidebar.home")</a>
-    <a class="@cls("encounters")" href="@Url.Action("Search", "Encounters")"><i class="bi bi-person-vcard"></i> @Cq.T("sidebar.patients")</a>
-    <a class="@cls("questionnaires")" href="@Url.Action("Index", "Questionnaires")"><i class="bi bi-clipboard2-pulse"></i> @Cq.T("sidebar.questionnaires")</a>
-    <a class="@cls("reports")" href="@Url.Action("Index", "Reports")"><i class="bi bi-bar-chart"></i> @Cq.T("sidebar.reports")</a>
+    <div class="cq-sidebar__inner">
+        <div class="cq-sidebar__group-label">@Cq.T("sidebar.group.work")</div>
+        <a class="@cls("home")" href="@Url.Action("Index", "Home")"><i class="bi bi-house-door"></i> @Cq.T("sidebar.home")</a>
+        <a class="@cls("encounters")" href="@Url.Action("Search", "Encounters")"><i class="bi bi-person-vcard"></i> @Cq.T("sidebar.patients")</a>
+        <a class="@cls("questionnaires")" href="@Url.Action("Index", "Questionnaires")"><i class="bi bi-clipboard2-pulse"></i> @Cq.T("sidebar.questionnaires")</a>
+        <a class="@cls("reports")" href="@Url.Action("Index", "Reports")"><i class="bi bi-bar-chart"></i> @Cq.T("sidebar.reports")</a>
 
-    <div class="cq-sidebar__group-label">@Cq.T("sidebar.group.admin")</div>
-    <a class="@cls("audit")" href="@Url.Action("Index", "Audit")"><i class="bi bi-shield-check"></i> @Cq.T("sidebar.audit")</a>
-    <a class="@cls("users")" href="@Url.Action("Index", "Users")"><i class="bi bi-people"></i> @Cq.T("sidebar.users")</a>
-    <a class="@cls("integrations")" href="@Url.Action("Integrations", "Admin")"><i class="bi bi-plug"></i> @Cq.T("sidebar.integrations")</a>
+        <div class="cq-sidebar__group-label">@Cq.T("sidebar.group.admin")</div>
+        <a class="@cls("audit")" href="@Url.Action("Index", "Audit")"><i class="bi bi-shield-check"></i> @Cq.T("sidebar.audit")</a>
+        <a class="@cls("users")" href="@Url.Action("Index", "Users")"><i class="bi bi-people"></i> @Cq.T("sidebar.users")</a>
+    </div>
 </nav>

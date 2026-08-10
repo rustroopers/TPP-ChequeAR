@@ -25,12 +25,18 @@ namespace ChequeAR.Infrastructure.Repositories
             await _ctx.SaveChangesAsync();
         }
 
-        public async Task<IReadOnlyList<AuditEvent>> SearchAsync(string agentUserId, string entityRef, int skip, int take)
+        public async Task<IReadOnlyList<AuditEvent>> SearchAsync(string agentUserId, string action, System.DateTime? fromUtc, System.DateTime? toUtc, int max)
         {
             var q = _ctx.AuditEvents.AsQueryable();
-            if (!string.IsNullOrEmpty(agentUserId)) q = q.Where(x => x.AgentUserId == agentUserId);
-            if (!string.IsNullOrEmpty(entityRef)) q = q.Where(x => x.EntityRef == entityRef);
-            return await q.OrderByDescending(x => x.Recorded).Skip(skip).Take(take).ToListAsync();
+            if (!string.IsNullOrEmpty(agentUserId))
+            {
+                var u = agentUserId.ToLower();
+                q = q.Where(x => x.AgentUserId.ToLower().Contains(u));
+            }
+            if (!string.IsNullOrEmpty(action)) q = q.Where(x => x.Action == action);
+            if (fromUtc.HasValue) q = q.Where(x => x.Recorded >= fromUtc.Value);
+            if (toUtc.HasValue) q = q.Where(x => x.Recorded < toUtc.Value);
+            return await q.OrderByDescending(x => x.Recorded).Skip(0).Take(max).ToListAsync();
         }
     }
 }

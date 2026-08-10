@@ -33,7 +33,9 @@
                     @if (q.Required) { <span class="text-danger" aria-label="obligatorio">*</span> }
                 </dt>
                 <dd class="col-sm-7 cq-text-muted">
-                    <span class="cq-badge cq-badge--info">@q.Type</span>
+                    @* Mismo vocabulario que el editor ("Texto corto", no "string"): quien
+                       revisa el cuestionario no tiene por qué conocer los tipos de FHIR. *@
+                    <span class="cq-badge cq-badge--info">@Cq.T("qtype." + (q.Type ?? "").ToLowerInvariant())</span>
                     @if (!string.IsNullOrEmpty(q.Unit)) { <span class="cq-text-sm ms-2">unidad: @q.Unit</span> }
                     @if (q.Options != null && q.Options.Count > 0)
                     {

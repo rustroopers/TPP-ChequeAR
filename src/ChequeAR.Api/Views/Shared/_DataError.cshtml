@@ -1,0 +1,26 @@
+@*
+    Banner de datos no disponibles.
+
+    Se muestra cuando un controller no pudo leer de la base. Reemplaza al viejo
+    fallback silencioso a MockSeed: antes la pantalla se llenaba con datos
+    inventados y el usuario no tenia forma de notarlo.
+
+    Los controllers lo activan con: ViewBag.DataError = "<detalle tecnico>";
+*@
+@{
+    var detail = ViewBag.DataError as string;
+}
+@if (!string.IsNullOrEmpty(detail))
+{
+    <div class="alert alert-danger d-flex gap-2 align-items-start" role="alert">
+        <span aria-hidden="true">&#9888;</span>
+        <div>
+            <strong>@ChequeAR.Api.Helpers.Cq.T("data.error.title")</strong>
+            <div class="small">@ChequeAR.Api.Helpers.Cq.T("data.error.desc")</div>
+            @if (HttpContext.Current != null && HttpContext.Current.IsDebuggingEnabled)
+            {
+                <div class="small text-muted mt-1"><code>@detail</code></div>
+            }
+        </div>
+    </div>
+}

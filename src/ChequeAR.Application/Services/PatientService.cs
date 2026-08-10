@@ -8,15 +8,20 @@ using ChequeAR.Domain.Entities;
 namespace ChequeAR.Application.Services
 {
     /// Servicio thin que centraliza lookups de pacientes contra el hospital.
-    /// ChequeAR no posee la entidad Patient — la consume del FHIR del hospital
-    /// y/o de las vistas Oracle (`VW_PACIENTE_DATOS_BASICOS`).
+    /// ChequeAR no posee la entidad Patient — la consume de la vista Oracle
+    /// `VW_PACIENTE` (ver specs/008-mock-hospital-db/contracts/view-schema.md).
     ///
-    /// Modo degradado: si el hospital no responde (FHIR/Oracle caídos) o no
-    /// devuelve resultados, deriva los pacientes de las respuestas ya cargadas
-    /// en ChequeAR (QuestionnaireResponse + Patient "contained" en el FhirJson).
-    /// Esto permite operar el sistema con datos propios / de seed.
+    /// Modo degradado: si Oracle no responde o no devuelve resultados, deriva
+    /// los pacientes de las respuestas ya cargadas en ChequeAR
+    /// (QuestionnaireResponse + Patient "contained" en el FhirJson). Son datos
+    /// reales de la base propia, no de demostración.
     public class PatientService
     {
+        private const string PatientView = "VW_PACIENTE";
+
+        /// Columnas del contrato contra las que se busca texto libre.
+        private static readonly string[] SearchColumns = { "APELLIDO", "NOMBRE", "DOCUMENTO", "ID_PACIENTE" };
+
         private readonly IHospitalFhirClient _fhir;
         private readonly IOracleViewClient _oracle;
         private readonly IQuestionnaireResponseRepository _qrRepo;
@@ -36,8 +41,7 @@ namespace ChequeAR.Application.Services
 
             try
             {
-                var filters = new Dictionary<string, object> { { "QUERY", query } };
-                var rows = await _oracle.QueryAsync("VW_PACIENTE_DATOS_BASICOS", filters);
+                var rows = await _oracle.SearchAsync(PatientView, SearchColumns, query);
                 var result = new List<PatientSearchHit>();
                 foreach (var row in rows) result.Add(MapRow(row, null));
                 if (result.Count > 0) return result;
@@ -51,8 +55,8 @@ namespace ChequeAR.Application.Services
         {
             try
             {
-                var rows = await _oracle.QueryAsync("VW_PACIENTE_DATOS_BASICOS",
-                    new Dictionary<string, object> { { "HC", hospitalId } });
+                var rows = await _oracle.QueryAsync(PatientView,
+                    new Dictionary<string, object> { { "ID_PACIENTE", hospitalId } });
                 var row = rows.FirstOrDefault();
                 if (row != null) return MapRow(row, hospitalId);
             }
@@ -98,7 +102,10 @@ namespace ChequeAR.Application.Services
                 if (q != null)
                 {
                     specialtyCode = q.SpecialtyCode;
-                    specialtyLabel = q.SpecialtyDisplay ?? q.SpecialtyCode;
+                    // Caer al código dejaba "reuma" como label en las pantallas de paciente
+                    // y encuentro: el editor guarda SpecialtyDisplay en null, así que ese
+                    // fallback era el caso normal, no el borde.
+                    specialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay);
                 }
             }
             catch { /* ignore */ }
@@ -113,16 +120,43 @@ namespace ChequeAR.Application.Services
             };
         }
 
-        private static PatientSearchHit MapRow(IDictionary<string, object> row, string fallbackHc)
+        /// Mapea una fila de VW_PACIENTE. La vista no expone edad ni especialidad:
+        /// la edad se calcula de FECHA_NACIMIENTO y la especialidad no pertenece
+        /// al paciente sino al episodio (VW_EPISODIO.COD_ESPECIALIDAD).
+        private static PatientSearchHit MapRow(IDictionary<string, object> row, string fallbackId)
         {
+            var apellido = row.TryGetValue("APELLIDO", out var a) ? a?.ToString() : null;
+            var nombre = row.TryGetValue("NOMBRE", out var n) ? n?.ToString() : null;
+
+            string fullName = null;
+            if (!string.IsNullOrEmpty(apellido) && !string.IsNullOrEmpty(nombre))
+                fullName = apellido + ", " + nombre;
+            else
+                fullName = apellido ?? nombre;
+
             return new PatientSearchHit
             {
-                HospitalId = row.TryGetValue("HC", out var hc) ? hc?.ToString() : fallbackHc,
-                FullName = row.TryGetValue("NOMBRE_COMPLETO", out var n) ? n?.ToString() : null,
-                AgeLabel = row.TryGetValue("EDAD_ANIOS", out var e) ? e?.ToString() + " años" : null,
-                SpecialtyCode = row.TryGetValue("ESPECIALIDAD_COD", out var sp) ? sp?.ToString() : null,
-                SpecialtyLabel = row.TryGetValue("ESPECIALIDAD", out var spl) ? spl?.ToString() : null
+                HospitalId = row.TryGetValue("ID_PACIENTE", out var id) ? id?.ToString() : fallbackId,
+                FullName = fullName,
+                AgeLabel = row.TryGetValue("FECHA_NACIMIENTO", out var fn) ? AgeLabelFrom(fn) : null,
+                SpecialtyCode = null,
+                SpecialtyLabel = null
             };
+        }
+
+        private static string AgeLabelFrom(object birthDate)
+        {
+            if (!(birthDate is DateTime dob)) return null;
+
+            var today = DateTime.Today;
+            var years = today.Year - dob.Year;
+            if (dob.Date > today.AddYears(-years)) years--;
+            if (years >= 1) return years + (years == 1 ? " año" : " años");
+
+            var months = (today.Year - dob.Year) * 12 + today.Month - dob.Month;
+            if (today.Day < dob.Day) months--;
+            if (months < 0) months = 0;
+            return months + (months == 1 ? " mes" : " meses");
         }
     }
 

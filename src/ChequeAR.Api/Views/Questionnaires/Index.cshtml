@@ -2,6 +2,8 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("q1.title");
+    var pageSize = Model.PageSize > 0 ? Model.PageSize : 20;
+    var totalPages = (int)Math.Ceiling((double)Model.Total / pageSize);
 }
 
 <header class="cq-page-header">
@@ -14,10 +16,10 @@
     </a>
 </header>
 
-@using (Html.BeginForm("Index", "Questionnaires", FormMethod.Get, new { @class = "mb-3" }))
+@using (Html.BeginForm("Index", "Questionnaires", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "questionnaires" }))
 {
     <div class="row g-2 align-items-end">
-        <div class="col-md-5">
+        <div class="col-md-6">
             <label class="form-label cq-text-sm">Buscar</label>
             <input type="search" name="q" value="@Model.SearchTerm" class="form-control" placeholder="Título…" />
         </div>
@@ -25,13 +27,13 @@
             <label class="form-label cq-text-sm">Especialidad</label>
             <select name="specialty" class="form-select">
                 <option value="">Todas</option>
-                <option value="cardio" selected="@(Model.SpecialtyFilter == "cardio")">Cardiología</option>
-                <option value="neumo" selected="@(Model.SpecialtyFilter == "neumo")">Neumonología</option>
-                <option value="onco" selected="@(Model.SpecialtyFilter == "onco")">Oncología</option>
-                <option value="general" selected="@(Model.SpecialtyFilter == "general")">General</option>
+                @foreach (var sp in Model.Specialties)
+                {
+                    <option value="@sp.Code" selected="@(Model.SpecialtyFilter == sp.Code)">@sp.Label</option>
+                }
             </select>
         </div>
-        <div class="col-md-2">
+        <div class="col-md-3">
             <label class="form-label cq-text-sm">Estado</label>
             <select name="status" class="form-select">
                 <option value="">Todos</option>
@@ -39,9 +41,6 @@
                 <option value="published" selected="@(Model.StatusFilter == "published")">Publicado</option>
                 <option value="archived" selected="@(Model.StatusFilter == "archived")">Archivado</option>
             </select>
-        </div>
-        <div class="col-md-2">
-            <button class="btn btn-outline-secondary w-100" type="submit">Filtrar</button>
         </div>
     </div>
 }
@@ -52,8 +51,6 @@
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
             <div class="cq-empty__title">@Cq.T("q1.empty.title")</div>
-            <div class="cq-empty__desc">@Cq.T("q1.empty.desc")</div>
-            <a href="@Url.Action("Edit")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")</a>
         </div>
     </div>
 }
@@ -81,6 +78,10 @@ else
                         @if (q.Status == "published") { <span class="cq-badge cq-badge--published">@Cq.T("status.published")</span> }
                         else if (q.Status == "draft") { <span class="cq-badge cq-badge--draft">@Cq.T("status.draft")</span> }
                         else { <span class="cq-badge cq-badge--archived">@Cq.T("status.archived")</span> }
+                        @if (q.HasUnpublishedChanges)
+                        {
+                            <span class="cq-badge cq-badge--info d-block mt-1" title="Se editó después de publicar. Los clínicos siguen viendo la versión publicada.">cambios sin publicar</span>
+                        }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@q.UpdatedAt</td>
                     <td class="text-end">
@@ -93,8 +94,14 @@ else
                                 <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
                                 <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
                                 <li><hr class="dropdown-divider" /></li>
-                                <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
-                                <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                @if (!(q.Status == "published" && !q.HasUnpublishedChanges))
+                                {
+                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                }
+                                @if (q.Status != "archived")
+                                {
+                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                }
                             </ul>
                         </div>
                     </td>
@@ -104,13 +111,16 @@ else
     </table>
     <div class="d-flex justify-content-between align-items-center mt-3 cq-text-sm cq-text-muted">
         <span>Mostrando @Model.Items.Count de @Model.Total</span>
-        <nav>
-            <ul class="pagination pagination-sm mb-0">
-                <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page - 1 })">‹</a></li>
-                <li class="page-item active"><span class="page-link">@Model.Page</span></li>
-                <li class="page-item"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page + 1 })">›</a></li>
-            </ul>
-        </nav>
+        @if (totalPages > 1)
+        {
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page - 1 })">‹</a></li>
+                    <li class="page-item active"><span class="page-link">@Model.Page</span></li>
+                    <li class="page-item @(Model.Page >= totalPages ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, specialty = Model.SpecialtyFilter, status = Model.StatusFilter, page = Model.Page + 1 })">›</a></li>
+                </ul>
+            </nav>
+        }
     </div>
 }
 

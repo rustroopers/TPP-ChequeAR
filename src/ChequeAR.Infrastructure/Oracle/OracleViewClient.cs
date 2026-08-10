@@ -63,13 +63,52 @@ namespace ChequeAR.Infrastructure.Oracle
                 }
             }
 
+            return await ExecuteAsync(sql.ToString(), binds).ConfigureAwait(false);
+        }
+
+        public async Task<IReadOnlyList<IDictionary<string, object>>> SearchAsync(
+            string viewName, IEnumerable<string> columns, string term, int maxRows = 50)
+        {
+            var safeView = ValidateViewName(viewName);
+
+            var safeColumns = new List<string>();
+            if (columns != null)
+                foreach (var c in columns) safeColumns.Add(ValidateColumnName(c));
+            if (safeColumns.Count == 0)
+                throw new ArgumentException("Se requiere al menos una columna de busqueda", nameof(columns));
+
+            if (string.IsNullOrWhiteSpace(term))
+                return new List<IDictionary<string, object>>();
+
+            // UPPER(col) LIKE UPPER(:term) en cada columna, unidas por OR. El
+            // patron va como bind: el usuario nunca inyecta SQL, solo texto.
+            var sql = new StringBuilder("SELECT * FROM ").Append(safeView).Append(" WHERE ");
+            for (int i = 0; i < safeColumns.Count; i++)
+            {
+                if (i > 0) sql.Append(" OR ");
+                sql.Append("UPPER(").Append(safeColumns[i]).Append(") LIKE UPPER(:term)");
+            }
+            sql.Append(" FETCH FIRST :maxRows ROWS ONLY");
+
+            var binds = new[]
+            {
+                new OracleParameter("term", "%" + term.Trim() + "%"),
+                new OracleParameter("maxRows", maxRows)
+            };
+
+            return await ExecuteAsync(sql.ToString(), binds).ConfigureAwait(false);
+        }
+
+        private async Task<IReadOnlyList<IDictionary<string, object>>> ExecuteAsync(
+            string sql, IReadOnlyList<OracleParameter> binds)
+        {
             var rows = new List<IDictionary<string, object>>();
             using (var conn = new OracleConnection(_connectionString))
-            using (var cmd = new OracleCommand(sql.ToString(), conn))
+            using (var cmd = new OracleCommand(sql, conn))
             {
                 cmd.BindByName = true;
                 cmd.CommandType = CommandType.Text;
-                cmd.Parameters.AddRange(binds.ToArray());
+                foreach (var b in binds) cmd.Parameters.Add(b);
                 await conn.OpenAsync().ConfigureAwait(false);
                 using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
                 {

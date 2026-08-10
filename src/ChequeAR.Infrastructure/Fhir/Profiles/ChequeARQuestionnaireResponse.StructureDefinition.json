@@ -1,0 +1,65 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "ChequeARQuestionnaireResponse",
+  "url": "https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaireResponse",
+  "version": "1.0.0",
+  "name": "ChequeARQuestionnaireResponse",
+  "title": "Ficha clínica de ChequeAR",
+  "status": "active",
+  "publisher": "Hospital Garrahan",
+  "description": "Restricciones que ChequeAR impone sobre QuestionnaireResponse por encima de FHIR R5. Las tres son sobre trazabilidad: de quién es la ficha, a qué cuestionario responde, y con qué versión se completó.",
+  "fhirVersion": "5.0.0",
+  "kind": "resource",
+  "abstract": false,
+  "type": "QuestionnaireResponse",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/QuestionnaireResponse",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "QuestionnaireResponse.questionnaire",
+        "path": "QuestionnaireResponse.questionnaire",
+        "short": "Cuestionario al que responde",
+        "definition": "Obligatorio: sin la referencia, las respuestas no se pueden interpretar.",
+        "min": 1
+      },
+      {
+        "id": "QuestionnaireResponse.subject",
+        "path": "QuestionnaireResponse.subject",
+        "short": "Paciente, identificado por historia clínica",
+        "definition": "Obligatorio: una ficha sin paciente no tiene sentido clínico.",
+        "min": 1
+      },
+      {
+        "id": "QuestionnaireResponse.subject.identifier",
+        "path": "QuestionnaireResponse.subject.identifier",
+        "short": "Número de historia clínica del hospital",
+        "definition": "ChequeAR no posee la entidad Patient: la referencia siempre es por identificador, nunca por Reference resoluble.",
+        "min": 1
+      },
+      {
+        "id": "QuestionnaireResponse.extension",
+        "path": "QuestionnaireResponse.extension",
+        "slicing": {
+          "discriminator": [{ "type": "value", "path": "url" }],
+          "rules": "open"
+        }
+      },
+      {
+        "id": "QuestionnaireResponse.extension:versionAnclada",
+        "path": "QuestionnaireResponse.extension",
+        "sliceName": "versionAnclada",
+        "short": "Versión congelada con la que se completó la ficha",
+        "definition": "Obligatorio. Es lo que garantiza que la ficha refleje las preguntas que el médico realmente leyó: sin el anclaje, una publicación posterior reinterpretaría fichas ya cerradas.",
+        "min": 1,
+        "max": "1",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": ["https://chequear.garrahan/StructureDefinition/questionnaire-version-id"]
+          }
+        ]
+      }
+    ]
+  }
+}

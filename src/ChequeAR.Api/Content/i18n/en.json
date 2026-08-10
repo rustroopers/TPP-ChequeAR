@@ -44,6 +44,18 @@
   "status.active": "Active",
   "status.inactive": "Inactive",
 
+  "qtype.string": "Short text",
+  "qtype.text": "Long text",
+  "qtype.integer": "Number",
+  "qtype.decimal": "Decimal",
+  "qtype.scale": "Scale",
+  "qtype.boolean": "Boolean",
+  "qtype.choice": "Single choice",
+  "qtype.openchoice": "Multiple choice",
+  "qtype.date": "Date",
+  "qtype.datetime": "Date and time",
+  "qtype.attachment": "Attachment",
+
   "table.col.patient": "Patient",
   "table.col.questionnaire": "Questionnaire",
   "table.col.specialty": "Specialty",
@@ -73,7 +85,7 @@
   "home.action.questionnaires.title": "Questionnaires",
   "home.action.questionnaires.desc": "Create, edit and publish parametric forms",
   "home.action.reports.title": "Reports",
-  "home.action.reports.desc": "Build cohorts and export results",
+  "home.action.reports.desc": "Analyze records and export results",
   "home.recent.title": "Recent forms",
   "home.recent.viewall": "View all →",
   "home.empty.title": "No recent activity",
@@ -102,7 +114,7 @@
   "q2.btn.save": "Save",
   "q2.loading": "Loading editor…",
   "r3.loading": "Loading form…",
-  "e2.loading": "Loading query builder…",
+  "e2.loading": "Loading report builder…",
 
   "r1.title": "Search patient",
   "r1.subtitle": "By national ID, medical record or last name",
@@ -115,10 +127,10 @@
   "r1.btn.load": "Load form →",
 
   "e1.title": "Reports",
-  "e1.subtitle": "Saved cohorts and new queries",
-  "e1.new": "New query",
+  "e1.subtitle": "Saved reports and record analysis",
+  "e1.new": "New report",
   "e1.empty.title": "No saved reports",
-  "e1.empty.desc": "Build your first query to get started.",
+  "e1.empty.desc": "Build your first report to get started.",
 
   "audit.title": "Audit",
   "audit.subtitle": "System events",
@@ -130,5 +142,8 @@
   "integrations.title": "Integrations",
   "integrations.subtitle": "Health and latency of connected systems",
   "integrations.errors.title": "Recent errors",
-  "integrations.errors.empty": "No recent errors."
+  "integrations.errors.empty": "No recent errors.",
+
+  "data.error.title": "Could not load data",
+  "data.error.desc": "The database did not respond. What you see below is incomplete: this is not demo data, there is simply nothing to show."
 }

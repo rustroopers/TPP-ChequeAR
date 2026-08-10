@@ -47,7 +47,6 @@
 @* Recientes *@
 <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="m-0">@Cq.T("home.recent.title")</h2>
-    <a href="@Url.Action("Search", "Encounters")" class="cq-text-sm">@Cq.T("home.recent.viewall")</a>
 </div>
 
 @if (Model.RecentEncounters == null || Model.RecentEncounters.Count == 0)
@@ -71,7 +70,7 @@ else
                 <th>@Cq.T("table.col.specialty")</th>
                 <th>@Cq.T("table.col.status")</th>
                 <th>@Cq.T("table.col.updated")</th>
-                <th class="text-end">@Cq.T("table.col.open")</th>
+                <th class="text-end"><span class="visually-hidden">@Cq.T("table.col.open")</span></th>
             </tr>
         </thead>
         <tbody>
@@ -80,14 +79,24 @@ else
                 <tr>
                     <td>@enc.PatientName</td>
                     <td>@enc.QuestionnaireTitle</td>
-                    <td><span class="cq-chip cq-chip--@enc.SpecialtyCode">@enc.SpecialtyCode</span></td>
+                    <td><span class="cq-chip cq-chip--@enc.SpecialtyCode">@enc.SpecialtyLabel</span></td>
                     <td>
-                        @if (enc.Status == "published") { <span class="cq-badge cq-badge--published">@Cq.T("status.completed")</span> }
-                        else if (enc.Status == "draft") { <span class="cq-badge cq-badge--draft">@Cq.T("status.draft")</span> }
-                        else { <span class="cq-badge cq-badge--archived">@enc.Status</span> }
+                        @if (enc.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
+                        else if (enc.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
+                        else if (enc.Status == "amended") { <span class="cq-badge cq-badge--archived">Enmendada</span> }
+                        else { <span class="cq-badge cq-badge--archived">Con error</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@enc.UpdatedAt</td>
-                    <td class="text-end"><a href="@enc.OpenUrl" class="btn btn-sm btn-outline-primary">@Cq.T("common.open") →</a></td>
+                    <td class="text-end">
+                        @if (enc.Status == "pending")
+                        {
+                            <a href="@enc.OpenUrl" class="btn btn-sm btn-primary"><i class="bi bi-pencil-square me-1"></i>Continuar edición</a>
+                        }
+                        else
+                        {
+                            <a href="@enc.OpenUrl" class="btn btn-sm btn-outline-primary">@Cq.T("common.open") →</a>
+                        }
+                    </td>
                 </tr>
             }
         </tbody>

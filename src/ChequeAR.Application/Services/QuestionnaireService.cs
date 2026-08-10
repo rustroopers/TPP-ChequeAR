@@ -1,29 +1,70 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Application.Services
 {
+    /// <summary>Qué terminó pasando al pedir la baja de un cuestionario.</summary>
+    public enum DeleteOutcome
+    {
+        Deleted,
+        /// <summary>Tenía respuestas cargadas: se archivó en vez de eliminarse.</summary>
+        ArchivedBecauseInUse
+    }
+
     public class QuestionnaireService
     {
         private readonly IQuestionnaireRepository _repo;
+        private readonly IQuestionnaireResponseRepository _responses;
         private readonly IFhirValidator _validator;
         private readonly AuditDispatcher _audit;
 
-        public QuestionnaireService(IQuestionnaireRepository repo, IFhirValidator validator, AuditDispatcher audit)
+        public QuestionnaireService(
+            IQuestionnaireRepository repo,
+            IQuestionnaireResponseRepository responses,
+            IFhirValidator validator,
+            AuditDispatcher audit)
         {
             _repo = repo;
+            _responses = responses;
             _validator = validator;
             _audit = audit;
         }
+
+        // ── Lecturas ──────────────────────────────────────────────────────────────────
+        // Delegan al repositorio sin agregar nada. Existen igual porque la capa de
+        // presentación no debe conocer la de datos: un controller que inyecta un repositorio
+        // se salta la capa donde viven las reglas, y cuando aparece una regla nueva termina
+        // copiada en cada pantalla que hacía la consulta a mano.
+
+        public Task<Questionnaire> GetAsync(Guid id) => _repo.GetAsync(id);
+
+        public Task<IReadOnlyList<Questionnaire>> SearchAsync(
+            QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)
+            => _repo.SearchAsync(status, titleContains, specialtyCode, skip, take);
+
+        public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
+            => _repo.CountAsync(status, titleContains, specialtyCode);
+
+        public Task<IReadOnlyList<string>> GetSpecialtyCodesAsync() => _repo.GetSpecialtyCodesAsync();
+
+        public Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
+            => _repo.GetTitlesAsync(ids);
+
+        public Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber)
+            => _repo.GetVersionAsync(questionnaireId, versionNumber);
 
         public async Task<Questionnaire> CreateAsync(Questionnaire q, string userId)
         {
             q.Id = Guid.NewGuid();
             q.Status = QuestionnaireStatus.Draft;
+            q.HasPendingChanges = false;   // todavía no hay versión publicada que contradecir
             q.CreatedBy = userId;
             q.CreatedAt = DateTime.UtcNow;
             q.UpdatedAt = DateTime.UtcNow;
@@ -80,60 +121,198 @@ namespace ChequeAR.Application.Services
             }
         }
 
-        public async Task<Questionnaire> UpdateAsync(Guid id, Questionnaire patch, string userId)
+        /// <param name="expectedVersion">
+        /// ConcurrencyVersion que el cliente tenía al abrir el editor (llega por If-Match).
+        /// Si no coincide con la de la base, alguien más guardó en el medio y se rechaza en
+        /// vez de pisar su trabajo.
+        /// </param>
+        public async Task<Questionnaire> UpdateAsync(Guid id, Questionnaire patch, string userId, int? expectedVersion = null)
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
             if (q.Status == QuestionnaireStatus.Retired)
                 throw new InvalidOperationException("Retired questionnaires cannot be edited");
 
+            // Chequeo temprano: da un error claro sin tocar la base. La carrera que queda
+            // entre este read y el write la ataja el token de concurrencia en el UPDATE.
+            if (expectedVersion.HasValue && q.ConcurrencyVersion != expectedVersion.Value)
+                throw new ConcurrencyConflictException(expectedVersion.Value, q.ConcurrencyVersion);
+
             q.Title = patch.Title ?? q.Title;
             q.Description = patch.Description ?? q.Description;
             q.SpecialtyCode = patch.SpecialtyCode ?? q.SpecialtyCode;
             q.UpdatedAt = DateTime.UtcNow;
+            // Toda edición deja cambios pendientes de publicar. En un borrador el flag es
+            // inocuo (HasUnpublishedChanges() exige estado Activo).
+            q.HasPendingChanges = true;
+            q.ConcurrencyVersion++;
 
-            await _repo.UpdateAsync(q);
+            // Estructura (secciones/preguntas/opciones): si el patch trae alguna, reemplaza
+            // por completo la existente. Un patch sin estructura (colecciones vacías, que es
+            // lo que deja el binder cuando el cliente no manda "questions") no la toca.
+            var hasStructure = (patch.Groups != null && patch.Groups.Count > 0)
+                            || (patch.Questions != null && patch.Questions.Count > 0);
+            if (hasStructure)
+            {
+                var replacement = new Questionnaire { Id = q.Id, Groups = patch.Groups, Questions = patch.Questions };
+                AssignChildIds(replacement);
+                await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
+            }
+            else
+            {
+                await _repo.UpdateAsync(q);
+            }
+
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id, userId));
             return q;
         }
 
-        public async Task<Questionnaire> PublishAsync(Guid id, string fhirJson, string userId)
+        /// <summary>
+        /// Congela una versión. El recurso se arma SIEMPRE desde la base.
+        ///
+        /// Antes aceptába también un JSON del cliente, con prioridad sobre lo construido:
+        /// tenía sentido cuando el editor mantenía su propia representación. Con una sola
+        /// superficie FHIR ningún cliente lo manda, y dejarlo abierto permitía congelar una
+        /// versión cuyo contenido no se corresponde con la entidad — es decir, mentirle a
+        /// quien después responda esa ficha.
+        /// </summary>
+        public async Task<Questionnaire> PublishAsync(Guid id, string userId, string changeNote = null)
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
             if (!q.CanPublish()) throw new InvalidOperationException("Questionnaire cannot be published in current state");
 
-            var validation = _validator.Validate(fhirJson, "https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaire");
-            if (!validation.IsValid)
-                throw new InvalidOperationException("FHIR validation failed: " + string.Join("; ", validation.Errors));
-
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
+
+            var fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber);
+
+            var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
+            if (!validation.IsValid)
+                throw new ValidationFailedException(validation.Errors);
+
+            // Un único timestamp para la versión y para el cuestionario: no lo necesita
+            // HasPendingChanges (que es explícito), pero deja coherente el "última
+            // modificación" del listado con la fecha de publicación.
+            var now = DateTime.UtcNow;
             var version = new QuestionnaireVersion
             {
                 Id = Guid.NewGuid(),
                 QuestionnaireId = q.Id,
                 VersionNumber = nextVersionNumber,
                 FhirJson = fhirJson,
-                PublishedAt = DateTime.UtcNow,
-                PublishedBy = userId
+                PublishedAt = now,
+                PublishedBy = userId,
+                ChangeNote = string.IsNullOrWhiteSpace(changeNote) ? null : changeNote.Trim()
             };
-            await _repo.AddVersionAsync(version);
-
             q.CurrentVersionId = version.Id;
             q.Status = QuestionnaireStatus.Active;
-            q.UpdatedAt = DateTime.UtcNow;
-            await _repo.UpdateAsync(q);
+            q.HasPendingChanges = false;   // lo pendiente acaba de quedar congelado en la versión
+            q.UpdatedAt = now;
+            q.ConcurrencyVersion++;
+            await _repo.PublishAsync(q, version);
 
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$publish", userId));
             return q;
+        }
+
+        /// <summary>
+        /// Copia estructura completa en un cuestionario nuevo, siempre en Borrador y sin
+        /// versiones publicadas: es un punto de partida, no una continuación del original.
+        /// </summary>
+        public async Task<Questionnaire> CloneAsync(Guid id, string newTitle, string userId)
+        {
+            var source = await _repo.GetAsync(id);
+            if (source == null) throw new InvalidOperationException("Not found");
+
+            var copy = new Questionnaire
+            {
+                Title = string.IsNullOrWhiteSpace(newTitle) ? source.Title + " (copia)" : newTitle,
+                Description = source.Description,
+                SpecialtyCode = source.SpecialtyCode,
+                SpecialtyDisplay = source.SpecialtyDisplay
+            };
+
+            // Los linkId se conservan a propósito: son la referencia de las respuestas y
+            // mantenerlos hace que un clon siga siendo comparable con el original en reportes.
+            foreach (var g in (source.Groups ?? new List<QuestionGroup>()).OrderBy(x => x.OrderIndex))
+            {
+                var newGroup = new QuestionGroup { LinkId = g.LinkId, Title = g.Title, OrderIndex = g.OrderIndex };
+                foreach (var question in (source.Questions ?? new List<Question>())
+                             .Where(x => x.GroupId == g.Id).OrderBy(x => x.OrderIndex))
+                    newGroup.Questions.Add(CopyQuestion(question));
+                copy.Groups.Add(newGroup);
+            }
+            foreach (var question in (source.Questions ?? new List<Question>())
+                         .Where(x => !x.GroupId.HasValue).OrderBy(x => x.OrderIndex))
+                copy.Questions.Add(CopyQuestion(question));
+
+            var created = await CreateAsync(copy, userId);
+            _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + created.Id + "$clone-from-" + id, userId));
+            return created;
+        }
+
+        private static Question CopyQuestion(Question source)
+        {
+            var copy = new Question
+            {
+                LinkId = source.LinkId,
+                Text = source.Text,
+                Type = source.Type,
+                Required = source.Required,
+                RepeatsAllowed = source.RepeatsAllowed,
+                OrderIndex = source.OrderIndex,
+                ValidationJson = source.ValidationJson,
+                EnableWhenJson = source.EnableWhenJson,
+                CodingJson = source.CodingJson
+            };
+            foreach (var opt in (source.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex))
+                copy.Options.Add(new AnswerOption
+                {
+                    Value = opt.Value,
+                    Display = opt.Display,
+                    Code = opt.Code,
+                    OrderIndex = opt.OrderIndex
+                });
+            return copy;
+        }
+
+        /// <summary>
+        /// Baja lógica, con la salvaguarda de la spec: si ya hay respuestas cargadas el
+        /// cuestionario NO se elimina —esas respuestas quedarían apuntando a algo que
+        /// desapareció del listado— sino que se archiva.
+        /// </summary>
+        public async Task<DeleteOutcome> DeleteAsync(Guid id, string userId)
+        {
+            var q = await _repo.GetAsync(id);
+            if (q == null) throw new InvalidOperationException("Not found");
+
+            if (await _responses.HasResponsesAsync(id))
+            {
+                if (q.Status != QuestionnaireStatus.Retired)
+                {
+                    q.Status = QuestionnaireStatus.Retired;
+                    q.UpdatedAt = DateTime.UtcNow;
+                    q.ConcurrencyVersion++;
+                    await _repo.UpdateAsync(q);
+                }
+                _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + id + "$archive-instead-of-delete", userId));
+                return DeleteOutcome.ArchivedBecauseInUse;
+            }
+
+            await _repo.SoftDeleteAsync(id);
+            _audit.Enqueue(AuditEventBuilder.For("delete", "Questionnaire/" + id, userId));
+            return DeleteOutcome.Deleted;
         }
 
         public async Task ArchiveAsync(Guid id, string userId)
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
+            if (q.Status == QuestionnaireStatus.Retired)
+                throw new InvalidOperationException("Questionnaire is already archived");
             q.Status = QuestionnaireStatus.Retired;
             q.UpdatedAt = DateTime.UtcNow;
+            q.ConcurrencyVersion++;
             await _repo.UpdateAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$archive", userId));
         }

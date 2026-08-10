@@ -18,6 +18,13 @@
     <PackageReference Include="EntityFramework" Version="6.5.1" />
     <PackageReference Include="Oracle.ManagedDataAccess" Version="21.17.0" />
     <PackageReference Include="Oracle.ManagedDataAccess.EntityFramework" Version="21.17.0" />
+    <!--
+      Validacion contra perfiles. .Specification trae el Validator; .Specification.Data
+      trae el specification.zip con las definiciones oficiales R5 que consume ZipSource.
+      Misma version pinneada que Hl7.Fhir.R5 (ver research.md R1).
+    -->
+    <PackageReference Include="Hl7.Fhir.Specification.R5" Version="5.13.4" />
+    <PackageReference Include="Hl7.Fhir.Specification.Data.R5" Version="5.13.4" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,6 +36,34 @@
     <None Update="Oracle\allowlist.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!--
+      Perfiles de conformidad propios. Mismo patrón que allowlist.yaml: viajan como
+      archivos junto al ensamblado y el validador los carga al arrancar. Que sean
+      artefactos versionados y no constantes en código es parte del requisito: el
+      sistema declara cumplirlos en meta.profile y alguien puede pedir verlos.
+    -->
+    <None Update="Fhir\Profiles\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
+
+  <!--
+    Cada migracion EF6 lleva un .resx con el snapshot del modelo. El Designer.cs
+    generado lo busca con ResourceManager(typeof(InitialCreate)), o sea por el
+    nombre de la CLASE: "ChequeAR.Infrastructure.Migrations.InitialCreate".
+    Pero el archivo se llama "<timestamp>_InitialCreate.resx", y en un proyecto
+    SDK-style el manifest name sale de la ruta -> incluiria el timestamp y EF
+    tira MissingManifestResourceException al aplicar.
+
+    Se le saca el prefijo "<15 digitos>_" al nombre del recurso. Aplica solo a
+    Migrations\, asi cualquier migracion futura funciona sin tocar el csproj.
+  -->
+  <Target Name="FixMigrationResourceNames" BeforeTargets="PrepareResourceNames">
+    <ItemGroup>
+      <EmbeddedResource Condition="'%(RelativeDir)' == 'Migrations\'">
+        <LogicalName>$(RootNamespace).Migrations.$([System.Text.RegularExpressions.Regex]::Replace('%(Filename)', '^\d{15}_', '')).resources</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
 
 </Project>

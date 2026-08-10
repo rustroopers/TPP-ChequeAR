@@ -7,35 +7,114 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">Historial · @Model.Patient.FullName</h1>
-        <p class="cq-page-header__subtitle">HC @Model.Patient.HC · @Model.Patient.AgeLabel · <span class="cq-chip cq-chip--@Model.Patient.SpecialtyCode">@Model.Patient.SpecialtyLabel</span></p>
     </div>
 </header>
+
+@using (Html.BeginForm("Timeline", "Encounters", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "patient-timeline" }))
+{
+    @Html.Hidden("patientId", Model.Patient.HC)
+    <div class="row g-2 align-items-end" style="max-width:760px;">
+        <div class="col-md-3">
+            <label class="form-label cq-text-sm">Cuestionario</label>
+            <select class="form-select" name="cuestionario">
+                <option value="">Todos</option>
+                @foreach (var opt in Model.AvailableQuestionnaires)
+                {
+                    <option value="@opt.Value" selected="@(Model.QuestionnaireFilter.HasValue && Model.QuestionnaireFilter.Value.ToString() == opt.Value)">@opt.Label</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label cq-text-sm">Especialidad</label>
+            <select class="form-select" name="especialidad">
+                <option value="">Todas</option>
+                @foreach (var opt in Model.AvailableSpecialties)
+                {
+                    <option value="@opt.Value" selected="@(Model.SpecialtyFilter == opt.Value)">@opt.Label</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label cq-text-sm">Autor</label>
+            <select class="form-select" name="autor">
+                <option value="">Todos</option>
+                @foreach (var a in Model.AvailableAuthors)
+                {
+                    <option value="@a" selected="@(Model.AuthorFilter == a)">@a</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label cq-text-sm">Estado</label>
+            <select class="form-select" name="estado">
+                <option value="">Todos</option>
+                <option value="pendiente" selected="@(Model.StatusFilter == "pendiente")">Pendiente</option>
+                <option value="finalizada" selected="@(Model.StatusFilter == "finalizada")">Finalizada</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label cq-text-sm">Período</label>
+            <cq-date-range name-from="from" name-to="to" value-from="@Model.From" value-to="@Model.To"></cq-date-range>
+        </div>
+    </div>
+}
 
 <div class="cq-card" style="max-width:760px;">
     @if (Model.Entries.Count == 0)
     {
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-clock-history"></i></div>
-            <div class="cq-empty__title">Sin fichas previas</div>
+            @if (Model.HasAnyEncounters)
+            {
+                <div class="cq-empty__title">Sin resultados para estos filtros</div>
+            }
+            else
+            {
+                <div class="cq-empty__title">Sin fichas previas</div>
+            }
         </div>
     }
     else
     {
-        <div style="position:relative; padding-left:20px; border-left:2px solid var(--cq-neutral-200);">
-            @foreach (var e in Model.Entries)
+        <div style="position:relative; padding-left:20px;">
+            @for (var i = 0; i < Model.Entries.Count; i++)
             {
+                var e = Model.Entries[i];
+                var isLast = i == Model.Entries.Count - 1;
                 <div style="position:relative; padding-bottom:24px;">
+                    @if (!isLast)
+                    {
+                        <span style="position:absolute; left:-22px; top:18px; bottom:-12px; width:2px; background:var(--cq-neutral-200);"></span>
+                    }
                     <span style="position:absolute; left:-27px; top:6px; width:12px; height:12px; border-radius:50%; background:var(--cq-primary); border:2px solid #fff;"></span>
                     <div class="cq-text-sm cq-text-muted">@e.Date</div>
-                    <div class="d-flex align-items-center gap-2 mt-1">
-                        <strong>@e.QuestionnaireTitle</strong>
-                        <span class="cq-text-xs cq-text-muted">v@(e.QuestionnaireVersion)</span>
-                        @if (e.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
-                    </div>
                     <div class="d-flex justify-content-between align-items-center mt-1">
-                        <span class="cq-text-sm cq-text-muted">por @e.Author</span>
-                        <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
+                        <div class="d-flex align-items-center gap-2">
+                            <strong>@e.QuestionnaireTitle</strong>
+                            @if (e.QuestionnaireVersion > 0)
+                            {
+                                <span class="cq-text-xs cq-text-muted" title="Versión con la que se completó">v@(e.QuestionnaireVersion)</span>
+                            }
+                            <span class="cq-chip cq-chip--@e.SpecialtyCode">@e.SpecialtyLabel</span>
+                            @if (e.Status == "completed")
+                            {
+                                <span class="cq-badge cq-badge--published">Finalizada</span>
+                            }
+                            else
+                            {
+                                <span class="cq-badge cq-badge--info">Pendiente</span>
+                            }
+                        </div>
+                        @if (e.Status == "completed")
+                        {
+                            <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
+                        }
+                        else
+                        {
+                            <a href="@Url.Action("Load", new { patientId = Model.Patient.HC, questionnaireId = e.QuestionnaireId })" class="btn btn-sm btn-primary"><i class="bi bi-pencil-square me-1"></i>Continuar edición</a>
+                        }
                     </div>
+                    <div class="cq-text-sm cq-text-muted mt-1">por @e.Author</div>
                 </div>
             }
         </div>
