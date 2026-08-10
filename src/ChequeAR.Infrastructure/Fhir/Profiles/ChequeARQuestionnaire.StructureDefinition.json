@@ -1,0 +1,61 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "ChequeARQuestionnaire",
+  "url": "https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaire",
+  "version": "1.0.0",
+  "name": "ChequeARQuestionnaire",
+  "title": "Cuestionario clínico de ChequeAR",
+  "status": "active",
+  "publisher": "Hospital Garrahan",
+  "description": "Restricciones que ChequeAR impone sobre Questionnaire por encima de FHIR R5. Sólo declara lo que el sistema realmente exige para poder publicar y renderizar una versión: si una regla no está acá, no se está verificando. La unicidad de linkId no aparece porque ya la impone el invariante que-2 de la especificación base.",
+  "fhirVersion": "5.0.0",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Questionnaire",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Questionnaire",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Questionnaire.title",
+        "path": "Questionnaire.title",
+        "short": "Título visible del cuestionario",
+        "definition": "Obligatorio: sin título el listado no es usable y las fichas quedan sin identificar.",
+        "min": 1
+      },
+      {
+        "id": "Questionnaire.subjectType",
+        "path": "Questionnaire.subjectType",
+        "short": "Siempre Patient",
+        "definition": "ChequeAR sólo cuestiona pacientes.",
+        "min": 1,
+        "max": "1",
+        "fixedCode": "Patient"
+      },
+      {
+        "id": "Questionnaire.useContext",
+        "path": "Questionnaire.useContext",
+        "short": "Especialidad a la que pertenece el cuestionario",
+        "definition": "Obligatorio: la especialidad gobierna los filtros del listado, los permisos por especialidad y el alcance de los reportes. Un cuestionario sin especialidad queda invisible para quien debería usarlo.",
+        "min": 1
+      },
+      {
+        "id": "Questionnaire.item.linkId",
+        "path": "Questionnaire.item.linkId",
+        "short": "Identificador estable de la pregunta",
+        "definition": "Las respuestas y los filtros de reportes referencian por linkId. La unicidad la exige el invariante que-2 de la especificación base.",
+        "min": 1
+      },
+      {
+        "id": "Questionnaire.item.type",
+        "path": "Questionnaire.item.type",
+        "short": "Sólo los tipos que el renderizador sabe dibujar",
+        "definition": "Un tipo fuera de esta lista produce una pregunta que se puede publicar pero no responder. Vocabulario R5: las preguntas de opción son 'coding' y se distinguen por answerConstraint — 'choice' y 'open-choice' eran de R4 y no existen acá.",
+        "binding": {
+          "strength": "required",
+          "valueSet": "https://chequear.garrahan/ValueSet/ChequeARQuestionnaireItemType"
+        }
+      }
+    ]
+  }
+}

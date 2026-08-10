@@ -160,11 +160,16 @@ else
             headers: { "Authorization": "Bearer " + meta.getAttribute("content") }
         }).then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
             if (!bundle) return;
-            var entries = bundle.entry || bundle.Entry || [];
+            // Bundle conforme: los resultados vienen en entry[].resource, y el cuestionario
+            // se referencia por su canonical (.../Questionnaire/{id}), no por un campo propio.
+            var entries = bundle.entry || [];
             var lastByQ = {};
             entries.forEach(function (e) {
-                var qid = (e.QuestionnaireId || e.questionnaireId || "").toLowerCase();
-                var when = e.AuthoredAt || e.authoredAt;
+                var r = e.resource;
+                if (!r) return;
+                var canonical = r.questionnaire || "";
+                var qid = canonical.substring(canonical.lastIndexOf("/") + 1).toLowerCase();
+                var when = r.authored;
                 if (!qid || !when) return;
                 if (!lastByQ[qid] || when > lastByQ[qid]) lastByQ[qid] = when;
             });

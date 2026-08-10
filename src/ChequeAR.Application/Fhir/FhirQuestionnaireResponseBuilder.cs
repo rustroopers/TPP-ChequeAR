@@ -1,127 +1,145 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using Hl7.Fhir.Model;
+using Hl7.Fhir.Serialization;
+using DomainResponse = ChequeAR.Domain.Entities.QuestionnaireResponse;
+using DomainResponseItem = ChequeAR.Domain.Entities.QuestionnaireResponseItem;
+using FhirResponse = Hl7.Fhir.Model.QuestionnaireResponse;
 
 namespace ChequeAR.Application.Fhir
 {
     /// <summary>
-    /// Serializa una respuesta de dominio al recurso FHIR R5 QuestionnaireResponse que se
-    /// guarda en QuestionnaireResponse.FhirJson.
-    ///
-    /// Ese campo no lo escribía nadie: FinalizeAsync lo validaba y, al estar vacío, toda
-    /// finalización terminaba en 422.
+    /// Traduce una respuesta de dominio al recurso FHIR R5 QuestionnaireResponse, que es la
+    /// representación canónica de la ficha y lo que valida $finalize.
     /// </summary>
     public static class FhirQuestionnaireResponseBuilder
     {
-        public static string Build(QuestionnaireResponse response, RenderableQuestionnaire pinnedVersion, PatientDemographicsDto patient = null)
+        public const string PatientIdentifierSystem = "https://chequear.garrahan/patient-hospital-id";
+        private const string QuestionnaireBaseUrl = "https://chequear.garrahan/Questionnaire/";
+
+        public static string Build(
+            DomainResponse response, RenderableQuestionnaire pinnedVersion, PatientDemographicsDto patient = null)
+            => new FhirJsonSerializer().SerializeToString(ToResource(response, pinnedVersion, patient));
+
+        public static FhirResponse ToResource(
+            DomainResponse response, RenderableQuestionnaire pinnedVersion, PatientDemographicsDto patient = null)
         {
             if (response == null) throw new ArgumentNullException(nameof(response));
 
-            var resource = new JObject
+            var resource = new FhirResponse
             {
-                ["resourceType"] = "QuestionnaireResponse",
-                ["id"] = response.Id.ToString(),
-                ["questionnaire"] = "https://chequear.garrahan/Questionnaire/" + response.QuestionnaireId,
-                ["status"] = FhirStatus(response.Status),
-                ["authored"] = response.AuthoredAt.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                ["subject"] = new JObject
+                Id = response.Id.ToString(),
+                Questionnaire = QuestionnaireBaseUrl + response.QuestionnaireId,
+                Status = FhirStatus(response.Status),
+                Authored = response.AuthoredAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
+                Subject = new ResourceReference
                 {
-                    ["identifier"] = new JObject
-                    {
-                        ["system"] = "https://chequear.garrahan/patient-hospital-id",
-                        ["value"] = response.PatientHospitalId
-                    },
-                    ["display"] = patient?.FullName ?? response.PatientHospitalId
+                    Identifier = new Identifier(PatientIdentifierSystem, response.PatientHospitalId),
+                    Display = patient?.FullName ?? response.PatientHospitalId
                 }
             };
 
+            // Ancla la ficha a la versión con la que se completó. Sin equivalente nativo:
+            // el dominio ancla por Guid de versión, no por número (ver research.md R3).
+            ChequeARExtensions.SetQuestionnaireVersionId(resource, response.QuestionnaireVersionId);
+
             if (!string.IsNullOrWhiteSpace(response.AuthorUserId))
-                resource["author"] = new JObject { ["display"] = response.AuthorUserId };
+                resource.Author = new ResourceReference { Display = response.AuthorUserId };
 
-            // Patient "contained": es lo que lee FhirPatientReader cuando el hospital no
-            // responde y las respuestas propias son la única fuente de pacientes.
-            if (patient != null && !string.IsNullOrWhiteSpace(patient.FullName))
-            {
-                var contained = new JObject
-                {
-                    ["resourceType"] = "Patient",
-                    ["id"] = "p",
-                    ["name"] = new JArray(new JObject { ["text"] = patient.FullName })
-                };
-                if (!string.IsNullOrWhiteSpace(patient.Gender)) contained["gender"] = patient.Gender;
-                if (patient.BirthDate.HasValue) contained["birthDate"] = patient.BirthDate.Value.ToString("yyyy-MM-dd");
-                resource["contained"] = new JArray(contained);
-            }
+            AddContainedPatient(resource, patient);
 
-            resource["item"] = BuildItems(response, pinnedVersion);
-            return JsonConvert.SerializeObject(resource, Formatting.None);
+            foreach (var item in BuildItems(response, pinnedVersion)) resource.Item.Add(item);
+            return resource;
         }
 
-        private static JArray BuildItems(QuestionnaireResponse response, RenderableQuestionnaire pinnedVersion)
+        /// <summary>
+        /// Paciente embebido. No es decorativo: cuando el hospital no responde, este Patient
+        /// contenido es la ÚNICA forma de saber de quién es la ficha — lo lee PatientService
+        /// en modo degradado.
+        /// </summary>
+        private static void AddContainedPatient(FhirResponse resource, PatientDemographicsDto patient)
         {
-            // Los textos vienen de la VERSION ANCLADA, no de la entidad viva: si alguien
-            // renombro una pregunta despues, la ficha conserva lo que el medico leyo.
+            if (patient == null || string.IsNullOrWhiteSpace(patient.FullName)) return;
+
+            var contained = new Patient
+            {
+                Id = "p",
+                Name = { new HumanName { Text = patient.FullName } }
+            };
+            if (!string.IsNullOrWhiteSpace(patient.Gender))
+                contained.GenderElement = new Code<AdministrativeGender>(
+                    Hl7.Fhir.Utility.EnumUtility.ParseLiteral<AdministrativeGender>(patient.Gender));
+            if (patient.BirthDate.HasValue)
+                contained.BirthDate = patient.BirthDate.Value.ToString("yyyy-MM-dd");
+
+            resource.Contained.Add(contained);
+        }
+
+        private static List<FhirResponse.ItemComponent> BuildItems(
+            DomainResponse response, RenderableQuestionnaire pinnedVersion)
+        {
+            // Los textos vienen de la VERSIÓN ANCLADA, no de la entidad viva: si alguien
+            // renombró una pregunta después, la ficha conserva lo que el médico leyó.
             var textByLinkId = (pinnedVersion?.Groups ?? new List<RenderableGroup>())
                 .SelectMany(g => g.Questions)
                 .Where(x => !string.IsNullOrWhiteSpace(x.LinkId))
                 .GroupBy(x => x.LinkId)
                 .ToDictionary(g => g.Key, g => g.First().Text);
 
-            var items = new JArray();
-            // Un linkId puede repetirse (opción múltiple: un item por opción marcada). En
-            // FHIR eso es UN item con varias entradas en "answer".
-            foreach (var group in (response.Items ?? new List<QuestionnaireResponseItem>())
+            var items = new List<FhirResponse.ItemComponent>();
+
+            // Un linkId puede repetirse en el dominio (opción múltiple: un registro por
+            // opción marcada). En FHIR eso es UN item con varias entradas en answer.
+            foreach (var grupo in (response.Items ?? new List<DomainResponseItem>())
                          .Where(i => !string.IsNullOrWhiteSpace(i.LinkId))
                          .GroupBy(i => i.LinkId))
             {
-                var answers = new JArray();
-                foreach (var value in group.Select(Answer).Where(a => a != null)) answers.Add(value);
+                var item = new FhirResponse.ItemComponent { LinkId = grupo.Key };
 
-                var item = new JObject { ["linkId"] = group.Key };
-                if (textByLinkId.TryGetValue(group.Key, out var text) && !string.IsNullOrWhiteSpace(text))
-                    item["text"] = text;
-                // Una pregunta sin responder se serializa sin "answer", no con un answer vacío.
-                if (answers.Count > 0) item["answer"] = answers;
+                if (textByLinkId.TryGetValue(grupo.Key, out var text) && !string.IsNullOrWhiteSpace(text))
+                    item.Text = text;
+
+                foreach (var valor in grupo.Select(Answer).Where(a => a != null))
+                    item.Answer.Add(new FhirResponse.AnswerComponent { Value = valor });
+
+                // Una pregunta sin responder se serializa SIN answer, no con uno vacío.
                 items.Add(item);
             }
             return items;
         }
 
-        private static JObject Answer(QuestionnaireResponseItem item)
+        private static DataType Answer(DomainResponseItem item)
         {
+            // El adjunto se guarda por referencia: el archivo ya está subido.
             if (item.AttachmentId.HasValue)
             {
-                return new JObject
+                return new Attachment
                 {
-                    ["valueAttachment"] = new JObject
-                    {
-                        ["url"] = "/api/attachments/" + item.AttachmentId.Value,
-                        ["title"] = item.ValueString
-                    }
+                    Url = "/api/attachments/" + item.AttachmentId.Value,
+                    Title = item.ValueString
                 };
             }
-            if (item.ValueBoolean.HasValue) return new JObject { ["valueBoolean"] = item.ValueBoolean.Value };
-            if (item.ValueInteger.HasValue) return new JObject { ["valueInteger"] = item.ValueInteger.Value };
-            if (item.ValueDecimal.HasValue) return new JObject { ["valueDecimal"] = item.ValueDecimal.Value };
+            if (item.ValueBoolean.HasValue) return new FhirBoolean(item.ValueBoolean.Value);
+            if (item.ValueInteger.HasValue) return new Integer(item.ValueInteger.Value);
+            if (item.ValueDecimal.HasValue) return new FhirDecimal(item.ValueDecimal.Value);
             if (item.ValueDate.HasValue)
-                return new JObject { ["valueDateTime"] = item.ValueDate.Value.ToString("yyyy-MM-ddTHH:mm:ss") };
+                return new FhirDateTime(item.ValueDate.Value.ToString("yyyy-MM-dd'T'HH:mm:ss"));
             if (!string.IsNullOrEmpty(item.ValueCode))
-                return new JObject { ["valueCoding"] = new JObject { ["code"] = item.ValueCode, ["display"] = item.ValueCode } };
-            if (!string.IsNullOrEmpty(item.ValueString)) return new JObject { ["valueString"] = item.ValueString };
+                return new Coding(null, item.ValueCode, item.ValueCode);
+            if (!string.IsNullOrEmpty(item.ValueString)) return new FhirString(item.ValueString);
             return null;   // sin responder
         }
 
-        private static string FhirStatus(ResponseStatus status)
+        private static FhirResponse.QuestionnaireResponseStatus FhirStatus(ResponseStatus status)
         {
             switch (status)
             {
-                case ResponseStatus.Completed: return "completed";
-                case ResponseStatus.Amended: return "amended";
-                default: return "in-progress";
+                case ResponseStatus.Completed: return FhirResponse.QuestionnaireResponseStatus.Completed;
+                case ResponseStatus.Amended:   return FhirResponse.QuestionnaireResponseStatus.Amended;
+                case ResponseStatus.EnteredInError: return FhirResponse.QuestionnaireResponseStatus.EnteredInError;
+                default: return FhirResponse.QuestionnaireResponseStatus.InProgress;
             }
         }
     }

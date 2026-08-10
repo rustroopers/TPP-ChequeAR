@@ -7,33 +7,9 @@ namespace ChequeAR.Tests.Application
 {
     public class ReportPivotTests
     {
-        // El bug: ResponseId es RAW(16) en Oracle y ODP.NET lo devuelve como byte[].
-        // Convert.ToString(byte[]) da "System.Byte[]" para TODAS las filas, asi que el
-        // pivot agrupaba todas las fichas bajo la misma clave y devolvia UNA sola fila con
-        // las respuestas de distintos pacientes mezcladas.
-        [Fact]
-        public void Normalize_SixteenByteArray_BecomesGuid()
-        {
-            var a = Guid.NewGuid();
-            var b = Guid.NewGuid();
-
-            var na = OracleValue.Normalize(a.ToByteArray());
-            var nb = OracleValue.Normalize(b.ToByteArray());
-
-            Assert.Equal(a, na);
-            Assert.Equal(b, nb);
-            Assert.NotEqual(Convert.ToString(na), Convert.ToString(nb));
-        }
-
-        // Un byte[] que no sea de 16 no es un Guid: no se toca.
-        [Fact]
-        public void Normalize_OtherValues_PassThrough()
-        {
-            Assert.Equal("texto", OracleValue.Normalize("texto"));
-            Assert.Equal(42, OracleValue.Normalize(42));
-            var otros = new byte[] { 1, 2, 3 };
-            Assert.Same(otros, OracleValue.Normalize(otros));
-        }
+        // La normalizacion del identificador (byte[16] -> Guid) es comportamiento del
+        // driver, no del pivot: sus pruebas viven en MockHospital.Tests, que sí ve la capa
+        // de infraestructura. Acá se asume ya normalizado, que es como llega.
 
         // Con los ResponseId ya normalizados, cada ficha es una fila.
         [Fact]
@@ -70,7 +46,7 @@ namespace ChequeAR.Tests.Application
         {
             return new Dictionary<string, object>
             {
-                ["ResponseId"] = OracleValue.Normalize(responseId.ToByteArray()),
+                ["ResponseId"] = responseId,
                 ["PatientHospitalId"] = hc,
                 ["AuthoredAt"] = new DateTime(2026, 7, 22),
                 ["LinkId"] = linkId,

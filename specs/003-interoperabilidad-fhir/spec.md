@@ -4,6 +4,28 @@
 **Created**: 2026-06-01
 **Status**: Draft
 
+
+> ## ✅ Cerrada por la spec 009
+>
+> Lo que este módulo dejó en estado de MVP lo completa
+> [`009-conformidad-fhir-capas`](../009-conformidad-fhir-capas/spec.md):
+>
+> - **Persistencia y exposición como recursos FHIR reales.** Hasta 009 las rutas tenían forma
+>   FHIR pero devolvían la entidad de dominio serializada; ahora devuelven recursos R5
+>   construidos con el SDK oficial, con Bundle conformes y `application/fhir+json` por omisión.
+> - **Validación real.** El validador de este módulo era un sustituto que sólo verificaba la
+>   presencia de la cadena `"resourceType"`. Al reemplazarlo se descubrió que había dejado
+>   pasar 9 versiones publicadas con vocabulario R4 mientras el sistema declaraba conformidad
+>   5.0.0 — ver R8 en el research de 009.
+> - **Perfiles de conformidad.** El perfil `ChequeARQuestionnaire` que este módulo declaraba
+>   cumplir **no existía como archivo**. En 009 se publican como artefactos versionados.
+> - **`OperationOutcome`** en todos los errores, en lugar de un formato propio.
+> - **Patient y Encounter** expuestos como recursos de sólo lectura.
+>
+> Lo que **no** cambia respecto de lo especificado acá: `Observation` se sigue consumiendo del
+> servidor FHIR del hospital y no se expone; el adaptador a la vista Oracle sigue siendo la
+> fuente de pacientes cuando FHIR no alcanza.
+
 ## Contexto
 
 Núcleo de datos del sistema basado en HL7 FHIR R5. Provee:

@@ -108,5 +108,16 @@ namespace ChequeAR.Api.Models
     {
         public string Type { get; set; }
         public string Interactions { get; set; }
+
+        /// <summary>
+        /// Un recurso declarado SIN interacciones significa "conozco este tipo y NO lo
+        /// soporto". Sin distinguirlo, la pantalla lo mostraba igual que a uno soportado
+        /// pero con la columna de operaciones vacía, que se lee como un error de la pantalla
+        /// en vez de como una decisión.
+        /// </summary>
+        public bool Soportado { get; set; } = true;
+
+        /// <summary>Nota para quien integra: por qué no se soporta, o de dónde salen los datos.</summary>
+        public string Nota { get; set; }
     }
 }

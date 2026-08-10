@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Dtos;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Application.Reports;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -15,15 +15,15 @@ namespace ChequeAR.Api.Controllers.Mvc
     // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
     public class ReportsController : Controller
     {
-        private readonly ISavedReportRepository _savedRepo;
+        private readonly SavedReportService _saved;
         private readonly ReportExecutor _executor;
-        private readonly IQuestionnaireRepository _qRepo;
+        private readonly QuestionnaireService _questionnaires;
 
-        public ReportsController(ISavedReportRepository savedRepo, ReportExecutor executor, IQuestionnaireRepository qRepo)
+        public ReportsController(SavedReportService saved, ReportExecutor executor, QuestionnaireService questionnaires)
         {
-            _savedRepo = savedRepo;
+            _saved = saved;
             _executor = executor;
-            _qRepo = qRepo;
+            _questionnaires = questionnaires;
         }
 
         // E1
@@ -45,14 +45,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // listado salía siempre vacío aunque hubiera consultas guardadas.
                 var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
                     ? User.Identity.Name : "dev";
-                var saved = await _savedRepo.ListForUserAsync(userId, new string[0]);
+                var saved = await _saved.ListForUserAsync(userId, new string[0]);
                 // El titulo del cuestionario base, no su GUID. Se cachea porque varios
                 // reportes guardados suelen apuntar al mismo cuestionario.
                 var titles = new Dictionary<Guid, string>();
                 foreach (var r in saved)
                 {
                     if (!titles.ContainsKey(r.QuestionnaireId))
-                        titles[r.QuestionnaireId] = (await _qRepo.GetAsync(r.QuestionnaireId))?.Title;
+                        titles[r.QuestionnaireId] = (await _questionnaires.GetAsync(r.QuestionnaireId))?.Title;
 
                     model.Items.Add(new SavedReportItem
                     {
@@ -102,7 +102,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportPreviewViewModel();
             try
             {
-                var saved = await _savedRepo.GetAsync(id);
+                var saved = await _saved.GetAsync(id);
                 if (saved == null) return HttpNotFound();
 
                 model.ReportName = saved.Name;
@@ -159,7 +159,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportStatsViewModel { ReportId = id };
             try
             {
-                var saved = await _savedRepo.GetAsync(id);
+                var saved = await _saved.GetAsync(id);
                 if (saved == null) return HttpNotFound();
                 model.ReportName = saved.Name;
 

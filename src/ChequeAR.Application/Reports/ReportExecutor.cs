@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
-using Oracle.ManagedDataAccess.Client;
 
 namespace ChequeAR.Application.Reports
 {
@@ -16,13 +15,13 @@ namespace ChequeAR.Application.Reports
         /// </summary>
         public const int MaxSyncRows = 10000;
 
-        private readonly string _connectionString;
+        private readonly IReportQueryRunner _runner;
         private readonly QueryBuilder _builder;
         private readonly IQuestionnaireRepository _questionnaires;
 
-        public ReportExecutor(string connectionString, QueryBuilder builder, IQuestionnaireRepository questionnaires)
+        public ReportExecutor(IReportQueryRunner runner, QueryBuilder builder, IQuestionnaireRepository questionnaires)
         {
-            _connectionString = connectionString;
+            _runner = runner;
             _builder = builder;
             _questionnaires = questionnaires;
         }
@@ -72,44 +71,18 @@ namespace ChequeAR.Application.Reports
 
             var built = _builder.Build(q, schema, paginate);
 
-            var rows = new List<Dictionary<string, object>>();
-            int totalResponses;
+            // La ejecución la hace el adaptador: quién abre la conexión y cómo se bindean los
+            // parámetros no es una decisión del negocio.
+            var ejecutado = await _runner.RunAsync(built, paginate);
 
-            using (var conn = new OracleConnection(_connectionString))
-            {
-                await conn.OpenAsync();
+            // El tope de filas exportables SÍ es una regla de negocio, así que se aplica acá.
+            if (!paginate && ejecutado.TotalResponses > MaxSyncRows)
+                throw new InvalidOperationException(
+                    "La consulta devuelve " + ejecutado.TotalResponses + " fichas y el máximo para exportar en línea es " +
+                    MaxSyncRows + ". Acotá el rango de fechas o agregá filtros.");
 
-                using (var countCmd = new OracleCommand(built.CountSql, conn))
-                {
-                    countCmd.BindByName = true;
-                    countCmd.Parameters.AddRange(CloneParameters(built.Parameters));
-                    totalResponses = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
-                }
-
-                if (!paginate && totalResponses > MaxSyncRows)
-                    throw new InvalidOperationException(
-                        "La consulta devuelve " + totalResponses + " fichas y el máximo para exportar en línea es " +
-                        MaxSyncRows + ". Acotá el rango de fechas o agregá filtros.");
-
-                using (var cmd = new OracleCommand(built.Sql, conn))
-                {
-                    // Bindeo por nombre: el QueryBuilder usa marcadores :nombre (no posicionales).
-                    cmd.BindByName = true;
-                    cmd.Parameters.AddRange(built.Parameters.ToArray());
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var row = new Dictionary<string, object>();
-                            for (int i = 0; i < reader.FieldCount; i++)
-                            {
-                                row[reader.GetName(i)] = reader.IsDBNull(i) ? null : OracleValue.Normalize(reader.GetValue(i));
-                            }
-                            rows.Add(row);
-                        }
-                    }
-                }
-            }
+            var rows = ejecutado.Rows;
+            var totalResponses = ejecutado.TotalResponses;
 
             return new RawResult { Rows = rows, TotalResponses = totalResponses, Schema = schema };
         }
@@ -121,35 +94,8 @@ namespace ChequeAR.Application.Reports
             public ReportSchema Schema { get; set; }
         }
 
-        /// <summary>
-        /// Un OracleParameter no se puede compartir entre dos OracleCommand: al asignarlo al
-        /// segundo, ODP.NET tira "El parámetro ya está contenido en otra colección".
-        /// </summary>
-        private static OracleParameter[] CloneParameters(IEnumerable<OracleParameter> source)
-        {
-            var copies = new List<OracleParameter>();
-            foreach (var p in source)
-            {
-                copies.Add(new OracleParameter(p.ParameterName, p.OracleDbType, p.Size, p.Value, p.Direction));
-            }
-            return copies.ToArray();
-        }
     }
 
-    public static class OracleValue
-    {
-        /// <summary>
-        /// Los Guid se guardan como RAW(16) y ODP.NET los devuelve como byte[].
-        /// Convert.ToString(byte[]) da "System.Byte[]" para TODAS las filas: el pivot
-        /// agrupa por ResponseId, así que todas las fichas colapsaban en una sola con las
-        /// respuestas mezcladas entre pacientes. Y en el Excel se exportaba ese literal.
-        /// </summary>
-        public static object Normalize(object value)
-        {
-            if (value is byte[] bytes && bytes.Length == 16) return new Guid(bytes);
-            return value;
-        }
-    }
 
     public class ReportResult
     {

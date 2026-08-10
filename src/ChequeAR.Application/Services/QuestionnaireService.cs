@@ -37,6 +37,29 @@ namespace ChequeAR.Application.Services
             _audit = audit;
         }
 
+        // ── Lecturas ──────────────────────────────────────────────────────────────────
+        // Delegan al repositorio sin agregar nada. Existen igual porque la capa de
+        // presentación no debe conocer la de datos: un controller que inyecta un repositorio
+        // se salta la capa donde viven las reglas, y cuando aparece una regla nueva termina
+        // copiada en cada pantalla que hacía la consulta a mano.
+
+        public Task<Questionnaire> GetAsync(Guid id) => _repo.GetAsync(id);
+
+        public Task<IReadOnlyList<Questionnaire>> SearchAsync(
+            QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)
+            => _repo.SearchAsync(status, titleContains, specialtyCode, skip, take);
+
+        public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
+            => _repo.CountAsync(status, titleContains, specialtyCode);
+
+        public Task<IReadOnlyList<string>> GetSpecialtyCodesAsync() => _repo.GetSpecialtyCodesAsync();
+
+        public Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
+            => _repo.GetTitlesAsync(ids);
+
+        public Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber)
+            => _repo.GetVersionAsync(questionnaireId, versionNumber);
+
         public async Task<Questionnaire> CreateAsync(Questionnaire q, string userId)
         {
             q.Id = Guid.NewGuid();
@@ -144,7 +167,16 @@ namespace ChequeAR.Application.Services
             return q;
         }
 
-        public async Task<Questionnaire> PublishAsync(Guid id, string fhirJson, string userId, string changeNote = null)
+        /// <summary>
+        /// Congela una versión. El recurso se arma SIEMPRE desde la base.
+        ///
+        /// Antes aceptába también un JSON del cliente, con prioridad sobre lo construido:
+        /// tenía sentido cuando el editor mantenía su propia representación. Con una sola
+        /// superficie FHIR ningún cliente lo manda, y dejarlo abierto permitía congelar una
+        /// versión cuyo contenido no se corresponde con la entidad — es decir, mentirle a
+        /// quien después responda esa ficha.
+        /// </summary>
+        public async Task<Questionnaire> PublishAsync(Guid id, string userId, string changeNote = null)
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
@@ -152,14 +184,11 @@ namespace ChequeAR.Application.Services
 
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
 
-            // Publicar desde el listado (Q1/Q6) no manda JSON: lo armamos desde la base.
-            // El editor, en cambio, puede mandar el suyo y ese tiene prioridad.
-            if (string.IsNullOrWhiteSpace(fhirJson))
-                fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber);
+            var fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber);
 
             var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
             if (!validation.IsValid)
-                throw new InvalidOperationException("FHIR validation failed: " + string.Join("; ", validation.Errors));
+                throw new ValidationFailedException(validation.Errors);
 
             // Un único timestamp para la versión y para el cuestionario: no lo necesita
             // HasPendingChanges (que es explícito), pero deja coherente el "última

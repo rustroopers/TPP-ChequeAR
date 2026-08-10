@@ -1,12 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Data;
 using System.Linq;
 using System.Text;
 using ChequeAR.Application.Dtos;
-using Oracle.ManagedDataAccess.Client;
-using Oracle.ManagedDataAccess.Types;
 
 namespace ChequeAR.Application.Reports
 {
@@ -37,7 +34,7 @@ namespace ChequeAR.Application.Reports
             if (q.QuestionnaireId == Guid.Empty) throw new ArgumentException("QuestionnaireId required");
             if (schema == null) throw new ArgumentException("Falta la metadata del cuestionario.");
 
-            var ps = new List<OracleParameter> { GuidParameter("QuestionnaireId", q.QuestionnaireId) };
+            var ps = new List<QueryParameter> { GuidParameter("QuestionnaireId", q.QuestionnaireId) };
             var where = BuildWhere(q, schema, ps);
 
             var sql = new StringBuilder();
@@ -61,8 +58,8 @@ namespace ChequeAR.Application.Reports
                 sql.AppendLine("      OFFSET :Skip ROWS FETCH NEXT :Take ROWS ONLY");
                 sql.AppendLine("    )");
                 sql.AppendLine("  )");
-                ps.Add(new OracleParameter("Skip", OracleDbType.Int32, skip, ParameterDirection.Input));
-                ps.Add(new OracleParameter("Take", OracleDbType.Int32, take, ParameterDirection.Input));
+                ps.Add(QueryParameter.Int("Skip", skip));
+                ps.Add(QueryParameter.Int("Take", take));
             }
 
             // Orden estable: sin ORDER BY explicito Oracle no garantiza nada, y el pivot
@@ -78,7 +75,7 @@ namespace ChequeAR.Application.Reports
             return new BuiltQuery { Sql = sql.ToString(), CountSql = countSql, Parameters = ps };
         }
 
-        private string BuildWhere(ReportQuery q, ReportSchema schema, List<OracleParameter> ps)
+        private string BuildWhere(ReportQuery q, ReportSchema schema, List<QueryParameter> ps)
         {
             var sb = new StringBuilder();
             sb.Append(Alias).Append(".\"QuestionnaireId\" = :QuestionnaireId");
@@ -96,12 +93,12 @@ namespace ChequeAR.Application.Reports
             if (q.DateRange?.From != null)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" >= :DateFrom");
-                ps.Add(new OracleParameter("DateFrom", q.DateRange.From.Value));
+                ps.Add(QueryParameter.Date("DateFrom", q.DateRange.From.Value));
             }
             if (q.DateRange?.To != null)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" <= :DateTo");
-                ps.Add(new OracleParameter("DateTo", q.DateRange.To.Value));
+                ps.Add(QueryParameter.Date("DateTo", q.DateRange.To.Value));
             }
 
             // Version del cuestionario con la que se completo la ficha. La vista ya expone la
@@ -114,7 +111,7 @@ namespace ChequeAR.Application.Reports
                 {
                     if (i > 0) sb.Append(", ");
                     sb.Append(":qv").Append(i);
-                    ps.Add(new OracleParameter("qv" + i, OracleDbType.Int32, versions[i], ParameterDirection.Input));
+                    ps.Add(QueryParameter.Int("qv" + i, versions[i]));
                 }
                 sb.Append(")");
             }
@@ -128,7 +125,7 @@ namespace ChequeAR.Application.Reports
                 {
                     if (i > 0) sb.Append(", ");
                     sb.Append(":au").Append(i);
-                    ps.Add(new OracleParameter("au" + i, authors[i]));
+                    ps.Add(QueryParameter.Text("au" + i, authors[i]));
                 }
                 sb.Append(")");
             }
@@ -141,7 +138,7 @@ namespace ChequeAR.Application.Reports
             return sb.ToString();
         }
 
-        private void BuildNode(FilterNode node, ReportSchema schema, StringBuilder sql, List<OracleParameter> ps)
+        private void BuildNode(FilterNode node, ReportSchema schema, StringBuilder sql, List<QueryParameter> ps)
         {
             var logic = string.Equals(node.Logic, "OR", StringComparison.OrdinalIgnoreCase) ? " OR " : " AND ";
             sql.Append("(");
@@ -164,7 +161,7 @@ namespace ChequeAR.Application.Reports
                 sql.Append("EXISTS (SELECT 1 FROM \"QuestionnaireResponseItem\" qri")
                    .Append(" WHERE qri.\"ResponseId\" = ").Append(Alias).Append(".\"ResponseId\"")
                    .Append(" AND qri.\"LinkId\" = :li").Append(idx);
-                ps.Add(new OracleParameter("li" + idx, p.LinkId));
+                ps.Add(QueryParameter.Text("li" + idx, p.LinkId));
 
                 sql.Append(" AND ").Append(Predicate(p, schema, col, idx, ps)).Append(")");
             }
@@ -172,7 +169,7 @@ namespace ChequeAR.Application.Reports
         }
 
         /// <summary>Condición sobre la columna tipada, según el operador.</summary>
-        private string Predicate(FilterPredicate p, ReportSchema schema, string col, int idx, List<OracleParameter> ps)
+        private string Predicate(FilterPredicate p, ReportSchema schema, string col, int idx, List<QueryParameter> ps)
         {
             var target = "qri.\"" + col + "\"";
 
@@ -181,7 +178,7 @@ namespace ChequeAR.Application.Reports
 
             if (string.Equals(p.Op, "contains", StringComparison.OrdinalIgnoreCase))
             {
-                ps.Add(new OracleParameter("p" + idx, "%" + Convert.ToString(p.Value) + "%"));
+                ps.Add(QueryParameter.Text("p" + idx, "%" + Convert.ToString(p.Value) + "%"));
                 return "UPPER(" + target + ") LIKE UPPER(:p" + idx + ")";
             }
 
@@ -194,7 +191,7 @@ namespace ChequeAR.Application.Reports
                 {
                     var name = "p" + idx + "_" + i;
                     names.Add(":" + name);
-                    ps.Add(new OracleParameter(name, schema.Coerce(p.LinkId, values[i]) ?? DBNull.Value));
+                    ps.Add(QueryParameter.Text(name, schema.Coerce(p.LinkId, values[i]) ?? DBNull.Value));
                 }
                 return target + " IN (" + string.Join(", ", names) + ")";
             }
@@ -203,12 +200,12 @@ namespace ChequeAR.Application.Reports
             {
                 var values = AsList(p.Value);
                 if (values.Count != 2) throw new ArgumentException("El operador 'between' necesita exactamente dos valores.");
-                ps.Add(new OracleParameter("p" + idx + "_lo", schema.Coerce(p.LinkId, values[0]) ?? DBNull.Value));
-                ps.Add(new OracleParameter("p" + idx + "_hi", schema.Coerce(p.LinkId, values[1]) ?? DBNull.Value));
+                ps.Add(QueryParameter.Text("p" + idx + "_lo", schema.Coerce(p.LinkId, values[0]) ?? DBNull.Value));
+                ps.Add(QueryParameter.Text("p" + idx + "_hi", schema.Coerce(p.LinkId, values[1]) ?? DBNull.Value));
                 return target + " BETWEEN :p" + idx + "_lo AND :p" + idx + "_hi";
             }
 
-            ps.Add(new OracleParameter("p" + idx, schema.Coerce(p.LinkId, p.Value) ?? DBNull.Value));
+            ps.Add(QueryParameter.Text("p" + idx, schema.Coerce(p.LinkId, p.Value) ?? DBNull.Value));
             return target + " " + p.Op + " :p" + idx;
         }
 
@@ -225,15 +222,18 @@ namespace ChequeAR.Application.Reports
         }
 
         /// <summary>
-        /// ODP.NET no sabe bindear un Guid: new OracleParameter(name, guid) tira
+        /// El identificador viaja como los 16 bytes crudos porque es así como está guardado
+        /// (EF los persiste como RAW(16)); convertirlo a texto haría que la comparación nunca
+        /// matchee. El driver además no sabe bindear un Guid directamente: tiraba
         /// ArgumentException ("El valor no está dentro del intervalo esperado") y toda
-        /// consulta de reportes fallaba antes de llegar a la base. EF guarda los Guid como
-        /// RAW(16), así que se bindea explícitamente como bytes.
+        /// consulta de reportes fallaba antes de llegar a la base.
+        ///
+        /// Esa segunda razón es del motor y ya no se nombra acá: la traducción concreta la
+        /// hace la capa de infraestructura. Lo que queda es la decisión de negocio —comparar
+        /// contra la representación real del identificador— expresada con un tipo neutro.
         /// </summary>
-        private static OracleParameter GuidParameter(string name, Guid value)
-        {
-            return new OracleParameter(name, OracleDbType.Raw, 16, value.ToByteArray(), ParameterDirection.Input);
-        }
+        private static QueryParameter GuidParameter(string name, Guid value)
+            => QueryParameter.Id(name, value);
     }
 
     public class BuiltQuery
@@ -241,6 +241,6 @@ namespace ChequeAR.Application.Reports
         public string Sql { get; set; }
         /// <summary>Cuenta de fichas distintas que matchean, sin paginar.</summary>
         public string CountSql { get; set; }
-        public List<OracleParameter> Parameters { get; set; }
+        public List<QueryParameter> Parameters { get; set; }
     }
 }

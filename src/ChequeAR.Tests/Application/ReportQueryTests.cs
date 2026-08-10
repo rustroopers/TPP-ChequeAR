@@ -173,7 +173,7 @@ namespace ChequeAR.Tests.Application
             var built = new QueryBuilder().Build(Query(Un("dx", "in", new List<object> { "A", "B", "C" })), schema);
 
             Assert.Contains("IN (:p1_0, :p1_1, :p1_2)", built.Sql);
-            Assert.Equal(3, built.Parameters.Count(p => p.ParameterName.StartsWith("p1_")));
+            Assert.Equal(3, built.Parameters.Count(p => p.Name.StartsWith("p1_")));
         }
 
         [Fact]
@@ -253,8 +253,8 @@ namespace ChequeAR.Tests.Application
 
             Assert.Contains("OFFSET :Skip ROWS FETCH NEXT :Take ROWS ONLY", built.Sql);
             Assert.Contains("v.\"ResponseId\" IN (", built.Sql);
-            Assert.Equal(25, built.Parameters.Single(p => p.ParameterName == "Skip").Value);
-            Assert.Equal(25, built.Parameters.Single(p => p.ParameterName == "Take").Value);
+            Assert.Equal(25, built.Parameters.Single(p => p.Name == "Skip").Value);
+            Assert.Equal(25, built.Parameters.Single(p => p.Name == "Take").Value);
         }
 
         // La exportacion no pagina: un archivo cortado en la primera pagina seria peor que
@@ -286,8 +286,8 @@ namespace ChequeAR.Tests.Application
 
             var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
 
-            Assert.Equal(temprano, built.Parameters.Single(p => p.ParameterName == "DateFrom").Value);
-            Assert.Equal(tarde, built.Parameters.Single(p => p.ParameterName == "DateTo").Value);
+            Assert.Equal(temprano, built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(tarde, built.Parameters.Single(p => p.Name == "DateTo").Value);
         }
     }
 }

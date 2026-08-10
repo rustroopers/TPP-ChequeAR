@@ -1,0 +1,30 @@
+{
+  "resourceType": "ValueSet",
+  "id": "ChequeARQuestionnaireItemType",
+  "url": "https://chequear.garrahan/ValueSet/ChequeARQuestionnaireItemType",
+  "version": "1.0.0",
+  "name": "ChequeARQuestionnaireItemType",
+  "title": "Tipos de pregunta que ChequeAR sabe renderizar",
+  "status": "active",
+  "publisher": "Hospital Garrahan",
+  "description": "Subconjunto de Questionnaire.item.type soportado. Corresponde a los 11 tipos del dominio más 'group' para las secciones. Escala y opción abierta no aparecen como tipos propios porque FHIR no los tiene: la escala es 'integer' con itemControl slider, y la opción abierta es 'coding' con answerConstraint optionsOrString.",
+  "compose": {
+    "include": [
+      {
+        "system": "http://hl7.org/fhir/item-type",
+        "concept": [
+          { "code": "group", "display": "Sección" },
+          { "code": "string", "display": "Texto corto" },
+          { "code": "text", "display": "Texto largo" },
+          { "code": "integer", "display": "Número entero (o escala, con itemControl slider)" },
+          { "code": "decimal", "display": "Número decimal" },
+          { "code": "boolean", "display": "Sí/No" },
+          { "code": "date", "display": "Fecha" },
+          { "code": "dateTime", "display": "Fecha y hora" },
+          { "code": "coding", "display": "Opción (cerrada o abierta, según answerConstraint)" },
+          { "code": "attachment", "display": "Adjunto" }
+        ]
+      }
+    ]
+  }
+}

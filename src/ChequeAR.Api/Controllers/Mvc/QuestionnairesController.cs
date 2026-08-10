@@ -7,7 +7,6 @@ using ChequeAR.Api.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
-using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
@@ -16,12 +15,11 @@ namespace ChequeAR.Api.Controllers.Mvc
     // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
     public class QuestionnairesController : Controller
     {
-        private readonly IQuestionnaireRepository _repo;
+        
         private readonly QuestionnaireService _svc;
 
-        public QuestionnairesController(IQuestionnaireRepository repo, QuestionnaireService svc)
+        public QuestionnairesController(QuestionnaireService svc)
         {
-            _repo = repo;
             _svc = svc;
         }
 
@@ -45,12 +43,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             try
             {
                 // Opciones del filtro derivadas de los cuestionarios reales (antes estaban hardcodeadas).
-                foreach (var code in await _repo.GetSpecialtyCodesAsync())
+                foreach (var code in await _svc.GetSpecialtyCodesAsync())
                     model.Specialties.Add(new SpecialtyOption { Code = code, Label = SpecialtyMap.Label(code) });
 
                 var st = QuestionnaireStatusMap.FromUi(status);
-                var items = await _repo.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
-                model.Total = await _repo.CountAsync(st, q, specialty);
+                var items = await _svc.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
+                model.Total = await _svc.CountAsync(st, q, specialty);
                 foreach (var it in items)
                 {
                     model.Items.Add(new QuestionnaireListItem
@@ -102,7 +100,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 try
                 {
-                    var q = await _repo.GetAsync(id.Value);
+                    var q = await _svc.GetAsync(id.Value);
                     title = q?.Title ?? "Cuestionario";
                     if (q != null)
                     {
@@ -191,52 +189,41 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .ToList()
             };
 
-            // min/max/unidad viajan dentro de ValidationJson; el editor las necesita de
-            // vuelta como campos sueltos para poder mostrarlas en el panel de propiedades.
-            var validation = ParseValidation(qq.ValidationJson);
+            // Desarmar los contratos JSON es conocimiento del dominio y vive en la capa de
+            // negocio; acá sólo queda pasarlos al ViewModel, que sí es presentación.
+            var validation = QuestionMetadataReader.ReadValidation(qq.ValidationJson);
             if (validation != null)
             {
-                view.Min = (decimal?)validation["min"];
-                view.Max = (decimal?)validation["max"];
-                view.Unit = (string)validation["unit"];
-                view.Accept = (string)validation["accept"];
-                view.MaxLength = (int?)validation["maxLength"];
-                view.Pattern = (string)validation["pattern"];
+                view.Min = validation.Min;
+                view.Max = validation.Max;
+                view.Unit = validation.Unit;
+                view.Accept = validation.Accept;
+                view.MaxLength = validation.MaxLength;
+                view.Pattern = validation.Pattern;
             }
 
-            var enableWhen = ParseValidation(qq.EnableWhenJson);
-            if (enableWhen != null && enableWhen["question"] != null)
+            var enableWhen = QuestionMetadataReader.ReadCondition(qq.EnableWhenJson);
+            if (enableWhen != null)
             {
                 view.EnableWhen = new EnableWhenView
                 {
-                    Question = (string)enableWhen["question"],
-                    Op = (string)enableWhen["op"] ?? "=",
-                    Value = ((JValue)enableWhen["value"])?.Value
+                    Question = enableWhen.Question,
+                    Op = enableWhen.Op,
+                    Value = enableWhen.Value
                 };
             }
 
-            var coding = ParseValidation(qq.CodingJson);
+            var coding = QuestionMetadataReader.ReadCoding(qq.CodingJson);
             if (coding != null)
             {
-                view.CodeSystem = (string)coding["system"];
-                view.Code = (string)coding["code"];
-                view.CodeDisplay = (string)coding["display"];
-                // Las preguntas codificadas antes de que existiera el término explícito no
-                // tienen "term": se cae al display del concepto elegido, que es la mejor
-                // aproximación disponible y evita que el campo aparezca vacío al reabrirlas.
-                view.Term = (string)coding["term"] ?? (string)coding["display"];
+                view.CodeSystem = coding.System;
+                view.Code = coding.Code;
+                view.CodeDisplay = coding.Display;
+                view.Term = coding.Term;
             }
             return view;
         }
 
-        // Un ValidationJson corrupto no debe tumbar la pantalla: se ignora y la pregunta
-        // se muestra sin restricciones.
-        private static JObject ParseValidation(string json)
-        {
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            try { return JObject.Parse(json); }
-            catch (JsonException) { return null; }
-        }
 
         // Q5 — Vista previa
         public async Task<ActionResult> Preview(Guid id)
@@ -252,7 +239,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                var q = await _repo.GetAsync(id);
+                var q = await _svc.GetAsync(id);
                 if (q == null) return View("~/Views/Error/Index.cshtml");
                 var model = new QuestionnaireDetailViewModel
                 {
@@ -289,7 +276,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
-                var q = await _repo.GetAsync(id);
+                var q = await _svc.GetAsync(id);
                 ViewBag.QuestionnaireTitle = q?.Title;
                 var list = (q?.Versions ?? new List<ChequeAR.Domain.Entities.QuestionnaireVersion>())
                     .OrderByDescending(v => v.VersionNumber)
@@ -315,10 +302,9 @@ namespace ChequeAR.Api.Controllers.Mvc
         public async Task<ActionResult> Publish(Guid id, string changeNote)
         {
             var userId = User?.Identity?.Name ?? "unknown";
-            // fhirJson null => el service lo arma desde la base (ver FhirQuestionnaireBuilder).
             try
             {
-                await _svc.PublishAsync(id, null, userId, changeNote);
+                await _svc.PublishAsync(id, userId, changeNote);
                 TempData["Toast"] = "Cuestionario publicado.";
                 TempData["ToastLevel"] = "success";
             }
