@@ -10,6 +10,9 @@
             questionnaireId: String,
             questionnaireVersionId: String,
             version: Number,
+            // Número de la versión vigente si esta ficha está en una anterior; 0 si ya está
+            // en la última. Habilita la opción de pasar a la versión nueva.
+            newerVersion: { type: Number, default: 0 },
             title: String,
             groups: { type: Array, default: function () { return []; } }
         },
@@ -85,14 +88,40 @@
             var savingState = Vue.ref('idle'); // idle | dirty | saving | error
             var submitting = Vue.ref(false);
 
+            // --- Completado asincrónico: guardado parcial + lock de sesión -------------
+            // La ficha puede quedar InProgress durante semanas (ej. seguimiento telefónico).
+            // responseId/concurrencyVersion identifican la ficha que se está completando;
+            // lockToken es la credencial de ESTA sesión de edición (la devuelve $lock),
+            // exigida en cada guardado para que dos médicos no puedan completarla a la vez.
+            var responseId = Vue.ref(null);
+            // Espejo de meta.versionId del recurso FHIR: es el reemplazo FHIR-idiomático del
+            // viejo ConcurrencyVersion crudo, mismo mecanismo ETag/If-Match ya usado para
+            // Questionnaire.
+            var concurrencyVersion = Vue.ref(null);
+            var lockToken = Vue.ref(null);
+            var lockExpiresAt = Vue.ref(null);
+            // Respuestas tal como estaban al ABRIR esta sesión (lo resumido, o [] si la ficha
+            // es nueva), en forma interna (LinkId/ValueXxx). Se manda al cerrar
+            // deliberadamente (guardar avance / finalizar) para que el server audite UN solo
+            // evento con el diff de lo completado en la sesión. No es la representación FHIR
+            // del recurso -- $unlock sigue esperando el formato interno de guardado parcial.
+            var sessionBaseline = Vue.ref([]);
+            // Alguien más tiene el lock: {userId, expiresAt}. Mientras esté seteado, el
+            // formulario queda de solo lectura.
+            var lockedByOther = Vue.ref(null);
+            var showRenewPrompt = Vue.ref(false);
+            var lockSecondsLeft = Vue.ref(null);
+            var autosaveTimer = null;
+            var lockCountdownTimer = null;
+            var AUTOSAVE_DEBOUNCE_MS = 2500;
+            var LOCK_WARNING_MS = 60000;
+
             function token() {
                 var m = document.querySelector('meta[name="cq-token"]');
                 return m ? m.getAttribute('content') : null;
             }
-            // Las escrituras de esta isla van todas a la interfaz FHIR, así que el tipo de
-            // contenido es el del estándar. La subida de adjuntos usa su propio fetch.
             function authHeaders() {
-                var h = { 'Content-Type': 'application/fhir+json' };
+                var h = { 'Content-Type': 'application/json' };
                 var t = token();
                 if (t) h['Authorization'] = 'Bearer ' + t;
                 return h;
@@ -198,6 +227,7 @@
             }
 
             function onChange(q, value) {
+                if (lockedByOther.value) return;   // solo lectura: alguien más lo está completando
                 answers[q.linkId] = value;
                 validate(q, value);
                 // re-validar campos dependientes
@@ -255,113 +285,112 @@
                 onChange(q, current);
             }
 
-            // El backend todavia no expone un endpoint de update para
-            // QuestionnaireResponse (solo POST y $finalize), asi que no hay
-            // autosave posible. Se marca el estado como 'dirty' para que la UI
-            // diga la verdad: hay cambios sin guardar hasta que se finalice.
+            // Autosave real, debounced: cada cambio reprograma el guardado un poco más
+            // adelante en vez de mandar un PUT por tecla. Con esto la ventana de "algo
+            // tipeado que todavía no llegó al server" es de segundos, no de toda la llamada.
             function triggerAutosave() {
                 savingState.value = 'dirty';
+                if (lockedByOther.value) return;
+                if (autosaveTimer) clearTimeout(autosaveTimer);
+                autosaveTimer = setTimeout(doSave, AUTOSAVE_DEBOUNCE_MS);
             }
 
-            function totalQuestions() {
-                var n = 0;
-                questionnaire.value.groups.forEach(function (g) {
-                    g.questions.forEach(function (q) { if (isVisible(q)) n++; });
-                });
-                return n;
-            }
-            function answeredCount() {
-                var n = 0;
-                questionnaire.value.groups.forEach(function (g) {
-                    g.questions.forEach(function (q) {
-                        if (isVisible(q) && answers[q.linkId] !== undefined && answers[q.linkId] !== '' && answers[q.linkId] !== null) n++;
-                    });
-                });
-                return n;
-            }
-
-            // Un valor del formulario -> la columna tipada que espera
-            // QuestionnaireResponseItem en el backend.
-            // Devuelve una LISTA porque una opción múltiple genera un item por opción
-            // marcada (linkId repetido), que es como FHIR modela las respuestas repetidas.
-            // Traduce la respuesta de una pregunta a item[].answer[] de FHIR.
-            //
-            // Un linkId con varias answer es como el estándar modela la opción múltiple;
-            // el backend lo vuelve a separar en un registro por opción marcada.
-            // Sin responder se emite el item SIN answer: un answer vacío es inválido en FHIR
-            // y además afirma algo que el clínico no dijo.
-            function toItem(q) {
-                var v = answers[q.linkId];
-                var item = { linkId: q.linkId, text: q.text };
-                if (v === undefined || v === '' || v === null) return item;
-
-                if (q.type === 'openChoice') {
-                    var selectedOpts = Array.isArray(v) ? v : [v];
-                    if (!selectedOpts.length) return item;
-                    item.answer = selectedOpts.map(function (opt) {
-                        return { valueCoding: { code: String(opt), display: String(opt) } };
-                    });
-                    return item;
-                }
-
-                var answer;
-                switch (q.type) {
-                    case 'boolean':  answer = { valueBoolean: !!v }; break;
-                    case 'integer':  answer = { valueInteger: parseNumeric(v) }; break;
-                    case 'decimal':
-                    case 'scale':    answer = { valueDecimal: parseNumeric(v) }; break;
-                    case 'date':
-                    case 'dateTime': answer = { valueDateTime: v }; break;
-                    case 'choice':   answer = { valueCoding: { code: String(v), display: String(v) } }; break;
-                    // El adjunto se guarda por referencia: el archivo ya está subido.
-                    case 'attachment':
-                        answer = { valueAttachment: { url: '/api/attachments/' + v.attachmentId, title: v.fileName } };
-                        break;
-                    default:         answer = { valueString: String(v) }; break;
-                }
-                item.answer = [answer];
-                return item;
-            }
-
-            // Los errores de la API son OperationOutcome: el detalle legible vive en
-            // issue[].diagnostics. Mostrarlo importa mas aca que en el editor — el medico
-            // necesita saber POR QUE no se guardo la ficha que acaba de completar, no un
-            // "HTTP 422" que no le dice nada.
-            function diagnostico(body, porOmision) {
-                var issues = body && body.issue;
-                if (!issues || !issues.length) return porOmision;
-                var textos = issues.map(function (i) { return i.diagnostics; }).filter(Boolean);
-                return textos.length ? textos.join(' ') : porOmision;
-            }
-
-            function submit() {
-                if (submitting.value) return;
-
-                var allErrors = [];
+            function collectItems() {
                 var items = [];
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (q) {
                         if (!isVisible(q)) return;
-                        validate(q, answers[q.linkId]);
-                        if (errors[q.linkId]) allErrors.push(q.text + ': ' + errors[q.linkId]);
-                        items.push(toItem(q));
+                        toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });
-                if (allErrors.length) {
-                    window.cqToast && window.cqToast('Hay ' + allErrors.length + ' campos con error', 'error');
-                    return;
-                }
-                if (!token()) {
-                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar la ficha.', 'error');
-                    return;
-                }
+                return items;
+            }
 
-                submitting.value = true;
-                savingState.value = 'saving';
+            // Reconstruye `answers` a partir del item[] del recurso FHIR, al resumir una
+            // ficha en progreso. Un item con varias answer (opción múltiple) ya viene
+            // agrupado por linkId -- a diferencia del formato interno, FHIR no lo separa en
+            // varios registros.
+            function applyExistingItems(fhirItems) {
+                var byLinkId = {};
+                (fhirItems || []).forEach(function (it) {
+                    if (it.linkId && it.answer && it.answer.length) byLinkId[it.linkId] = it;
+                });
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        var it = byLinkId[q.linkId];
+                        if (!it) return;
+                        var value = valueFromFhirItem(q, it);
+                        if (value !== undefined) answers[q.linkId] = value;
+                    });
+                });
+            }
 
-                // Se crea la respuesta y recien despues se finaliza: son dos
-                // endpoints distintos y $finalize necesita el id.
-                fetch('/fhir/r5/QuestionnaireResponse', {
+            function valueFromFhirItem(q, it) {
+                if (q.type === 'openChoice') {
+                    return it.answer
+                        .map(function (a) { return a.valueCoding && a.valueCoding.code; })
+                        .filter(function (c) { return !!c; });
+                }
+                var a = it.answer[0];
+                if (a.valueBoolean !== undefined) return a.valueBoolean;
+                if (a.valueInteger !== undefined) return a.valueInteger;
+                if (a.valueDecimal !== undefined) return a.valueDecimal;
+                if (a.valueDateTime !== undefined) {
+                    // El server serializa fecha y fecha-hora igual (FhirDateTime); acá se
+                    // recorta según lo que espera cada control HTML nativo.
+                    if (q.type === 'date') return a.valueDateTime.slice(0, 10);
+                    if (q.type === 'dateTime') return a.valueDateTime.slice(0, 16);
+                    return a.valueDateTime;
+                }
+                if (a.valueCoding) return a.valueCoding.code;
+                if (a.valueAttachment) {
+                    return { attachmentId: attachmentIdFromUrl(a.valueAttachment.url), fileName: a.valueAttachment.title };
+                }
+                if (a.valueString !== undefined) return a.valueString;
+                return undefined;
+            }
+
+            function attachmentIdFromUrl(url) {
+                if (!url) return null;
+                var sinBarra = url.replace(/\/+$/, '');
+                return sinBarra.substring(sinBarra.lastIndexOf('/') + 1) || null;
+            }
+
+            // Convierte item[] FHIR al formato interno (LinkId/ValueXxx) que espera $unlock
+            // para el baseline de la sesión. No es la representación canónica del recurso,
+            // es sólo el formato del diff de auditoría de guardado parcial.
+            function fhirItemsToDomain(fhirItems) {
+                var result = [];
+                (fhirItems || []).forEach(function (it) {
+                    if (!it.answer || !it.answer.length) { result.push({ LinkId: it.linkId }); return; }
+                    it.answer.forEach(function (a) {
+                        var d = { LinkId: it.linkId };
+                        if (a.valueBoolean !== undefined) d.ValueBoolean = a.valueBoolean;
+                        else if (a.valueInteger !== undefined) d.ValueInteger = a.valueInteger;
+                        else if (a.valueDecimal !== undefined) d.ValueDecimal = a.valueDecimal;
+                        else if (a.valueDateTime !== undefined) d.ValueDate = a.valueDateTime;
+                        else if (a.valueCoding) d.ValueCode = a.valueCoding.code;
+                        else if (a.valueAttachment) {
+                            d.AttachmentId = attachmentIdFromUrl(a.valueAttachment.url);
+                            d.ValueString = a.valueAttachment.title;
+                        } else if (a.valueString !== undefined) d.ValueString = a.valueString;
+                        result.push(d);
+                    });
+                });
+                return result;
+            }
+
+            function formatTime(iso) {
+                try { return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }); }
+                catch (e) { return ''; }
+            }
+
+            // Crea la ficha (InProgress) la primera vez que hay algo para guardar. Llamadas
+            // siguientes son no-op: ya existe. El body es un recurso FHIR QuestionnaireResponse
+            // real -- Create habla FHIR igual que Search/Get/$finalize.
+            function ensureResponse() {
+                if (responseId.value) return Promise.resolve();
+                return fetch('/fhir/r5/QuestionnaireResponse', {
                     method: 'POST',
                     headers: authHeaders(),
                     body: JSON.stringify({
@@ -381,42 +410,418 @@
                             url: 'https://chequear.garrahan/StructureDefinition/questionnaire-version-id',
                             valueString: props.questionnaireVersionId
                         }],
-                        item: items
+                        item: []
                     })
                 }).then(function (r) {
-                    if (r.ok) return r.json();
-                    return r.json().catch(function () { return null; }).then(function (body) {
-                        throw new Error(diagnostico(body, 'HTTP ' + r.status));
-                    });
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' al crear la ficha');
+                    return r.json();
                 }).then(function (created) {
-                    // FHIR normaliza en "id" minúscula.
-                    var id = created.id;
-                    return fetch('/fhir/r5/QuestionnaireResponse/' + id + '/$finalize', {
-                        method: 'POST',
-                        headers: authHeaders()
-                    }).then(function (r) {
-                        if (r.ok) return id;
-                        return r.json().catch(function () { return null; }).then(function (body) {
-                            throw new Error(diagnostico(body, 'HTTP ' + r.status + ' al finalizar'));
-                        });
-                    });
-                }).then(function (id) {
-                    savingState.value = 'idle';
-                    window.cqToast && window.cqToast('Ficha finalizada', 'success');
-                    // Marca esta entrada del historial ANTES de redirigir: si la persona
-                    // vuelve con "atrás", el renderer la lee y muestra el aviso en vez de
-                    // dejar re-finalizar. Se guarda el id para poder linkear a la ficha.
-                    try {
-                        window.history.replaceState(
-                            { cqFinalized: true, responseId: id }, '', window.location.href);
-                    } catch (e) { /* history bloqueado: el aviso no aparecerá, pero la ficha ya se guardó */ }
-                    window.location.href = '/Encounters/View/' + id;
-                }).catch(function (err) {
-                    savingState.value = 'error';
-                    window.cqToast && window.cqToast('No se pudo guardar la ficha: ' + err.message, 'error');
-                }).then(function () {
-                    submitting.value = false;
+                    responseId.value = created.id;
+                    concurrencyVersion.value = created.meta && created.meta.versionId;
                 });
+            }
+
+            // Toma (o reutiliza) el lock de esta sesión de edición. Si otro usuario lo
+            // tiene vigente, deja el formulario en solo lectura en vez de reintentar solo.
+            function ensureLock() {
+                if (lockToken.value && lockExpiresAt.value && lockExpiresAt.value.getTime() > Date.now()) {
+                    return Promise.resolve();
+                }
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$lock', {
+                    method: 'POST',
+                    headers: authHeaders()
+                }).then(function (r) {
+                    if (r.status === 409) {
+                        return r.json().then(function (body) {
+                            lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
+                            throw new Error(body.error || 'Lo está completando otro usuario.');
+                        });
+                    }
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' al tomar el lock');
+                    return r.json();
+                }).then(function (body) {
+                    lockToken.value = body.lockToken;
+                    lockExpiresAt.value = new Date(body.expiresAt);
+                    lockedByOther.value = null;
+                    // $lock también incrementa ConcurrencyVersion del lado del server (es una
+                    // escritura más); sin actualizar acá, el próximo guardado manda un
+                    // If-Match viejo y choca con un 409 que no es un conflicto real.
+                    if (body.concurrencyVersion !== undefined) concurrencyVersion.value = body.concurrencyVersion;
+                    scheduleLockCountdown();
+                });
+            }
+
+            // Guardado parcial: manda TODO lo respondido hasta ahora (no sólo lo nuevo de
+            // esta sesión). Es idempotente -- volver a mandar una respuesta ya guardada no
+            // hace nada -- y así no hace falta llevar un registro aparte de "qué cambió
+            // desde el último autosave". La respuesta SÍ es el recurso FHIR completo (con
+            // meta.versionId); el vencimiento del lock, sin lugar nativo en FHIR, viaja en
+            // un header propio.
+            function putProgress() {
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, {
+                    method: 'PUT',
+                    headers: Object.assign({}, authHeaders(), {
+                        'If-Match': 'W/"' + concurrencyVersion.value + '"',
+                        'X-Lock-Token': lockToken.value
+                    }),
+                    body: JSON.stringify({ Items: collectItems() })
+                }).then(function (r) {
+                    if (r.status === 409) {
+                        return r.json().then(function (body) {
+                            if (body.lockedBy) {
+                                lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
+                            } else if (body.actualVersion !== undefined) {
+                                concurrencyVersion.value = body.actualVersion;
+                            }
+                            throw new Error(body.error || 'conflicto al guardar');
+                        });
+                    }
+                    if (!r.ok) throw new Error('HTTP ' + r.status + ' al guardar');
+                    var lockExpiresHeader = r.headers.get('X-Lock-Expires-At');
+                    return r.json().then(function (updated) {
+                        concurrencyVersion.value = updated.meta && updated.meta.versionId;
+                        if (lockExpiresHeader) {
+                            lockExpiresAt.value = new Date(lockExpiresHeader);
+                            showRenewPrompt.value = false;
+                        }
+                        savingState.value = 'idle';
+                    });
+                });
+            }
+
+            function doSave() {
+                if (lockedByOther.value || !token()) return;
+                ensureResponse()
+                    .then(ensureLock)
+                    .then(putProgress)
+                    .catch(function (err) {
+                        savingState.value = 'error';
+                        window.cqToast && window.cqToast('No se pudo guardar: ' + err.message, 'error');
+                    });
+            }
+
+            // Timer de 1s para el aviso de "1 minuto para que se cierre". No vence el lock
+            // del lado del cliente: eso lo decide el server en el próximo guardado (con el
+            // grace period si nadie más lo tomó mientras tanto).
+            function scheduleLockCountdown() {
+                if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                lockCountdownTimer = setInterval(function () {
+                    if (!lockExpiresAt.value) return;
+                    var msLeft = lockExpiresAt.value.getTime() - Date.now();
+                    lockSecondsLeft.value = Math.max(0, Math.round(msLeft / 1000));
+                    showRenewPrompt.value = msLeft <= LOCK_WARNING_MS;
+                }, 1000);
+            }
+
+            function renewLock() {
+                if (!responseId.value || !lockToken.value) return;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$renew-lock', {
+                    method: 'POST',
+                    headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
+                }).then(function (r) { return r.ok ? r.json() : null; })
+                  .then(function (body) {
+                      if (body && body.expiresAt) {
+                          lockExpiresAt.value = new Date(body.expiresAt);
+                          showRenewPrompt.value = false;
+                          if (body.concurrencyVersion !== undefined) concurrencyVersion.value = body.concurrencyVersion;
+                      }
+                  });
+            }
+
+            function retryLock() {
+                lockedByOther.value = null;
+                if (!responseId.value) { initSession(); return; }
+                ensureLock().catch(function () { /* sigue tomado: ensureLock ya reseteó lockedByOther */ });
+            }
+
+            // Salir del editor por una vía NO deliberada (cerrar pestaña, botón atrás,
+            // navegar afuera). Manda el baseline igual que el "Guardar avance" para que el
+            // server deje UN evento de auditoría con lo agregado en la sesión. Es best-effort:
+            // keepalive (no sendBeacon, que no permite headers de auth ni X-Lock-Token); si el
+            // navegador matan el proceso de golpe puede no llegar, y ahí el TTL libera el lock
+            // solo unos minutos después. El chequeo de lockToken evita el doble disparo
+            // (beforeunload + onUnmounted): el segundo ve el token ya en null y no hace nada.
+            function releaseLock() {
+                if (!responseId.value || !lockToken.value) return;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$unlock', {
+                    method: 'POST',
+                    headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
+                    body: JSON.stringify({ Items: sessionBaseline.value }),
+                    keepalive: true
+                }).catch(function () { /* nada que hacer del lado del cliente */ });
+                lockToken.value = null;
+                if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+            }
+
+            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
+            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
+            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
+            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
+            // cliente estándar esperaría.
+            function initSession() {
+                // No bloquea el render con `loading`: el formulario ya es usable de
+                // entrada (ficha nueva) y, si había algo para resumir, se completa solo
+                // un instante después sin parpadeo de spinner.
+                var query = '/fhir/r5/QuestionnaireResponse?subject=' + encodeURIComponent(props.patientId) +
+                    '&questionnaire=' + encodeURIComponent(props.questionnaireId) + '&status=InProgress&_count=1';
+                fetch(query, { headers: authHeaders() }).then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(function (bundle) {
+                    var entry = (bundle.entry || [])[0];
+                    var existing = entry && entry.resource;
+                    if (!existing) return;   // ficha nueva: el baseline queda [] (nada previo)
+                    responseId.value = existing.id;
+                    concurrencyVersion.value = existing.meta && existing.meta.versionId;
+                    var existingItems = existing.item || [];
+                    // Foto del punto de partida para el diff de auditoría de esta sesión.
+                    sessionBaseline.value = fhirItemsToDomain(existingItems);
+                    applyExistingItems(existingItems);
+                    return ensureLock();
+                }).catch(function () { /* no se pudo resumir: sigue como ficha nueva */ });
+            }
+
+            Vue.onMounted(function () {
+                if (blockedByBack.value || !token()) return;
+                initSession();
+            });
+            Vue.onUnmounted(function () {
+                window.removeEventListener('beforeunload', releaseLock);
+                if (autosaveTimer) clearTimeout(autosaveTimer);
+                releaseLock();
+            });
+            window.addEventListener('beforeunload', releaseLock);
+
+            function totalQuestions() {
+                var n = 0;
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) { if (isVisible(q)) n++; });
+                });
+                return n;
+            }
+            // Misma noción de "vacío" que validate(): una opción múltiple sin nada tildado
+            // llega como [], que no es '' ni null pero tampoco es una respuesta.
+            function isEmptyAnswer(v) {
+                return v === undefined || v === '' || v === null || (Array.isArray(v) && v.length === 0);
+            }
+            function answeredCount() {
+                var n = 0;
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        if (isVisible(q) && !isEmptyAnswer(answers[q.linkId])) n++;
+                    });
+                });
+                return n;
+            }
+            // Todas las preguntas visibles están respondidas: no queda nada para "guardar sin
+            // terminar", así que el guardado parcial se bloquea y la ficha se finaliza.
+            function isComplete() {
+                var total = totalQuestions();
+                return total > 0 && answeredCount() === total;
+            }
+
+            // Un valor del formulario -> la columna tipada que espera
+            // QuestionnaireResponseItem en el backend (formato interno de guardado parcial,
+            // no el recurso FHIR -- ver comentario en putProgress/collectItems).
+            // Devuelve una LISTA porque una opción múltiple genera un item por opción
+            // marcada (linkId repetido), que es como FHIR modela las respuestas repetidas.
+            function toItems(q) {
+                var v = answers[q.linkId];
+                var base = function () { return { LinkId: q.linkId, QuestionType: q.type }; };
+                if (v === undefined || v === '' || v === null) return [base()];
+
+                if (q.type === 'openChoice') {
+                    var selectedOpts = Array.isArray(v) ? v : [v];
+                    if (!selectedOpts.length) return [base()];
+                    return selectedOpts.map(function (opt) {
+                        var it = base();
+                        it.ValueCode = String(opt);
+                        return it;
+                    });
+                }
+
+                var item = base();
+                switch (q.type) {
+                    case 'boolean':  item.ValueBoolean = !!v; break;
+                    case 'integer':  item.ValueInteger = parseNumeric(v); break;
+                    case 'decimal':
+                    case 'scale':    item.ValueDecimal = parseNumeric(v); break;
+                    case 'date':
+                    case 'dateTime': item.ValueDate = v; break;
+                    case 'choice':   item.ValueCode = String(v); break;
+                    // El adjunto se guarda por referencia: el archivo ya está subido.
+                    case 'attachment':
+                        item.AttachmentId = v.attachmentId;
+                        item.ValueString = v.fileName;
+                        break;
+                    default:         item.ValueString = String(v); break;
+                }
+                return [item];
+            }
+
+            function submit() {
+                if (submitting.value) return;
+                if (lockedByOther.value) {
+                    window.cqToast && window.cqToast('Esta ficha la está completando otro usuario.', 'error');
+                    return;
+                }
+
+                var allErrors = [];
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        if (!isVisible(q)) return;
+                        validate(q, answers[q.linkId]);
+                        if (errors[q.linkId]) allErrors.push(q.text + ': ' + errors[q.linkId]);
+                    });
+                });
+                if (allErrors.length) {
+                    window.cqToast && window.cqToast('Hay ' + allErrors.length + ' campos con error', 'error');
+                    return;
+                }
+                if (!token()) {
+                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar la ficha.', 'error');
+                    return;
+                }
+
+                submitting.value = true;
+                savingState.value = 'saving';
+                if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+
+                // Crea/toma el lock si hace falta y guarda todo antes de finalizar: mismo
+                // camino que el autosave, así $finalize siempre corre sobre lo último.
+                ensureResponse()
+                    .then(ensureLock)
+                    .then(putProgress)
+                    .then(function () {
+                        return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$finalize', {
+                            method: 'POST',
+                            headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
+                            // La auditoría de la finalización guarda la ficha COMPLETA desde el
+                            // estado del server; no hace falta mandar baseline acá.
+                        });
+                    }).then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status + ' al finalizar');
+                        return responseId.value;
+                    }).then(function (id) {
+                        savingState.value = 'idle';
+                        lockToken.value = null;   // $finalize ya liberó el lock del lado del server
+                        if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                        window.cqToast && window.cqToast('Ficha finalizada', 'success');
+                        // Marca esta entrada del historial ANTES de redirigir: si la persona
+                        // vuelve con "atrás", el renderer la lee y muestra el aviso en vez de
+                        // dejar re-finalizar. Se guarda el id para poder linkear a la ficha.
+                        try {
+                            window.history.replaceState(
+                                { cqFinalized: true, responseId: id }, '', window.location.href);
+                        } catch (e) { /* history bloqueado: el aviso no aparecerá, pero la ficha ya se guardó */ }
+                        window.location.href = '/Encounters/View/' + id;
+                    }).catch(function (err) {
+                        savingState.value = 'error';
+                        window.cqToast && window.cqToast('No se pudo guardar la ficha: ' + err.message, 'error');
+                    }).then(function () {
+                        submitting.value = false;
+                    });
+            }
+
+            function goToHistory() {
+                window.location.href = '/Encounters/Timeline?patientId=' + encodeURIComponent(props.patientId);
+            }
+
+            // --- Pasar la ficha a la versión más reciente del cuestionario ----------------
+            // Sólo aplica a una ficha que se está completando en una versión anterior a la
+            // vigente (props.newerVersion > 0). Se muestra un preview del merge y, si el
+            // médico confirma, se re-ancla a la versión nueva (descartando lo que esa versión
+            // eliminó) y se recarga la página para renderizar el formulario nuevo.
+            var retargetPreview = Vue.ref(null);
+            var showRetargetModal = Vue.ref(false);
+            var retargeting = Vue.ref(false);
+
+            function openRetargetPreview() {
+                if (!responseId.value) return;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$retarget-preview', {
+                    headers: authHeaders()
+                }).then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(function (preview) {
+                    retargetPreview.value = preview;
+                    showRetargetModal.value = true;
+                }).catch(function (err) {
+                    window.cqToast && window.cqToast('No se pudo calcular la vista previa: ' + err.message, 'error');
+                });
+            }
+
+            function closeRetargetModal() { showRetargetModal.value = false; }
+
+            function confirmRetarget() {
+                if (retargeting.value || !responseId.value || !lockToken.value) return;
+                retargeting.value = true;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$retarget-version', {
+                    method: 'POST',
+                    headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
+                }).then(function (r) {
+                    if (r.status === 409) {
+                        return r.json().then(function (b) { throw new Error(b.error || 'conflicto'); });
+                    }
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(function () {
+                    // Se anula el lock del lado del cliente para que el beforeunload de la
+                    // recarga no dispare un "Avance guardado" espurio (el diff sería contra un
+                    // baseline que ya no corresponde). Al recargar, la sesión se retoma sola en
+                    // la versión nueva.
+                    lockToken.value = null;
+                    if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                    window.cqToast && window.cqToast('Ficha actualizada a la versión v' + props.newerVersion, 'success');
+                    window.location.reload();
+                }).catch(function (err) {
+                    retargeting.value = false;
+                    window.cqToast && window.cqToast('No se pudo actualizar la versión: ' + err.message, 'error');
+                });
+            }
+
+            // "Guardar y continuar después": guarda el avance, cierra la sesión de edición
+            // (la ficha queda Pendiente) y vuelve al historial del paciente. A diferencia del
+            // autosave silencioso, este cierre deliberado sí deja UN evento en auditoría con
+            // el diff de lo completado en la sesión (mandando el baseline al $unlock).
+            function finishPartial() {
+                if (submitting.value) return;
+                if (lockedByOther.value) {
+                    window.cqToast && window.cqToast('Esta ficha la está completando otro usuario.', 'error');
+                    return;
+                }
+                if (!token()) {
+                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar.', 'error');
+                    return;
+                }
+                // Nada cargado y ni siquiera se creó la ficha: no tiene sentido crear una vacía.
+                if (!responseId.value && answeredCount() === 0) { goToHistory(); return; }
+
+                submitting.value = true;
+                savingState.value = 'saving';
+                if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+
+                ensureResponse()
+                    .then(ensureLock)
+                    .then(putProgress)
+                    .then(function () {
+                        return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$unlock', {
+                            method: 'POST',
+                            headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
+                            body: JSON.stringify({ Items: sessionBaseline.value })
+                        });
+                    }).then(function () {
+                        savingState.value = 'idle';
+                        lockToken.value = null;   // ya liberado; el beforeunload no reintenta
+                        if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                        window.cqToast && window.cqToast('Avance guardado. Podés retomar esta ficha desde el historial.', 'success');
+                        goToHistory();
+                    }).catch(function (err) {
+                        savingState.value = 'error';
+                        window.cqToast && window.cqToast('No se pudo guardar el avance: ' + err.message, 'error');
+                    }).then(function () {
+                        submitting.value = false;
+                    });
             }
 
             return {
@@ -426,8 +831,15 @@
                 completedResponseId: completedResponseId,
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
-                totalQuestions: totalQuestions, answeredCount: answeredCount,
-                submit: submit
+                totalQuestions: totalQuestions, answeredCount: answeredCount, isComplete: isComplete,
+                submit: submit, finishPartial: finishPartial,
+                lockedByOther: lockedByOther, showRenewPrompt: showRenewPrompt,
+                lockSecondsLeft: lockSecondsLeft, renewLock: renewLock,
+                retryLock: retryLock, formatTime: formatTime,
+                newerVersion: props.newerVersion, responseId: responseId,
+                retargetPreview: retargetPreview, showRetargetModal: showRetargetModal,
+                retargeting: retargeting, openRetargetPreview: openRetargetPreview,
+                closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget
             };
         },
         template: '\
@@ -449,6 +861,29 @@
     <div class="small">{{ loadError }}</div>\
 </div>\
 <div v-else class="row g-3">\
+    <div v-if="lockedByOther" class="col-12">\
+        <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">\
+            <i class="bi bi-lock-fill"></i>\
+            <div class="flex-grow-1">Lo está completando <strong>{{ lockedByOther.userId }}</strong>\
+                <span v-if="lockedByOther.expiresAt"> hasta las {{ formatTime(lockedByOther.expiresAt) }}</span>.\
+            </div>\
+            <button class="btn btn-sm btn-outline-secondary" @click="retryLock">Reintentar</button>\
+        </div>\
+    </div>\
+    <div v-else-if="showRenewPrompt" class="col-12">\
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
+            <i class="bi bi-clock-history"></i>\
+            <div class="flex-grow-1">Tu sesión de edición se cierra en {{ lockSecondsLeft }}s por inactividad.</div>\
+            <button class="btn btn-sm btn-primary" @click="renewLock">Seguir completando</button>\
+        </div>\
+    </div>\
+    <div v-if="newerVersion && responseId && !lockedByOther" class="col-12">\
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
+            <i class="bi bi-arrow-up-circle"></i>\
+            <div class="flex-grow-1">Hay una versión más nueva (<strong>v{{ newerVersion }}</strong>) de este cuestionario. Esta ficha se sigue completando en la v{{ questionnaire.version }}, con la que se inició.</div>\
+            <button class="btn btn-sm btn-outline-primary" @click="openRetargetPreview">Ver cambios y actualizar</button>\
+        </div>\
+    </div>\
     <aside class="col-lg-3">\
         <div class="cq-card" style="position:sticky; top:84px;">\
             <h3 class="cq-section-title" style="margin-top:0;">Índice</h3>\
@@ -470,7 +905,7 @@
     </aside>\
 \
     <div class="col-lg-9">\
-        <div class="cq-card">\
+        <div class="cq-card" :style="lockedByOther ? { pointerEvents: \'none\', opacity: 0.6 } : {}">\
             <section v-for="g in questionnaire.groups" :key="g.linkId" :id="g.linkId" class="mb-4">\
                 <h2 class="cq-section-title" style="margin-top:0;">{{ g.title }}</h2>\
                 <template v-for="q in g.questions" :key="q.linkId">\
@@ -546,8 +981,43 @@
                 </template>\
             </section>\
 \
-            <div class="d-flex justify-content-end border-top pt-3 mt-3">\
-                <button class="btn btn-primary" :disabled="submitting" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
+            <div class="border-top pt-3 mt-3">\
+                <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
+                    <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther || isComplete()" :title="isComplete() ? \'Ya respondiste todo: usá Finalizar y enviar\' : null" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
+                    <button class="btn btn-primary" :disabled="submitting || lockedByOther || !isComplete()" :title="!isComplete() ? \'Respondé todas las preguntas para poder finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
+                </div>\
+                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Ya respondiste todas las preguntas: finalizá para dejar la ficha completa.\' : \'Guardá lo cargado y retomá esta ficha más tarde desde el historial del paciente, o finalizá para dejarla completa.\' }}</p>\
+            </div>\
+        </div>\
+    </div>\
+\
+    <div v-if="showRetargetModal && retargetPreview" class="col-12" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeRetargetModal">\
+        <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
+            <h2 class="cq-section-title" style="margin-top:0;">Pasar a la versión v{{ retargetPreview.ToVersion }}</h2>\
+            <p class="cq-text-sm cq-text-muted">Estás completando la v{{ retargetPreview.FromVersion }}. Así queda tu ficha si pasás a la v{{ retargetPreview.ToVersion }}:</p>\
+            <div class="mb-3">\
+                <div class="cq-text-sm fw-semibold"><i class="bi bi-check2 text-success me-1"></i>Se conservan ({{ retargetPreview.Carried.length }})</div>\
+                <ul class="cq-text-sm mb-0" v-if="retargetPreview.Carried.length">\
+                    <li v-for="c in retargetPreview.Carried" :key="c.LinkId">{{ c.Text }}<span v-if="c.Changed" class="cq-text-xs cq-text-muted"> · cambió el enunciado</span></li>\
+                </ul>\
+                <div v-else class="cq-text-sm cq-text-muted">Ninguna respuesta previa se reutiliza.</div>\
+            </div>\
+            <div class="mb-3" v-if="retargetPreview.Added.length">\
+                <div class="cq-text-sm fw-semibold"><i class="bi bi-plus-circle text-primary me-1"></i>Preguntas nuevas ({{ retargetPreview.Added.length }})</div>\
+                <ul class="cq-text-sm mb-0">\
+                    <li v-for="a in retargetPreview.Added" :key="a.LinkId">{{ a.Text }}</li>\
+                </ul>\
+            </div>\
+            <div class="mb-3" v-if="retargetPreview.Dropped.length">\
+                <div class="cq-text-sm fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Se descartan ({{ retargetPreview.Dropped.length }})</div>\
+                <ul class="cq-text-sm mb-0">\
+                    <li v-for="d in retargetPreview.Dropped" :key="d.LinkId">{{ d.Text }}: <strong>{{ d.Answer }}</strong></li>\
+                </ul>\
+                <p class="cq-text-xs text-danger mb-0 mt-1">Estas respuestas se perderán al actualizar.</p>\
+            </div>\
+            <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-3">\
+                <button class="btn btn-outline-secondary" :disabled="retargeting" @click="closeRetargetModal">Seguir en v{{ retargetPreview.FromVersion }}</button>\
+                <button class="btn btn-primary" :disabled="retargeting" @click="confirmRetarget"><i class="bi bi-arrow-up-circle me-1"></i>{{ retargeting ? \'Actualizando…\' : \'Actualizar a v\' + retargetPreview.ToVersion }}</button>\
             </div>\
         </div>\
     </div>\

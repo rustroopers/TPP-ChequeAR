@@ -28,6 +28,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // {action} de MVC (nombre del método), que gana sobre el query string y rompía el filtro.
         public async Task<ActionResult> Index(string user = null, string act = null, string resource = null, string from = null, string to = null, int page = 1)
         {
+            NormalizeDateRange(ref from, ref to);
             ViewBag.Title = "Auditoría";
             ViewBag.PageId = "audit";
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
@@ -106,10 +107,26 @@ namespace ChequeAR.Api.Controllers.Mvc
             return ArgentinaTime.ToUtc(endOfDay ? d.Date.AddDays(1) : d.Date);
         }
 
+        /// <summary>
+        /// Si "desde" quedó después de "hasta" (rango invertido, tipeado a mano en la URL o
+        /// pegado sin pasar por el date-range picker), se intercambian acá. Nunca debe llegar a
+        /// filtrarse con un rango negativo.
+        /// </summary>
+        private static void NormalizeDateRange(ref string from, ref string to)
+        {
+            var fd = ParseArgDateToUtc(from, endOfDay: false);
+            var td = ParseArgDateToUtc(to, endOfDay: false);
+            if (fd.HasValue && td.HasValue && fd.Value > td.Value)
+            {
+                var tmp = from; from = to; to = tmp;
+            }
+        }
+
         // A6b — Exportación. Reutiliza los mismos exporters (XLSX/CSV) que Reportes,
         // armando un ReportResult con las columnas visibles del listado.
         public async Task<ActionResult> Export(string user = null, string act = null, string resource = null, string from = null, string to = null, string format = "xlsx")
         {
+            NormalizeDateRange(ref from, ref to);
             // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
             var entries = await LoadFilteredAsync(user, act, resource, from, to);
             var rows = entries.ConvertAll(e => new Dictionary<string, object>
@@ -163,6 +180,16 @@ namespace ChequeAR.Api.Controllers.Mvc
                 if (av.Operation == AuditPresentation.Op.Publish && av.ResourceId.HasValue)
                     await FillVersionDiffAsync(detail, av.ResourceId.Value, e.Recorded);
 
+                // Para una ficha: al finalizar se guardó la foto COMPLETA (todas las
+                // respuestas); en un guardado de avance, sólo el diff de esa sesión.
+                if (av.ResourceType == "QuestionnaireResponse" && !string.IsNullOrWhiteSpace(e.FhirJson))
+                {
+                    if (av.Operation == AuditPresentation.Op.Finalize)
+                        FillResponseSnapshot(detail, e.FhirJson);
+                    else
+                        FillResponseDiff(detail, e.FhirJson);
+                }
+
                 return View(detail);
             }
             catch (Exception ex)
@@ -201,6 +228,42 @@ namespace ChequeAR.Api.Controllers.Mvc
                 out var beforeMarked, out var afterMarked);
             detail.BeforeLines = beforeMarked;
             detail.AfterLines = afterMarked;
+        }
+
+        /// <summary>
+        /// Lee el diff de una sesión de guardado (lista de <see cref="Application.Services.ResponseFieldChange"/>
+        /// serializada en el evento) y lo carga en el detalle. Si el JSON no es interpretable
+        /// se ignora en silencio: es un extra de presentación, no un dato crítico.
+        /// </summary>
+        private static void FillResponseDiff(AuditDetailViewModel detail, string fhirJson)
+        {
+            try
+            {
+                var changes = Newtonsoft.Json.JsonConvert
+                    .DeserializeObject<List<Application.Services.ResponseFieldChange>>(fhirJson);
+                if (changes == null || changes.Count == 0) return;
+                detail.HasResponseDiff = true;
+                detail.ResponseChanges = changes;
+            }
+            catch (Newtonsoft.Json.JsonException) { /* payload viejo o ilegible: sin diff */ }
+        }
+
+        /// <summary>
+        /// Lee la foto completa de una ficha finalizada (lista de
+        /// <see cref="Application.Services.ResponseSnapshotSection"/> serializada) y la carga en
+        /// el detalle. Si el JSON no es interpretable se ignora en silencio.
+        /// </summary>
+        private static void FillResponseSnapshot(AuditDetailViewModel detail, string fhirJson)
+        {
+            try
+            {
+                var sections = Newtonsoft.Json.JsonConvert
+                    .DeserializeObject<List<Application.Services.ResponseSnapshotSection>>(fhirJson);
+                if (sections == null || sections.Count == 0) return;
+                detail.HasResponseSnapshot = true;
+                detail.ResponseSnapshot = sections;
+            }
+            catch (Newtonsoft.Json.JsonException) { /* payload viejo o ilegible: sin foto */ }
         }
 
         private async Task<IReadOnlyDictionary<Guid, string>> ResolveTitlesAsync(IEnumerable<AuditEvent> events)

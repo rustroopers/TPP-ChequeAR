@@ -44,15 +44,41 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // Los datos los arma el servicio; acá sólo queda darles forma de pantalla.
                 foreach (var e in await _dashboard.RecentEncountersAsync(5))
                 {
+                    // El estado de una QuestionnaireResponse no es "borrador vs publicado"
+                    // (eso es del ciclo de vida de Questionnaire); acá reflejamos el ciclo de
+                    // vida real de la ficha: InProgress se sigue completando con el tiempo
+                    // (no es un borrador descartable), y solo esa va a "Continuar edición".
+                    string status;
+                    string openUrl;
+                    switch (e.Status)
+                    {
+                        case ChequeAR.Domain.Enums.ResponseStatus.InProgress:
+                            status = "pending";
+                            openUrl = Url.Action("Load", "Encounters", new { patientId = e.PatientHospitalId, questionnaireId = e.QuestionnaireId });
+                            break;
+                        case ChequeAR.Domain.Enums.ResponseStatus.Amended:
+                            status = "amended";
+                            openUrl = Url.Action("View", "Encounters", new { id = e.Id });
+                            break;
+                        case ChequeAR.Domain.Enums.ResponseStatus.EnteredInError:
+                            status = "error";
+                            openUrl = Url.Action("View", "Encounters", new { id = e.Id });
+                            break;
+                        default:
+                            status = "completed";
+                            openUrl = Url.Action("View", "Encounters", new { id = e.Id });
+                            break;
+                    }
+
                     model.RecentEncounters.Add(new RecentEncounter
                     {
                         PatientName = e.PatientName,
                         QuestionnaireTitle = e.QuestionnaireTitle,
                         SpecialtyCode = e.SpecialtyCode,
                         SpecialtyLabel = SpecialtyMap.Label(e.SpecialtyCode, e.SpecialtyDisplay),
-                        Status = e.Completed ? "published" : "draft",
+                        Status = status,
                         UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(e.LastSavedAt),
-                        OpenUrl = Url.Action("View", "Encounters", new { id = e.Id })
+                        OpenUrl = openUrl
                     });
                 }
 

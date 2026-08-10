@@ -49,6 +49,17 @@ namespace ChequeAR.Api.Models
         public int? ToVersion { get; set; }
         public List<Helpers.AuditPresentation.DiffLine> BeforeLines { get; set; } = new List<Helpers.AuditPresentation.DiffLine>();
         public List<Helpers.AuditPresentation.DiffLine> AfterLines { get; set; } = new List<Helpers.AuditPresentation.DiffLine>();
+
+        // Diff de lo completado en una sesión de guardado de una ficha (solo para eventos
+        // "$save" de una QuestionnaireResponse que efectivamente cambiaron algo).
+        public bool HasResponseDiff { get; set; }
+        public List<ChequeAR.Application.Services.ResponseFieldChange> ResponseChanges { get; set; }
+            = new List<ChequeAR.Application.Services.ResponseFieldChange>();
+
+        // Foto completa de la ficha al finalizarla (todas las preguntas + respuesta final).
+        public bool HasResponseSnapshot { get; set; }
+        public List<ChequeAR.Application.Services.ResponseSnapshotSection> ResponseSnapshot { get; set; }
+            = new List<ChequeAR.Application.Services.ResponseSnapshotSection>();
     }
 
     public class UserListItem

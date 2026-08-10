@@ -80,6 +80,16 @@ namespace ChequeAR.Application.Reports
             var sb = new StringBuilder();
             sb.Append(Alias).Append(".\"QuestionnaireId\" = :QuestionnaireId");
 
+            // Si "desde" quedó después de "hasta" (rango invertido), se intercambian acá:
+            // nunca debe llegar a ejecutarse un rango que estructuralmente no puede traer filas.
+            if (q.DateRange != null && q.DateRange.From.HasValue && q.DateRange.To.HasValue
+                && q.DateRange.From.Value > q.DateRange.To.Value)
+            {
+                var tmp = q.DateRange.From;
+                q.DateRange.From = q.DateRange.To;
+                q.DateRange.To = tmp;
+            }
+
             if (q.DateRange?.From != null)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" >= :DateFrom");

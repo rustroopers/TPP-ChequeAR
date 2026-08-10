@@ -12,10 +12,12 @@ namespace ChequeAR.Application.Services
     {
         public Guid Id { get; set; }
         public string PatientName { get; set; }
+        public string PatientHospitalId { get; set; }
+        public Guid QuestionnaireId { get; set; }
         public string QuestionnaireTitle { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyDisplay { get; set; }
-        public bool Completed { get; set; }
+        public ResponseStatus Status { get; set; }
         public DateTime LastSavedAt { get; set; }
     }
 
@@ -75,10 +77,12 @@ namespace ChequeAR.Application.Services
                     // El nombre sale del Patient embebido en el recurso; si no está, la
                     // historia clínica. Nunca se inventa un nombre.
                     PatientName = FhirPatientReader.ReadName(r.FhirJson) ?? r.PatientHospitalId,
+                    PatientHospitalId = r.PatientHospitalId,
+                    QuestionnaireId = r.QuestionnaireId,
                     QuestionnaireTitle = q?.Title ?? r.QuestionnaireId.ToString(),
                     SpecialtyCode = q?.SpecialtyCode ?? "general",
                     SpecialtyDisplay = q?.SpecialtyDisplay,
-                    Completed = r.Status == ResponseStatus.Completed,
+                    Status = r.Status,
                     LastSavedAt = r.LastSavedAt
                 };
             }).ToList();

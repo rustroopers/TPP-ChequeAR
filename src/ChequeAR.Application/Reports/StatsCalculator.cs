@@ -87,9 +87,10 @@ namespace ChequeAR.Application.Reports
             qs.N = valores.Count;
             if (valores.Count == 0) return;
 
+            var media = valores.Average();
             qs.Min = valores.First();
             qs.Max = valores.Last();
-            qs.Mean = Redondear(valores.Average());
+            qs.Mean = Redondear(media);
             qs.Median = Redondear(Percentil(valores, 0.50));
             qs.P25 = Redondear(Percentil(valores, 0.25));
             qs.P75 = Redondear(Percentil(valores, 0.75));
@@ -98,7 +99,6 @@ namespace ChequeAR.Application.Reports
             // null en vez de mostrar 0, que se leería como "no hay dispersión".
             if (valores.Count > 1)
             {
-                var media = valores.Average();
                 var suma = valores.Sum(v => (v - media) * (v - media));
                 qs.StdDev = Redondear(Math.Sqrt((double)(suma / (valores.Count - 1))));
             }

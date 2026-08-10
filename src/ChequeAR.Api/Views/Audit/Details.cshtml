@@ -53,3 +53,56 @@
         }
     </div>
 }
+
+@if (Model.HasResponseSnapshot)
+{
+    <div class="cq-card mt-3" style="max-width:760px;">
+        <h2 class="cq-section-title">Cuestionario completo</h2>
+        <p class="cq-text-sm cq-text-muted">Respuestas de la ficha tal como quedó al finalizarla.</p>
+        @foreach (var grp in Model.ResponseSnapshot)
+        {
+            if (!string.IsNullOrWhiteSpace(grp.Title))
+            {
+                <h3 class="cq-text-sm fw-semibold mt-3 mb-1">@grp.Title</h3>
+            }
+            <table class="table cq-table mb-0">
+                <tbody>
+                    @foreach (var a in grp.Answers)
+                    {
+                        <tr>
+                            <td style="width:55%;">@a.Text</td>
+                            <td>@a.Answer</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@if (Model.HasResponseDiff)
+{
+    <div class="cq-card mt-3" style="max-width:760px;">
+        <h2 class="cq-section-title">Completado en esta sesión</h2>
+        <p class="cq-text-sm cq-text-muted">Preguntas que cambiaron de valor en este guardado.</p>
+        <table class="table cq-table mb-0">
+            <thead>
+                <tr>
+                    <th>Pregunta</th>
+                    <th>Antes</th>
+                    <th>Después</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in Model.ResponseChanges)
+                {
+                    <tr>
+                        <td>@c.Text</td>
+                        <td><span class="cq-diff__del">@c.Before</span></td>
+                        <td><span class="cq-diff__add">@c.After</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

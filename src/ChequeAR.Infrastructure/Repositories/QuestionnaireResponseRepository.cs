@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -33,7 +35,7 @@ namespace ChequeAR.Infrastructure.Repositories
             await _ctx.SaveChangesAsync();
         }
 
-        public Task UpdateAsync(QuestionnaireResponse r) => _ctx.SaveChangesAsync();
+        public Task UpdateAsync(QuestionnaireResponse r) => SaveAsync();
 
         public async Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items)
         {
@@ -44,6 +46,70 @@ namespace ChequeAR.Infrastructure.Repositories
         public Task<bool> HasResponsesAsync(Guid questionnaireId)
         {
             return _ctx.QuestionnaireResponses.AnyAsync(r => r.QuestionnaireId == questionnaireId);
+        }
+
+        public async Task SaveProgressAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> replacementItems)
+        {
+            var linkIds = (replacementItems ?? new List<QuestionnaireResponseItem>())
+                .Select(i => i.LinkId).Distinct().ToList();
+
+            // Se opera contra el DbSet, no contra r.Items: la relación es requerida
+            // (WillCascadeOnDelete(false)), así que sacar un item de la colección de
+            // navegación sin borrarlo del set intentaría poner su FK en null y EF lo
+            // rechazaría. Mismo criterio que QuestionnaireRepository.ReplaceStructureAsync.
+            if (linkIds.Count > 0)
+            {
+                var stale = await _ctx.QuestionnaireResponseItems
+                    .Where(i => i.ResponseId == r.Id && linkIds.Contains(i.LinkId)).ToListAsync();
+                _ctx.QuestionnaireResponseItems.RemoveRange(stale);
+            }
+            _ctx.QuestionnaireResponseItems.AddRange(replacementItems ?? new List<QuestionnaireResponseItem>());
+
+            // Cabecera (con el token de concurrencia) e items en el mismo SaveChanges: la
+            // ficha nunca queda con items nuevos pero el ConcurrencyVersion/FhirJson viejo,
+            // ni viceversa.
+            await SaveAsync();
+        }
+
+        public async Task RetargetAsync(QuestionnaireResponse r, ICollection<string> keepLinkIds)
+        {
+            var keep = new HashSet<string>(keepLinkIds ?? new List<string>());
+            // Se materializan y filtran en memoria: EF6 no traduce bien `!keep.Contains(...)`
+            // sobre una colección local dentro del WHERE. Se borran los items cuyo linkId ya no
+            // existe en la versión nueva (las respuestas descartadas del re-anclaje).
+            var current = await _ctx.QuestionnaireResponseItems
+                .Where(i => i.ResponseId == r.Id).ToListAsync();
+            var drop = current.Where(i => !keep.Contains(i.LinkId)).ToList();
+            if (drop.Count > 0) _ctx.QuestionnaireResponseItems.RemoveRange(drop);
+
+            // Cabecera (nueva versión anclada + FhirJson + ConcurrencyVersion) y borrado de
+            // items en el mismo SaveChanges, por el mismo motivo que SaveProgressAsync.
+            await SaveAsync();
+        }
+
+        // Traduce el choque de concurrencia de EF al lenguaje de la aplicación, igual que
+        // QuestionnaireRepository.SaveAsync: salta cuando el UPDATE afecta 0 filas porque
+        // el ConcurrencyVersion del WHERE ya no coincide (alguien más guardó/tomó el lock
+        // en el medio).
+        private async Task SaveAsync()
+        {
+            try
+            {
+                await _ctx.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                var stale = ex.Entries.Select(e => e.Entity).OfType<QuestionnaireResponse>().FirstOrDefault();
+                var expected = stale?.ConcurrencyVersion ?? 0;
+                var actual = expected;
+                if (stale != null)
+                {
+                    var fromDb = await _ctx.QuestionnaireResponses.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Id == stale.Id);
+                    actual = fromDb?.ConcurrencyVersion ?? expected;
+                }
+                throw new ConcurrencyConflictException(expected, actual);
+            }
         }
     }
 }

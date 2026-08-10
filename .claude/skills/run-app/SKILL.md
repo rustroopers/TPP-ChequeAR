@@ -34,6 +34,31 @@ MSBUILD="C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current
 
 El warning `CS0108` de `AccountController.Profile()` es preexistente e inofensivo.
 
+## Paso 2b — Migraciones EF pendientes (sólo si la app tira "model backing... has changed")
+
+Si al abrir una pantalla que consulta datos aparece **"The model backing the 'ChequeARDbContext' context has changed since the database was created"**, es que hay una migración Code First sin aplicar en el Oracle de dev (típico después de un pull que trae migraciones nuevas). Se aplica con **`ef6.exe`** (EF6 6.5.1 ya no trae `migrate.exe`), copiándolo al `bin` de la Api para que resuelva EntityFramework + el provider de Oracle desde ahí.
+
+```bash
+# ef6.exe vive en el paquete NuGet restaurado (elegir la versión que referencia Infrastructure: 6.5.1)
+EF6="$USERPROFILE/.nuget/packages/entityframework/6.5.1/tools/net45/win-x86/ef6.exe"
+cp "$EF6" src/ChequeAR.Api/bin/ef6.exe
+
+cd src/ChequeAR.Api/bin
+# 1) DRY-RUN primero (--script): no toca la DB, confirma que el provider Oracle resuelve y muestra el DDL.
+# 2) Sacar --script para aplicar de verdad. Termina en "Running Seed method." si salió OK.
+./ef6.exe database update \
+  --assembly ChequeAR.Infrastructure.dll \
+  --migrations-config ChequeAR.Infrastructure.Migrations.Configuration \
+  --config ../Web.config \
+  --connection-string "User Id=CHEQUEAR;Password=Chequear_dev1;Data Source=localhost:1521/XEPDB1;" \
+  --connection-provider "Oracle.ManagedDataAccess.Client" --verbose
+```
+
+- El `--config ../Web.config` es para la sección `<entityFramework>` que registra el provider `Oracle.ManagedDataAccess.Client`; la connection string se pasa explícita (misma que `name=ChequeAR` en el Web.config).
+- Verificar que quedó aplicada: correr el mismo comando con `--script` → debe decir **"No pending explicit migrations."**
+- **Limpieza**: borrar `src/ChequeAR.Api/bin/ef6.exe` (y `ef6.pdb` si se copió) para no dejarlo suelto en el repo.
+- Equivale a `Update-Database` / `DbMigrator.Update()` del Package Manager Console de Visual Studio; usar cualquiera de los dos si se prefiere.
+
 ## Paso 3 — Correr IIS Express (en background)
 
 ```bash

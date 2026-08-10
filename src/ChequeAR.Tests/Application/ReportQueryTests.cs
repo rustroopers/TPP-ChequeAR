@@ -272,5 +272,22 @@ namespace ChequeAR.Tests.Application
             Assert.Throws<ArgumentException>(() =>
                 new QueryBuilder().Build(new ReportQuery(), ReportSchemaTests.SchemaCon(("a", QuestionType.String))));
         }
+
+        // Un rango invertido (desde > hasta) nunca debe ejecutarse tal cual: filtraria una
+        // cohorte estructuralmente vacia sin avisar. Se intercambian los extremos antes de
+        // armar el WHERE.
+        [Fact]
+        public void RangoDeFechasInvertido_SeIntercambia()
+        {
+            var q = Query();
+            var tarde = new DateTime(2026, 6, 1);
+            var temprano = new DateTime(2026, 1, 1);
+            q.DateRange = new DateRange { From = tarde, To = temprano };
+
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.Equal(temprano, built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(tarde, built.Parameters.Single(p => p.Name == "DateTo").Value);
+        }
     }
 }

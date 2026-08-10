@@ -32,18 +32,45 @@ namespace ChequeAR.Api.Models
 
     public class EncounterTimelineItem
     {
+        /// <summary>Fecha real (UTC), usada para filtrar por rango; no se muestra tal cual.</summary>
+        public DateTime RawDate { get; set; }
         public string Date { get; set; }
+        public Guid QuestionnaireId { get; set; }
         public string QuestionnaireTitle { get; set; }
         public int QuestionnaireVersion { get; set; }
+        public string SpecialtyCode { get; set; }
+        public string SpecialtyLabel { get; set; }
         public string Author { get; set; }
         public Guid EncounterId { get; set; }
         public string Status { get; set; }
+    }
+
+    public class TimelineFilterOption
+    {
+        public string Value { get; set; }
+        public string Label { get; set; }
     }
 
     public class PatientTimelineViewModel
     {
         public PatientSearchItem Patient { get; set; }
         public List<EncounterTimelineItem> Entries { get; set; } = new List<EncounterTimelineItem>();
+        /// <summary>Si el paciente tiene fichas antes de aplicar filtros (distingue "sin historial" de "sin resultados para este filtro").</summary>
+        public bool HasAnyEncounters { get; set; }
+
+        // Filtros aplicados (para repoblar el form).
+        public Guid? QuestionnaireFilter { get; set; }
+        public string SpecialtyFilter { get; set; }
+        public string AuthorFilter { get; set; }
+        /// <summary>"pendiente" (InProgress), "finalizada" (Completed), o null = todas.</summary>
+        public string StatusFilter { get; set; }
+        public string From { get; set; }
+        public string To { get; set; }
+
+        // Opciones de filtro: sólo lo que efectivamente aparece en el historial de este paciente.
+        public List<TimelineFilterOption> AvailableQuestionnaires { get; set; } = new List<TimelineFilterOption>();
+        public List<TimelineFilterOption> AvailableSpecialties { get; set; } = new List<TimelineFilterOption>();
+        public List<string> AvailableAuthors { get; set; } = new List<string>();
     }
 
     public class EncounterReadonlyViewModel

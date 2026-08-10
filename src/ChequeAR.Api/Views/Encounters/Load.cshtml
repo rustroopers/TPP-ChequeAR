@@ -10,8 +10,9 @@
         <h1 class="cq-page-header__title">@ViewBag.QuestionnaireTitle <span class="cq-text-sm cq-text-muted">v@(ViewBag.Version)</span></h1>
         <p class="cq-page-header__subtitle">@ViewBag.PatientName</p>
     </div>
-    @* Sin autosave todavia: el backend solo expone POST + $finalize para
-       QuestionnaireResponse, no hay endpoint de update. *@
+    @* La ficha puede completarse de forma asincrónica (ej. seguimiento telefónico
+       semana a semana): el renderer resume una ficha InProgress existente, toma un
+       lock de sesión y autoguarda con PUT + $lock/$renew-lock/$unlock. *@
 </header>
 
 @if (!string.IsNullOrEmpty(loadError))
@@ -27,8 +28,9 @@
 }
 else
 {
-    @* La ficha viene de la versión congelada, servida por el controller. Si alguien
-       publica un cambio mientras se completa, esto no se mueve. *@
+    @* La ficha viene de la versión congelada, servida por el controller. Si alguien publica
+       un cambio mientras se completa, esto no se mueve; el renderer ofrece pasar a la versión
+       nueva (con preview del merge) cuando corresponde. *@
     <div id="qRenderer" data-vue-island="questionnaire-renderer" data-props="@rendererProps">
         <div class="cq-card">
             <div class="cq-loading">
