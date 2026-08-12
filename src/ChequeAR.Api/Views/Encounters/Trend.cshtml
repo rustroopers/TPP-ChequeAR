@@ -2,10 +2,10 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Evolución de parámetros";
-    var selected = Model.SelectedQuestionnaireId?.ToString();
+    var selected = Model.SelectedQuestionnaireId == null ? null : Model.SelectedQuestionnaireId.ToString();
     var islandProps = Newtonsoft.Json.JsonConvert.SerializeObject(new
     {
-        patientId = Model.Patient?.HC,
+        patientId = Model.Patient == null ? null : Model.Patient.HC,
         questionnaireId = selected
     });
 }
@@ -40,7 +40,7 @@ else if (!Model.HasAnyCompleted)
 }
 else
 {
-    @using (Html.BeginForm("Trend", "Encounters", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "patient-trend" }))
+    using (Html.BeginForm("Trend", "Encounters", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "patient-trend" }))
     {
         @Html.Hidden("patientId", Model.Patient.HC)
         <div class="row g-2 align-items-end" style="max-width:520px;">

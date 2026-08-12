@@ -102,7 +102,7 @@ description: "Task list for: Evolución longitudinal de parámetros por paciente
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T019 [P] Ejecutar la guía manual de `quickstart.md` contra Oracle real (mismo enfoque de validación manual que usó la spec 009), y documentar cualquier bug real encontrado en el round-trip HTTP completo (los tests unitarios de T010 no lo cubren, igual que pasó con el bug de `ConcurrencyVersion` en spec 009).
+- [X] T019 [P] Ejecutar la guía manual de `quickstart.md` contra Oracle real (mismo enfoque de validación manual que usó la spec 009), y documentar cualquier bug real encontrado en el round-trip HTTP completo (los tests unitarios de T010 no lo cubren, igual que pasó con el bug de `ConcurrencyVersion` en spec 009).
 - [X] T020 [P] Revisar accesibilidad básica del selector de parámetros y de los gráficos (labels, contraste de la franja de rango normal) reusando las variables `--cq-*` ya definidas para el resto de la UI (vistas en `report-stats/index.js`).
 
 ---
@@ -164,3 +164,36 @@ Task: "Tests unitarios de PatientTrendService"
 - El backend (Foundational) ya soporta la funcionalidad completa de US1+US2 desde el arranque (múltiples `linkId`, `NormalRange` incluido) — lo que separa las historias es exclusivamente el frontend, para poder demostrar valor incremental sin re-trabajar la API.
 - Confirmar que los tests fallan antes de implementar (T010 antes de que T005 esté terminado, si se sigue TDD estricto).
 - Commitear después de cada tarea o grupo lógico.
+
+## Testing hecho (T019)
+
+Prueba manual end-to-end en el navegador, contra Oracle real (no mocks):
+
+- El seed data no tenía ningún paciente con 2+ fichas finalizadas del mismo
+  cuestionario (precondición de `quickstart.md`). Se cargó una segunda ficha
+  finalizada de "Dolor musculoesquelético - Triaje reumatológico" para
+  `PAC-000001` vía la UI normal (`Cargar ficha`) para poder ejercitar el caso.
+- **Se encontraron y arreglaron 2 bugs reales en `Trend.cshtml`**, ninguno
+  detectado por los tests unitarios porque no compilan la vista:
+  1. `@using (Html.BeginForm(...))` dentro de un bloque `else { }` que ya es
+     contexto de código — el `@` de más rompía el parser de Razor
+     ("Unexpected 'using' keyword after '@' character").
+  2. Dos usos del operador `?.` (`Model.SelectedQuestionnaireId?.ToString()`,
+     `Model.Patient?.HC`). El proyecto no tiene configurado
+     `Microsoft.CodeDom.Providers.DotNetCompilerPlatform`, así que el
+     compilador Razor en runtime queda limitado a C# 5 y no soporta el
+     operador null-conditional (C# 6) — ningún otro `.cshtml` del proyecto lo
+     usa, por la misma razón. Se reemplazó por operador ternario con `== null`.
+- Con esos 2 fixes, se verificaron los 8 pasos de `quickstart.md`: selector de
+  cuestionario filtrado a los completados, selector de parámetros filtrado a
+  numéricos/fecha no repetibles, gráfico de un parámetro en orden cronológico,
+  selección múltiple (3 parámetros de "AIJ - Evaluación inicial") con gráficos
+  apilados independientes, y un cuestionario nunca completado por el paciente
+  que no queda seleccionable (no rompe, no preselecciona).
+- **Gap de datos, no de código**: tampoco había ninguna `Question.ValidationJson`
+  con `min`/`max` en toda la seed data, así que la franja de rango normal (US3)
+  nunca se había ejercitado contra datos reales. Se seteó un rango de prueba
+  por SQL directo (`{"min":0,"max":5}` en `impacto` de "Dolor musculoesquelético"),
+  se confirmó que la franja se dibuja correctamente detrás de la línea, y se
+  revirtió el cambio al terminar (no se hizo a través del flujo normal de la
+  app, así que no debía quedar en la base).
