@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
@@ -37,6 +38,37 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("user-1", created.CreatedBy);
             Assert.NotEqual(default, created.CreatedAt);
             _repo.Verify(r => r.AddAsync(It.IsAny<Questionnaire>()), Times.Once);
+        }
+
+        // Candidatos para "importar preguntas": misma especialidad, excluye archivados y el propio.
+        [Fact]
+        public async Task GetImportCandidates_ExcluyeArchivadosYElPropio()
+        {
+            var self = Guid.NewGuid();
+            var draft = new Questionnaire { Id = Guid.NewGuid(), Title = "Borrador", Status = QuestionnaireStatus.Draft, SpecialtyCode = "reuma" };
+            var active = new Questionnaire { Id = Guid.NewGuid(), Title = "Publicado", Status = QuestionnaireStatus.Active, SpecialtyCode = "reuma" };
+            var retired = new Questionnaire { Id = Guid.NewGuid(), Title = "Archivado", Status = QuestionnaireStatus.Retired, SpecialtyCode = "reuma" };
+            var itself = new Questionnaire { Id = self, Title = "El que edito", Status = QuestionnaireStatus.Draft, SpecialtyCode = "reuma" };
+            _repo.Setup(r => r.SearchAsync(null, null, "reuma", 0, 200))
+                 .ReturnsAsync((IReadOnlyList<Questionnaire>)new[] { draft, active, retired, itself }.ToList());
+
+            var result = await _sut.GetImportCandidatesAsync("reuma", self);
+
+            Assert.Equal(new[] { draft.Id, active.Id }, result.Select(q => q.Id));
+        }
+
+        // Sin excludeId (cuestionario nuevo todavía sin id real) igual filtra los archivados.
+        [Fact]
+        public async Task GetImportCandidates_SinExcludeId_SoloFiltraArchivados()
+        {
+            var active = new Questionnaire { Id = Guid.NewGuid(), Status = QuestionnaireStatus.Active, SpecialtyCode = "cardio" };
+            var retired = new Questionnaire { Id = Guid.NewGuid(), Status = QuestionnaireStatus.Retired, SpecialtyCode = "cardio" };
+            _repo.Setup(r => r.SearchAsync(null, null, "cardio", 0, 200))
+                 .ReturnsAsync((IReadOnlyList<Questionnaire>)new[] { active, retired }.ToList());
+
+            var result = await _sut.GetImportCandidatesAsync("cardio", null);
+
+            Assert.Equal(new[] { active.Id }, result.Select(q => q.Id));
         }
 
         // Editar un cuestionario que no existe debe fallar (no se puede actualizar la nada).

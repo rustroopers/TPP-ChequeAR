@@ -52,6 +52,21 @@ namespace ChequeAR.Application.Services
         public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
             => _repo.CountAsync(status, titleContains, specialtyCode);
 
+        /// <summary>
+        /// Cuestionarios que sirven como fuente para "importar preguntas" al crear/editar otro:
+        /// misma especialidad, no archivados, y distintos del que se está editando. Un archivado
+        /// no se ofrece —su estructura sigue siendo legible, pero como base de trabajo nuevo no
+        /// aporta y confunde—. El propio cuestionario se excluye para no importarse a sí mismo.
+        /// </summary>
+        public async Task<IReadOnlyList<Questionnaire>> GetImportCandidatesAsync(string specialtyCode, Guid? excludeId)
+        {
+            var candidatos = await _repo.SearchAsync(null, null, specialtyCode, 0, 200);
+            return candidatos
+                .Where(q => q.Status != QuestionnaireStatus.Retired
+                            && (!excludeId.HasValue || q.Id != excludeId.Value))
+                .ToList();
+        }
+
         public Task<IReadOnlyList<string>> GetSpecialtyCodesAsync() => _repo.GetSpecialtyCodesAsync();
 
         public Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)

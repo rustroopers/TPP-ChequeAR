@@ -394,6 +394,125 @@
             }
             function toast(msg, kind) { if (window.cqToast) window.cqToast(msg, kind); }
 
+            // ── Importar preguntas de otro cuestionario de la misma especialidad ──────────
+            // Se puede crear un cuestionario a partir de otro: se traen sus secciones/preguntas
+            // y se agregan a la estructura actual, que después se edita libremente. Cada pregunta
+            // importada recibe un linkId NUEVO para no colisionar con las de acá, y sus
+            // condiciones internas se re-apuntan a esos linkId nuevos; una condición que apunte a
+            // una pregunta que no vino en la importación se descarta (misma política de integridad
+            // que dropConditions/enforceConditionOrder para el resto del editor).
+            var importOpen = Vue.ref(false);
+            var importLoading = Vue.ref(false);   // trayendo la lista de candidatos
+            var importBusy = Vue.ref(false);      // trayendo/insertando el elegido
+            var importError = Vue.ref(null);
+            var importCandidates = Vue.ref([]);
+
+            function estadoLabel(s) {
+                return s === 'published' ? 'Publicado' : (s === 'draft' ? 'Borrador' : (s || ''));
+            }
+
+            function openImport() {
+                if (isArchived.value) return;
+                importOpen.value = true;
+                importError.value = null;
+                importCandidates.value = [];
+                importLoading.value = true;
+                var url = '/Questionnaires/ImportCandidates?specialty=' + encodeURIComponent(specialtyCode.value || 'general')
+                        + '&excludeId=' + encodeURIComponent(currentId.value || '');
+                fetch(url, { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(function (list) { importCandidates.value = list || []; })
+                    .catch(function (err) { importError.value = 'No se pudieron cargar los cuestionarios: ' + err.message; })
+                    .then(function () { importLoading.value = false; });
+            }
+
+            function closeImport() { importOpen.value = false; }
+
+            function usedLinkIds() {
+                var used = {};
+                allQuestions().forEach(function (q) { if (q.linkId) used[q.linkId] = true; });
+                return used;
+            }
+
+            function freshLinkId(used) {
+                var id;
+                do { id = 'q_' + Math.random().toString(36).slice(2, 7); } while (used[id]);
+                used[id] = true;
+                return id;
+            }
+
+            // Mapea una pregunta del formato del server (mismo que props.groups / EditorModel) al
+            // formato interno del editor, con un linkId nuevo. Es el mismo mapeo que hidrata
+            // `initial` al arrancar, acá reutilizado para lo importado.
+            function hydrateImportedQuestion(q, newLinkId) {
+                return {
+                    linkId: newLinkId,
+                    text: q.text,
+                    type: q.type,
+                    required: !!q.required,
+                    unit: q.unit,
+                    min: typeof q.min === 'number' ? q.min : undefined,
+                    max: typeof q.max === 'number' ? q.max : undefined,
+                    maxLength: typeof q.maxLength === 'number' ? q.maxLength : undefined,
+                    pattern: q.pattern,
+                    accept: q.accept,
+                    enableWhen: q.enableWhen ? {
+                        question: q.enableWhen.question,
+                        op: q.enableWhen.op || '=',
+                        value: q.enableWhen.value
+                    } : undefined,
+                    code: q.code,
+                    codeDisplay: q.codeDisplay,
+                    term: q.term,
+                    options: q.options && q.options.length ? q.options.slice() : undefined,
+                    optionsText: q.options && q.options.length ? q.options.join('\n') : ''
+                };
+            }
+
+            function importFrom(candidate) {
+                if (importBusy.value) return;
+                importBusy.value = true;
+                importError.value = null;
+                fetch('/Questionnaires/EditorModel/' + candidate.id, { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(function (src) {
+                        var srcGroups = src.groups || [];
+                        var used = usedLinkIds();
+                        // 1) linkId nuevo por pregunta + mapa viejo -> nuevo.
+                        var remap = {};
+                        var newGroups = srcGroups.map(function (g) {
+                            var questions = (g.questions || []).map(function (q) {
+                                var nl = freshLinkId(used);
+                                if (q.linkId) remap[q.linkId] = nl;
+                                return hydrateImportedQuestion(q, nl);
+                            });
+                            return { title: g.title || 'Sección importada', questions: questions };
+                        });
+                        // 2) Re-apuntar condiciones internas; descartar las que quedan colgadas.
+                        var count = 0, dropped = 0;
+                        newGroups.forEach(function (g) {
+                            g.questions.forEach(function (q) {
+                                count++;
+                                if (q.enableWhen && q.enableWhen.question) {
+                                    var target = remap[q.enableWhen.question];
+                                    if (target) q.enableWhen.question = target;
+                                    else { q.enableWhen = undefined; dropped++; }
+                                }
+                            });
+                        });
+                        if (!count) { importError.value = 'Ese cuestionario no tiene preguntas para importar.'; return; }
+                        // 3) Agregar al final de la estructura actual.
+                        newGroups.forEach(function (g) { groups.value.push(g); });
+                        dirty.value = true;
+                        importOpen.value = false;
+                        var msg = 'Se importaron ' + count + ' pregunta(s) de "' + (candidate.title || 'otro cuestionario') + '"';
+                        if (dropped) msg += ' — ' + dropped + ' condición(es) que apuntaban afuera quedaron sin efecto';
+                        toast(msg, 'success');
+                    })
+                    .catch(function (err) { importError.value = 'No se pudo importar: ' + err.message; })
+                    .then(function () { importBusy.value = false; });
+            }
+
             // Aviso que tiene que sobrevivir al window.location.reload() de publicar: un
             // toast disparado antes de recargar se pinta y desaparece en el mismo instante.
             // Queda anotado acá y lo levanta onMounted, ya con la versión nueva en pantalla.
@@ -1134,6 +1253,10 @@
                 onTypeChange: onTypeChange,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
+                importOpen: importOpen, importLoading: importLoading, importBusy: importBusy,
+                importError: importError, importCandidates: importCandidates,
+                openImport: openImport, closeImport: closeImport, importFrom: importFrom,
+                estadoLabel: estadoLabel,
                 drag: drag, dropTarget: dropTarget,
                 onQuestionDragStart: onQuestionDragStart, onGroupDragStart: onGroupDragStart,
                 onDragEnd: onDragEnd, onQuestionDragOver: onQuestionDragOver, onGroupDragOver: onGroupDragOver,
@@ -1189,6 +1312,27 @@
         </div>\
     </div>\
 </div>\
+<div v-if="importOpen" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeImport">\
+    <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
+        <h2 class="cq-section-title" style="margin-top:0;">Importar preguntas de otro cuestionario</h2>\
+        <p class="cq-text-sm cq-text-muted">Se agregan las preguntas del cuestionario elegido (misma especialidad) a la estructura actual. Después podés editar, reordenar o quitar lo que quieras.</p>\
+        <div v-if="importLoading" class="cq-text-sm cq-text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> Cargando…</div>\
+        <div v-else-if="importError" class="cq-text-sm text-danger py-2">{{ importError }}</div>\
+        <div v-else-if="!importCandidates.length" class="cq-text-sm cq-text-muted py-3">No hay otros cuestionarios de esta especialidad para importar.</div>\
+        <ul v-else class="list-unstyled mb-0">\
+            <li v-for="c in importCandidates" :key="c.id" class="d-flex align-items-center gap-2 py-2 border-bottom">\
+                <div class="flex-fill">\
+                    <div class="cq-text-sm fw-semibold">{{ c.title }}</div>\
+                    <div class="cq-text-xs cq-text-muted">v{{ c.version }} · {{ estadoLabel(c.status) }}</div>\
+                </div>\
+                <button class="btn btn-sm btn-primary" :disabled="importBusy" @click="importFrom(c)"><i class="bi bi-box-arrow-in-down me-1"></i> Importar</button>\
+            </li>\
+        </ul>\
+        <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-3">\
+            <button class="btn btn-outline-secondary" @click="closeImport">Cerrar</button>\
+        </div>\
+    </div>\
+</div>\
 <div v-if="issues.length" class="cq-card mb-2" style="border-left:3px solid var(--cq-warning);">\
     <div class="d-flex align-items-start gap-2">\
         <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
@@ -1240,6 +1384,9 @@
                     </select>\
                 </div>\
             </div>\
+        </div>\
+        <div class="mb-2" v-if="!isArchived">\
+            <button class="btn btn-sm btn-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
         </div>\
         <div class="d-flex justify-content-between align-items-center mb-2">\
             <h3 class="m-0">Estructura</h3>\

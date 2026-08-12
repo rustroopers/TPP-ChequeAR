@@ -152,6 +152,34 @@ namespace ChequeAR.Api.Controllers.Mvc
                 "application/json");
         }
 
+        // Candidatos para "importar preguntas" en el editor: cuestionarios de la MISMA
+        // especialidad (no archivados, distinto del actual). Devuelve JSON liviano —sin las
+        // preguntas, para no disparar N+1—; la estructura completa se trae recién al elegir uno,
+        // reutilizando EditorModel. La lógica de filtrado vive en el service (testeable).
+        public async Task<ActionResult> ImportCandidates(string specialty, Guid? excludeId = null)
+        {
+            try
+            {
+                var candidatos = await _svc.GetImportCandidatesAsync(specialty, excludeId);
+                var payload = candidatos.Select(q => new
+                {
+                    id = q.Id,
+                    title = q.Title,
+                    status = QuestionnaireStatusMap.ToUi(q.Status),
+                    specialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay),
+                    version = q.Versions?.Count ?? 0
+                }).ToList();
+                return Content(
+                    JsonConvert.SerializeObject(payload,
+                        new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
+                    "application/json");
+            }
+            catch (Exception ex)
+            {
+                return new HttpStatusCodeResult(500, ex.Message);
+            }
+        }
+
         // Versión viva: la que apunta CurrentVersionId. Si por lo que sea quedó colgado,
         // caemos a la más alta publicada. 0 = nunca se publicó.
         private static int CurrentVersionNumber(ChequeAR.Domain.Entities.Questionnaire q)
