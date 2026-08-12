@@ -92,8 +92,11 @@ namespace ChequeAR.Api.App_Start
             _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             _authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
             // El terminológico puede ser un server externo (más lento que el hospital local):
-            // le damos algo más de aire.
-            _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            // le damos bastante más aire. En arranque en frío, la PRIMERA expansión de los ECL
+            // grandes de la config (<<404684003 "Clinical finding" entero, etc.) se pasaba de 8s
+            // hasta que Elasticsearch calienta sus cachés, y el autocomplete del editor moría en
+            // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
+            _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(25) };
 
             // AuditDispatcher requiere repo; usamos una factory que crea su propio contexto.
             _audit = new AuditDispatcher(NewAuditRepository(), 1000);
