@@ -9,6 +9,10 @@
             id: String, title: String, version: Number, isNew: Boolean,
             specialtyCode: String,
             status: String,
+            // Cambios guardados en una sesión anterior y todavía sin publicar. Lo calcula
+            // el server; sin declararlo acá Vue lo deja en $attrs y llega undefined, que es
+            // como se perdía el permiso para publicar al reabrir el editor.
+            hasPendingChanges: Boolean,
             concurrencyVersion: Number,
             groups: { type: Array, default: function () { return []; } }
         },
@@ -389,6 +393,26 @@
                 dirty.value = true;
             }
             function toast(msg, kind) { if (window.cqToast) window.cqToast(msg, kind); }
+
+            // Aviso que tiene que sobrevivir al window.location.reload() de publicar: un
+            // toast disparado antes de recargar se pinta y desaparece en el mismo instante.
+            // Queda anotado acá y lo levanta onMounted, ya con la versión nueva en pantalla.
+            // Se guarda el id para no mostrar el aviso de un cuestionario sobre otro si la
+            // recarga no llegó a ocurrir (por ejemplo, si se navegó a otra ficha).
+            var PUBLISH_TOAST_KEY = 'cq.publishedToast';
+            function stashPublishToast() {
+                try { sessionStorage.setItem(PUBLISH_TOAST_KEY, String(currentId.value)); }
+                catch (e) { /* sessionStorage no disponible: se pierde el aviso, sin más */ }
+            }
+            function flushPublishToast() {
+                var pendiente = null;
+                try {
+                    pendiente = sessionStorage.getItem(PUBLISH_TOAST_KEY);
+                    sessionStorage.removeItem(PUBLISH_TOAST_KEY);
+                } catch (e) { return; }
+                if (!pendiente || pendiente !== String(currentId.value)) return;
+                toast('Cuestionario publicado exitosamente', 'success');
+            }
 
             function getToken() {
                 var meta = document.querySelector('meta[name="cq-token"]');
@@ -1021,6 +1045,7 @@
                 }).then(function () {
                     dirty.value = false;
                     // Recargar: versión, estado y "cambios sin publicar" los calcula el server.
+                    stashPublishToast();
                     window.location.reload();
                 }).catch(function (err) {
                     toast('No se pudo publicar: ' + err.message, 'error');
@@ -1061,6 +1086,7 @@
             // Engancha los botones del header (viven fuera de la isla). Ojo: el listener
             // recibe el Event, así que va el wrapper y no save directamente.
             Vue.onMounted(function () {
+                flushPublishToast();
                 var btn = document.getElementById('saveBtn');
                 if (btn) btn.addEventListener('click', saveExplicit);
                 var pub = document.getElementById('publishBtn');
