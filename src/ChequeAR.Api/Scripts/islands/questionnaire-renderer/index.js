@@ -695,9 +695,11 @@
                     .then(function () {
                         return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$finalize', {
                             method: 'POST',
-                            headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
-                            // La auditoría de la finalización guarda la ficha COMPLETA desde el
-                            // estado del server; no hace falta mandar baseline acá.
+                            headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
+                            // Además de la foto completa, el server audita el diff de lo que
+                            // cambió en esta última sesión: se manda el baseline (respuestas al
+                            // abrirla) igual que en "Guardar avance", para que el Detalle muestre A→B.
+                            body: JSON.stringify({ Items: sessionBaseline.value })
                         });
                     }).then(function (r) {
                         if (!r.ok) throw new Error('HTTP ' + r.status + ' al finalizar');

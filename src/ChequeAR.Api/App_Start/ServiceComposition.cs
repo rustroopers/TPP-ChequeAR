@@ -190,7 +190,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Mvc.QuestionnairesController>(() => new Controllers.Mvc.QuestionnairesController(
                 Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(
-                Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>()));
+                Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>(), Resolve<AuditQueryService>()));
             Register<Controllers.Mvc.ReportsController>(() => new Controllers.Mvc.ReportsController(
                 Resolve<SavedReportService>(), Resolve<ReportExecutor>(), Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(

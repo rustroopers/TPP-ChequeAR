@@ -19,12 +19,14 @@ namespace ChequeAR.Api.Controllers.Mvc
         private readonly PatientService _patients;
         private readonly QuestionnaireResponseService _responses;
         private readonly QuestionnaireService _questionnaires;
+        private readonly AuditQueryService _audit;
 
-        public EncountersController(PatientService patients, QuestionnaireResponseService responses, QuestionnaireService questionnaires)
+        public EncountersController(PatientService patients, QuestionnaireResponseService responses, QuestionnaireService questionnaires, AuditQueryService audit)
         {
             _patients = patients;
             _responses = responses;
             _questionnaires = questionnaires;
+            _audit = audit;
         }
 
         // R1
@@ -130,7 +132,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // el guardado y la finalización siguen ancladas a esa versión, el formulario
                 // quedaría fuera de sincronía con lo que efectivamente se persiste/valida. La
                 // versión nueva rige para fichas nuevas. Sin borrador previo, se usa la vigente.
-                var version = await ResolveResumeVersionAsync(q, patientId, questionnaireId) ?? current;
+                var draft = await GetResumeDraftAsync(patientId, questionnaireId);
+                var version = ResolveResumeVersion(q, draft) ?? current;
+                // El botón "Detalle" (historial de la ficha) sólo tiene sentido si ya hay una
+                // ficha con eventos: una carga nueva todavía no generó ninguno.
+                ViewBag.ExistingResponseId = draft?.Id;
 
                 ViewBag.Version = version.VersionNumber;
                 var renderable = FhirQuestionnaireReader.Read(version.FhirJson);
@@ -181,27 +187,33 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         /// <summary>
-        /// Versión a la que hay que anclar el editor al reabrir: la de la ficha InProgress ya
-        /// existente para este paciente+cuestionario, si la hay. Devuelve null cuando no hay
-        /// borrador que retomar (ficha nueva), cuando la ficha es anterior al anclaje de
-        /// versión (VersionId vacío) o cuando la base no responde: en todos esos casos el
-        /// llamador cae a la versión vigente. Usa el mismo criterio que el renderer para elegir
-        /// la ficha (la InProgress más reciente), así ambos resuelven la misma.
+        /// La ficha InProgress más reciente para este paciente+cuestionario, o null si no hay
+        /// (ficha nueva) o la base no responde. Mismo criterio que usa el renderer, así ambos
+        /// resuelven la misma ficha. Se busca una sola vez y se reutiliza para elegir la versión
+        /// de reanudación y para linkear el historial de esa ficha.
         /// </summary>
-        private async Task<ChequeAR.Domain.Entities.QuestionnaireVersion> ResolveResumeVersionAsync(
-            ChequeAR.Domain.Entities.Questionnaire q, string patientId, Guid questionnaireId)
+        private async Task<ChequeAR.Domain.Entities.QuestionnaireResponse> GetResumeDraftAsync(string patientId, Guid questionnaireId)
         {
-            if (q?.Versions == null || q.Versions.Count == 0) return null;
-            IReadOnlyList<ChequeAR.Domain.Entities.QuestionnaireResponse> drafts;
             try
             {
-                drafts = await _responses.SearchAsync(patientId, questionnaireId, ResponseStatus.InProgress, 0, 1);
+                var drafts = await _responses.SearchAsync(patientId, questionnaireId, ResponseStatus.InProgress, 0, 1);
+                return drafts.FirstOrDefault();
             }
             catch
             {
-                return null;   // sin base no se puede resumir: se cae a la versión vigente
+                return null;   // sin base no se puede resumir: el llamador cae a la versión vigente
             }
-            var draft = drafts.FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Versión a la que hay que anclar el editor al reabrir un borrador: la que se congeló
+        /// cuando se inició. Devuelve null cuando no hay borrador o es anterior al anclaje de
+        /// versión (VersionId vacío); en ambos casos el llamador cae a la versión vigente.
+        /// </summary>
+        private static ChequeAR.Domain.Entities.QuestionnaireVersion ResolveResumeVersion(
+            ChequeAR.Domain.Entities.Questionnaire q, ChequeAR.Domain.Entities.QuestionnaireResponse draft)
+        {
+            if (q?.Versions == null || q.Versions.Count == 0) return null;
             if (draft == null || draft.QuestionnaireVersionId == Guid.Empty) return null;
             return q.Versions.FirstOrDefault(v => v.Id == draft.QuestionnaireVersionId);
         }
@@ -346,6 +358,81 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
             if (!string.IsNullOrEmpty(item.ValueCode)) return item.ValueCode;
             return "—";
+        }
+
+        // Historial de UNA ficha ("Detalle"): quién y cuándo tocó qué, reconstruido de los
+        // eventos de auditoría de esa respuesta. Es la vista por-ficha de Auditoría.
+        public async Task<ActionResult> History(Guid id)
+        {
+            ViewBag.Title = "Detalle de la ficha";
+            ViewBag.PageId = "encounters";
+            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
+            {
+                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
+                System.Tuple.Create("Pacientes", Url.Action("Search")),
+                System.Tuple.Create("Detalle de la ficha", (string)null)
+            };
+            try
+            {
+                var qr = await _responses.GetAsync(id);
+                if (qr == null) return HttpNotFound();
+                var q = await _questionnaires.GetAsync(qr.QuestionnaireId);
+                var p = await _patients.GetAsync(qr.PatientHospitalId);
+
+                var model = new EncounterHistoryViewModel
+                {
+                    EncounterId = qr.Id,
+                    Patient = new PatientSearchItem { HC = qr.PatientHospitalId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" },
+                    QuestionnaireId = qr.QuestionnaireId,
+                    QuestionnaireTitle = q?.Title,
+                    QuestionnaireVersion = PinnedVersionNumber(q, qr.QuestionnaireVersionId),
+                    Status = qr.Status.ToString().ToLowerInvariant()
+                };
+
+                foreach (var e in await _audit.ForResponseAsync(id))
+                {
+                    ChequeAR.Api.Helpers.AuditPresentation.ParseRef(e.EntityRef, out _, out _, out var suffix);
+                    var isSave = suffix != null && suffix.StartsWith("save", StringComparison.OrdinalIgnoreCase);
+                    var isFinalize = suffix != null && suffix.StartsWith("finalize", StringComparison.OrdinalIgnoreCase);
+
+                    // Sólo interesa lo que se COMPLETÓ: un avance guardado (con su diff) o la
+                    // finalización. Se descartan "edición iniciada" ($lock) — alguien pudo abrir
+                    // la ficha y cerrarla sin tocar nada —, "ficha iniciada" (create) y los
+                    // cambios de versión: ninguno registra trabajo hecho sobre las respuestas.
+                    if (!isSave && !isFinalize) continue;
+
+                    var av = ChequeAR.Api.Helpers.AuditPresentation.Describe(e.EntityRef, e.Action);
+                    var entry = new EncounterHistoryEntry
+                    {
+                        Timestamp = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(e.Recorded),
+                        Username = e.AgentUserId,
+                        Label = av.Label,
+                        BadgeClass = av.BadgeClass,
+                        Icon = av.Icon
+                    };
+
+                    // El "Avance guardado" trae el diff de la sesión; la finalización es sólo
+                    // el "quién/cuándo" (su foto completa vive en el detalle de auditoría).
+                    if (isSave && !string.IsNullOrWhiteSpace(e.FhirJson))
+                    {
+                        try
+                        {
+                            var changes = JsonConvert.DeserializeObject<List<ResponseFieldChange>>(e.FhirJson);
+                            if (changes != null) entry.Changes = changes;
+                        }
+                        catch (JsonException) { /* payload viejo o ilegible: se muestra sin diff */ }
+                    }
+
+                    model.Entries.Add(entry);
+                }
+
+                return View(model);
+            }
+            catch (Exception ex)
+            {
+                ViewBag.DataError = ex.Message;
+                return View(new EncounterHistoryViewModel { EncounterId = id });
+            }
         }
 
         // R7 — Timeline

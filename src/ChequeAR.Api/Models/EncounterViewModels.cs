@@ -101,6 +101,34 @@ namespace ChequeAR.Api.Models
         public List<AnsweredQuestion> Questions { get; set; } = new List<AnsweredQuestion>();
     }
 
+    /// <summary>
+    /// Historial de UNA ficha: quién y cuándo tocó qué cosa, reconstruido de los eventos de
+    /// auditoría de esa respuesta (<c>QuestionnaireResponse/{id}$save|$finalize|$lock…</c>).
+    /// Es la vista por-ficha de lo que Auditoría muestra a nivel global.
+    /// </summary>
+    public class EncounterHistoryViewModel
+    {
+        public Guid EncounterId { get; set; }
+        public PatientSearchItem Patient { get; set; }
+        public Guid QuestionnaireId { get; set; }
+        public string QuestionnaireTitle { get; set; }
+        public int QuestionnaireVersion { get; set; }
+        /// <summary>"completed" / "inprogress": decide si se ofrece "Ver ficha" (solo finalizadas) y el texto de "volver a completar".</summary>
+        public string Status { get; set; }
+        public List<EncounterHistoryEntry> Entries { get; set; } = new List<EncounterHistoryEntry>();
+    }
+
+    public class EncounterHistoryEntry
+    {
+        public string Timestamp { get; set; }
+        public string Username { get; set; }
+        public string Label { get; set; }
+        public string BadgeClass { get; set; }
+        public string Icon { get; set; }
+        /// <summary>Diff de la sesión, sólo presente en los "Avance guardado" ($save).</summary>
+        public List<ChequeAR.Application.Services.ResponseFieldChange> Changes { get; set; } = new List<ChequeAR.Application.Services.ResponseFieldChange>();
+    }
+
     public class AnsweredQuestion
     {
         public string Text { get; set; }
