@@ -281,7 +281,7 @@
             // El boton "Previsualizar" pasa el Event como argumento (no un numero): en ese
             // caso arranca en la pagina 1. Anterior/Siguiente pasan el numero de pagina.
             function preview(goToPage) {
-                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 var p = (typeof goToPage === 'number' && goToPage > 0) ? goToPage : 1;
                 loading.value = true; error.value = null;
                 var q = buildQuery();
@@ -304,12 +304,12 @@
             // /query: pedirlas por id de cuestionario daria numeros que no corresponden a
             // los filtros que la persona tiene puestos en pantalla.
             function stats() {
-                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 window.dispatchEvent(new CustomEvent('cq:report-query', { detail: buildQuery() }));
             }
 
             function openSave() {
-                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 showSave.value = true;
             }
 
@@ -318,9 +318,9 @@
             // vez y PUT sobre la misma si ya existia. El backend solo deja actualizar al
             // dueño (403 si no).
             function saveReport() {
-                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 var name = (reportName.value || '').trim();
-                if (!name) { toast('Poné un nombre para el reporte', 'error'); return; }
+                if (!name) { toast('Ingrese un nombre para el reporte', 'error'); return; }
                 if (saving.value) return;
 
                 saving.value = true;
@@ -357,7 +357,7 @@
             }
 
             function exportFile(format, filename) {
-                if (!selectedId.value) { toast('Elegí un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 exporting.value = true;
                 fetch('/api/reports/export', { method: 'POST', headers: authHeaders(), body: JSON.stringify(buildQuery(format)) })
                     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
@@ -457,7 +457,7 @@
 \
     <div class="cq-text-sm cq-text-muted border-top pt-3">\
         <span v-if="loading"><span class="cq-spinner cq-spinner--sm me-1"></span> Actualizando…</span>\
-        <span v-else-if="total === null">Elegí un cuestionario para ver los resultados.</span>\
+        <span v-else-if="total === null">Seleccione un cuestionario para ver los resultados.</span>\
     </div>\
 \
     <div v-if="showSave" class="cq-card mt-3 mb-0" style="border-left:3px solid var(--cq-primary);">\
@@ -467,7 +467,7 @@
             <button class="btn btn-sm btn-primary" @click="saveReport" :disabled="saving">{{ saving ? \'Guardando…\' : \'Guardar\' }}</button>\
             <button class="btn btn-sm btn-link" @click="showSave = false">Cancelar</button>\
         </div>\
-        <p class="cq-text-xs cq-text-muted mt-1 mb-0">El reporte guarda la definición (cuestionario y condiciones), no los resultados. Lo podés volver a correr desde el listado de reportes.</p>\
+        <p class="cq-text-xs cq-text-muted mt-1 mb-0">El reporte guarda la definición (cuestionario y condiciones), no los resultados. Lo puede volver a correr desde el listado de reportes.</p>\
     </div>\
 \
     <div v-if="error" class="alert alert-danger mt-3 mb-0">{{ error }}</div>\
@@ -493,7 +493,7 @@
         <div class="cq-empty">\
             <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>\
             <div class="cq-empty__title">No hay fichas</div>\
-            <div class="cq-empty__desc">Probá ampliando el rango de fechas o sacando condiciones.</div>\
+            <div class="cq-empty__desc">Pruebe ampliando el rango de fechas o sacando condiciones.</div>\
         </div>\
     </div>\
 \

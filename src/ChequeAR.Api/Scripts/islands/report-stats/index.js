@@ -92,7 +92,7 @@
 </div>\
 <div v-else-if="error" class="alert alert-danger">{{ error }}</div>\
 <div v-else-if="!stats" class="cq-card cq-text-sm cq-text-muted">\
-    Armá el reporte y pedí las estadísticas para verlas acá.\
+    Arme el reporte y pida las estadísticas para verlas aquí.\
 </div>\
 <div v-else>\
     <template v-if="stats.Responses">\

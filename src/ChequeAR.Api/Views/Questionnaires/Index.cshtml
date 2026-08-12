@@ -85,24 +85,36 @@ else
                     </td>
                     <td class="cq-text-sm cq-text-muted">@q.UpdatedAt</td>
                     <td class="text-end">
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" aria-label="Acciones de @q.Title">
-                                <i class="bi bi-three-dots"></i>
-                            </button>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
-                                <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
-                                <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
-                                <li><hr class="dropdown-divider" /></li>
-                                @if (!(q.Status == "published" && !q.HasUnpublishedChanges))
-                                {
-                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
-                                }
-                                @if (q.Status != "archived")
-                                {
-                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
-                                }
-                            </ul>
+                        <div class="d-flex justify-content-end align-items-center gap-2">
+                            @* Publicar cambios pendientes es LA acción esperada en ese estado:
+                               enterrarla en el menú la hacía invisible justo cuando importa. *@
+                            @if (q.HasUnpublishedChanges)
+                            {
+                                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title">
+                                    <i class="bi bi-send me-1"></i> Publicar
+                                </button>
+                            }
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" aria-label="Acciones de @q.Title">
+                                    <i class="bi bi-three-dots"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
+                                    <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
+                                    <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
+                                    <li><hr class="dropdown-divider" /></li>
+                                    @* Publicado con cambios pendientes ya tiene su botón afuera;
+                                       un publicado sin cambios no tiene nada que publicar. *@
+                                    @if (q.Status != "published")
+                                    {
+                                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                    }
+                                    @if (q.Status != "archived")
+                                    {
+                                        <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                    }
+                                </ul>
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -139,7 +151,7 @@ else
                 <p class="cq-text-sm cq-text-muted mb-3">Una vez publicada, la versión queda inmutable. Las cargas existentes mantienen su versión.</p>
                 <div class="mb-3">
                     <label class="form-label">Notas del cambio</label>
-                    <textarea name="changeNote" rows="3" class="form-control" placeholder="Describí qué cambia respecto a la versión anterior"></textarea>
+                    <textarea name="changeNote" rows="3" class="form-control" placeholder="Describa qué cambia respecto a la versión anterior"></textarea>
                 </div>
             </div>
             <div class="modal-footer">

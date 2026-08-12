@@ -161,7 +161,7 @@ namespace ChequeAR.Application.Services
         /// evita que alguien termine (y le cierre la puerta al lock) una ficha que en
         /// realidad está completando otro usuario en este momento.
         /// </param>
-        public async Task<QuestionnaireResponse> FinalizeAsync(Guid id, string userId, Guid lockToken)
+        public async Task<QuestionnaireResponse> FinalizeAsync(Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
@@ -196,9 +196,29 @@ namespace ChequeAR.Application.Services
             ClearLock(r);   // ya no hay nada que seguir editando ni que bloquear
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
+
+            // Si el cliente mandó el baseline de la sesión, se audita ADEMÁS el diff de lo que
+            // se completó/cambió en esta última tanda (mismo evento "$save" que "Guardar
+            // avance"). Sin esto, finalizar sólo dejaba la foto completa y el Detalle no mostraba
+            // que un campo pasó de A a B en la sesión final. Va antes que el "$finalize" para que
+            // en el historial (orden descendente) la finalización quede por encima del diff.
+            if (sessionBaseline != null)
+            {
+                var sessionChanges = BuildNetDiff(sessionBaseline, r.Items, structure);
+                if (sessionChanges.Count > 0)
+                {
+                    var saveEvt = AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$save", userId);
+                    saveEvt.FhirJson = JsonConvert.SerializeObject(sessionChanges);
+                    await _audit.PersistImmediatelyAsync(saveEvt);
+                }
+            }
+
             var evt = AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$finalize", userId);
             if (snapshot.Count > 0) evt.FhirJson = JsonConvert.SerializeObject(snapshot);
-            _audit.Enqueue(evt);
+            // Persistencia inmediata (no vía el flush por timer): al finalizar, la persona
+            // suele abrir el "Detalle" de la ficha en el acto, y con el flush diferido el
+            // evento recién guardado no llegaba a aparecer.
+            await _audit.PersistImmediatelyAsync(evt);
             return r;
         }
 
@@ -415,7 +435,9 @@ namespace ChequeAR.Application.Services
             {
                 var evt = AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$save", userId);
                 evt.FhirJson = JsonConvert.SerializeObject(changes);
-                _audit.Enqueue(evt);
+                // Inmediato, no diferido: el "Detalle" de la ficha se abre apenas se guarda el
+                // avance, y con el flush por timer el evento no alcanzaba a estar persistido.
+                await _audit.PersistImmediatelyAsync(evt);
             }
         }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
+using Newtonsoft.Json;
 
 namespace ChequeAR.Application.Services
 {
@@ -35,8 +36,13 @@ namespace ChequeAR.Application.Services
     public class SavedReportService
     {
         private readonly ISavedReportRepository _repo;
+        private readonly AuditDispatcher _audit;
 
-        public SavedReportService(ISavedReportRepository repo) { _repo = repo; }
+        public SavedReportService(ISavedReportRepository repo, AuditDispatcher audit)
+        {
+            _repo = repo;
+            _audit = audit;
+        }
 
         public Task<IReadOnlyList<SavedReport>> ListForUserAsync(string userId, IEnumerable<string> specialties)
             => _repo.ListForUserAsync(userId, specialties);
@@ -50,6 +56,7 @@ namespace ChequeAR.Application.Services
             nueva.CreatedAt = DateTime.UtcNow;
             nueva.UpdatedAt = DateTime.UtcNow;
             await _repo.AddAsync(nueva);
+            Auditar("create", nueva, userId);
             return nueva;
         }
 
@@ -70,6 +77,7 @@ namespace ChequeAR.Application.Services
             actual.UpdatedAt = DateTime.UtcNow;
 
             await _repo.UpdateAsync(actual);
+            Auditar("update", actual, userId);
             return SavedReportResult.Ok(actual);
         }
 
@@ -80,7 +88,27 @@ namespace ChequeAR.Application.Services
             if (!EsPropietario(actual, userId)) return SavedReportResult.Forbidden();
 
             await _repo.DeleteAsync(id);
+            Auditar("delete", actual, userId);
             return SavedReportResult.Ok(actual);
+        }
+
+        /// <summary>
+        /// Registra el evento de auditoría de una consulta guardada, con una foto de su
+        /// definición (nombre, alcance y filtros) para que el detalle sea legible aunque la
+        /// consulta cambie o se borre después. Sin esto, guardar un reporte no dejaba rastro.
+        /// </summary>
+        private void Auditar(string action, SavedReport r, string userId)
+        {
+            var evt = AuditEventBuilder.For(action, "SavedReport/" + r.Id, userId, category: "report");
+            evt.FhirJson = JsonConvert.SerializeObject(new SavedReportAuditSnapshot
+            {
+                Name = r.Name,
+                Scope = r.Scope,
+                SpecialtyCode = r.SpecialtyCode,
+                QuestionnaireId = r.QuestionnaireId,
+                QueryJson = r.QueryJson
+            });
+            _audit.Enqueue(evt);
         }
 
         /// <summary>

@@ -9,6 +9,10 @@
             id: String, title: String, version: Number, isNew: Boolean,
             specialtyCode: String,
             status: String,
+            // Cambios guardados en una sesión anterior y todavía sin publicar. Lo calcula
+            // el server; sin declararlo acá Vue lo deja en $attrs y llega undefined, que es
+            // como se perdía el permiso para publicar al reabrir el editor.
+            hasPendingChanges: Boolean,
             concurrencyVersion: Number,
             groups: { type: Array, default: function () { return []; } }
         },
@@ -74,6 +78,19 @@
             });
             if (!initial.length) initial = [{ title: 'Nueva sección', questions: [] }];
             var groups = Vue.ref(initial);
+
+            // Foto de la estructura tal como se cargó: es la BASE del merge de 3 vías cuando
+            // otra persona guarda en el medio. Se re-ancla después de un merge exitoso.
+            var baseGroups = JSON.parse(JSON.stringify(props.groups || []));
+
+            // Estado del merge de conflictos (ver beginMerge/finishMerge más abajo).
+            var merging = Vue.ref(false);
+            var mergePlanAll = Vue.ref([]);     // plan completo (autos + conflictos)
+            var mergeAutoCount = Vue.ref(0);
+            var pendingTheirs = null;           // { concurrencyVersion, groups } de la otra persona
+            var conflictEntries = Vue.computed(function () {
+                return mergePlanAll.value.filter(function (e) { return e.needsChoice; });
+            });
 
             // Los códigos coinciden con QuestionType del backend (bindeo por nombre,
             // case-insensitive) y con los que dibuja questionnaire-renderer. Antes de
@@ -377,6 +394,26 @@
             }
             function toast(msg, kind) { if (window.cqToast) window.cqToast(msg, kind); }
 
+            // Aviso que tiene que sobrevivir al window.location.reload() de publicar: un
+            // toast disparado antes de recargar se pinta y desaparece en el mismo instante.
+            // Queda anotado acá y lo levanta onMounted, ya con la versión nueva en pantalla.
+            // Se guarda el id para no mostrar el aviso de un cuestionario sobre otro si la
+            // recarga no llegó a ocurrir (por ejemplo, si se navegó a otra ficha).
+            var PUBLISH_TOAST_KEY = 'cq.publishedToast';
+            function stashPublishToast() {
+                try { sessionStorage.setItem(PUBLISH_TOAST_KEY, String(currentId.value)); }
+                catch (e) { /* sessionStorage no disponible: se pierde el aviso, sin más */ }
+            }
+            function flushPublishToast() {
+                var pendiente = null;
+                try {
+                    pendiente = sessionStorage.getItem(PUBLISH_TOAST_KEY);
+                    sessionStorage.removeItem(PUBLISH_TOAST_KEY);
+                } catch (e) { return; }
+                if (!pendiente || pendiente !== String(currentId.value)) return;
+                toast('Cuestionario publicado exitosamente', 'success');
+            }
+
             function getToken() {
                 var meta = document.querySelector('meta[name="cq-token"]');
                 return meta ? meta.getAttribute('content') : null;
@@ -442,7 +479,7 @@
                 var term = q ? (q.term || '').trim() : '';
                 snomedError.value = null;
                 if (term.length < 3) {
-                    snomedError.value = 'Escribí al menos 3 caracteres en el término clínico (ej: "dolor torácico").';
+                    snomedError.value = 'Escriba al menos 3 caracteres en el término clínico (ej: "dolor torácico").';
                     snomedResults.value = []; snomedOpen.value = true;
                     return;
                 }
@@ -464,7 +501,7 @@
                             // El tiempo de espera viene dentro del diagnostics del
                             // OperationOutcome: el estandar no tiene un campo para eso.
                             var texto = diagnosticoTerminologia(body,
-                                'Demasiadas consultas a SNOMED. Reintentá en unos segundos.');
+                                'Demasiadas consultas a SNOMED. Reintente en unos segundos.');
                             var m = /(\d+)\s*segundos/.exec(texto);
                             snomedCooldownUntil = Date.now() + ((m ? parseInt(m[1], 10) : 8) * 1000);
                             throw new Error(texto);
@@ -706,7 +743,7 @@
                 // El backend rechaza cualquier escritura sobre un archivado: cortar acá
                 // evita el viaje al server (que hoy devolvía 500) y explica por qué.
                 if (isArchived.value) {
-                    if (explicit) toast('Este cuestionario está archivado: no se puede editar. Publicalo de nuevo desde el listado para reactivarlo.', 'error');
+                    if (explicit) toast('Este cuestionario está archivado: no se puede editar. Publíquelo de nuevo desde el listado para reactivarlo.', 'error');
                     return Promise.resolve(false);
                 }
                 // Con un conflicto sin resolver no se vuelve a intentar: reintentar sólo
@@ -772,15 +809,15 @@
                     if (creating) toast('Cuestionario creado', 'success');
                     else if (explicit) {
                         toast(isPublished.value
-                            ? 'Cambios guardados. Publicá de nuevo para que lleguen a los clínicos.'
+                            ? 'Cambios guardados. Publique de nuevo para que lleguen a los clínicos.'
                             : 'Cambios guardados', 'success');
                     }
                     return true;
                 }).catch(function (err) {
                     if (err.isConflict) {
-                        // No se pisa nada: se corta acá y decide la persona.
-                        conflict.value = true;
-                        toast(err.message, 'error');
+                        // Otra persona guardó en el medio: en lugar de pisar o descartar todo,
+                        // se intenta combinar los dos trabajos (con descarte siempre disponible).
+                        beginMerge();
                     } else {
                         toast('Error al guardar: ' + err.message, 'error');
                     }
@@ -801,6 +838,166 @@
                 window.location.reload();
             }
 
+            // ── Merge de conflictos de edición (3 vías) ───────────────────────────────────
+            // Cuando otra persona guardó mientras editábamos, en vez de obligar a descartar
+            // todo, se combinan los dos trabajos: base = lo que cargamos, "lo mío" = lo local,
+            // "lo de la otra persona" = la versión actual del server. Se auto-combina todo lo
+            // que sólo tocó una de las dos partes; sólo se pregunta donde ambos modificaron la
+            // MISMA pregunta (o uno la editó y el otro la borró). Descartar sigue disponible.
+            function numOrNull(v) { return typeof v === 'number' && !isNaN(v) ? v : null; }
+
+            // Foto canónica de una pregunta para comparar entre las 3 fuentes (ignora orden y
+            // campos de presentación como optionsText).
+            function normQ(q) {
+                if (!q) return null;
+                return JSON.stringify({
+                    text: q.text || '',
+                    type: q.type || 'string',
+                    required: !!q.required,
+                    options: (q.options || []).slice(),
+                    min: numOrNull(q.min), max: numOrNull(q.max),
+                    unit: q.unit || null, accept: q.accept || null,
+                    maxLength: numOrNull(q.maxLength), pattern: q.pattern || null,
+                    enableWhen: (q.enableWhen && q.enableWhen.question)
+                        ? { question: q.enableWhen.question, op: q.enableWhen.op || '=', value: q.enableWhen.value === undefined ? null : q.enableWhen.value }
+                        : null,
+                    code: q.code || null, codeDisplay: q.codeDisplay || null, term: q.term || null
+                });
+            }
+
+            function indexQuestions(grps) {
+                var map = {};
+                (grps || []).forEach(function (g) {
+                    (g.questions || []).forEach(function (q) {
+                        if (q && q.linkId) map[q.linkId] = { q: q, section: g.title || '' };
+                    });
+                });
+                return map;
+            }
+
+            function computeMerge(base, mine, theirs) {
+                var b = indexQuestions(base), m = indexQuestions(mine), t = indexQuestions(theirs);
+                var keys = {};
+                [b, m, t].forEach(function (idx) { Object.keys(idx).forEach(function (k) { keys[k] = true; }); });
+
+                var plan = [];
+                Object.keys(keys).forEach(function (k) {
+                    var bi = b[k], mi = m[k], ti = t[k];
+                    var nb = normQ(bi && bi.q), nm = normQ(mi && mi.q), nt = normQ(ti && ti.q);
+                    var mineChanged = nm !== nb, theirsChanged = nt !== nb;
+                    var e = {
+                        key: k, text: (mi && mi.q.text) || (ti && ti.q.text) || k,
+                        mine: mi ? mi.q : null, mineSection: mi ? mi.section : null,
+                        needsChoice: false, choice: null, action: 'keep-theirs', auto: false, kind: null
+                    };
+
+                    if (mi && ti) {
+                        if (!mineChanged && theirsChanged) { e.action = 'keep-theirs'; e.auto = true; }
+                        else if (mineChanged && !theirsChanged) { e.action = 'take-mine'; e.auto = true; }
+                        else if (mineChanged && theirsChanged && nm !== nt) { e.needsChoice = true; e.kind = 'edit-edit'; e.choice = 'mine'; }
+                        // (ninguno cambió, o el mismo cambio) -> keep-theirs, sin marcar auto
+                    } else if (mi && !ti) {
+                        if (!bi) { e.action = 'take-mine'; e.auto = true; }        // la agregué yo
+                        else if (mineChanged) { e.needsChoice = true; e.kind = 'mine-vs-delete'; e.choice = 'mine'; }  // la borraron; yo la edité
+                        else { e.action = 'delete'; e.auto = true; }               // la borraron; no la toqué
+                    } else if (!mi && ti) {
+                        if (!bi) { e.action = 'keep-theirs'; }                     // la agregaron ellos
+                        else if (theirsChanged) { e.needsChoice = true; e.kind = 'delete-vs-theirs'; e.choice = 'delete'; }  // yo la borré; ellos la editaron
+                        else { e.action = 'delete'; e.auto = true; }               // yo la borré; no la tocaron
+                    } else { e.action = 'noop'; }
+                    plan.push(e);
+                });
+                return {
+                    plan: plan,
+                    conflicts: plan.filter(function (x) { return x.needsChoice; }),
+                    autoCount: plan.filter(function (x) { return x.auto; }).length
+                };
+            }
+
+            function resolveEntry(e) {
+                if (!e.needsChoice) return e.action;
+                if (e.kind === 'edit-edit') return e.choice === 'mine' ? 'take-mine' : 'keep-theirs';
+                if (e.kind === 'mine-vs-delete') return e.choice === 'mine' ? 'take-mine' : 'delete';
+                if (e.kind === 'delete-vs-theirs') return e.choice === 'theirs' ? 'keep-theirs' : 'delete';
+                return 'keep-theirs';
+            }
+
+            // Esqueleto = la versión de la otra persona; encima se aplican sólo mis cambios que
+            // ganaron. Así el orden y las secciones siguen a la versión del server (predecible),
+            // y lo mío nuevo se agrega a su sección por título (o se crea si no existe).
+            function buildMerged(theirs, plan) {
+                var merged = JSON.parse(JSON.stringify(theirs || []));
+                function findQ(linkId) {
+                    for (var i = 0; i < merged.length; i++) {
+                        var qs = merged[i].questions || [];
+                        for (var j = 0; j < qs.length; j++) if (qs[j].linkId === linkId) return { g: merged[i], idx: j };
+                    }
+                    return null;
+                }
+                function sectionByTitle(title) {
+                    for (var i = 0; i < merged.length; i++) if ((merged[i].title || '') === (title || '')) return merged[i];
+                    var g = { title: title || 'Nueva sección', questions: [] };
+                    merged.push(g);
+                    return g;
+                }
+                function upsert(q, sectionTitle) {
+                    var clone = JSON.parse(JSON.stringify(q));
+                    var found = findQ(q.linkId);
+                    if (found) found.g.questions.splice(found.idx, 1, clone);
+                    else sectionByTitle(sectionTitle).questions.push(clone);
+                }
+                function removeQ(linkId) { var f = findQ(linkId); if (f) f.g.questions.splice(f.idx, 1); }
+
+                plan.forEach(function (e) {
+                    var r = resolveEntry(e);
+                    if (r === 'take-mine') upsert(e.mine, e.mineSection);
+                    else if (r === 'delete') removeQ(e.key);
+                    // 'keep-theirs' / 'noop' -> ya está en el esqueleto
+                });
+                merged.forEach(function (g) {
+                    g.questions.forEach(function (q) { q.optionsText = (q.options || []).join('\n'); });
+                });
+                return merged;
+            }
+
+            // Trae la versión de la otra persona (mismo formato que props.groups) y arma el plan.
+            function beginMerge() {
+                fetch('/Questionnaires/EditorModel/' + currentId.value, { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(function (theirs) {
+                        var res = computeMerge(baseGroups, groups.value, theirs.groups || []);
+                        pendingTheirs = theirs;
+                        mergePlanAll.value = res.plan;
+                        mergeAutoCount.value = res.autoCount;
+                        if (!res.conflicts.length) finishMerge(true);   // nada que decidir: combinar y guardar
+                        else merging.value = true;                      // hay conflictos: abrir el modal
+                    })
+                    .catch(function () {
+                        // Sin la otra versión no se puede combinar: se cae al camino honesto de descartar.
+                        conflict.value = true;
+                    });
+            }
+
+            function finishMerge(silent) {
+                if (!pendingTheirs) return;
+                var merged = buildMerged(pendingTheirs.groups || [], mergePlanAll.value);
+                var theirsVersion = pendingTheirs.concurrencyVersion;
+                groups.value = merged;
+                baseGroups = JSON.parse(JSON.stringify(merged));   // la base ahora es lo combinado
+                recordVersion.value = theirsVersion;               // anclado a la versión del server
+                merging.value = false; conflict.value = false;
+                pendingTheirs = null; mergePlanAll.value = []; mergeAutoCount.value = 0;
+                dirty.value = true;
+                save({ explicit: true }).then(function (ok) {
+                    if (ok) toast(silent
+                        ? 'Se combinaron tus cambios con los de la otra persona.'
+                        : 'Cambios combinados y guardados.', 'success');
+                });
+            }
+
+            function confirmMerge() { finishMerge(false); }
+            function cancelMerge() { merging.value = false; }   // cierra el modal; nada se descarta
+
             function publish() {
                 if (saving.value || publishing.value) return;
                 // Ya publicado y el borrador es igual a esa versión (nada en esta sesión
@@ -811,14 +1008,14 @@
                     return;
                 }
                 if (conflict.value) {
-                    toast('Resolvé el conflicto de edición antes de publicar.', 'error');
+                    toast('Resuelva el conflicto de edición antes de publicar.', 'error');
                     return;
                 }
                 // Publicar congela la estructura para los clínicos: una condición rota se
                 // vuelve una pregunta que nadie va a poder ver, y ya no hay forma de
                 // corregir esa versión.
                 if (issues.value.length) {
-                    toast('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes. Resolvelas antes de publicar.', 'error');
+                    toast('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes. Resuélvalas antes de publicar.', 'error');
                     return;
                 }
                 // Publicar exige haber guardado antes: no queremos congelar en una versión
@@ -827,7 +1024,7 @@
                 // misma marca de tiempo y se veían fuera de orden en auditoría. Guardar es
                 // una decisión explícita y previa.
                 if (dirty.value || isNew.value) {
-                    toast('Guardá los cambios antes de publicar.', 'error');
+                    toast('Guarde los cambios antes de publicar.', 'error');
                     return;
                 }
                 var token = getToken();
@@ -848,6 +1045,7 @@
                 }).then(function () {
                     dirty.value = false;
                     // Recargar: versión, estado y "cambios sin publicar" los calcula el server.
+                    stashPublishToast();
                     window.location.reload();
                 }).catch(function (err) {
                     toast('No se pudo publicar: ' + err.message, 'error');
@@ -888,6 +1086,7 @@
             // Engancha los botones del header (viven fuera de la isla). Ojo: el listener
             // recibe el Event, así que va el wrapper y no save directamente.
             Vue.onMounted(function () {
+                flushPublishToast();
                 var btn = document.getElementById('saveBtn');
                 if (btn) btn.addEventListener('click', saveExplicit);
                 var pub = document.getElementById('publishBtn');
@@ -924,6 +1123,8 @@
                 qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
                 isPublished: isPublished, isArchived: isArchived, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
+                merging: merging, mergeAutoCount: mergeAutoCount, conflictEntries: conflictEntries,
+                confirmMerge: confirmMerge, cancelMerge: cancelMerge,
                 issues: issues, fixIssues: fixIssues,
                 conditionSources: conditionSources, conditionSource: conditionSource,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
@@ -945,9 +1146,46 @@
     <div class="d-flex align-items-start gap-2">\
         <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-danger);"></i>\
         <div class="flex-fill">\
-            <div class="cq-text-sm"><strong>Otra persona guardó cambios mientras editabas.</strong></div>\
-            <div class="cq-text-sm cq-text-muted">Tus cambios NO se guardaron, y los de la otra persona siguen intactos. No hay forma automática de combinar las dos versiones, así que tenés que elegir: anotá lo tuyo y volvé a cargar, o abrí el cuestionario en otra pestaña para comparar.</div>\
+            <div class="cq-text-sm"><strong>Otra persona guardó cambios mientras usted editaba.</strong></div>\
+            <div class="cq-text-sm cq-text-muted">Sus cambios NO se guardaron, y los de la otra persona siguen intactos. No hay forma automática de combinar las dos versiones, así que debe elegir: anote lo suyo y vuelva a cargar, o abra el cuestionario en otra pestaña para comparar.</div>\
             <button class="btn btn-sm btn-danger mt-2" @click="reloadFromServer"><i class="bi bi-arrow-clockwise me-1"></i> Descartar lo mío y recargar</button>\
+        </div>\
+    </div>\
+</div>\
+<div v-if="merging" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="cancelMerge">\
+    <div class="cq-card" style="max-width:640px; width:100%; max-height:85vh; overflow:auto;">\
+        <h2 class="cq-section-title" style="margin-top:0;">Otra persona editó este cuestionario</h2>\
+        <p class="cq-text-sm cq-text-muted">Se pueden combinar los dos trabajos. <strong>{{ mergeAutoCount }}</strong> cambio(s) se integran automáticamente. Elija qué versión conservar donde ambos modificaron la misma pregunta:</p>\
+        <div v-if="!conflictEntries.length" class="cq-text-sm cq-text-muted mb-2">No hay diferencias que resolver a mano.</div>\
+        <div v-for="e in conflictEntries" :key="e.key" class="mb-3" style="border-left:3px solid var(--cq-warning); padding-left:.75rem;">\
+            <div class="cq-text-sm fw-semibold">{{ e.text }}</div>\
+            <div v-if="e.kind === \'edit-edit\'" class="cq-text-xs cq-text-muted mb-1">Ambos la modificaron.</div>\
+            <div v-else-if="e.kind === \'mine-vs-delete\'" class="cq-text-xs cq-text-muted mb-1">La otra persona la eliminó; usted la modificó.</div>\
+            <div v-else class="cq-text-xs cq-text-muted mb-1">Usted la eliminó; la otra persona la modificó.</div>\
+            <div class="btn-group btn-group-sm" role="group">\
+                <template v-if="e.kind === \'edit-edit\'">\
+                    <input type="radio" class="btn-check" :name="\'mc_\'+e.key" :id="\'mc_\'+e.key+\'_m\'" :checked="e.choice===\'mine\'" @change="e.choice=\'mine\'" />\
+                    <label class="btn btn-outline-primary" :for="\'mc_\'+e.key+\'_m\'">La mía</label>\
+                    <input type="radio" class="btn-check" :name="\'mc_\'+e.key" :id="\'mc_\'+e.key+\'_t\'" :checked="e.choice===\'theirs\'" @change="e.choice=\'theirs\'" />\
+                    <label class="btn btn-outline-primary" :for="\'mc_\'+e.key+\'_t\'">La de la otra persona</label>\
+                </template>\
+                <template v-else-if="e.kind === \'mine-vs-delete\'">\
+                    <input type="radio" class="btn-check" :name="\'mc_\'+e.key" :id="\'mc_\'+e.key+\'_m\'" :checked="e.choice===\'mine\'" @change="e.choice=\'mine\'" />\
+                    <label class="btn btn-outline-primary" :for="\'mc_\'+e.key+\'_m\'">Mantener la mía</label>\
+                    <input type="radio" class="btn-check" :name="\'mc_\'+e.key" :id="\'mc_\'+e.key+\'_d\'" :checked="e.choice===\'delete\'" @change="e.choice=\'delete\'" />\
+                    <label class="btn btn-outline-primary" :for="\'mc_\'+e.key+\'_d\'">Aceptar el borrado</label>\
+                </template>\
+                <template v-else>\
+                    <input type="radio" class="btn-check" :name="\'mc_\'+e.key" :id="\'mc_\'+e.key+\'_d\'" :checked="e.choice===\'delete\'" @change="e.choice=\'delete\'" />\
+                    <label class="btn btn-outline-primary" :for="\'mc_\'+e.key+\'_d\'">Eliminar</label>\
+                    <input type="radio" class="btn-check" :name="\'mc_\'+e.key" :id="\'mc_\'+e.key+\'_t\'" :checked="e.choice===\'theirs\'" @change="e.choice=\'theirs\'" />\
+                    <label class="btn btn-outline-primary" :for="\'mc_\'+e.key+\'_t\'">Mantener la de la otra persona</label>\
+                </template>\
+            </div>\
+        </div>\
+        <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-3">\
+            <button class="btn btn-outline-danger" @click="reloadFromServer"><i class="bi bi-arrow-clockwise me-1"></i> Descartar lo mío y recargar</button>\
+            <button class="btn btn-primary" @click="confirmMerge"><i class="bi bi-check2 me-1"></i> Combinar y guardar</button>\
         </div>\
     </div>\
 </div>\
@@ -965,11 +1203,11 @@
 </div>\
 <div v-if="isPublished && !conflict" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
     <i class="bi bi-info-circle" style="color:var(--cq-info);"></i>\
-    <span class="cq-text-sm">Este cuestionario está <strong>publicado</strong>. Los cambios se guardan como pendientes: los clínicos siguen viendo la versión publicada hasta que publiques una nueva.</span>\
+    <span class="cq-text-sm">Este cuestionario está <strong>publicado</strong>. Los cambios se guardan como pendientes: los clínicos siguen viendo la versión publicada hasta que publique una nueva.</span>\
 </div>\
 <div v-if="isArchived && !conflict" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-warning);">\
     <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
-    <span class="cq-text-sm">Este cuestionario está <strong>archivado</strong> y es de sólo lectura: no se puede editar ni guardar. Para reactivarlo, publicalo de nuevo desde el listado de Cuestionarios.</span>\
+    <span class="cq-text-sm">Este cuestionario está <strong>archivado</strong> y es de sólo lectura: no se puede editar ni guardar. Para reactivarlo, publíquelo de nuevo desde el listado de Cuestionarios.</span>\
 </div>\
 <div class="row g-3">\
     <div class="col-lg-2">\
@@ -980,7 +1218,7 @@
                     <i :class="\'bi \' + t.icon"></i> {{ t.label }}\
                 </div>\
             </div>\
-            <p class="cq-text-xs cq-text-muted mt-3 mb-0">Hacé click en + dentro de una sección para agregar.</p>\
+            <p class="cq-text-xs cq-text-muted mt-3 mb-0">Haga clic en + dentro de una sección para agregar.</p>\
         </div>\
     </div>\
 \
@@ -1156,13 +1394,12 @@
                     <i class="bi bi-check-circle-fill text-success"></i> {{ selected.question.codeDisplay }}\
                     <a href="javascript:" class="ms-1" @click="clearSnomed">quitar</a>\
                 </div>\
-                <p v-else class="cq-text-xs cq-text-muted mt-1">Elegí una sugerencia de arriba, o escribí el código a mano si ya lo sabés.</p>\
             </div>\
 \
             <hr />\
             <button class="btn btn-sm btn-outline-danger" @click="removeQuestion(selected.group, selected.question)"><i class="bi bi-trash me-1"></i> Eliminar pregunta</button>\
         </div>\
-        <div v-else class="cq-card cq-text-sm cq-text-muted">Seleccioná una pregunta para editar sus propiedades.</div>\
+        <div v-else class="cq-card cq-text-sm cq-text-muted">Seleccione una pregunta para editar sus propiedades.</div>\
     </div>\
 </div>\
 </div>'

@@ -137,6 +137,21 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View();
         }
 
+        // Modelo interno del editor (secciones → preguntas) para la versión ACTUAL en base,
+        // en el MISMO formato que props.groups. Lo consume el merge de conflictos del editor
+        // para traer "la versión de la otra persona" y compararla, sin reparsear FHIR en el
+        // cliente. Es de sólo lectura y reutiliza el mismo armado que hidrata el editor.
+        public async Task<ActionResult> EditorModel(Guid id)
+        {
+            var q = await _svc.GetAsync(id);
+            if (q == null) return HttpNotFound();
+            var payload = new { concurrencyVersion = q.ConcurrencyVersion, groups = BuildEditorGroups(q) };
+            return Content(
+                JsonConvert.SerializeObject(payload,
+                    new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
+                "application/json");
+        }
+
         // Versión viva: la que apunta CurrentVersionId. Si por lo que sea quedó colgado,
         // caemos a la más alta publicada. 0 = nunca se publicó.
         private static int CurrentVersionNumber(ChequeAR.Domain.Entities.Questionnaire q)

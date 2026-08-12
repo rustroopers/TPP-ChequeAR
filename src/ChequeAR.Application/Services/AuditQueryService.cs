@@ -49,6 +49,23 @@ namespace ChequeAR.Application.Services
             };
         }
 
+        /// <summary>
+        /// Todos los eventos de UNA ficha (respuesta), ordenados del más reciente al más viejo.
+        /// Matchea tanto el evento de creación (<c>QuestionnaireResponse/{id}</c>) como los de
+        /// operación (<c>…$save</c>, <c>…$finalize</c>, <c>…$lock</c>, <c>…$retarget</c>), pero
+        /// no las respuestas cuyo id sea prefijo de otra: exige el separador exacto ('$' o fin).
+        /// </summary>
+        public async Task<IReadOnlyList<AuditEvent>> ForResponseAsync(Guid responseId)
+        {
+            var prefix = "QuestionnaireResponse/" + responseId;
+            var todos = await _repo.SearchAsync(null, null, null, null, MaxFilas);
+            return (todos ?? new List<AuditEvent>())
+                .Where(e => e.EntityRef == prefix
+                            || (e.EntityRef != null && e.EntityRef.StartsWith(prefix + "$", StringComparison.Ordinal)))
+                .OrderByDescending(e => e.Recorded)
+                .ToList();
+        }
+
         public async Task<AuditEvent> GetAsync(Guid id)
         {
             // El repositorio no expone búsqueda por identificador; se filtra sobre la ventana
