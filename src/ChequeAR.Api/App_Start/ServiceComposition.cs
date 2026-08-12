@@ -135,7 +135,7 @@ namespace ChequeAR.Api.App_Start
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
                 Resolve<IFhirValidator>(), _audit));
             Register<AuditQueryService>(() => new AuditQueryService(Resolve<IAuditRepository>()));
-            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>()));
+            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>(), Resolve<AuditDispatcher>()));
             Register<UserService>(() => new UserService(Resolve<IUserRepository>()));
             Register<TerminologyService>(() => new TerminologyService(Resolve<ITerminologyClient>()));
             Register<HomeDashboardService>(() => new HomeDashboardService(

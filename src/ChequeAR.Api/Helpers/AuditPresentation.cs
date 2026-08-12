@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ChequeAR.Application.Dtos;
 using Newtonsoft.Json.Linq;
 
 namespace ChequeAR.Api.Helpers
@@ -79,6 +80,15 @@ namespace ChequeAR.Api.Helpers
             else if (type == "Report")
             {
                 return Set(view, Op.Export, "Reporte exportado", "cq-badge--info", "bi-download");
+            }
+            else if (type == "SavedReport")
+            {
+                switch (actionCode)
+                {
+                    case "C": return Set(view, Op.Create, "Reporte creado", "cq-badge--published", "bi-file-earmark-bar-graph");
+                    case "U": return Set(view, Op.Edit, "Reporte modificado", "cq-badge--info", "bi-pencil");
+                    case "D": return Set(view, Op.Delete, "Reporte eliminado", "cq-badge--danger", "bi-trash");
+                }
             }
 
             // Fallback genérico por código, en español.
@@ -219,6 +229,127 @@ namespace ChequeAR.Api.Helpers
                 Text = l,
                 Change = beforeSet.Contains(l) ? Change.Same : Change.Added
             }).ToList();
+        }
+
+        // ===== Consulta guardada (SavedReport): foto legible de sus condiciones =====
+
+        /// <summary>Lee la foto de una consulta guardada serializada en el evento. Null si no es interpretable.</summary>
+        public static Application.Services.SavedReportAuditSnapshot ReadSavedReport(string fhirJson)
+        {
+            if (string.IsNullOrWhiteSpace(fhirJson)) return null;
+            try
+            {
+                return Newtonsoft.Json.JsonConvert
+                    .DeserializeObject<Application.Services.SavedReportAuditSnapshot>(fhirJson);
+            }
+            catch (Newtonsoft.Json.JsonException) { return null; }
+        }
+
+        /// <summary>
+        /// Traduce la definición de la consulta (filtros, fechas, versiones, autores) a líneas
+        /// que un clínico pueda leer, resolviendo cada linkId al texto de su pregunta. Devuelve
+        /// lista vacía si la consulta no tiene condiciones (equivale a "todas las fichas").
+        /// </summary>
+        public static List<string> DescribeReportConditions(string queryJson, IReadOnlyDictionary<string, string> linkTexts)
+        {
+            var lines = new List<string>();
+            if (string.IsNullOrWhiteSpace(queryJson)) return lines;
+
+            ReportQuery query;
+            // Newtonsoft matchea las propiedades sin distinguir mayúsculas, así que el JSON
+            // camelCase que mandó la isla se deserializa sin resolver adicional.
+            try { query = Newtonsoft.Json.JsonConvert.DeserializeObject<ReportQuery>(queryJson); }
+            catch (Newtonsoft.Json.JsonException) { return lines; }
+            if (query == null) return lines;
+
+            if (query.QuestionnaireVersions != null && query.QuestionnaireVersions.Count > 0)
+                lines.Add("Versión del cuestionario: " + string.Join(", ", query.QuestionnaireVersions));
+
+            if (query.DateRange != null && (query.DateRange.From.HasValue || query.DateRange.To.HasValue))
+            {
+                var from = query.DateRange.From.HasValue ? query.DateRange.From.Value.ToString("dd/MM/yyyy") : "el inicio";
+                var to = query.DateRange.To.HasValue ? query.DateRange.To.Value.ToString("dd/MM/yyyy") : "hoy";
+                lines.Add("Fecha de carga: entre " + from + " y " + to);
+            }
+
+            var authors = (query.Authors ?? new List<string>())
+                .Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
+            if (authors.Count > 0)
+                lines.Add("Cargadas por: " + string.Join(", ", authors));
+
+            if (query.Filters?.Predicates != null && query.Filters.Predicates.Count > 0)
+                FlattenFilterNode(query.Filters, linkTexts, lines, 0);
+
+            return lines;
+        }
+
+        private static void FlattenFilterNode(FilterNode node, IReadOnlyDictionary<string, string> linkTexts,
+                                              List<string> lines, int depth)
+        {
+            if (node?.Predicates == null || node.Predicates.Count == 0) return;
+            var indent = new string(' ', depth * 4);
+
+            if (node.Predicates.Count > 1)
+            {
+                var connector = string.Equals(node.Logic, "OR", StringComparison.OrdinalIgnoreCase)
+                    ? "Se cumple ALGUNA de estas condiciones:"
+                    : "Se cumplen TODAS estas condiciones:";
+                lines.Add(indent + connector);
+            }
+
+            foreach (var p in node.Predicates)
+            {
+                if (p.Group != null) { FlattenFilterNode(p.Group, linkTexts, lines, depth + 1); continue; }
+
+                var text = linkTexts != null && p.LinkId != null
+                           && linkTexts.TryGetValue(p.LinkId, out var t) && !string.IsNullOrWhiteSpace(t)
+                    ? t : (p.LinkId ?? "campo");
+                lines.Add(indent + "• " + text + " " + OpPhrase(p.Op, p.Value));
+            }
+        }
+
+        /// <summary>Frase del operador + valor, en español.</summary>
+        private static string OpPhrase(string op, object value)
+        {
+            switch ((op ?? string.Empty).ToLowerInvariant())
+            {
+                case "exists":   return "fue respondida";
+                case "contains": return "contiene «" + FormatValue(value) + "»";
+                case "=":        return "es igual a " + FormatValue(value);
+                case "!=":       return "es distinto de " + FormatValue(value);
+                case ">":        return "es mayor que " + FormatValue(value);
+                case "<":        return "es menor que " + FormatValue(value);
+                case ">=":       return "es mayor o igual que " + FormatValue(value);
+                case "<=":       return "es menor o igual que " + FormatValue(value);
+                case "in":       return "es alguno de " + string.Join(", ", AsValueList(value).Select(FormatScalar));
+                case "between":
+                    var vs = AsValueList(value);
+                    return vs.Count == 2 ? "está entre " + FormatScalar(vs[0]) + " y " + FormatScalar(vs[1])
+                                         : "está en el rango " + string.Join(", ", vs.Select(FormatScalar));
+                default:         return (op ?? "?") + " " + FormatValue(value);
+            }
+        }
+
+        private static string FormatValue(object value)
+        {
+            var list = value as JArray;
+            if (list != null) return string.Join(", ", list.Select(FormatScalar));
+            return FormatScalar(value);
+        }
+
+        private static string FormatScalar(object value)
+        {
+            if (value == null) return "—";
+            if (value is JValue jv) value = jv.Value;
+            if (value is bool b) return b ? "Sí" : "No";
+            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static List<object> AsValueList(object value)
+        {
+            if (value is JArray arr) return arr.Cast<object>().ToList();
+            if (value == null) return new List<object>();
+            return new List<object> { value };
         }
     }
 }
