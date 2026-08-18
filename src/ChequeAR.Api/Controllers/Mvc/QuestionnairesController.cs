@@ -95,6 +95,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             var pendingChanges = false;
             var concurrencyVersion = 0;
             var groups = new List<QuestionGroupView>();
+            // Codificación clínica del cuestionario completo (opcional). Mismo contrato que la
+            // de cada pregunta: se lo desarma en la capa de negocio y acá sólo se pasa al editor.
+            string code = null, codeDisplay = null, term = null;
 
             if (id.HasValue)
             {
@@ -112,6 +115,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                         // El editor se hidrata con la estructura real desde el server; antes
                         // arrancaba con datos de ejemplo hardcodeados y pisaba lo guardado.
                         groups = BuildEditorGroups(q);
+
+                        var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
+                        if (coding != null)
+                        {
+                            code = coding.Code;
+                            codeDisplay = coding.Display;
+                            term = coding.Term;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -132,7 +143,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
             // status manda: el editor no autoguarda un cuestionario publicado.
             ViewBag.EditorProps = JsonConvert.SerializeObject(
-                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges },
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges, code, codeDisplay, term },
                 new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
         }
@@ -150,6 +161,34 @@ namespace ChequeAR.Api.Controllers.Mvc
                 JsonConvert.SerializeObject(payload,
                     new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
                 "application/json");
+        }
+
+        // Candidatos para "importar preguntas" en el editor: cuestionarios de la MISMA
+        // especialidad (no archivados, distinto del actual). Devuelve JSON liviano —sin las
+        // preguntas, para no disparar N+1—; la estructura completa se trae recién al elegir uno,
+        // reutilizando EditorModel. La lógica de filtrado vive en el service (testeable).
+        public async Task<ActionResult> ImportCandidates(string specialty, Guid? excludeId = null)
+        {
+            try
+            {
+                var candidatos = await _svc.GetImportCandidatesAsync(specialty, excludeId);
+                var payload = candidatos.Select(q => new
+                {
+                    id = q.Id,
+                    title = q.Title,
+                    status = QuestionnaireStatusMap.ToUi(q.Status),
+                    specialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay),
+                    version = q.Versions?.Count ?? 0
+                }).ToList();
+                return Content(
+                    JsonConvert.SerializeObject(payload,
+                        new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
+                    "application/json");
+            }
+            catch (Exception ex)
+            {
+                return new HttpStatusCodeResult(500, ex.Message);
+            }
         }
 
         // Versión viva: la que apunta CurrentVersionId. Si por lo que sea quedó colgado,

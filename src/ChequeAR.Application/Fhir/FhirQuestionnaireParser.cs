@@ -39,7 +39,8 @@ namespace ChequeAR.Application.Fhir
                 Title = resource.Title ?? resource.Name,
                 Description = resource.Description,
                 SpecialtyCode = SpecialtyCode(resource),
-                SpecialtyDisplay = SpecialtyDisplay(resource)
+                SpecialtyDisplay = SpecialtyDisplay(resource),
+                CodingJson = ToQuestionnaireCodingJson(resource)
             };
 
             var orden = 0;
@@ -204,6 +205,31 @@ namespace ChequeAR.Application.Fhir
         {
             var coding = (item.Code ?? new List<Coding>()).FirstOrDefault();
             var term = ChequeARExtensions.GetQuestionTerm(item);
+
+            if (coding == null && string.IsNullOrWhiteSpace(term)) return null;
+
+            var o = new JObject();
+            if (coding != null && !string.IsNullOrWhiteSpace(coding.Code))
+            {
+                SetString(o, "system", coding.System);
+                SetString(o, "code", coding.Code);
+                SetString(o, "display", coding.Display);
+            }
+            SetString(o, "term", term);
+
+            return o.HasValues ? JsonConvert.SerializeObject(o, Formatting.None) : null;
+        }
+
+        /// <summary>
+        /// Inverso de <c>FhirQuestionnaireBuilder.AddQuestionnaireCoding</c>: el concepto sale
+        /// de Questionnaire.code y el término de autoría de la extensión propia. Como en la
+        /// pregunta, pueden existir por separado y devuelve null si no hay ninguno de los dos,
+        /// para no guardar "{}".
+        /// </summary>
+        private static string ToQuestionnaireCodingJson(FhirQuestionnaire resource)
+        {
+            var coding = (resource.Code ?? new List<Coding>()).FirstOrDefault();
+            var term = ChequeARExtensions.GetQuestionnaireTerm(resource);
 
             if (coding == null && string.IsNullOrWhiteSpace(term)) return null;
 

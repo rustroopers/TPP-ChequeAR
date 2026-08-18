@@ -32,6 +32,15 @@ namespace ChequeAR.Application.Fhir
         public const string QuestionTermUrl = Base + "question-term";
 
         /// <summary>
+        /// El equivalente de <see cref="QuestionTermUrl"/> a nivel del cuestionario entero: el
+        /// término en palabras que describe qué mide la ficha completa, escrito por quien la
+        /// diseña, aunque todavía no haya elegido un concepto SNOMED. Igual que en la pregunta,
+        /// no es lo mismo que <c>Questionnaire.code.display</c> (el término preferido del
+        /// concepto elegido) y se guarda aunque no haya código, para poder codificar después.
+        /// </summary>
+        public const string QuestionnaireTermUrl = Base + "questionnaire-term";
+
+        /// <summary>
         /// Identificador de la versión congelada a la que se ancla una ficha.
         ///
         /// FHIR permitiría referenciar por canonical versionado (Questionnaire/{id}|{n}), pero
@@ -74,6 +83,12 @@ namespace ChequeAR.Application.Fhir
 
         public static string GetQuestionTerm(IExtendable item)
             => GetString(item, QuestionTermUrl);
+
+        public static void SetQuestionnaireTerm(IExtendable resource, string term)
+            => SetString(resource, QuestionnaireTermUrl, term);
+
+        public static string GetQuestionnaireTerm(IExtendable resource)
+            => GetString(resource, QuestionnaireTermUrl);
 
         public static void SetQuestionnaireVersionId(IExtendable response, Guid versionId)
         {

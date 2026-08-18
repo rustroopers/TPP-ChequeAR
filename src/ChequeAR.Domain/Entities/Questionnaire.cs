@@ -12,6 +12,16 @@ namespace ChequeAR.Domain.Entities
         public QuestionnaireStatus Status { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyDisplay { get; set; }
+
+        /// <summary>
+        /// Codificación clínica del cuestionario como un todo (concepto SNOMED CT) más el
+        /// término de autoría, en el mismo contrato JSON que <see cref="Question.CodingJson"/>:
+        /// { system, code, display, term }. Es el análogo a nivel cuestionario de lo que ya se
+        /// podía anotar por pregunta: qué mide la ficha completa —ej. "control cardiológico"—,
+        /// independiente del código de cada pregunta, que se conserva intacto.
+        /// </summary>
+        public string CodingJson { get; set; }
+
         public Guid? CurrentVersionId { get; set; }
         public string CreatedBy { get; set; }
         public DateTime CreatedAt { get; set; }
