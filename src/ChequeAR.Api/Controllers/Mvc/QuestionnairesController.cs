@@ -95,6 +95,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             var pendingChanges = false;
             var concurrencyVersion = 0;
             var groups = new List<QuestionGroupView>();
+            // Codificación clínica del cuestionario completo (opcional). Mismo contrato que la
+            // de cada pregunta: se lo desarma en la capa de negocio y acá sólo se pasa al editor.
+            string code = null, codeDisplay = null, term = null;
 
             if (id.HasValue)
             {
@@ -112,6 +115,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                         // El editor se hidrata con la estructura real desde el server; antes
                         // arrancaba con datos de ejemplo hardcodeados y pisaba lo guardado.
                         groups = BuildEditorGroups(q);
+
+                        var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
+                        if (coding != null)
+                        {
+                            code = coding.Code;
+                            codeDisplay = coding.Display;
+                            term = coding.Term;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -132,7 +143,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
             // status manda: el editor no autoguarda un cuestionario publicado.
             ViewBag.EditorProps = JsonConvert.SerializeObject(
-                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges },
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges, code, codeDisplay, term },
                 new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
         }

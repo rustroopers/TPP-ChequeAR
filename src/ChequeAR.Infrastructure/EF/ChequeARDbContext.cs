@@ -81,6 +81,7 @@ namespace ChequeAR.Infrastructure.EF
             mb.Entity<Question>().Property(x => x.ValidationJson).HasColumnType("CLOB").HasMaxLength(null);
             mb.Entity<Question>().Property(x => x.EnableWhenJson).HasColumnType("CLOB").HasMaxLength(null);
             mb.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").HasMaxLength(null);
+            mb.Entity<Questionnaire>().Property(x => x.CodingJson).HasColumnType("CLOB").HasMaxLength(null);
             mb.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
             mb.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
             mb.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);

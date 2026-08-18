@@ -267,6 +267,83 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Cardiología", vuelta.SpecialtyDisplay);
         }
 
+        /// <summary>
+        /// Codificación del cuestionario completo: análogo al término de autoría de la pregunta,
+        /// con el mismo riesgo. El concepto viaja en Questionnaire.code (campo nativo) y el
+        /// término en una extensión propia; si el par se rompe, se pierde en silencio en el
+        /// próximo guardado igual que a nivel pregunta.
+        /// </summary>
+        [Fact]
+        public void CodificacionDelCuestionario_SobreviveElCiclo()
+        {
+            var original = new ChequeAR.Domain.Entities.Questionnaire
+            {
+                Id = Guid.NewGuid(), Title = "Control cardiológico", SpecialtyCode = "cardio",
+                CodingJson = "{\"system\":\"http://snomed.info/sct\",\"code\":\"302760001\","
+                           + "\"display\":\"Control cardiológico\",\"term\":\"seguimiento del corazón\"}",
+                Questions = { new Question { Id = Guid.NewGuid(), LinkId = "x", Type = QuestionType.String } }
+            };
+
+            var coding = JObject.Parse(Ciclo(original).CodingJson);
+
+            Assert.Equal("seguimiento del corazón", (string)coding["term"]);
+            Assert.Equal("302760001", (string)coding["code"]);
+            Assert.Equal("http://snomed.info/sct", (string)coding["system"]);
+            Assert.Equal("Control cardiológico", (string)coding["display"]);
+        }
+
+        [Fact]
+        public void TerminoDelCuestionarioSinCodigo_SobreviveIgual()
+        {
+            var original = new ChequeAR.Domain.Entities.Questionnaire
+            {
+                Id = Guid.NewGuid(), Title = "Ficha", SpecialtyCode = "cardio",
+                CodingJson = "{\"term\":\"algo que todavía no codifiqué\"}",
+                Questions = { new Question { Id = Guid.NewGuid(), LinkId = "x", Type = QuestionType.String } }
+            };
+
+            var coding = JObject.Parse(Ciclo(original).CodingJson);
+
+            Assert.Equal("algo que todavía no codifiqué", (string)coding["term"]);
+            Assert.Null(coding["code"]);
+        }
+
+        /// <summary>
+        /// La codificación del cuestionario es INDEPENDIENTE de la de sus preguntas: ambas
+        /// coexisten sin pisarse. Un error acá haría que codificar la ficha borre el código de
+        /// una pregunta (o al revés), que es exactamente lo que la feature promete no hacer.
+        /// </summary>
+        [Fact]
+        public void CodigoDelCuestionario_NoPisaElDeLaPregunta()
+        {
+            var original = new ChequeAR.Domain.Entities.Questionnaire
+            {
+                Id = Guid.NewGuid(), Title = "Ficha", SpecialtyCode = "cardio",
+                CodingJson = "{\"system\":\"http://snomed.info/sct\",\"code\":\"302760001\",\"display\":\"Control cardiológico\"}",
+                Questions =
+                {
+                    new Question
+                    {
+                        Id = Guid.NewGuid(), LinkId = "dolor", Type = QuestionType.Boolean,
+                        CodingJson = "{\"system\":\"http://snomed.info/sct\",\"code\":\"29857009\",\"display\":\"dolor torácico\"}"
+                    }
+                }
+            };
+
+            var vuelta = Ciclo(original);
+
+            Assert.Equal("302760001", (string)JObject.Parse(vuelta.CodingJson)["code"]);
+            Assert.Equal("29857009", (string)JObject.Parse(vuelta.Questions.Single().CodingJson)["code"]);
+        }
+
+        [Fact]
+        public void CuestionarioSinCodificacion_NoInventaCodingJson()
+        {
+            var original = ConUnaPregunta(new Question { LinkId = "x", Type = QuestionType.String });
+
+            Assert.Null(Ciclo(original).CodingJson);
+        }
+
         [Fact]
         public void PreguntaSinRestricciones_NoInventaValidationJson()
         {

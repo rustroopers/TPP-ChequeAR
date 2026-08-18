@@ -14,6 +14,12 @@
             // como se perdía el permiso para publicar al reabrir el editor.
             hasPendingChanges: Boolean,
             concurrencyVersion: Number,
+            // Codificación clínica del cuestionario completo (opcional): término de autoría +
+            // concepto SNOMED. Es el análogo a nivel cuestionario de la que ya existía por
+            // pregunta; los códigos de cada pregunta siguen siendo suyos y no se tocan.
+            code: String,
+            codeDisplay: String,
+            term: String,
             groups: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
@@ -24,6 +30,14 @@
             var isNew = Vue.ref(!!props.isNew);
             var qTitle = Vue.ref(props.title || 'Nuevo cuestionario');
             var specialtyCode = Vue.ref(props.specialtyCode || 'general');
+            // Codificación del cuestionario completo. Objeto reactivo (no tres refs sueltos)
+            // para que el mismo buscador SNOMED que usan las preguntas pueda escribir aquí
+            // code/codeDisplay tratándolo igual que a una pregunta.
+            var questionnaireCoding = Vue.reactive({
+                term: props.term || '',
+                code: props.code || undefined,
+                codeDisplay: props.codeDisplay || undefined
+            });
             var saving = Vue.ref(false);
             var publishing = Vue.ref(false);
             // Un publicado no se autoguarda: sus cambios quedan pendientes hasta que
@@ -547,45 +561,8 @@
             // sin tocar el código del que dependen los reportes.
             // Elegir una sugerencia completa code + codeDisplay, que buildCoding() serializa
             // a Question.CodingJson junto al término.
-            var snomedResults = Vue.ref([]);
-            var snomedSearching = Vue.ref(false);
-            var snomedError = Vue.ref(null);
-            var snomedOpen = Vue.ref(false);
-            var snomedAbort = null;
-            var snomedDebounce;
-            // Al cambiar de pregunta, el término "cambia" sin que nadie tipee: no queremos
-            // disparar una búsqueda por eso. Esta bandera suprime ese primer disparo.
-            var snomedSuppress = false;
-            // Backoff ante 429: hasta este instante (ms epoch) no autocompletamos solos,
-            // para no seguir golpeando un server que ya nos está limitando.
-            var snomedCooldownUntil = 0;
-
-            // Cambiar de pregunta no debe arrastrar los resultados de la anterior.
-            Vue.watch(selected, function () {
-                snomedResults.value = []; snomedOpen.value = false; snomedError.value = null;
-                clearTimeout(snomedDebounce);
-                snomedSuppress = true;
-                Vue.nextTick(function () { snomedSuppress = false; });
-            });
-
-            // Autosugerencia asíncrona: mientras se edita el término clínico buscamos solos
-            // (debounce) para no golpear el terminológico en cada tecla. Escribir el
-            // enunciado ya no dispara búsquedas: sólo el término las provoca.
-            Vue.watch(function () {
-                return selected.value && selected.value.question ? selected.value.question.term : null;
-            }, function (term) {
-                if (snomedSuppress) return;   // el cambio vino de seleccionar otra pregunta
-                clearTimeout(snomedDebounce);
-                if (!term || term.trim().length < 3) {
-                    snomedResults.value = []; snomedOpen.value = false; snomedError.value = null;
-                    return;
-                }
-                if (Date.now() < snomedCooldownUntil) return;   // en backoff por 429
-                snomedDebounce = setTimeout(searchSnomed, 600);
-            });
-
             // Mismo criterio que diagnostico(): el detalle legible de un OperationOutcome
-            // vive en issue[].diagnostics. Se declara aparte porque este bloque corre antes
+            // vive en issue[].diagnostics. Se declara aparte porque el buscador corre antes
             // de que diagnostico() este definido en el scope.
             function diagnosticoTerminologia(body, porOmision) {
                 var issues = body && body.issue;
@@ -593,71 +570,146 @@
                 return issues[0].diagnostics || porOmision;
             }
 
-            function searchSnomed() {
-                var q = selected.value && selected.value.question;
-                var term = q ? (q.term || '').trim() : '';
-                snomedError.value = null;
-                if (term.length < 3) {
-                    snomedError.value = 'Escriba al menos 3 caracteres en el término clínico (ej: "dolor torácico").';
-                    snomedResults.value = []; snomedOpen.value = true;
-                    return;
+            // Fábrica de buscadores SNOMED. Un cuestionario tiene DOS puntos de codificación
+            // —cada pregunta y el cuestionario entero— con idéntica mecánica: autocompletar
+            // por término, elegir un concepto, quitarlo. En vez de duplicar toda la lógica
+            // (debounce, backoff por 429, cancelación de la consulta en curso), se crea una
+            // instancia por punto. `getActive()` devuelve el objeto sobre el que se escribe
+            // code/codeDisplay (una pregunta, o el objeto de codificación del cuestionario);
+            // ambos exponen las mismas tres propiedades term/code/codeDisplay.
+            function createSnomedSearch(getActive) {
+                var results = Vue.ref([]);
+                var searching = Vue.ref(false);
+                var error = Vue.ref(null);
+                var open = Vue.ref(false);
+                var abort = null;
+                var debounce;
+                // Backoff ante 429: hasta este instante (ms epoch) no autocompletamos solos,
+                // para no seguir golpeando un server que ya nos está limitando.
+                var cooldownUntil = 0;
+
+                function reset() {
+                    results.value = []; open.value = false; error.value = null;
+                    clearTimeout(debounce);
                 }
-                var token = getToken();
-                if (!token) { toast('No hay sesión: no se puede consultar SNOMED (token ausente).', 'error'); return; }
 
-                // Si el usuario busca de nuevo con una consulta en curso, cancelamos la vieja.
-                if (snomedAbort) snomedAbort.abort();
-                snomedAbort = ('AbortController' in window) ? new AbortController() : null;
-                snomedSearching.value = true;
+                // Autosugerencia asíncrona: mientras se edita el término clínico buscamos
+                // solos (debounce) para no golpear el terminológico en cada tecla. El
+                // enunciado de la pregunta NO dispara búsquedas: sólo el término.
+                function schedule(term) {
+                    clearTimeout(debounce);
+                    if (!term || term.trim().length < 3) { reset(); return; }
+                    if (Date.now() < cooldownUntil) return;   // en backoff por 429
+                    debounce = setTimeout(search, 600);
+                }
 
-                fetch('/fhir/r5/ValueSet/$expand?count=15&filter=' + encodeURIComponent(term), {
-                    headers: { 'Authorization': 'Bearer ' + token },
-                    signal: snomedAbort ? snomedAbort.signal : undefined
-                }).then(function (res) {
-                    return res.json().catch(function () { return null; }).then(function (body) {
-                        if (res.status === 429) {
-                            // El server nos limita: entramos en cooldown y frenamos el autosugerir.
-                            // El tiempo de espera viene dentro del diagnostics del
-                            // OperationOutcome: el estandar no tiene un campo para eso.
-                            var texto = diagnosticoTerminologia(body,
-                                'Demasiadas consultas a SNOMED. Reintente en unos segundos.');
-                            var m = /(\d+)\s*segundos/.exec(texto);
-                            snomedCooldownUntil = Date.now() + ((m ? parseInt(m[1], 10) : 8) * 1000);
-                            throw new Error(texto);
-                        }
-                        if (!res.ok) throw new Error(diagnosticoTerminologia(body, 'HTTP ' + res.status));
-                        return body;
+                function search() {
+                    var target = getActive();
+                    var term = target ? (target.term || '').trim() : '';
+                    error.value = null;
+                    if (term.length < 3) {
+                        error.value = 'Escriba al menos 3 caracteres en el término clínico (ej: "dolor torácico").';
+                        results.value = []; open.value = true;
+                        return;
+                    }
+                    var token = getToken();
+                    if (!token) { toast('No hay sesión: no se puede consultar SNOMED (token ausente).', 'error'); return; }
+
+                    // Si el usuario busca de nuevo con una consulta en curso, cancelamos la vieja.
+                    if (abort) abort.abort();
+                    abort = ('AbortController' in window) ? new AbortController() : null;
+                    searching.value = true;
+
+                    fetch('/fhir/r5/ValueSet/$expand?count=15&filter=' + encodeURIComponent(term), {
+                        headers: { 'Authorization': 'Bearer ' + token },
+                        signal: abort ? abort.signal : undefined
+                    }).then(function (res) {
+                        return res.json().catch(function () { return null; }).then(function (body) {
+                            if (res.status === 429) {
+                                // El server nos limita: entramos en cooldown y frenamos el autosugerir.
+                                // El tiempo de espera viene dentro del diagnostics del
+                                // OperationOutcome: el estandar no tiene un campo para eso.
+                                var texto = diagnosticoTerminologia(body,
+                                    'Demasiadas consultas a SNOMED. Reintente en unos segundos.');
+                                var m = /(\d+)\s*segundos/.exec(texto);
+                                cooldownUntil = Date.now() + ((m ? parseInt(m[1], 10) : 8) * 1000);
+                                throw new Error(texto);
+                            }
+                            if (!res.ok) throw new Error(diagnosticoTerminologia(body, 'HTTP ' + res.status));
+                            return body;
+                        });
+                    }).then(function (data) {
+                        results.value = (data && data.results) || [];
+                        open.value = true;
+                    }).catch(function (err) {
+                        if (err.name === 'AbortError') return;
+                        error.value = err.message;
+                        results.value = []; open.value = true;
+                    }).then(function () {
+                        searching.value = false;
                     });
-                }).then(function (data) {
-                    snomedResults.value = (data && data.results) || [];
-                    snomedOpen.value = true;
-                }).catch(function (err) {
-                    if (err.name === 'AbortError') return;
-                    snomedError.value = err.message;
-                    snomedResults.value = []; snomedOpen.value = true;
-                }).then(function () {
-                    snomedSearching.value = false;
+                }
+
+                function pick(r) {
+                    var target = getActive();
+                    if (!target) return;
+                    target.code = r.code;
+                    target.codeDisplay = r.display;
+                    open.value = false;
+                    results.value = [];
+                    dirty.value = true;
+                }
+
+                // Saca el código pero conserva el término: qué mide no deja de ser cierto
+                // porque se descarte el concepto elegido, y así se puede volver a buscar sin
+                // reescribirlo.
+                function clear() {
+                    var target = getActive();
+                    if (!target) return;
+                    target.code = undefined;
+                    target.codeDisplay = undefined;
+                    dirty.value = true;
+                }
+
+                function cancel() { clearTimeout(debounce); if (abort) abort.abort(); }
+
+                // Envuelto en reactive (no un objeto plano): al exponerse anidado bajo
+                // `questionSnomed`/`questionnaireSnomed` en el return de setup, Vue NO desenvuelve
+                // los refs sueltos —`.searching` llegaría al template como el objeto Ref, siempre
+                // truthy, y el spinner quedaría fijo—. reactive los desenvuelve al accederlos.
+                return Vue.reactive({
+                    results: results, searching: searching, error: error, open: open,
+                    schedule: schedule, search: search, pick: pick, clear: clear, reset: reset, cancel: cancel
                 });
             }
 
-            function pickSnomed(r) {
-                var q = selected.value.question;
-                q.code = r.code;
-                q.codeDisplay = r.display;
-                snomedOpen.value = false;
-                snomedResults.value = [];
-                dirty.value = true;
-            }
+            // Buscador por PREGUNTA: escribe sobre la pregunta seleccionada.
+            var questionSnomed = createSnomedSearch(function () {
+                return selected.value && selected.value.question ? selected.value.question : null;
+            });
+            // Al cambiar de pregunta, el término "cambia" sin que nadie tipee: no queremos
+            // disparar una búsqueda por eso. Esta bandera suprime ese primer disparo.
+            var questionSnomedSuppress = false;
+            // Cambiar de pregunta no debe arrastrar los resultados de la anterior.
+            Vue.watch(selected, function () {
+                questionSnomed.reset();
+                questionSnomedSuppress = true;
+                Vue.nextTick(function () { questionSnomedSuppress = false; });
+            });
+            Vue.watch(function () {
+                return selected.value && selected.value.question ? selected.value.question.term : null;
+            }, function (term) {
+                if (questionSnomedSuppress) return;   // el cambio vino de seleccionar otra pregunta
+                questionSnomed.schedule(term);
+            });
 
-            // Saca el código pero conserva el término: qué mide la pregunta no deja de ser
-            // cierto porque se descarte el concepto elegido, y así se puede volver a buscar
-            // sin reescribirlo.
-            function clearSnomed() {
-                var q = selected.value.question;
-                q.code = undefined;
-                q.codeDisplay = undefined;
-                dirty.value = true;
-            }
+            // Buscador del CUESTIONARIO completo: escribe sobre el objeto de codificación
+            // reactivo. No hay "cambio de selección" que suprimir; el término lo edita una
+            // sola caja fija en el encabezado.
+            var questionnaireSnomed = createSnomedSearch(function () { return questionnaireCoding; });
+            Vue.watch(function () { return questionnaireCoding.term; }, function (term) {
+                questionnaireSnomed.schedule(term);
+            });
             // ---- Serialización a FHIR R5 ----
             //
             // Desde la feature 009 el editor habla FHIR directamente: hay UNA sola
@@ -830,6 +882,20 @@
                     }];
                 }
 
+                // Codificación del cuestionario completo. El concepto SNOMED va en el campo
+                // nativo Questionnaire.code; el término de autoría, en la extensión propia
+                // questionnaire-term (misma razón que la de la pregunta: no tiene lugar nativo
+                // y se guarda aunque todavía no haya código). Es simétrico a buildItem.
+                if (questionnaireCoding.code) {
+                    recurso.code = [{
+                        system: SNOMED_SYSTEM,
+                        code: questionnaireCoding.code,
+                        display: questionnaireCoding.codeDisplay || (questionnaireCoding.term || '').trim() || qTitle.value
+                    }];
+                }
+                var qTerm = (questionnaireCoding.term || '').trim();
+                if (qTerm) recurso.extension = [ext(CQ_EXT + 'questionnaire-term', 'valueString', qTerm)];
+
                 return recurso;
             }
 
@@ -887,12 +953,22 @@
                 // If-Match sólo al actualizar: al crear todavía no hay nada con qué chocar.
                 if (!creating) headers['If-Match'] = 'W/"' + recordVersion.value + '"';
 
+                // La foto que se manda se congela ACÁ. A partir de este punto marcamos
+                // "limpio" de forma optimista: si el usuario edita algo mientras el PUT viaja
+                // (ventana real en el Oracle lento de dev), markDirty vuelve a prender dirty y
+                // ese cambio NO se pierde. Antes, dirty se apagaba recién en el .then —después
+                // de la respuesta—, así que pisaba la edición hecha durante el vuelo y el
+                // siguiente autosave la veía "sin cambios" (era el "no hay cambios para
+                // guardar" al modificar el código SNOMED). En error se restaura (más abajo).
+                var body = JSON.stringify(buildPayload());
+                dirty.value = false;
+
                 // Devuelve una promesa que resuelve en true/false: publicar necesita saber
                 // si el guardado previo salió bien antes de congelar una versión.
                 return fetch(url, {
                     method: creating ? 'POST' : 'PUT',
                     headers: headers,
-                    body: JSON.stringify(buildPayload())
+                    body: body
                 }).then(function (res) {
                     if (res.status === 409) {
                         return res.json().catch(function () { return null; }).then(function (body) {
@@ -921,9 +997,10 @@
                     var v = data && data.meta && parseInt(data.meta.versionId, 10);
                     if (typeof v === 'number' && !isNaN(v)) recordVersion.value = v;
                     lastSaved.value = new Date().toLocaleTimeString();
-                    dirty.value = false;
+                    // dirty ya se apagó (optimista) antes del fetch; no se vuelve a tocar acá
+                    // para no pisar una edición hecha mientras el guardado viajaba.
                     // Se guardó un cambio sobre un publicado: a partir de ahora hay que
-                    // dejar publicar aunque "dirty" ya esté en false (recién se limpió arriba).
+                    // dejar publicar aunque "dirty" ya esté en false.
                     if (isPublished.value) hasPendingChanges.value = true;
                     if (creating) toast('Cuestionario creado', 'success');
                     else if (explicit) {
@@ -933,6 +1010,10 @@
                     }
                     return true;
                 }).catch(function (err) {
+                    // El guardado no llegó a persistir: revertimos el "limpio" optimista para
+                    // que los cambios NO queden marcados como guardados (si no, se perderían en
+                    // silencio). Si el usuario editó durante el vuelo, dirty ya está en true.
+                    dirty.value = true;
                     if (err.isConflict) {
                         // Otra persona guardó en el medio: en lugar de pisar o descartar todo,
                         // se intenta combinar los dos trabajos (con descarte siempre disponible).
@@ -1188,8 +1269,11 @@
             Vue.watch(groups, markDirty, { deep: true });
             // Título y especialidad viven fuera de `groups`: sin este watcher, editar sólo
             // la cabecera no marcaba nada como sucio, así que no se autoguardaba y
-            // beforeunload dejaba salir de la página perdiendo el cambio en silencio.
+            // beforeunload dejaba salir de la página perdiendo el cambio en silencio. La
+            // codificación del cuestionario (objeto reactivo) va con deep por lo mismo:
+            // tipear el término o el código a mano tiene que marcar la ficha como sucia.
             Vue.watch([qTitle, specialtyCode], markDirty);
+            Vue.watch(questionnaireCoding, markDirty, { deep: true });
 
             // Sin autosave en publicados, salir de la página con cambios pendientes los
             // perdía en silencio. El navegador pide confirmación. En un archivado nada se
@@ -1227,8 +1311,8 @@
             });
             Vue.onUnmounted(function () {
                 clearTimeout(debounce);
-                clearTimeout(snomedDebounce);
-                if (snomedAbort) snomedAbort.abort();
+                questionSnomed.cancel();
+                questionnaireSnomed.cancel();
                 var btn = document.getElementById('saveBtn');
                 if (btn) btn.removeEventListener('click', saveExplicit);
                 var pub = document.getElementById('publishBtn');
@@ -1247,9 +1331,8 @@
                 issues: issues, fixIssues: fixIssues,
                 conditionSources: conditionSources, conditionSource: conditionSource,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
-                snomedResults: snomedResults, snomedSearching: snomedSearching,
-                snomedError: snomedError, snomedOpen: snomedOpen,
-                searchSnomed: searchSnomed, pickSnomed: pickSnomed, clearSnomed: clearSnomed,
+                questionSnomed: questionSnomed,
+                questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
                 onTypeChange: onTypeChange,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
@@ -1382,6 +1465,37 @@
                         <option value="onco">Oncología</option>\
                         <option value="reuma">Reumatología</option>\
                     </select>\
+                </div>\
+            </div>\
+            <hr class="my-2" />\
+            <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica del cuestionario <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
+            <p class="cq-text-xs cq-text-muted mb-2">Asociar un concepto de SNOMED CT a la ficha</p>\
+            <div class="row g-2">\
+                <div class="col-7">\
+                    <label class="form-label cq-text-sm">Término clínico</label>\
+                    <div class="input-group input-group-sm">\
+                        <input v-model="questionnaireCoding.term" class="form-control form-control-sm" placeholder="ej: control cardiológico" />\
+                        <button class="btn btn-outline-primary" type="button" @click="questionnaireSnomed.search" :disabled="questionnaireSnomed.searching" title="Buscar el término en SNOMED CT">\
+                            <span v-if="questionnaireSnomed.searching" class="spinner-border spinner-border-sm"></span>\
+                            <template v-else><i class="bi bi-search"></i> Buscar</template>\
+                        </button>\
+                    </div>\
+                    <div v-if="questionnaireSnomed.error" class="cq-text-xs text-danger mt-1">{{ questionnaireSnomed.error }}</div>\
+                    <ul v-if="questionnaireSnomed.open && questionnaireSnomed.results.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
+                        <li v-for="r in questionnaireSnomed.results" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="questionnaireSnomed.pick(r)"\
+                            onmouseover="this.style.background=\'var(--cq-primary-100)\'" onmouseout="this.style.background=\'transparent\'">\
+                            {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
+                        </li>\
+                    </ul>\
+                    <div v-else-if="questionnaireSnomed.open && !questionnaireSnomed.searching && !questionnaireSnomed.error" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
+                </div>\
+                <div class="col-5">\
+                    <label class="form-label cq-text-sm">Código SNOMED CT</label>\
+                    <input v-model="questionnaireCoding.code" class="form-control form-control-sm" placeholder="ej: 302760001" />\
+                    <div v-if="questionnaireCoding.codeDisplay" class="cq-text-xs mt-1">\
+                        <i class="bi bi-check-circle-fill text-success"></i> {{ questionnaireCoding.codeDisplay }}\
+                        <a href="javascript:" class="ms-1" @click="questionnaireSnomed.clear">quitar</a>\
+                    </div>\
                 </div>\
             </div>\
         </div>\
@@ -1520,26 +1634,26 @@
                 <label class="form-label cq-text-sm">Término clínico</label>\
                 <div class="input-group input-group-sm">\
                     <input v-model="selected.question.term" class="form-control form-control-sm" placeholder="ej: dolor torácico" />\
-                    <button class="btn btn-outline-primary" type="button" @click="searchSnomed" :disabled="snomedSearching" title="Buscar el término en SNOMED CT">\
-                        <span v-if="snomedSearching" class="spinner-border spinner-border-sm"></span>\
+                    <button class="btn btn-outline-primary" type="button" @click="questionSnomed.search" :disabled="questionSnomed.searching" title="Buscar el término en SNOMED CT">\
+                        <span v-if="questionSnomed.searching" class="spinner-border spinner-border-sm"></span>\
                         <template v-else><i class="bi bi-search"></i> Buscar</template>\
                     </button>\
                 </div>\
-                <div v-if="snomedError" class="cq-text-xs text-danger mt-1">{{ snomedError }}</div>\
-                <ul v-if="snomedOpen && snomedResults.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
-                    <li v-for="r in snomedResults" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="pickSnomed(r)"\
+                <div v-if="questionSnomed.error" class="cq-text-xs text-danger mt-1">{{ questionSnomed.error }}</div>\
+                <ul v-if="questionSnomed.open && questionSnomed.results.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
+                    <li v-for="r in questionSnomed.results" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="questionSnomed.pick(r)"\
                         onmouseover="this.style.background=\'var(--cq-primary-100)\'" onmouseout="this.style.background=\'transparent\'">\
                         {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
                     </li>\
                 </ul>\
-                <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
+                <div v-else-if="questionSnomed.open && !questionSnomed.searching && !questionSnomed.error" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
             </div>\
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Código SNOMED CT</label>\
                 <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
                 <div v-if="selected.question.codeDisplay" class="cq-text-xs mt-1">\
                     <i class="bi bi-check-circle-fill text-success"></i> {{ selected.question.codeDisplay }}\
-                    <a href="javascript:" class="ms-1" @click="clearSnomed">quitar</a>\
+                    <a href="javascript:" class="ms-1" @click="questionSnomed.clear">quitar</a>\
                 </div>\
             </div>\
 \

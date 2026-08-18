@@ -109,6 +109,40 @@ namespace ChequeAR.Tests.Application
             _repo.Verify(r => r.UpdateAsync(existing), Times.Once);
         }
 
+        // La codificación clínica del cuestionario se persiste igual que el resto: viene en el
+        // patch y queda guardada.
+        [Fact]
+        public async Task UpdateAsync_PersistsQuestionnaireCoding()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire { Id = id, Title = "old", Status = QuestionnaireStatus.Draft };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var coding = "{\"system\":\"http://snomed.info/sct\",\"code\":\"302760001\",\"term\":\"control\"}";
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "old", CodingJson = coding }, "u");
+
+            Assert.Equal(coding, updated.CodingJson);
+        }
+
+        // A diferencia de título/descripción, la codificación es OPCIONAL y tiene que poder
+        // QUITARSE: un patch sin código ni término (null) la borra, no la conserva. Es la
+        // paridad con la codificación por pregunta, donde quitarla también es posible.
+        [Fact]
+        public async Task UpdateAsync_NullCoding_ClearsExistingCoding()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire
+            {
+                Id = id, Title = "old", Status = QuestionnaireStatus.Draft,
+                CodingJson = "{\"code\":\"302760001\"}"
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "old", CodingJson = null }, "u");
+
+            Assert.Null(updated.CodingJson);
+        }
+
         // Publicar un cuestionario inexistente debe fallar.
         [Fact]
         public async Task PublishAsync_NotFound_Throws()
@@ -403,6 +437,7 @@ namespace ChequeAR.Tests.Application
                 Id = id,
                 Title = "Original",
                 SpecialtyCode = "REU",
+                CodingJson = "{\"system\":\"http://snomed.info/sct\",\"code\":\"302760001\",\"term\":\"control\"}",
                 Status = QuestionnaireStatus.Active,
                 CurrentVersionId = Guid.NewGuid()
             };
@@ -429,6 +464,8 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(QuestionnaireStatus.Draft, copy.Status);
             Assert.Null(copy.CurrentVersionId);
             Assert.Empty(copy.Versions);
+            // La codificación del cuestionario también se clona: un clon comparte qué mide.
+            Assert.Equal(source.CodingJson, copy.CodingJson);
 
             var clonedQuestion = copy.Groups.Single().Questions.Single();
             Assert.Equal("edad", clonedQuestion.LinkId);          // linkId se conserva

@@ -156,6 +156,12 @@ namespace ChequeAR.Application.Services
             q.Title = patch.Title ?? q.Title;
             q.Description = patch.Description ?? q.Description;
             q.SpecialtyCode = patch.SpecialtyCode ?? q.SpecialtyCode;
+            // A diferencia de los campos de arriba, la codificación se asigna directo (sin el
+            // "?? valor viejo"): es metadata clínica OPCIONAL que tiene que poder QUITARSE, y un
+            // PUT FHIR es un reemplazo completo del recurso —un cuestionario sin code ni término
+            // significa "sin codificar", no "no lo toques"—. Así se logra la misma paridad que
+            // en las preguntas, donde quitar el término también es posible.
+            q.CodingJson = patch.CodingJson;
             q.UpdatedAt = DateTime.UtcNow;
             // Toda edición deja cambios pendientes de publicar. En un borrador el flag es
             // inocuo (HasUnpublishedChanges() exige estado Activo).
@@ -244,7 +250,8 @@ namespace ChequeAR.Application.Services
                 Title = string.IsNullOrWhiteSpace(newTitle) ? source.Title + " (copia)" : newTitle,
                 Description = source.Description,
                 SpecialtyCode = source.SpecialtyCode,
-                SpecialtyDisplay = source.SpecialtyDisplay
+                SpecialtyDisplay = source.SpecialtyDisplay,
+                CodingJson = source.CodingJson
             };
 
             // Los linkId se conservan a propósito: son la referencia de las respuestas y
