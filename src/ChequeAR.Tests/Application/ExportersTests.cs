@@ -128,5 +128,60 @@ namespace ChequeAR.Tests.Application
             Assert.Contains("r=\"AA1\"", sheet);   // header de la 27ª columna
             Assert.Contains("r=\"AA2\"", sheet);   // dato de la 27ª columna
         }
+
+        // ---- StatsXlsxExporter ----
+
+        private static ReportStats StatsConDosPreguntas() => new ReportStats
+        {
+            Responses = 10,
+            Questions = new List<QuestionStats>
+            {
+                new QuestionStats
+                {
+                    LinkId = "peso", Text = "Peso", Type = "Decimal", Kind = "numeric",
+                    Answered = 8, Missing = 2, CompletenessPct = 80,
+                    N = 8, Mean = 12.5m, Median = 12m, StdDev = 1.1m, Min = 10m, Max = 15m, P25 = 11m, P75 = 13m
+                },
+                new QuestionStats
+                {
+                    LinkId = "dolor", Text = "¿Dolor?", Type = "Boolean", Kind = "categorical",
+                    Answered = 10, Missing = 0, CompletenessPct = 100,
+                    N = 10,
+                    Categories = new List<CategoryCount>
+                    {
+                        new CategoryCount { Label = "Sí", Count = 7, Pct = 70 },
+                        new CategoryCount { Label = "No", Count = 3, Pct = 30 }
+                    }
+                }
+            }
+        };
+
+        [Fact]
+        public void StatsXlsx_EscribeResumenYCategoriasDeAmbasPreguntas()
+        {
+            string resumen, categorias;
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(StatsConDosPreguntas()), ZipArchiveMode.Read))
+            {
+                resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
+                categorias = ReadEntry(zip, "xl/worksheets/sheet2.xml");
+            }
+
+            Assert.Contains("Peso", resumen);
+            Assert.Contains("12,5", resumen); // media en formato es-AR (coma decimal)
+            Assert.Contains("¿Dolor?", categorias);
+            Assert.Contains("Sí", categorias);
+            Assert.Contains("70", categorias);
+        }
+
+        [Fact]
+        public void StatsXlsx_FiltraPorLinkIdsSeleccionados()
+        {
+            string resumen;
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(StatsConDosPreguntas(), new[] { "peso" }), ZipArchiveMode.Read))
+                resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
+
+            Assert.Contains("Peso", resumen);
+            Assert.DoesNotContain("¿Dolor?", resumen);
+        }
     }
 }
