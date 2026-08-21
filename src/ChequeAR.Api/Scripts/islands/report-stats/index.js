@@ -14,7 +14,10 @@
         props: {
             // Query inicial (misma forma que /api/reports/query). La pantalla E5 la recibe
             // del reporte guardado; dentro del constructor llega por evento.
-            autoQuery: { type: Object, default: null }
+            autoQuery: { type: Object, default: null },
+            // Nombre del reporte guardado, si vino de uno. Si no vino (reporte ad-hoc, nunca
+            // guardado), se arma el nombre del archivo con el título del cuestionario.
+            reportName: { type: String, default: '' }
         },
         setup: function (props) {
             var stats = Vue.ref(null);
@@ -136,6 +139,13 @@
                 return Object.keys(selected).filter(function (k) { return selected[k]; });
             }
 
+            // Nombre + " - metricas.xlsx", sin caracteres invalidos para nombre de archivo.
+            function statsFilename() {
+                var base = (props.reportName || (stats.value && stats.value.QuestionnaireTitle) || 'estadisticas').trim();
+                var safe = base.replace(/[\\/:*?"<>|]/g, '').trim() || 'estadisticas';
+                return safe + ' - metricas.xlsx';
+            }
+
             function exportStats() {
                 if (!stats.value || !lastQuery.value) return;
                 var linkIds = selectedLinkIds();
@@ -159,7 +169,7 @@
                     var url = URL.createObjectURL(blob);
                     var a = document.createElement('a');
                     a.href = url;
-                    a.download = 'estadisticas.xlsx';
+                    a.download = statsFilename();
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
