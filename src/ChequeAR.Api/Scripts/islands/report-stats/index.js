@@ -142,10 +142,15 @@
                 var linkIds = selectedLinkIds();
                 if (!linkIds.length) { exportError.value = 'Seleccioná al menos una pregunta.'; return; }
 
+                // El Excel tiene que coincidir con lo que la persona ya eligio en pantalla
+                // (barra/torta por pregunta), no con un tipo fijo elegido de antemano.
+                var chartTypes = {};
+                Object.keys(chartType).forEach(function (linkId) { chartTypes[linkId] = chartType[linkId]; });
+
                 exporting.value = true; exportError.value = null;
                 fetch('/api/reports/stats/export', {
                     method: 'POST', headers: authHeaders(),
-                    body: JSON.stringify({ Query: lastQuery.value, LinkIds: linkIds, Format: format })
+                    body: JSON.stringify({ Query: lastQuery.value, LinkIds: linkIds, Format: format, ChartTypes: chartTypes })
                 }).then(function (r) {
                     if (r.ok) return r.blob();
                     return r.json().catch(function () { return null; }).then(function (b) {

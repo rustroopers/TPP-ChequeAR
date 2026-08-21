@@ -98,7 +98,7 @@ namespace ChequeAR.Api.Controllers.Api
             var format = (request.Format ?? "xlsx").ToLowerInvariant();
             var stream = format == "docx"
                 ? new StatsDocxExporter().Export(stats, request.LinkIds)
-                : (Stream)new StatsXlsxExporter().Export(stats, request.LinkIds);
+                : (Stream)new StatsXlsxExporter().Export(stats, request.LinkIds, request.ChartTypes);
 
             var resp = Request.CreateResponse(HttpStatusCode.OK);
             resp.Content = new StreamContent(stream);
