@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -67,6 +68,51 @@ namespace ChequeAR.Api.Controllers.Api
             {
                 return BadRequest(ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Exporta las estadísticas descriptivas (FR-008) a Excel o Word, opcionalmente
+        /// acotadas a las preguntas que la persona haya seleccionado en pantalla.
+        /// </summary>
+        [HttpPost, Route("stats/export"), Authorize]
+        public async Task<HttpResponseMessage> StatsExport([FromBody] StatsExportRequest request)
+        {
+            if (request == null || request.Query == null) return Request.CreateResponse(HttpStatusCode.BadRequest);
+
+            ReportStats stats;
+            try
+            {
+                stats = await _executor.ExecuteStatsAsync(request.Query);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.BadRequest, ex.Message);
+            }
+
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            _audit.Enqueue(AuditEventBuilder.For(
+                "execute",
+                "Report/statsExport?questionnaire=" + request.Query.QuestionnaireId + "&questions=" + stats.Questions.Count,
+                userId, category: "export"));
+
+            var format = (request.Format ?? "xlsx").ToLowerInvariant();
+            var stream = format == "docx"
+                ? new StatsDocxExporter().Export(stats, request.LinkIds)
+                : (Stream)new StatsXlsxExporter().Export(stats, request.LinkIds);
+
+            var resp = Request.CreateResponse(HttpStatusCode.OK);
+            resp.Content = new StreamContent(stream);
+            if (format == "docx")
+            {
+                resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = "estadisticas.docx" };
+            }
+            else
+            {
+                resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = "estadisticas.xlsx" };
+            }
+            return resp;
         }
 
         [HttpPost, Route("export"), Authorize]
