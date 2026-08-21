@@ -224,43 +224,6 @@
                 dirty.value = true;
             }
 
-            /// Familia de valor que produce cada tipo al responderse. Cambiar de tipo
-            /// dentro de la misma familia no invalida una condición existente; cambiar de
-            /// familia sí, porque el valor esperado guardado deja de ser comparable.
-            function answerKind(type) {
-                if (type === 'boolean') return 'boolean';
-                if (['integer', 'decimal', 'scale'].indexOf(type) >= 0) return 'number';
-                if (['choice', 'openChoice'].indexOf(type) >= 0) return 'choice';
-                if (type === 'attachment') return 'attachment';   // no comparable: familia propia
-                return 'text';
-            }
-
-            function onTypeChange(newType) {
-                var q = selected.value.question;
-                var previo = q.type;
-                if (!newType || newType === previo) return;
-                q.type = newType;
-
-                // Las opciones pertenecen a los tipos de opción. Si quedan colgadas al
-                // salir de esa familia, buildPayload las sigue mandando y el cuestionario
-                // se publica con answerOption en una pregunta de texto.
-                if (answerKind(newType) === 'choice') {
-                    if (!(q.options && q.options.length)) {
-                        q.options = ['Opción 1', 'Opción 2'];
-                        q.optionsText = q.options.join('\n');
-                    }
-                } else if (answerKind(previo) === 'choice') {
-                    q.options = undefined;
-                    q.optionsText = '';
-                }
-
-                if (answerKind(newType) !== answerKind(previo)) {
-                    dropConditions(dependentsOf([q.linkId]),
-                        'dependían de "' + q.text + '", que cambió de tipo');
-                }
-                dirty.value = true;
-            }
-
             // Condiciones ya rotas en lo que vino de la base: el árbol pudo haberse
             // guardado así antes de que existiera esta capa. Se listan en un cartel en vez
             // de arreglarse solas, porque tocar datos que la persona no editó en esta
@@ -1333,7 +1296,6 @@
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 questionSnomed: questionSnomed,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
-                onTypeChange: onTypeChange,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
                 importOpen: importOpen, importLoading: importLoading, importBusy: importBusy,
@@ -1550,12 +1512,6 @@
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Texto</label>\
                 <input v-model="selected.question.text" class="form-control form-control-sm" />\
-            </div>\
-            <div class="mb-2">\
-                <label class="form-label cq-text-sm">Tipo</label>\
-                <select :value="selected.question.type" @change="onTypeChange($event.target.value)" class="form-select form-select-sm">\
-                    <option v-for="t in types" :key="t.code" :value="t.code">{{ t.label }}</option>\
-                </select>\
             </div>\
             <div class="form-check mb-2">\
                 <input v-model="selected.question.required" type="checkbox" class="form-check-input" id="reqCk" />\
