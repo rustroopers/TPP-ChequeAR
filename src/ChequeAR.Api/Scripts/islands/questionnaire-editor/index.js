@@ -1528,7 +1528,7 @@
             </div>\
             <div v-if="[\'string\',\'text\'].indexOf(selected.question.type) >= 0">\
                 <div class="mb-2">\
-                    <label class="form-label cq-text-sm">Largo máximo <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></label>\
+                    <label class="form-label cq-text-sm">Largo máximo, en caracteres <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></label>\
                     <input v-model.number="selected.question.maxLength" type="number" min="1" class="form-control form-control-sm" placeholder="sin límite" />\
                 </div>\
                 <div class="mb-2">\
