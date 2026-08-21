@@ -135,5 +135,7 @@ namespace ChequeAR.Api.Models
         public string Answer { get; set; }
         public string Unit { get; set; }
         public bool Prefilled { get; set; }
+        /// <summary>Sólo para preguntas tipo adjunto: id para armar el link de descarga.</summary>
+        public Guid? AttachmentId { get; set; }
     }
 }

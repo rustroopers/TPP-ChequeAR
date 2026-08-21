@@ -284,7 +284,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                             {
                                 Text = question.Text,
                                 Answer = FormatAnswers(items),
-                                Prefilled = items != null && items.Any(i => i.WasPrefilled)
+                                Prefilled = items != null && items.Any(i => i.WasPrefilled),
+                                AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
                         }
                         if (group.Questions.Count > 0) model.Groups.Add(group);
@@ -304,7 +305,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                         {
                             Text = entry.Value,
                             Answer = FormatAnswers(items),
-                            Prefilled = items != null && items.Any(i => i.WasPrefilled)
+                            Prefilled = items != null && items.Any(i => i.WasPrefilled),
+                            AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
                     }
                     if (answered.Questions.Count > 0) model.Groups.Add(answered);

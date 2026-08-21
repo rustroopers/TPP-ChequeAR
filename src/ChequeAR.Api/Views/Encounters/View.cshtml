@@ -40,9 +40,36 @@
                     <strong>@q.Answer</strong>
                     @if (!string.IsNullOrEmpty(q.Unit)) { <span class="cq-text-sm cq-text-muted ms-1">@q.Unit</span> }
                     @if (q.Prefilled) { <span class="cq-badge cq-badge--info ms-2">Pre-cargado</span> }
+                    @if (q.AttachmentId.HasValue)
+                    {
+                        <button type="button" class="btn btn-sm btn-link cq-view-attachment" data-attachment-id="@q.AttachmentId">Ver</button>
+                    }
                 </dd>
             }
         </dl>
         <hr />
     }
 </div>
+
+<script>
+    // El endpoint pide JWT por Authorization header; un <a href> normal no lo manda, así
+    // que se trae el archivo por fetch (mismo patrón que Search.cshtml) y se abre como blob.
+    document.addEventListener('click', function (ev) {
+        var btn = ev.target.closest && ev.target.closest('.cq-view-attachment');
+        if (!btn) return;
+        var meta = document.querySelector('meta[name="cq-token"]');
+        if (!meta) return;
+        var id = btn.getAttribute('data-attachment-id');
+        var original = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Abriendo…';
+        fetch('/api/attachments/' + id, { headers: { 'Authorization': 'Bearer ' + meta.getAttribute('content') } })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+            .then(function (blob) {
+                var url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+            })
+            .catch(function () { window.cqToast && window.cqToast('No se pudo abrir el adjunto.', 'error'); })
+            .then(function () { btn.disabled = false; btn.textContent = original; });
+    });
+</script>

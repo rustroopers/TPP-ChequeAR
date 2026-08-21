@@ -4,16 +4,19 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Infrastructure.EF;
 
 namespace ChequeAR.Infrastructure.Storage
 {
     public class FileShareAttachmentStore : IAttachmentStore
     {
         private readonly string _root;
+        private readonly ChequeARDbContext _ctx;
 
-        public FileShareAttachmentStore(string rootPath)
+        public FileShareAttachmentStore(string rootPath, ChequeARDbContext ctx)
         {
             _root = rootPath;
+            _ctx = ctx;
             if (!Directory.Exists(_root)) Directory.CreateDirectory(_root);
         }
 
@@ -37,7 +40,7 @@ namespace ChequeAR.Infrastructure.Storage
                 size = fs.Length;
             }
 
-            return new Attachment
+            var attachment = new Attachment
             {
                 Id = id,
                 OriginalFileName = originalFileName,
@@ -48,11 +51,22 @@ namespace ChequeAR.Infrastructure.Storage
                 UploadedAt = DateTime.UtcNow,
                 Hash = hash
             };
+
+            // Sin esto no había forma de resolver de vuelta path/content-type a partir del id:
+            // el archivo quedaba en disco pero "huérfano" para cualquier request posterior.
+            _ctx.Attachments.Add(attachment);
+            await _ctx.SaveChangesAsync();
+
+            return attachment;
         }
 
-        public Task<Stream> OpenReadAsync(Guid attachmentId)
+        public Task<Attachment> GetAsync(Guid attachmentId) => _ctx.Attachments.FindAsync(attachmentId);
+
+        public async Task<Stream> OpenReadAsync(Guid attachmentId)
         {
-            throw new NotImplementedException("Resolver path desde repo y abrir el archivo (no implementado en MVP).");
+            var attachment = await _ctx.Attachments.FindAsync(attachmentId);
+            if (attachment == null || !File.Exists(attachment.StoragePath)) return null;
+            return File.OpenRead(attachment.StoragePath);
         }
     }
 }

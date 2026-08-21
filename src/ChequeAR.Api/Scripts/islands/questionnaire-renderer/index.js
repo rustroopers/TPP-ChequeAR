@@ -276,6 +276,29 @@
                 delete errors[q.linkId];
             }
 
+            // El link directo a /api/attachments/{id} no sirve: el endpoint pide JWT por
+            // Authorization header, y una navegación de <a href> no lo manda. Se trae el
+            // archivo por fetch (mismo header que el resto de la app) y se abre como blob.
+            var viewingAttachment = Vue.reactive({});
+            function viewAttachment(attachmentId, linkId) {
+                if (!attachmentId) return;
+                viewingAttachment[linkId] = true;
+                fetch('/api/attachments/' + attachmentId, { headers: { 'Authorization': 'Bearer ' + token() } })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.blob();
+                    })
+                    .then(function (blob) {
+                        var url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+                    })
+                    .catch(function () {
+                        window.cqToast && window.cqToast('No se pudo abrir el adjunto.', 'error');
+                    })
+                    .then(function () { viewingAttachment[linkId] = false; });
+            }
+
             // Opción múltiple: la respuesta es un array de opciones marcadas.
             function onToggleMulti(q, option, checked) {
                 var current = (answers[q.linkId] || []).slice();
@@ -833,6 +856,7 @@
                 completedResponseId: completedResponseId,
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
+                viewAttachment: viewAttachment, viewingAttachment: viewingAttachment,
                 totalQuestions: totalQuestions, answeredCount: answeredCount, isComplete: isComplete,
                 submit: submit, finishPartial: finishPartial,
                 lockedByOther: lockedByOther, showRenewPrompt: showRenewPrompt,
@@ -967,6 +991,7 @@
                             <div v-if="answers[q.linkId] && answers[q.linkId].attachmentId" class="d-flex align-items-center gap-2">\
                                 <i class="bi bi-paperclip"></i>\
                                 <span class="cq-text-sm">{{ answers[q.linkId].fileName }}</span>\
+                                <button class="btn btn-sm btn-link" :disabled="viewingAttachment[q.linkId]" @click="viewAttachment(answers[q.linkId].attachmentId, q.linkId)">{{ viewingAttachment[q.linkId] ? \'Abriendo…\' : \'Ver\' }}</button>\
                                 <button class="btn btn-sm btn-link text-danger" @click="clearFile(q)">Quitar</button>\
                             </div>\
                             <div v-else class="d-flex align-items-center gap-2">\
