@@ -636,11 +636,18 @@
                 });
                 return n;
             }
-            // Todas las preguntas visibles están respondidas: no queda nada para "guardar sin
-            // terminar", así que el guardado parcial se bloquea y la ficha se finaliza.
+            // Todas las preguntas obligatorias visibles están respondidas: habilita "Finalizar
+            // y enviar" (las opcionales pueden quedar vacías, igual que en submit()/validate()).
+            // "Guardar y continuar después" sigue disponible igual, por si el médico prefiere
+            // dejarla pendiente (ej. quiere revisarla o completar algo más luego).
             function isComplete() {
-                var total = totalQuestions();
-                return total > 0 && answeredCount() === total;
+                var ok = true;
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        if (isVisible(q) && q.required && isEmptyAnswer(answers[q.linkId])) ok = false;
+                    });
+                });
+                return ok;
             }
 
             // Un valor del formulario -> la columna tipada que espera
@@ -1010,10 +1017,10 @@
 \
             <div class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
-                    <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther || isComplete()" :title="isComplete() ? \'Ya está todo respondido: use Finalizar y enviar\' : null" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
+                    <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
                     <button class="btn btn-primary" :disabled="submitting || lockedByOther || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
                 </div>\
-                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Todas las preguntas están respondidas: finalice para dejar la ficha completa.\' : \'Guarde lo cargado y retome esta ficha más tarde desde el historial del paciente, o finalice para dejarla completa.\' }}</p>\
+                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Ya están todas las preguntas obligatorias respondidas: puede finalizar la ficha o guardar el avance para retomarla más tarde.\' : \'Guarde lo cargado y retome esta ficha más tarde desde el historial del paciente, o finalice para dejarla completa.\' }}</p>\
             </div>\
         </div>\
     </div>\
