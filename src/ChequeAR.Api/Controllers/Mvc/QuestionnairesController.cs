@@ -86,7 +86,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             var editorId = id ?? Guid.NewGuid();
             var isNew = !id.HasValue;
-            var title = "Nuevo cuestionario";
+            var title = "";
             var specialty = "general";
             // Número de la versión PUBLICADA (0 = nunca se publicó), no el de la próxima:
             // el editor tiene que decir cuál es la que están usando los clínicos.

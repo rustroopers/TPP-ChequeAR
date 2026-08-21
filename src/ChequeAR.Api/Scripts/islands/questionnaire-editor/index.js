@@ -28,7 +28,7 @@
             // ahí pasamos a modo edición (PUT) usando el id devuelto.
             var currentId = Vue.ref(props.id);
             var isNew = Vue.ref(!!props.isNew);
-            var qTitle = Vue.ref(props.title || 'Nuevo cuestionario');
+            var qTitle = Vue.ref(props.title || '');
             var specialtyCode = Vue.ref(props.specialtyCode || 'general');
             // Codificación del cuestionario completo. Objeto reactivo (no tres refs sueltos)
             // para que el mismo buscador SNOMED que usan las preguntas pueda escribir aquí
@@ -84,13 +84,12 @@
                             code: q.code,
                             codeDisplay: q.codeDisplay,
                             term: q.term,
-                            options: q.options && q.options.length ? q.options.slice() : undefined,
-                            optionsText: q.options && q.options.length ? q.options.join('\n') : ''
+                            options: q.options && q.options.length ? q.options.slice() : undefined
                         };
                     })
                 };
             });
-            if (!initial.length) initial = [{ title: 'Nueva sección', questions: [] }];
+            if (!initial.length) initial = [{ title: '', questions: [] }];
             var groups = Vue.ref(initial);
 
             // Foto de la estructura tal como se cargó: es la BASE del merge de 3 vías cuando
@@ -340,19 +339,28 @@
             }
 
             function addGroup() {
-                groups.value.push({ title: 'Nueva sección', questions: [] });
+                groups.value.push({ title: '', questions: [] });
                 dirty.value = true;
             }
             function addQuestion(g, type) {
                 var q = {
                     linkId: 'q_' + Math.random().toString(36).slice(2, 7),
-                    text: 'Nueva pregunta',
+                    text: '',
                     type: type,
                     required: false
                 };
-                if (type === 'choice' || type === 'openChoice') q.options = ['Opción 1', 'Opción 2'];
+                if (type === 'choice' || type === 'openChoice') q.options = ['', ''];
                 g.questions.push(q);
                 selected.value = { group: g, question: q };
+                dirty.value = true;
+            }
+            function addOption(q) {
+                if (!q.options) q.options = [];
+                q.options.push('');
+                dirty.value = true;
+            }
+            function removeOption(q, idx) {
+                q.options.splice(idx, 1);
                 dirty.value = true;
             }
             function removeQuestion(g, q) {
@@ -443,8 +451,7 @@
                     code: q.code,
                     codeDisplay: q.codeDisplay,
                     term: q.term,
-                    options: q.options && q.options.length ? q.options.slice() : undefined,
-                    optionsText: q.options && q.options.length ? q.options.join('\n') : ''
+                    options: q.options && q.options.length ? q.options.slice() : undefined
                 };
             }
 
@@ -1011,8 +1018,7 @@
             // MISMA pregunta (o uno la editó y el otro la borró). Descartar sigue disponible.
             function numOrNull(v) { return typeof v === 'number' && !isNaN(v) ? v : null; }
 
-            // Foto canónica de una pregunta para comparar entre las 3 fuentes (ignora orden y
-            // campos de presentación como optionsText).
+            // Foto canónica de una pregunta para comparar entre las 3 fuentes (ignora orden).
             function normQ(q) {
                 if (!q) return null;
                 return JSON.stringify({
@@ -1118,9 +1124,6 @@
                     if (r === 'take-mine') upsert(e.mine, e.mineSection);
                     else if (r === 'delete') removeQ(e.key);
                     // 'keep-theirs' / 'noop' -> ya está en el esqueleto
-                });
-                merged.forEach(function (g) {
-                    g.questions.forEach(function (q) { q.optionsText = (q.options || []).join('\n'); });
                 });
                 return merged;
             }
@@ -1299,6 +1302,7 @@
                 questionSnomed: questionSnomed,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
+                addOption: addOption, removeOption: removeOption,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
                 importOpen: importOpen, importLoading: importLoading, importBusy: importBusy,
                 importError: importError, importCandidates: importCandidates,
@@ -1479,7 +1483,7 @@
                    @dragstart="onGroupDragStart(g, $event)" @dragend="onDragEnd"\
                    :aria-label="\'Arrastrar para reordenar la sección \' + g.title" title="Arrastrar para reordenar la sección"></i>\
                 <i class="bi bi-folder text-primary"></i>\
-                <input v-model="g.title" class="form-control form-control-sm fw-semibold" style="max-width:320px;" />\
+                <input v-model="g.title" class="form-control form-control-sm fw-semibold" style="max-width:320px;" placeholder="Nueva sección" />\
                 <span class="cq-text-xs cq-text-muted">{{ g.questions.length }} preguntas</span>\
                 <button class="btn btn-sm btn-link text-danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title"><i class="bi bi-trash"></i></button>\
             </div>\
@@ -1494,7 +1498,7 @@
                     :style="{ borderRadius: \'6px\', cursor: \'pointer\', background: selected && selected.question === q ? \'var(--cq-primary-100)\' : \'transparent\', borderTop: (dropTarget === q && drag && drag.type === \'question\') ? \'2px solid var(--cq-primary)\' : \'2px solid transparent\' }"\
                     @click="selectQuestion(g, q)">\
                     <i class="bi bi-grip-vertical cq-text-muted" style="cursor:grab;"></i>\
-                    <span class="cq-text-sm flex-fill">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.type }}{{ q.required ? \'*\' : \'\' }})</span></span>\
+                    <span class="cq-text-sm flex-fill">{{ q.text || \'Nueva pregunta\' }} <span class="cq-text-xs cq-text-muted">({{ q.type }}{{ q.required ? \'*\' : \'\' }})</span></span>\
                     <button class="btn btn-sm btn-link text-danger" @click.stop="removeQuestion(g, q)" :aria-label="\'Eliminar \' + q.text"><i class="bi bi-x-lg"></i></button>\
                 </li>\
             </ul>\
@@ -1513,7 +1517,7 @@
             <h3 class="cq-section-title" style="margin-top:0;">Propiedades</h3>\
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Texto</label>\
-                <input v-model="selected.question.text" class="form-control form-control-sm" />\
+                <input v-model="selected.question.text" class="form-control form-control-sm" placeholder="Nueva pregunta" />\
             </div>\
             <div class="form-check mb-2">\
                 <input v-model="selected.question.required" type="checkbox" class="form-check-input" id="reqCk" />\
@@ -1539,8 +1543,11 @@
             </div>\
             <div v-if="[\'choice\',\'openChoice\'].indexOf(selected.question.type) >= 0">\
                 <label class="form-label cq-text-sm">Opciones</label>\
-                <textarea v-model="selected.question.optionsText" @input="selected.question.options = $event.target.value.split(\'\\n\').filter(Boolean)" class="form-control form-control-sm" rows="3" :placeholder="(selected.question.options||[]).join(\'\\n\')">{{ (selected.question.options || []).join(\'\\n\') }}</textarea>\
-                <p class="cq-text-xs cq-text-muted mt-1">Una opción por línea.</p>\
+                <div v-for="(opt, oi) in (selected.question.options || [])" :key="oi" class="input-group input-group-sm mb-1">\
+                    <input v-model="selected.question.options[oi]" class="form-control form-control-sm" :placeholder="\'Opción \' + (oi + 1)" />\
+                    <button class="btn btn-outline-danger" type="button" @click="removeOption(selected.question, oi)" :disabled="(selected.question.options || []).length <= 2" aria-label="Quitar opción"><i class="bi bi-x-lg"></i></button>\
+                </div>\
+                <button class="btn btn-sm btn-outline-secondary" type="button" @click="addOption(selected.question)"><i class="bi bi-plus-lg me-1"></i> Agregar opción</button>\
             </div>\
             <div v-if="selected.question.type === \'attachment\'">\
                 <label class="form-label cq-text-sm">Formatos permitidos</label>\
