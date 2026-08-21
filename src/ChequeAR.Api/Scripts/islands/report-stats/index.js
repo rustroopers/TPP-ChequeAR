@@ -2,7 +2,7 @@
  * Isla Vue: report-stats (pantalla E5)
  * Estadisticas descriptivas de la cohorte filtrada (FR-008): completitud por pregunta,
  * resumen numerico con histograma y distribucion de las categoricas. Tambien permite
- * exportar ese resumen a Excel o Word, con opcion de elegir que preguntas incluir.
+ * exportar ese resumen a Excel, con opcion de elegir que preguntas incluir.
  *
  * Los graficos son divs y SVG a mano, sin libreria. El resto de la app ya carga Vue y
  * Bootstrap desde un CDN y eso es un problema abierto para una intranet sin salida a
@@ -27,7 +27,6 @@
             var selected = Vue.reactive({});
             var exporting = Vue.ref(false);
             var exportError = Vue.ref(null);
-            var exportFormat = Vue.ref('xlsx');
 
             function authHeaders() {
                 var h = { 'Content-Type': 'application/json' };
@@ -137,7 +136,7 @@
                 return Object.keys(selected).filter(function (k) { return selected[k]; });
             }
 
-            function exportStats(format) {
+            function exportStats() {
                 if (!stats.value || !lastQuery.value) return;
                 var linkIds = selectedLinkIds();
                 if (!linkIds.length) { exportError.value = 'Seleccioná al menos una pregunta.'; return; }
@@ -150,7 +149,7 @@
                 exporting.value = true; exportError.value = null;
                 fetch('/api/reports/stats/export', {
                     method: 'POST', headers: authHeaders(),
-                    body: JSON.stringify({ Query: lastQuery.value, LinkIds: linkIds, Format: format, ChartTypes: chartTypes })
+                    body: JSON.stringify({ Query: lastQuery.value, LinkIds: linkIds, ChartTypes: chartTypes })
                 }).then(function (r) {
                     if (r.ok) return r.blob();
                     return r.json().catch(function () { return null; }).then(function (b) {
@@ -160,7 +159,7 @@
                     var url = URL.createObjectURL(blob);
                     var a = document.createElement('a');
                     a.href = url;
-                    a.download = 'estadisticas.' + format;
+                    a.download = 'estadisticas.xlsx';
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
@@ -176,7 +175,6 @@
                 completenessColor: completenessColor,
                 selected: selected, selectedCount: selectedCount, selectAll: selectAll,
                 exporting: exporting, exportError: exportError, exportStats: exportStats,
-                exportFormat: exportFormat,
                 chartType: chartType, setChartType: setChartType, pieSlices: pieSlices
             };
         },
@@ -289,22 +287,11 @@
         <div class="d-flex justify-content-end mt-3">\
             <div class="dropdown">\
                 <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" :disabled="exporting">\
-                    <i class="bi bi-download me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar\' }}\
+                    <i class="bi bi-download me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar (Excel)\' }}\
                 </button>\
                 <div class="dropdown-menu dropdown-menu-end p-3" style="min-width:320px;">\
-                    <label class="form-label">Formato</label>\
-                    <div class="mb-3">\
-                        <div class="form-check form-check-inline">\
-                            <input class="form-check-input" type="radio" id="statsFmtXlsx" value="xlsx" v-model="exportFormat" />\
-                            <label class="form-check-label" for="statsFmtXlsx">Excel (.xlsx)</label>\
-                        </div>\
-                        <div class="form-check form-check-inline">\
-                            <input class="form-check-input" type="radio" id="statsFmtDocx" value="docx" v-model="exportFormat" />\
-                            <label class="form-check-label" for="statsFmtDocx">Word (.docx)</label>\
-                        </div>\
-                    </div>\
                     <div class="mb-2 d-flex justify-content-between align-items-center">\
-                        <label class="form-label mb-0">Preguntas</label>\
+                        <label class="form-label mb-0">Preguntas a exportar</label>\
                         <div class="d-flex gap-2">\
                             <button type="button" class="btn btn-sm btn-link p-0" @click="selectAll(true)">Todas</button>\
                             <button type="button" class="btn btn-sm btn-link p-0" @click="selectAll(false)">Ninguna</button>\
@@ -317,7 +304,7 @@
                         </div>\
                     </div>\
                     <p v-if="exportError" class="cq-text-sm text-danger mb-2">{{ exportError }}</p>\
-                    <button type="button" class="btn btn-primary w-100" :disabled="exporting || !selectedCount()" @click="exportStats(exportFormat)">\
+                    <button type="button" class="btn btn-primary w-100" :disabled="exporting || !selectedCount()" @click="exportStats()">\
                         {{ exporting ? \'Exportando…\' : \'Descargar (\' + selectedCount() + \')\' }}\
                     </button>\
                 </div>\

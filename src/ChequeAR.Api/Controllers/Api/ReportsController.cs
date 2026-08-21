@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -71,8 +70,10 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         /// <summary>
-        /// Exporta las estadísticas descriptivas (FR-008) a Excel o Word, opcionalmente
-        /// acotadas a las preguntas que la persona haya seleccionado en pantalla.
+        /// Exporta las estadísticas descriptivas (FR-008) a Excel, opcionalmente acotadas a
+        /// las preguntas que la persona haya seleccionado en pantalla. Solo Excel: un export a
+        /// Word sin los gráficos nativos (torta/barra) sería una versión pobre de este mismo
+        /// archivo, así que no se ofrece.
         /// </summary>
         [HttpPost, Route("stats/export"), Authorize]
         public async Task<HttpResponseMessage> StatsExport([FromBody] StatsExportRequest request)
@@ -95,23 +96,12 @@ namespace ChequeAR.Api.Controllers.Api
                 "Report/statsExport?questionnaire=" + request.Query.QuestionnaireId + "&questions=" + stats.Questions.Count,
                 userId, category: "export"));
 
-            var format = (request.Format ?? "xlsx").ToLowerInvariant();
-            var stream = format == "docx"
-                ? new StatsDocxExporter().Export(stats, request.LinkIds)
-                : (Stream)new StatsXlsxExporter().Export(stats, request.LinkIds, request.ChartTypes);
+            var stream = new StatsXlsxExporter().Export(stats, request.LinkIds, request.ChartTypes);
 
             var resp = Request.CreateResponse(HttpStatusCode.OK);
             resp.Content = new StreamContent(stream);
-            if (format == "docx")
-            {
-                resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = "estadisticas.docx" };
-            }
-            else
-            {
-                resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = "estadisticas.xlsx" };
-            }
+            resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = "estadisticas.xlsx" };
             return resp;
         }
 
