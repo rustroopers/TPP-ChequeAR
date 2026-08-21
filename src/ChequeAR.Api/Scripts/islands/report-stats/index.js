@@ -21,6 +21,19 @@
         },
         setup: function (props) {
             var stats = Vue.ref(null);
+            // Sólo entran a la grilla de Métricas las preguntas que de verdad tienen algo
+            // para mostrar: texto/fecha nunca se resumen (Kind queda "other"), y una
+            // numérica/categórica sin ninguna respuesta cargada tampoco tiene nada que
+            // graficar. Antes esos dos casos mostraban una tarjeta con un mensaje de "sin
+            // datos"; ahora directamente no se ofrecen. Siguen disponibles para el export a
+            // Excel (ahí sí interesa saber cuántas fichas la tienen cargada).
+            var chartableQuestions = Vue.computed(function () {
+                return (stats.value && stats.value.Questions || []).filter(function (q) {
+                    if (q.Kind === 'numeric') return !!q.N;
+                    if (q.Kind === 'categorical') return !!(q.Categories && q.Categories.length);
+                    return false;
+                });
+            });
             var loading = Vue.ref(false);
             var error = Vue.ref(null);
             var lastQuery = Vue.ref(props.autoQuery);
@@ -52,7 +65,7 @@
                 }).then(function (d) {
                     stats.value = d;
                     Object.keys(selected).forEach(function (k) { delete selected[k]; });
-                    (d && d.Questions || []).forEach(function (q) { selected[q.LinkId] = true; });
+                    chartableQuestions.value.forEach(function (q) { selected[q.LinkId] = true; });
                 }).catch(function (e) {
                     error.value = e.message;
                     stats.value = null;
@@ -180,7 +193,7 @@
             }
 
             return {
-                stats: stats, loading: loading, error: error, lastQuery: lastQuery,
+                stats: stats, chartableQuestions: chartableQuestions, loading: loading, error: error, lastQuery: lastQuery,
                 load: load, num: num, binPct: binPct, rango: rango,
                 completenessColor: completenessColor,
                 selected: selected, selectedCount: selectedCount, selectAll: selectAll,
@@ -203,7 +216,7 @@
     <template v-if="stats.Responses">\
         <h2 class="cq-section-title border-top pt-3">Métricas</h2>\
         <div class="row g-3">\
-            <div v-for="q in stats.Questions" :key="q.LinkId" class="col-lg-6">\
+            <div v-for="q in chartableQuestions" :key="q.LinkId" class="col-lg-6">\
                 <div class="cq-card h-100">\
                     <div class="d-flex justify-content-between align-items-start gap-2">\
                         <h3 class="cq-section-title" style="margin-top:0;">{{ q.Text }}</h3>\
@@ -226,71 +239,61 @@
                     </div>\
 \
                     <template v-if="q.Kind === \'numeric\'">\
-                        <div v-if="!q.N" class="cq-text-sm cq-text-muted">Sin valores numéricos cargados.</div>\
-                        <template v-else>\
-                            <table class="table table-sm cq-text-sm mb-2">\
-                                <tbody>\
-                                    <tr><th class="cq-text-muted fw-normal">n</th><td>{{ q.N }}</td>\
-                                        <th class="cq-text-muted fw-normal">Media</th><td>{{ num(q.Mean) }}</td></tr>\
-                                    <tr><th class="cq-text-muted fw-normal">Mediana</th><td>{{ num(q.Median) }}</td>\
-                                        <th class="cq-text-muted fw-normal">Desvío</th><td>{{ num(q.StdDev) }}</td></tr>\
-                                    <tr><th class="cq-text-muted fw-normal">Mín–Máx</th><td>{{ num(q.Min) }}–{{ num(q.Max) }}</td>\
-                                        <th class="cq-text-muted fw-normal">P25–P75</th><td>{{ num(q.P25) }}–{{ num(q.P75) }}</td></tr>\
-                                </tbody>\
-                            </table>\
-                            <div v-if="q.Histogram && q.Histogram.length" class="d-flex align-items-end gap-1" style="height:110px;">\
-                                <div v-for="(b, bi) in q.Histogram" :key="bi" class="flex-fill d-flex flex-column align-items-center justify-content-end h-100"\
-                                     :title="rango(b) + \': \' + b.Count">\
-                                    <span class="cq-text-xs cq-text-muted">{{ b.Count }}</span>\
-                                    <div style="width:100%; border-radius:3px 3px 0 0; background:var(--cq-primary); min-height:2px;"\
-                                         :style="{ height: binPct(b, q) + \'%\' }"></div>\
-                                    <span class="cq-text-xs cq-text-muted text-center" style="font-size:.65rem; word-break:break-all;">{{ rango(b) }}</span>\
-                                </div>\
-                            </div>\
-                        </template>\
-                    </template>\
-\
-                    <template v-else-if="q.Kind === \'categorical\'">\
-                        <div v-if="!q.Categories || !q.Categories.length" class="cq-text-sm cq-text-muted">Sin respuestas cargadas.</div>\
-                        <div v-else>\
-                            <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Tipo de gráfico">\
-                                <button type="button" class="btn btn-outline-secondary" :class="{ active: (chartType[q.LinkId] || \'bar\') === \'bar\' }" @click="setChartType(q.LinkId, \'bar\')">\
-                                    <i class="bi bi-bar-chart-line"></i> Barras\
-                                </button>\
-                                <button type="button" class="btn btn-outline-secondary" :class="{ active: chartType[q.LinkId] === \'pie\' }" @click="setChartType(q.LinkId, \'pie\')">\
-                                    <i class="bi bi-pie-chart"></i> Torta\
-                                </button>\
-                            </div>\
-                            <div v-if="(chartType[q.LinkId] || \'bar\') === \'bar\'">\
-                                <div v-for="c in q.Categories" :key="c.Label" class="mb-2">\
-                                    <div class="d-flex justify-content-between cq-text-sm">\
-                                        <span>{{ c.Label }}</span>\
-                                        <span class="cq-text-muted">{{ c.Count }} · {{ c.Pct }}%</span>\
-                                    </div>\
-                                    <div class="progress mt-1" style="height:8px;">\
-                                        <div class="progress-bar" role="progressbar" :style="{ width: c.Pct + \'%\', background: \'var(--cq-primary)\' }"\
-                                             :aria-valuenow="c.Pct" aria-valuemin="0" aria-valuemax="100"></div>\
-                                    </div>\
-                                </div>\
-                            </div>\
-                            <div v-else class="d-flex align-items-center gap-3 flex-wrap">\
-                                <svg viewBox="0 0 100 100" width="130" height="130" style="flex-shrink:0;">\
-                                    <path v-for="s in pieSlices(q)" :key="s.label" :d="s.path" :fill="s.color" :title="s.label + \': \' + s.count"></path>\
-                                </svg>\
-                                <div class="cq-text-sm">\
-                                    <div v-for="s in pieSlices(q)" :key="s.label" class="d-flex align-items-center gap-2 mb-1">\
-                                        <span style="width:10px; height:10px; border-radius:2px; display:inline-block;" :style="{ background: s.color }"></span>\
-                                        <span>{{ s.label }}</span>\
-                                        <span class="cq-text-muted">{{ s.count }} · {{ s.pct }}%</span>\
-                                    </div>\
-                                </div>\
+                        <table class="table table-sm cq-text-sm mb-2">\
+                            <tbody>\
+                                <tr><th class="cq-text-muted fw-normal">n</th><td>{{ q.N }}</td>\
+                                    <th class="cq-text-muted fw-normal">Media</th><td>{{ num(q.Mean) }}</td></tr>\
+                                <tr><th class="cq-text-muted fw-normal">Mediana</th><td>{{ num(q.Median) }}</td>\
+                                    <th class="cq-text-muted fw-normal">Desvío</th><td>{{ num(q.StdDev) }}</td></tr>\
+                                <tr><th class="cq-text-muted fw-normal">Mín–Máx</th><td>{{ num(q.Min) }}–{{ num(q.Max) }}</td>\
+                                    <th class="cq-text-muted fw-normal">P25–P75</th><td>{{ num(q.P25) }}–{{ num(q.P75) }}</td></tr>\
+                            </tbody>\
+                        </table>\
+                        <div v-if="q.Histogram && q.Histogram.length" class="d-flex align-items-end gap-1" style="height:110px;">\
+                            <div v-for="(b, bi) in q.Histogram" :key="bi" class="flex-fill d-flex flex-column align-items-center justify-content-end h-100"\
+                                 :title="rango(b) + \': \' + b.Count">\
+                                <span class="cq-text-xs cq-text-muted">{{ b.Count }}</span>\
+                                <div style="width:100%; border-radius:3px 3px 0 0; background:var(--cq-primary); min-height:2px;"\
+                                     :style="{ height: binPct(b, q) + \'%\' }"></div>\
+                                <span class="cq-text-xs cq-text-muted text-center" style="font-size:.65rem; word-break:break-all;">{{ rango(b) }}</span>\
                             </div>\
                         </div>\
                     </template>\
 \
-                    <div v-else class="cq-text-sm cq-text-muted">\
-                        Las respuestas de texto y fecha no se resumen: sólo se informa cuántas fichas la tienen cargada.\
-                    </div>\
+                    <template v-else-if="q.Kind === \'categorical\'">\
+                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Tipo de gráfico">\
+                            <button type="button" class="btn btn-outline-secondary" :class="{ active: (chartType[q.LinkId] || \'bar\') === \'bar\' }" @click="setChartType(q.LinkId, \'bar\')">\
+                                <i class="bi bi-bar-chart-line"></i> Barras\
+                            </button>\
+                            <button type="button" class="btn btn-outline-secondary" :class="{ active: chartType[q.LinkId] === \'pie\' }" @click="setChartType(q.LinkId, \'pie\')">\
+                                <i class="bi bi-pie-chart"></i> Torta\
+                            </button>\
+                        </div>\
+                        <div v-if="(chartType[q.LinkId] || \'bar\') === \'bar\'">\
+                            <div v-for="c in q.Categories" :key="c.Label" class="mb-2">\
+                                <div class="d-flex justify-content-between cq-text-sm">\
+                                    <span>{{ c.Label }}</span>\
+                                    <span class="cq-text-muted">{{ c.Count }} · {{ c.Pct }}%</span>\
+                                </div>\
+                                <div class="progress mt-1" style="height:8px;">\
+                                    <div class="progress-bar" role="progressbar" :style="{ width: c.Pct + \'%\', background: \'var(--cq-primary)\' }"\
+                                         :aria-valuenow="c.Pct" aria-valuemin="0" aria-valuemax="100"></div>\
+                                </div>\
+                            </div>\
+                        </div>\
+                        <div v-else class="d-flex align-items-center gap-3 flex-wrap">\
+                            <svg viewBox="0 0 100 100" width="130" height="130" style="flex-shrink:0;">\
+                                <path v-for="s in pieSlices(q)" :key="s.label" :d="s.path" :fill="s.color" :title="s.label + \': \' + s.count"></path>\
+                            </svg>\
+                            <div class="cq-text-sm">\
+                                <div v-for="s in pieSlices(q)" :key="s.label" class="d-flex align-items-center gap-2 mb-1">\
+                                    <span style="width:10px; height:10px; border-radius:2px; display:inline-block;" :style="{ background: s.color }"></span>\
+                                    <span>{{ s.label }}</span>\
+                                    <span class="cq-text-muted">{{ s.count }} · {{ s.pct }}%</span>\
+                                </div>\
+                            </div>\
+                        </div>\
+                    </template>\
                 </div>\
             </div>\
         </div>\
@@ -308,7 +311,7 @@
                         </div>\
                     </div>\
                     <div class="border rounded p-2 mb-2" style="max-height:200px; overflow-y:auto;">\
-                        <div v-for="q in stats.Questions" :key="q.LinkId" class="form-check">\
+                        <div v-for="q in chartableQuestions" :key="q.LinkId" class="form-check">\
                             <input class="form-check-input" type="checkbox" :id="\'statsQ_\' + q.LinkId" v-model="selected[q.LinkId]" />\
                             <label class="form-check-label cq-text-sm" :for="\'statsQ_\' + q.LinkId">{{ q.Text }}</label>\
                         </div>\
