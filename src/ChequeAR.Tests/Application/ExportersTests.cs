@@ -183,5 +183,46 @@ namespace ChequeAR.Tests.Application
             Assert.Contains("Peso", resumen);
             Assert.DoesNotContain("¿Dolor?", resumen);
         }
+
+        // ---- StatsDocxExporter ----
+
+        private static string ReadDocxDocument(Stream s)
+        {
+            using (var zip = new ZipArchive(s, ZipArchiveMode.Read))
+            using (var r = new StreamReader(zip.GetEntry("word/document.xml").Open(), Encoding.UTF8))
+                return r.ReadToEnd();
+        }
+
+        [Fact]
+        public void StatsDocx_EsUnZipOpenXmlConLasPartesEsperadas()
+        {
+            using (var zip = new ZipArchive(new StatsDocxExporter().Export(StatsConDosPreguntas()), ZipArchiveMode.Read))
+            {
+                var entries = zip.Entries.Select(e => e.FullName).ToList();
+                Assert.Contains("[Content_Types].xml", entries);
+                Assert.Contains("_rels/.rels", entries);
+                Assert.Contains("word/document.xml", entries);
+            }
+        }
+
+        [Fact]
+        public void StatsDocx_EscribeResumenNumericoYCategorias()
+        {
+            var doc = ReadDocxDocument(new StatsDocxExporter().Export(StatsConDosPreguntas()));
+
+            Assert.Contains("Peso", doc);
+            Assert.Contains("Media=12,5", doc); // formato es-AR
+            Assert.Contains("¿Dolor?", doc);
+            Assert.Contains("Sí: 7 (70%)", doc);
+        }
+
+        [Fact]
+        public void StatsDocx_FiltraPorLinkIdsSeleccionados()
+        {
+            var doc = ReadDocxDocument(new StatsDocxExporter().Export(StatsConDosPreguntas(), new[] { "dolor" }));
+
+            Assert.Contains("¿Dolor?", doc);
+            Assert.DoesNotContain("Peso", doc);
+        }
     }
 }
