@@ -87,6 +87,45 @@
                 return 'var(--cq-danger)';
             }
 
+            // Tipo de grafico elegido por pregunta categorica: 'bar' (barras, el original)
+            // o 'pie' (torta). Por pregunta y no global, porque una pantalla con varias
+            // categoricas puede tener una con pocas categorias (torta prolija) y otra con
+            // muchas (donde la barra lee mejor).
+            var chartType = Vue.reactive({});
+            function setChartType(linkId, type) { chartType[linkId] = type; }
+
+            var PIE_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
+
+            // Slices de la torta en SVG: arcos como sectores circulares (M centro, L borde,
+            // A arco, Z). Angulo acumulado a partir de las mismas Categories que ya trae la
+            // pregunta -no se recalcula nada, solo se convierte % a grados-.
+            function pieSlices(q) {
+                var cats = q.Categories || [];
+                var total = cats.reduce(function (s, c) { return s + c.Pct; }, 0) || 100;
+                var acc = 0;
+                return cats.map(function (c, i) {
+                    var start = acc / total * 360;
+                    acc += c.Pct;
+                    var end = acc / total * 360;
+                    var color = PIE_COLORS[i % PIE_COLORS.length];
+                    return { path: arcPath(start, end), color: color, label: c.Label, count: c.Count, pct: c.Pct };
+                });
+            }
+            function arcPath(startDeg, endDeg) {
+                var full = (endDeg - startDeg) >= 359.999;
+                if (full) endDeg = startDeg + 359.999; // un solo valor con 100%: arco casi completo, no un punto.
+                var cx = 50, cy = 50, r = 48;
+                var p1 = polar(cx, cy, r, startDeg), p2 = polar(cx, cy, r, endDeg);
+                var largeArc = (endDeg - startDeg) > 180 ? 1 : 0;
+                return 'M ' + cx + ' ' + cy + ' L ' + p1.x + ' ' + p1.y +
+                    ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 1 ' + p2.x + ' ' + p2.y + ' Z';
+            }
+            function polar(cx, cy, r, deg) {
+                var rad = (deg - 90) * Math.PI / 180;
+                return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+            }
+
+
             // --- seleccion y exportacion -----------------------------------------------
             function selectedCount() {
                 return Object.keys(selected).filter(function (k) { return selected[k]; }).length;
@@ -132,7 +171,8 @@
                 completenessColor: completenessColor,
                 selected: selected, selectedCount: selectedCount, selectAll: selectAll,
                 exporting: exporting, exportError: exportError, exportStats: exportStats,
-                exportFormat: exportFormat
+                exportFormat: exportFormat,
+                chartType: chartType, setChartType: setChartType, pieSlices: pieSlices
             };
         },
         template: '\
@@ -200,14 +240,36 @@
                     <template v-else-if="q.Kind === \'categorical\'">\
                         <div v-if="!q.Categories || !q.Categories.length" class="cq-text-sm cq-text-muted">Sin respuestas cargadas.</div>\
                         <div v-else>\
-                            <div v-for="c in q.Categories" :key="c.Label" class="mb-2">\
-                                <div class="d-flex justify-content-between cq-text-sm">\
-                                    <span>{{ c.Label }}</span>\
-                                    <span class="cq-text-muted">{{ c.Count }} · {{ c.Pct }}%</span>\
+                            <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Tipo de gráfico">\
+                                <button type="button" class="btn btn-outline-secondary" :class="{ active: (chartType[q.LinkId] || \'bar\') === \'bar\' }" @click="setChartType(q.LinkId, \'bar\')">\
+                                    <i class="bi bi-bar-chart-line"></i> Barras\
+                                </button>\
+                                <button type="button" class="btn btn-outline-secondary" :class="{ active: chartType[q.LinkId] === \'pie\' }" @click="setChartType(q.LinkId, \'pie\')">\
+                                    <i class="bi bi-pie-chart"></i> Torta\
+                                </button>\
+                            </div>\
+                            <div v-if="(chartType[q.LinkId] || \'bar\') === \'bar\'">\
+                                <div v-for="c in q.Categories" :key="c.Label" class="mb-2">\
+                                    <div class="d-flex justify-content-between cq-text-sm">\
+                                        <span>{{ c.Label }}</span>\
+                                        <span class="cq-text-muted">{{ c.Count }} · {{ c.Pct }}%</span>\
+                                    </div>\
+                                    <div class="progress mt-1" style="height:8px;">\
+                                        <div class="progress-bar" role="progressbar" :style="{ width: c.Pct + \'%\', background: \'var(--cq-primary)\' }"\
+                                             :aria-valuenow="c.Pct" aria-valuemin="0" aria-valuemax="100"></div>\
+                                    </div>\
                                 </div>\
-                                <div class="progress mt-1" style="height:8px;">\
-                                    <div class="progress-bar" role="progressbar" :style="{ width: c.Pct + \'%\', background: \'var(--cq-primary)\' }"\
-                                         :aria-valuenow="c.Pct" aria-valuemin="0" aria-valuemax="100"></div>\
+                            </div>\
+                            <div v-else class="d-flex align-items-center gap-3 flex-wrap">\
+                                <svg viewBox="0 0 100 100" width="130" height="130" style="flex-shrink:0;">\
+                                    <path v-for="s in pieSlices(q)" :key="s.label" :d="s.path" :fill="s.color" :title="s.label + \': \' + s.count"></path>\
+                                </svg>\
+                                <div class="cq-text-sm">\
+                                    <div v-for="s in pieSlices(q)" :key="s.label" class="d-flex align-items-center gap-2 mb-1">\
+                                        <span style="width:10px; height:10px; border-radius:2px; display:inline-block;" :style="{ background: s.color }"></span>\
+                                        <span>{{ s.label }}</span>\
+                                        <span class="cq-text-muted">{{ s.count }} · {{ s.pct }}%</span>\
+                                    </div>\
                                 </div>\
                             </div>\
                         </div>\
