@@ -42,7 +42,7 @@ namespace ChequeAR.Application.Exporters
                 XlsxExporter.AddEntry(zip, "_rels/.rels", RootRels());
                 XlsxExporter.AddEntry(zip, "xl/workbook.xml", Workbook(charts.Count > 0));
                 XlsxExporter.AddEntry(zip, "xl/_rels/workbook.xml.rels", WorkbookRels(charts.Count > 0));
-                XlsxExporter.AddEntry(zip, "xl/worksheets/sheet1.xml", ResumenSheet(questions));
+                XlsxExporter.AddEntry(zip, "xl/worksheets/sheet1.xml", ResumenSheet(stats, questions));
                 XlsxExporter.AddEntry(zip, "xl/worksheets/sheet2.xml", categoriasSheet);
                 XlsxExporter.AddEntry(zip, "xl/worksheets/sheet3.xml", histogramasSheet);
 
@@ -151,9 +151,15 @@ namespace ChequeAR.Application.Exporters
         /// Las columnas se anchan al contenido: el ancho por defecto de Excel corta textos
         /// como "Categoria mas frecuente" o preguntas largas.
         /// </summary>
-        private static string ResumenSheet(List<QuestionStats> questions)
+        private static string ResumenSheet(ReportStats stats, List<QuestionStats> questions)
         {
             var filas = new List<string[]>();
+
+            // Para que el archivo "viva" solo: quien lo recibe no tiene la pantalla de
+            // reportes al lado para saber qué cuestionario, período o filtros lo generaron.
+            filas.Add(new[] { "Cuestionario", stats.QuestionnaireTitle ?? "" });
+            filas.Add(new[] { "Periodo", Periodo(stats.DateFrom, stats.DateTo) });
+            filas.Add(new[] { "Filtros aplicados", stats.FiltersSummary ?? "Sin filtros" });
 
             AgregarBloque(filas, "Preguntas numericas",
                 questions.Where(q => q.Kind == "numeric").ToList(),
@@ -188,6 +194,14 @@ namespace ChequeAR.Application.Exporters
             for (int i = 0; i < filas.Count; i++) AppendRow(sb, i + 1, filas[i]);
             sb.Append("</sheetData></worksheet>");
             return sb.ToString();
+        }
+
+        private static string Periodo(System.DateTime? from, System.DateTime? to)
+        {
+            if (from == null && to == null) return "Todo el rango";
+            var desde = from.HasValue ? from.Value.ToString("dd/MM/yyyy", Ar) : "inicio";
+            var hasta = to.HasValue ? to.Value.ToString("dd/MM/yyyy", Ar) : "hoy";
+            return desde + " - " + hasta;
         }
 
         private static string[] Comunes(QuestionStats q) => new[]
@@ -390,9 +404,15 @@ namespace ChequeAR.Application.Exporters
             "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../drawings/drawing1.xml\"/>" +
             "</Relationships>";
 
-        /// <summary>Un chart apilado cada 16 filas, ancho de 8 columnas.</summary>
+        /// <summary>
+        /// Grilla de 2 columnas (antes: apilados en una sola, dejaban la pantalla vacía a la
+        /// derecha). Cada celda de la grilla mide 9 columnas de ancho x 16 filas de alto; el
+        /// gráfico ocupa 8 de esas 9 columnas, dejando 1 de aire entre uno y el siguiente.
+        /// </summary>
         private static string Drawing(List<ChartPart> charts)
         {
+            const int colWidth = 9, rowHeight = 16;
+
             var sb = new StringBuilder();
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
             sb.Append("<xdr:wsDr xmlns:xdr=\"http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing\" ")
@@ -400,11 +420,14 @@ namespace ChequeAR.Application.Exporters
 
             for (int i = 0; i < charts.Count; i++)
             {
-                int rowFrom = i * 16;
+                int fila = i / 2, columna = i % 2;
+                int colFrom = columna * colWidth;
+                int colTo = colFrom + 8;
+                int rowFrom = fila * rowHeight;
                 int rowTo = rowFrom + 15;
                 sb.Append("<xdr:twoCellAnchor>");
-                sb.Append("<xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>").Append(rowFrom).Append("</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>");
-                sb.Append("<xdr:to><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>").Append(rowTo).Append("</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>");
+                sb.Append("<xdr:from><xdr:col>").Append(colFrom).Append("</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>").Append(rowFrom).Append("</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>");
+                sb.Append("<xdr:to><xdr:col>").Append(colTo).Append("</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>").Append(rowTo).Append("</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>");
                 sb.Append("<xdr:graphicFrame macro=\"\">");
                 sb.Append("<xdr:nvGraphicFramePr><xdr:cNvPr id=\"").Append(i + 2).Append("\" name=\"Chart ").Append(i + 1).Append("\"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>");
                 sb.Append("<xdr:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"4800600\" cy=\"2857500\"/></xdr:xfrm>");

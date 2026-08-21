@@ -42,10 +42,19 @@ namespace ChequeAR.Application.Reports
         public async Task<ReportStats> ExecuteStatsAsync(ReportQuery q)
         {
             var raw = await RunRawAsync(q, paginate: false);
-            return StatsCalculator.Compute(
+            var stats = StatsCalculator.Compute(
                 new ReportResult { Rows = raw.Rows, Total = raw.Rows.Count },
                 raw.Schema,
                 raw.TotalResponses);
+
+            // Para que un export "viva" solo: quien lo recibe no tiene la pantalla de
+            // reportes al lado para saber qué cuestionario, período o filtros generaron esto.
+            stats.QuestionnaireTitle = raw.QuestionnaireTitle;
+            stats.DateFrom = q.DateRange?.From;
+            stats.DateTo = q.DateRange?.To;
+            stats.FiltersSummary = FilterSummary.Describe(q.Filters, raw.Schema);
+
+            return stats;
         }
 
         private async Task<ReportResult> RunAsync(ReportQuery q, bool paginate)
@@ -84,7 +93,11 @@ namespace ChequeAR.Application.Reports
             var rows = ejecutado.Rows;
             var totalResponses = ejecutado.TotalResponses;
 
-            return new RawResult { Rows = rows, TotalResponses = totalResponses, Schema = schema };
+            return new RawResult
+            {
+                Rows = rows, TotalResponses = totalResponses, Schema = schema,
+                QuestionnaireTitle = questionnaire.Title
+            };
         }
 
         private class RawResult
@@ -92,6 +105,7 @@ namespace ChequeAR.Application.Reports
             public List<Dictionary<string, object>> Rows { get; set; }
             public int TotalResponses { get; set; }
             public ReportSchema Schema { get; set; }
+            public string QuestionnaireTitle { get; set; }
         }
 
     }

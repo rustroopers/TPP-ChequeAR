@@ -246,6 +246,44 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
+        public void StatsXlsx_ResumenIncluyeCuestionarioPeriodoYFiltros()
+        {
+            var stats = StatsConDosPreguntas();
+            stats.QuestionnaireTitle = "Control de embarazo";
+            stats.DateFrom = new DateTime(2026, 1, 1);
+            stats.DateTo = new DateTime(2026, 6, 30);
+            stats.FiltersSummary = "Peso >= 10";
+
+            string resumen;
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+                resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
+
+            Assert.Contains("Control de embarazo", resumen);
+            Assert.Contains("01/01/2026", resumen);
+            Assert.Contains("30/06/2026", resumen);
+            Assert.Contains("Peso &gt;= 10", resumen); // escapado XML de '>='
+        }
+
+        [Fact]
+        public void StatsXlsx_DistribuyeGraficosEnGrillaDeDosColumnas()
+        {
+            var stats = StatsConDosPreguntas();
+            stats.Questions.Add(new QuestionStats
+            {
+                LinkId = "otraCategorica", Text = "Fumador?", Type = "Boolean", Kind = "categorical",
+                Categories = new List<CategoryCount> { new CategoryCount { Label = "Sí", Count = 1, Pct = 100 } }
+            });
+
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            {
+                var drawing = ReadEntry(zip, "xl/drawings/drawing1.xml");
+                // El primer grafico arranca en col 0, el segundo (misma fila de la grilla) en col 9.
+                Assert.Contains("<xdr:col>0</xdr:col>", drawing);
+                Assert.Contains("<xdr:col>9</xdr:col>", drawing);
+            }
+        }
+
+        [Fact]
         public void StatsXlsx_SinCategoricasNiHistogramas_NoAgregaHojaDeGraficos()
         {
             var stats = StatsConDosPreguntas();

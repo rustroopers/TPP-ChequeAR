@@ -218,6 +218,15 @@ namespace ChequeAR.Application.Reports
         /// <summary>Fichas de la cohorte: el denominador de toda la pantalla.</summary>
         public int Responses { get; set; }
         public List<QuestionStats> Questions { get; set; } = new List<QuestionStats>();
+
+        /// <summary>
+        /// Metadata de la consulta que generó esta cohorte -para que un export "viva" solo,
+        /// sin depender de que quien lo reciba sepa qué se filtró en pantalla-.
+        /// </summary>
+        public string QuestionnaireTitle { get; set; }
+        public DateTime? DateFrom { get; set; }
+        public DateTime? DateTo { get; set; }
+        public string FiltersSummary { get; set; }
     }
 
     public class QuestionStats
