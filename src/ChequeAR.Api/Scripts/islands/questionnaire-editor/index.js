@@ -113,9 +113,11 @@
             var types = [
                 { code: 'string',     label: 'Texto corto',     icon: 'bi-fonts' },
                 { code: 'text',       label: 'Texto largo',     icon: 'bi-textarea-t' },
+                // "Escala" no se ofrece más para preguntas nuevas: es lo mismo que un Número
+                // con Min/Max. Se deja fuera de esta lista pero no del resto del editor/lectura,
+                // para no romper las preguntas ya publicadas con este tipo.
                 { code: 'integer',    label: 'Número',          icon: 'bi-123' },
                 { code: 'decimal',    label: 'Decimal',         icon: 'bi-percent' },
-                { code: 'scale',      label: 'Escala',          icon: 'bi-sliders' },
                 { code: 'boolean',    label: 'Booleano',        icon: 'bi-toggle-on' },
                 { code: 'choice',     label: 'Opción única',    icon: 'bi-ui-radios' },
                 { code: 'openChoice', label: 'Opción múltiple', icon: 'bi-check2-square' },
