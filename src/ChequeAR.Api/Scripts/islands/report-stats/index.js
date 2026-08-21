@@ -1,7 +1,8 @@
 /*
  * Isla Vue: report-stats (pantalla E5)
  * Estadisticas descriptivas de la cohorte filtrada (FR-008): completitud por pregunta,
- * resumen numerico con histograma y distribucion de las categoricas.
+ * resumen numerico con histograma y distribucion de las categoricas. Tambien permite
+ * exportar ese resumen a Excel o Word, con opcion de elegir que preguntas incluir.
  *
  * Los graficos son divs y SVG a mano, sin libreria. El resto de la app ya carga Vue y
  * Bootstrap desde un CDN y eso es un problema abierto para una intranet sin salida a
@@ -20,6 +21,13 @@
             var loading = Vue.ref(false);
             var error = Vue.ref(null);
             var lastQuery = Vue.ref(props.autoQuery);
+
+            // Preguntas elegidas para exportar. Arranca con todas marcadas cada vez que
+            // llegan estadisticas nuevas, para no dejar afuera algo sin que se note.
+            var selected = Vue.reactive({});
+            var exporting = Vue.ref(false);
+            var exportError = Vue.ref(null);
+            var exportFormat = Vue.ref('xlsx');
 
             function authHeaders() {
                 var h = { 'Content-Type': 'application/json' };
@@ -41,6 +49,8 @@
                     });
                 }).then(function (d) {
                     stats.value = d;
+                    Object.keys(selected).forEach(function (k) { delete selected[k]; });
+                    (d && d.Questions || []).forEach(function (q) { selected[q.LinkId] = true; });
                 }).catch(function (e) {
                     error.value = e.message;
                     stats.value = null;
@@ -77,10 +87,52 @@
                 return 'var(--cq-danger)';
             }
 
+            // --- seleccion y exportacion -----------------------------------------------
+            function selectedCount() {
+                return Object.keys(selected).filter(function (k) { return selected[k]; }).length;
+            }
+            function selectAll(value) {
+                Object.keys(selected).forEach(function (k) { selected[k] = value; });
+            }
+            function selectedLinkIds() {
+                return Object.keys(selected).filter(function (k) { return selected[k]; });
+            }
+
+            function exportStats(format) {
+                if (!stats.value || !lastQuery.value) return;
+                var linkIds = selectedLinkIds();
+                if (!linkIds.length) { exportError.value = 'Seleccioná al menos una pregunta.'; return; }
+
+                exporting.value = true; exportError.value = null;
+                fetch('/api/reports/stats/export', {
+                    method: 'POST', headers: authHeaders(),
+                    body: JSON.stringify({ Query: lastQuery.value, LinkIds: linkIds, Format: format })
+                }).then(function (r) {
+                    if (r.ok) return r.blob();
+                    return r.json().catch(function () { return null; }).then(function (b) {
+                        throw new Error((b && b.Message) || ('HTTP ' + r.status));
+                    });
+                }).then(function (blob) {
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'estadisticas.' + format;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }).catch(function (e) {
+                    exportError.value = e.message;
+                }).then(function () { exporting.value = false; });
+            }
+
             return {
                 stats: stats, loading: loading, error: error, lastQuery: lastQuery,
                 load: load, num: num, binPct: binPct, rango: rango,
-                completenessColor: completenessColor
+                completenessColor: completenessColor,
+                selected: selected, selectedCount: selectedCount, selectAll: selectAll,
+                exporting: exporting, exportError: exportError, exportStats: exportStats,
+                exportFormat: exportFormat
             };
         },
         template: '\
@@ -96,6 +148,7 @@
 </div>\
 <div v-else>\
     <template v-if="stats.Responses">\
+        <h2 class="cq-section-title border-top pt-3">Métricas</h2>\
         <div class="row g-3">\
             <div v-for="q in stats.Questions" :key="q.LinkId" class="col-lg-6">\
                 <div class="cq-card h-100">\
@@ -163,6 +216,43 @@
                     <div v-else class="cq-text-sm cq-text-muted">\
                         Las respuestas de texto y fecha no se resumen: sólo se informa cuántas fichas la tienen cargada.\
                     </div>\
+                </div>\
+            </div>\
+        </div>\
+        <div class="d-flex justify-content-end mt-3">\
+            <div class="dropdown">\
+                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" :disabled="exporting">\
+                    <i class="bi bi-download me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar\' }}\
+                </button>\
+                <div class="dropdown-menu dropdown-menu-end p-3" style="min-width:320px;">\
+                    <label class="form-label">Formato</label>\
+                    <div class="mb-3">\
+                        <div class="form-check form-check-inline">\
+                            <input class="form-check-input" type="radio" id="statsFmtXlsx" value="xlsx" v-model="exportFormat" />\
+                            <label class="form-check-label" for="statsFmtXlsx">Excel (.xlsx)</label>\
+                        </div>\
+                        <div class="form-check form-check-inline">\
+                            <input class="form-check-input" type="radio" id="statsFmtDocx" value="docx" v-model="exportFormat" />\
+                            <label class="form-check-label" for="statsFmtDocx">Word (.docx)</label>\
+                        </div>\
+                    </div>\
+                    <div class="mb-2 d-flex justify-content-between align-items-center">\
+                        <label class="form-label mb-0">Preguntas</label>\
+                        <div class="d-flex gap-2">\
+                            <button type="button" class="btn btn-sm btn-link p-0" @click="selectAll(true)">Todas</button>\
+                            <button type="button" class="btn btn-sm btn-link p-0" @click="selectAll(false)">Ninguna</button>\
+                        </div>\
+                    </div>\
+                    <div class="border rounded p-2 mb-2" style="max-height:200px; overflow-y:auto;">\
+                        <div v-for="q in stats.Questions" :key="q.LinkId" class="form-check">\
+                            <input class="form-check-input" type="checkbox" :id="\'statsQ_\' + q.LinkId" v-model="selected[q.LinkId]" />\
+                            <label class="form-check-label cq-text-sm" :for="\'statsQ_\' + q.LinkId">{{ q.Text }}</label>\
+                        </div>\
+                    </div>\
+                    <p v-if="exportError" class="cq-text-sm text-danger mb-2">{{ exportError }}</p>\
+                    <button type="button" class="btn btn-primary w-100" :disabled="exporting || !selectedCount()" @click="exportStats(exportFormat)">\
+                        {{ exporting ? \'Exportando…\' : \'Descargar (\' + selectedCount() + \')\' }}\
+                    </button>\
                 </div>\
             </div>\
         </div>\
