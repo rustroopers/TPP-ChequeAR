@@ -71,20 +71,23 @@ namespace ChequeAR.Infrastructure.EF
             mb.Entity<Specialty>().Property(x => x.Code).HasMaxLength(64);
             mb.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
 
-            // Campos JSON / texto largo → CLOB. HasMaxLength(null) suelta el límite de 2000
-            // que impone la convención de arriba: sin esto, EF valida client-side contra
-            // 2000 caracteres y un FHIR Questionnaire real (mayor a eso) revienta al publicar
-            // con "Validation failed for one or more entities", aunque la columna CLOB lo acepte.
-            mb.Entity<QuestionnaireVersion>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<QuestionnaireResponse>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<AuditEvent>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<Question>().Property(x => x.ValidationJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<Question>().Property(x => x.EnableWhenJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<Questionnaire>().Property(x => x.CodingJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
+            // Campos JSON / texto largo → CLOB. IsMaxLength() suelta el límite de 2000 que
+            // impone la convención de arriba: sin esto, EF valida client-side contra 2000
+            // caracteres y un FHIR Questionnaire real (mayor a eso) revienta al publicar con
+            // "Validation failed for one or more entities", aunque la columna CLOB lo acepte.
+            // OJO: HasMaxLength(null) NO alcanza acá — para EF6 equivale a "no configurado",
+            // así que la convención de arriba (Properties<string>().Configure) sigue ganando
+            // y el límite de 2000 queda puesto igual. Hay que pedir explícitamente el máximo.
+            mb.Entity<QuestionnaireVersion>().Property(x => x.FhirJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<QuestionnaireResponse>().Property(x => x.FhirJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<AuditEvent>().Property(x => x.FhirJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<Question>().Property(x => x.ValidationJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<Question>().Property(x => x.EnableWhenJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<Questionnaire>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
+            mb.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
 
             base.OnModelCreating(mb);
         }
