@@ -54,8 +54,12 @@ jobs:
       - name: Restore
         run: msbuild src\ChequeAR.sln -t:Restore -v:minimal -nologo
 
+      # -warnaserror: cualquier warning nuevo frena el PR. Se pudo prender recien
+      # cuando el build quedo en cero (CS0105 y MSB3247, mismo PR que este cambio).
+      # Va solo en el build; el restore queda sin promover para que un NU### de un
+      # paquete de terceros no bloquee sin que haya nada que arreglar de este lado.
       - name: Build (Release)
-        run: msbuild src\ChequeAR.sln -v:minimal -nologo -p:Configuration=Release -m
+        run: msbuild src\ChequeAR.sln -v:minimal -nologo -p:Configuration=Release -m -warnaserror
 
       - name: Tests unitarios
         run: >
