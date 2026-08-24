@@ -21,6 +21,9 @@ namespace ChequeAR.Tests.MockHospital
     /// automáticamente.
     /// </summary>
     [Collection("MockHospital")]
+    // Necesita el Oracle XE del mock levantado. El CI de build/test lo excluye
+    // con --filter "Requires!=Oracle"; el job de integracion lo incluye.
+    [Trait("Requires", "Oracle")]
     public class MappingCompatibilityTests
     {
         private readonly MockHospitalFixture _fx;

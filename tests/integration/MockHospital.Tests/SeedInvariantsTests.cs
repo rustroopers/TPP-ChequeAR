@@ -7,6 +7,9 @@ namespace ChequeAR.Tests.MockHospital
     /// del seed determinístico.
     /// </summary>
     [Collection("MockHospital")]
+    // Necesita el Oracle XE del mock levantado. El CI de build/test lo excluye
+    // con --filter "Requires!=Oracle"; el job de integracion lo incluye.
+    [Trait("Requires", "Oracle")]
     public class SeedInvariantsTests
     {
         private readonly MockHospitalFixture _fx;
