@@ -1,0 +1,85 @@
+# Build y tests unitarios de la solucion completa.
+#
+# Corre en windows-latest y NO en ubuntu como el smoke del mock: ChequeAR.Api es
+# un proyecto web legacy (ProjectTypeGuids con el flavor de ASP.NET Web Application)
+# que importa `Microsoft.WebApplication.targets` desde la instalacion de Visual
+# Studio. `dotnet build` no resuelve ese import, asi que el build va con el MSBuild
+# completo. Los otros cuatro proyectos son SDK-style y no tendrian ese problema.
+#
+# Sobre los tests: se buildea la solucion entera (incluido MockHospital.Tests, que
+# compila sin necesidad de base), pero SOLO se ejecuta ChequeAR.Tests. Los de
+# integracion necesitan el Oracle XE del mock y tienen su propio workflow
+# (mock-hospital-smoke.yml); correrlos aca los dejaria colgados sin DB.
+
+name: build & test
+
+on:
+  push:
+    branches: [dev, testing, main]
+  pull_request:
+    branches: [dev, testing, main]
+  workflow_dispatch: {}
+
+# Un push nuevo sobre la misma rama cancela la corrida anterior.
+concurrency:
+  group: build-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # MSBuild de la VS del runner (agrega msbuild.exe al PATH).
+      - uses: microsoft/setup-msbuild@v2
+
+      # Necesario para `dotnet test`: el runner de xunit corre sobre net471,
+      # pero la CLI que lo lanza es la del SDK.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # No hay lock files, asi que la clave se arma con los csproj: cualquier
+      # cambio de version de paquete invalida el cache.
+      - name: Cache de NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: msbuild src\ChequeAR.sln -t:Restore -v:minimal -nologo
+
+      - name: Build (Release)
+        run: msbuild src\ChequeAR.sln -v:minimal -nologo -p:Configuration=Release -m
+
+      - name: Tests unitarios
+        run: >
+          dotnet test src\ChequeAR.Tests\ChequeAR.Tests.csproj
+          -c Release --no-build --nologo
+          --logger "trx;LogFileName=unit.trx"
+          --results-directory TestResults
+
+      # Del proyecto de integracion, los 2 que NO necesitan base: normalizacion de
+      # valores del driver Oracle. Viven ahi y no en ChequeAR.Tests porque referencian
+      # ChequeAR.Infrastructure, y esa barrera es deliberada. El resto de ese proyecto
+      # esta marcado [Trait("Requires", "Oracle")] y queda excluido.
+      - name: Tests de infraestructura sin base
+        run: >
+          dotnet test tests\integration\MockHospital.Tests\MockHospital.Tests.csproj
+          -c Release --no-build --nologo
+          --filter "Requires!=Oracle"
+          --logger "trx;LogFileName=infra.trx"
+          --results-directory TestResults
+
+      - name: Publicar resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          if-no-files-found: warn

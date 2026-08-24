@@ -16,6 +16,9 @@ namespace ChequeAR.Tests.MockHospital
     /// `MOCK_HOSPITAL_RUN_RESET=1` antes de la sesión.
     /// </summary>
     [Collection("MockHospital")]
+    // Necesita el Oracle XE del mock levantado. El CI de build/test lo excluye
+    // con --filter "Requires!=Oracle"; el job de integracion lo incluye.
+    [Trait("Requires", "Oracle")]
     public class DeterminismTests
     {
         private readonly MockHospitalFixture _fx;

@@ -96,3 +96,6 @@ Desktop.ini
 .vscode/
 *.swp
 *.swo
+
+# Resultados de tests (.trx) — los genera el workflow build-test y correrlo en local
+TestResults/
