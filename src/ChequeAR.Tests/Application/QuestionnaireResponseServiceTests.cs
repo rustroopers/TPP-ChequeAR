@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
-using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
