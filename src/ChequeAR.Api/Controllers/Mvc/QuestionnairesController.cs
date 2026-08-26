@@ -64,11 +64,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Items.Clear();
                 model.Total = 0;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -125,11 +125,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                         }
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     title = null;
                     publishedVersion = 0;
-                    ViewBag.DataError = ex.Message;
+                    ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 }
             }
 
@@ -185,9 +185,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                         new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
                     "application/json");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return new HttpStatusCodeResult(500, ex.Message);
+                return new HttpStatusCodeResult(500, "Ocurrió un error al procesar la solicitud.");
             }
         }
 
@@ -309,9 +309,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 model.Groups.AddRange(BuildEditorGroups(q));
                 return View(model);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new QuestionnaireDetailViewModel { Id = id });
             }
         }
@@ -344,10 +344,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     }).ToList();
                 return View(list);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 ViewBag.QuestionnaireTitle = null;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new List<QuestionnaireVersionView>());
             }
         }
@@ -362,9 +362,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "Cuestionario publicado.";
                 TempData["ToastLevel"] = "success";
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                TempData["Toast"] = "No se pudo publicar: " + ex.Message;
+                TempData["Toast"] = "No se pudo publicar el cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");
@@ -380,9 +380,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "Cuestionario archivado.";
                 TempData["ToastLevel"] = "success";
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                TempData["Toast"] = "No se pudo archivar: " + ex.Message;
+                TempData["Toast"] = "No se pudo archivar el cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");

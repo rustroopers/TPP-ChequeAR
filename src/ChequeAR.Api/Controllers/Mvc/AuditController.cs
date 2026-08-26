@@ -51,11 +51,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Skip((model.Page - 1) * pageSize)
                     .Take(pageSize));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Entries.Clear();
                 model.Total = 0;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -197,9 +197,9 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(detail);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new AuditDetailViewModel { Id = id });
             }
         }

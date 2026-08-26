@@ -52,7 +52,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return RedirectToAction("Index", "Home");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // En dev sin endpoint del hospital: aceptamos cualquier credencial para demo.
                 if (System.Web.HttpContext.Current.IsDebuggingEnabled)
@@ -60,7 +60,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     FormsAuthentication.SetAuthCookie(username, remember);
                     return RedirectToAction("Index", "Home");
                 }
-                ModelState.AddModelError("", "Error de autenticación: " + ex.Message);
+                ModelState.AddModelError("", "No se pudo iniciar sesión. Intentá nuevamente.");
                 return View("Login");
             }
         }
