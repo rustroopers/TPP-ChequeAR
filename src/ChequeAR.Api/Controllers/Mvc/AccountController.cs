@@ -1,4 +1,5 @@
 using System;
+using System.Configuration;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
@@ -54,8 +55,14 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
             catch (Exception)
             {
-                // En dev sin endpoint del hospital: aceptamos cualquier credencial para demo.
-                if (System.Web.HttpContext.Current.IsDebuggingEnabled)
+                // Fallback de demo cuando el hospital no está disponible: requiere debug=true
+                // (Web.config) Y un opt-in explícito por entorno (Auth:AllowDebugLoginFallback en
+                // Web.Secrets.config, no versionado), para que no baste con un debug="true" suelto
+                // en un ambiente que no sea la máquina de un dev.
+                var allowDebugFallback = string.Equals(
+                    ConfigurationManager.AppSettings["Auth:AllowDebugLoginFallback"], "true",
+                    StringComparison.OrdinalIgnoreCase);
+                if (System.Web.HttpContext.Current.IsDebuggingEnabled && allowDebugFallback)
                 {
                     FormsAuthentication.SetAuthCookie(username, remember);
                     return RedirectToAction("Index", "Home");
