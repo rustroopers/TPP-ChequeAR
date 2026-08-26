@@ -139,10 +139,11 @@ namespace ChequeAR.Api.Controllers.Mvc
             });
 
             var result = new ReportResult { Total = rows.Count, Rows = rows };
+            var dateSuffix = DateTime.Now.ToString("yyyy-MM-dd");
             if ((format ?? "xlsx").ToLowerInvariant() == "csv")
-                return File(new CsvExporter().Export(result), "text/csv", "auditoria.csv");
+                return File(new CsvExporter().Export(result), "text/csv", $"auditoria_{dateSuffix}.csv");
             return File(new XlsxExporter().Export(result),
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "auditoria.xlsx");
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"auditoria_{dateSuffix}.xlsx");
         }
 
         // A7

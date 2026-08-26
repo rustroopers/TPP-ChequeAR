@@ -152,11 +152,14 @@
                 return Object.keys(selected).filter(function (k) { return selected[k]; });
             }
 
-            // Nombre + " - metricas.xlsx", sin caracteres invalidos para nombre de archivo.
+            // Nombre + " - metricas - fecha.xlsx", sin caracteres invalidos para nombre de archivo.
             function statsFilename() {
                 var base = (props.reportName || (stats.value && stats.value.QuestionnaireTitle) || 'estadisticas').trim();
                 var safe = base.replace(/[\\/:*?"<>|]/g, '').trim() || 'estadisticas';
-                return safe + ' - metricas.xlsx';
+                var today = new Date();
+                var pad = function (n) { return String(n).padStart(2, '0'); };
+                var dateStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+                return safe + ' - metricas - ' + dateStr + '.xlsx';
             }
 
             function exportStats() {

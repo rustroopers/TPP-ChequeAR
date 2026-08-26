@@ -356,11 +356,14 @@
                     .then(function () { saving.value = false; });
             }
 
-            // Nombre + " - reporte.ext", sin caracteres invalidos para nombre de archivo.
+            // Nombre + " - reporte - fecha.ext", sin caracteres invalidos para nombre de archivo.
             function exportFilename(ext) {
                 var base = (selectedTitle.value || 'reporte').trim();
                 var safe = base.replace(/[\\/:*?"<>|]/g, '').trim() || 'reporte';
-                return safe + ' - reporte.' + ext;
+                var today = new Date();
+                var pad = function (n) { return String(n).padStart(2, '0'); };
+                var dateStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+                return safe + ' - reporte - ' + dateStr + '.' + ext;
             }
 
             function exportFile(format, filename) {
