@@ -46,10 +46,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Users.Clear();
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -87,9 +87,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return View(model);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new UserDetailViewModel { Username = username });
             }
         }
@@ -106,9 +106,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 await _users.UpsertAsync(existing);
                 TempData["Toast"] = "Cambios guardados.";
             }
-            catch (System.Exception ex)
+            catch (System.Exception)
             {
-                TempData["Toast"] = "Error: " + ex.Message;
+                TempData["Toast"] = "No se pudieron guardar los cambios.";
             }
             return RedirectToAction("Index");
         }

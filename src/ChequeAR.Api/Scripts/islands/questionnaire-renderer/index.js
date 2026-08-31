@@ -276,6 +276,29 @@
                 delete errors[q.linkId];
             }
 
+            // El link directo a /api/attachments/{id} no sirve: el endpoint pide JWT por
+            // Authorization header, y una navegación de <a href> no lo manda. Se trae el
+            // archivo por fetch (mismo header que el resto de la app) y se abre como blob.
+            var viewingAttachment = Vue.reactive({});
+            function viewAttachment(attachmentId, linkId) {
+                if (!attachmentId) return;
+                viewingAttachment[linkId] = true;
+                fetch('/api/attachments/' + attachmentId, { headers: { 'Authorization': 'Bearer ' + token() } })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.blob();
+                    })
+                    .then(function (blob) {
+                        var url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+                    })
+                    .catch(function () {
+                        window.cqToast && window.cqToast('No se pudo abrir el adjunto.', 'error');
+                    })
+                    .then(function () { viewingAttachment[linkId] = false; });
+            }
+
             // Opción múltiple: la respuesta es un array de opciones marcadas.
             function onToggleMulti(q, option, checked) {
                 var current = (answers[q.linkId] || []).slice();
@@ -613,11 +636,18 @@
                 });
                 return n;
             }
-            // Todas las preguntas visibles están respondidas: no queda nada para "guardar sin
-            // terminar", así que el guardado parcial se bloquea y la ficha se finaliza.
+            // Todas las preguntas obligatorias visibles están respondidas: habilita "Finalizar
+            // y enviar" (las opcionales pueden quedar vacías, igual que en submit()/validate()).
+            // "Guardar y continuar después" sigue disponible igual, por si el médico prefiere
+            // dejarla pendiente (ej. quiere revisarla o completar algo más luego).
             function isComplete() {
-                var total = totalQuestions();
-                return total > 0 && answeredCount() === total;
+                var ok = true;
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        if (isVisible(q) && q.required && isEmptyAnswer(answers[q.linkId])) ok = false;
+                    });
+                });
+                return ok;
             }
 
             // Un valor del formulario -> la columna tipada que espera
@@ -833,6 +863,7 @@
                 completedResponseId: completedResponseId,
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
+                viewAttachment: viewAttachment, viewingAttachment: viewingAttachment,
                 totalQuestions: totalQuestions, answeredCount: answeredCount, isComplete: isComplete,
                 submit: submit, finishPartial: finishPartial,
                 lockedByOther: lockedByOther, showRenewPrompt: showRenewPrompt,
@@ -967,6 +998,7 @@
                             <div v-if="answers[q.linkId] && answers[q.linkId].attachmentId" class="d-flex align-items-center gap-2">\
                                 <i class="bi bi-paperclip"></i>\
                                 <span class="cq-text-sm">{{ answers[q.linkId].fileName }}</span>\
+                                <button class="btn btn-sm btn-link" :disabled="viewingAttachment[q.linkId]" @click="viewAttachment(answers[q.linkId].attachmentId, q.linkId)">{{ viewingAttachment[q.linkId] ? \'Abriendo…\' : \'Ver\' }}</button>\
                                 <button class="btn btn-sm btn-link text-danger" @click="clearFile(q)">Quitar</button>\
                             </div>\
                             <div v-else class="d-flex align-items-center gap-2">\
@@ -985,10 +1017,10 @@
 \
             <div class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
-                    <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther || isComplete()" :title="isComplete() ? \'Ya está todo respondido: use Finalizar y enviar\' : null" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
+                    <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
                     <button class="btn btn-primary" :disabled="submitting || lockedByOther || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
                 </div>\
-                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Todas las preguntas están respondidas: finalice para dejar la ficha completa.\' : \'Guarde lo cargado y retome esta ficha más tarde desde el historial del paciente, o finalice para dejarla completa.\' }}</p>\
+                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Ya están todas las preguntas obligatorias respondidas: puede finalizar la ficha o guardar el avance para retomarla más tarde.\' : \'Guarde lo cargado y retome esta ficha más tarde desde el historial del paciente, o finalice para dejarla completa.\' }}</p>\
             </div>\
         </div>\
     </div>\

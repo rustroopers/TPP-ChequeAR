@@ -356,6 +356,16 @@
                     .then(function () { saving.value = false; });
             }
 
+            // Nombre + " - reporte - fecha.ext", sin caracteres invalidos para nombre de archivo.
+            function exportFilename(ext) {
+                var base = (selectedTitle.value || 'reporte').trim();
+                var safe = base.replace(/[\\/:*?"<>|]/g, '').trim() || 'reporte';
+                var today = new Date();
+                var pad = function (n) { return String(n).padStart(2, '0'); };
+                var dateStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+                return safe + ' - reporte - ' + dateStr + '.' + ext;
+            }
+
             function exportFile(format, filename) {
                 if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 exporting.value = true;
@@ -387,8 +397,8 @@
                 opsFor: opsFor, questionByLink: questionByLink,
                 addFilter: addFilter, removeFilter: removeFilter, onQuestionChange: onQuestionChange,
                 preview: preview,
-                exportXlsx: function () { exportFile('xlsx', 'reporte.xlsx'); },
-                exportCsv: function () { exportFile('csv', 'reporte.csv'); }
+                exportXlsx: function () { exportFile('xlsx', exportFilename('xlsx')); },
+                exportCsv: function () { exportFile('csv', exportFilename('csv')); }
             };
         },
         template: '\

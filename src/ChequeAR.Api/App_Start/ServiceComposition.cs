@@ -125,7 +125,7 @@ namespace ChequeAR.Api.App_Start
                 : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
             Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
             Register<IFhirValidator>(() => _fhirValidator);
-            Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot));
+            Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot, Resolve<ChequeARDbContext>()));
 
             Register<JwtIssuer>(() => _jwt);
             Register<AuditDispatcher>(() => _audit);

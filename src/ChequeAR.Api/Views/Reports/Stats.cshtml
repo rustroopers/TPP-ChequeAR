@@ -41,7 +41,7 @@ else if (string.IsNullOrEmpty(Model.QueryJson))
 }
 else
 {
-    <div data-vue-island="report-stats" data-props='@Html.Raw("{\"autoQuery\":" + Model.QueryJson + "}")'>
+    <div data-vue-island="report-stats" data-props='@Html.Raw("{\"autoQuery\":" + Model.QueryJson + ",\"reportName\":" + Newtonsoft.Json.JsonConvert.ToString(Model.ReportName ?? "") + "}")'>
         <div class="cq-card">
             <div class="cq-loading">
                 <div class="cq-spinner cq-spinner--lg"></div>

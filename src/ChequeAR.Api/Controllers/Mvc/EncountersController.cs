@@ -59,9 +59,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
 
             if (!model.HasSearched) return View(model);
@@ -80,10 +80,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Results.Clear();
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -166,12 +166,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                         NullValueHandling = NullValueHandling.Ignore
                     });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 ViewBag.PatientName = "HC " + patientId;
                 ViewBag.QuestionnaireTitle = null;
                 ViewBag.Version = 0;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View();
         }
@@ -284,7 +284,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                             {
                                 Text = question.Text,
                                 Answer = FormatAnswers(items),
-                                Prefilled = items != null && items.Any(i => i.WasPrefilled)
+                                Prefilled = items != null && items.Any(i => i.WasPrefilled),
+                                AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
                         }
                         if (group.Questions.Count > 0) model.Groups.Add(group);
@@ -304,16 +305,17 @@ namespace ChequeAR.Api.Controllers.Mvc
                         {
                             Text = entry.Value,
                             Answer = FormatAnswers(items),
-                            Prefilled = items != null && items.Any(i => i.WasPrefilled)
+                            Prefilled = items != null && items.Any(i => i.WasPrefilled),
+                            AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
                     }
                     if (answered.Questions.Count > 0) model.Groups.Add(answered);
                 }
                 return base.View(model);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return base.View(new EncounterReadonlyViewModel { EncounterId = id });
             }
         }
@@ -428,9 +430,9 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(model);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new EncounterHistoryViewModel { EncounterId = id });
             }
         }
@@ -510,9 +512,9 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(model);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 model.Patient = new PatientSearchItem { HC = patientId };
                 return View(model);
             }
@@ -561,9 +563,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     !model.AvailableQuestionnaires.Any(o => o.Value == questionnaireId.Value.ToString()))
                     model.SelectedQuestionnaireId = null;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 model.Patient = model.Patient ?? new PatientSearchItem { HC = patientId };
             }
             return View(model);

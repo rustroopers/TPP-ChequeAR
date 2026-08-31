@@ -30,7 +30,7 @@ namespace ChequeAR.Application.Exporters
             return ms;
         }
 
-        private static void AddEntry(ZipArchive zip, string path, string content)
+        internal static void AddEntry(ZipArchive zip, string path, string content)
         {
             var entry = zip.CreateEntry(path, CompressionLevel.Optimal);
             using (var s = entry.Open())
@@ -115,14 +115,14 @@ namespace ChequeAR.Application.Exporters
             return TextCell(reference, value.ToString());
         }
 
-        private static string TextCell(string reference, string text) =>
+        internal static string TextCell(string reference, string text) =>
             "<c r=\"" + reference + "\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" + Escape(text) + "</t></is></c>";
 
         private static bool IsNumeric(object v) =>
             v is int || v is long || v is short || v is byte ||
             v is decimal || v is double || v is float;
 
-        private static string CellRef(int colZeroBased, int row)
+        internal static string CellRef(int colZeroBased, int row)
         {
             var col = "";
             int n = colZeroBased;
@@ -130,7 +130,7 @@ namespace ChequeAR.Application.Exporters
             return col + row;
         }
 
-        private static string Escape(string s)
+        internal static string Escape(string s)
         {
             if (string.IsNullOrEmpty(s)) return string.Empty;
             return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");

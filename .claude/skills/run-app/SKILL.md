@@ -24,13 +24,25 @@ Test-NetConnection localhost -Port 1521 -InformationLevel Quiet   # -> True
 
 ## Paso 2 — Build (saltear si el argumento es `solo-run`)
 
-MSBuild de VS2022 Community. Restore primero, luego build del proyecto Api. **Usar forward slashes en los paths del .sln/.csproj** (en Git Bash los backslashes se comen).
+MSBuild de la VS instalada. **No hardcodear el path**: la carpeta lleva el numero de version
+(`2022`, `18`, ...) y cambia cuando VS se actualiza. Resolverlo siempre con `vswhere`, que vive en
+una ruta fija que Microsoft no mueve entre versiones. **Usar forward slashes en los paths del
+.sln/.csproj** (en Git Bash los backslashes se comen).
 
 ```bash
-MSBUILD="C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe"
+VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+MSBUILD=$("$VSWHERE" -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe')
+[ -n "$MSBUILD" ] || { echo "MSBuild no encontrado: falta el workload 'Desarrollo de escritorio' o VS no esta instalado"; exit 1; }
+
 "$MSBUILD" "src/ChequeAR.sln" -t:Restore -v:minimal -nologo
 "$MSBUILD" "src/ChequeAR.Api/ChequeAR.Api.csproj" -v:minimal -nologo -p:Configuration=Debug
 ```
+
+- El `-find` lleva **backslashes** (es un patron de Windows, lo interpreta vswhere, no bash) y va en
+  comillas simples para que bash no se los coma. El path que devuelve tambien viene con backslashes:
+  se ejecuta bien siempre que se lo entrecomille (`"$MSBUILD"`), no hace falta convertirlo.
+- Equivalente en PowerShell, si se prefiere:
+  `& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe"`
 
 El warning `CS0108` de `AccountController.Profile()` es preexistente e inofensivo.
 

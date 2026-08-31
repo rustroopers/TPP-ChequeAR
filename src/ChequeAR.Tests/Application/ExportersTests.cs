@@ -128,5 +128,174 @@ namespace ChequeAR.Tests.Application
             Assert.Contains("r=\"AA1\"", sheet);   // header de la 27ª columna
             Assert.Contains("r=\"AA2\"", sheet);   // dato de la 27ª columna
         }
+
+        // ---- StatsXlsxExporter ----
+
+        private static ReportStats StatsConDosPreguntas() => new ReportStats
+        {
+            Responses = 10,
+            Questions = new List<QuestionStats>
+            {
+                new QuestionStats
+                {
+                    LinkId = "peso", Text = "Peso", Type = "Decimal", Kind = "numeric",
+                    Answered = 8, Missing = 2, CompletenessPct = 80,
+                    N = 8, Mean = 12.5m, Median = 12m, StdDev = 1.1m, Min = 10m, Max = 15m, P25 = 11m, P75 = 13m
+                },
+                new QuestionStats
+                {
+                    LinkId = "dolor", Text = "¿Dolor?", Type = "Boolean", Kind = "categorical",
+                    Answered = 10, Missing = 0, CompletenessPct = 100,
+                    N = 10,
+                    Categories = new List<CategoryCount>
+                    {
+                        new CategoryCount { Label = "Sí", Count = 7, Pct = 70 },
+                        new CategoryCount { Label = "No", Count = 3, Pct = 30 }
+                    }
+                }
+            }
+        };
+
+        [Fact]
+        public void StatsXlsx_EscribeResumenYCategoriasDeAmbasPreguntas()
+        {
+            string resumen, categorias;
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(StatsConDosPreguntas()), ZipArchiveMode.Read))
+            {
+                resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
+                categorias = ReadEntry(zip, "xl/worksheets/sheet2.xml");
+            }
+
+            Assert.Contains("Peso", resumen);
+            Assert.Contains("12,5", resumen); // media en formato es-AR (coma decimal)
+            Assert.Contains("¿Dolor?", categorias);
+            Assert.Contains("Sí", categorias);
+            Assert.Contains("70", categorias);
+        }
+
+        [Fact]
+        public void StatsXlsx_FiltraPorLinkIdsSeleccionados()
+        {
+            string resumen;
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(StatsConDosPreguntas(), new[] { "peso" }), ZipArchiveMode.Read))
+                resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
+
+            Assert.Contains("Peso", resumen);
+            Assert.DoesNotContain("¿Dolor?", resumen);
+        }
+
+        [Fact]
+        public void StatsXlsx_EscribeHojaDeHistogramasConLosBins()
+        {
+            var stats = StatsConDosPreguntas();
+            stats.Questions[0].Histogram = new List<HistogramBin>
+            {
+                new HistogramBin { From = 10m, To = 12m, Count = 3 },
+                new HistogramBin { From = 12m, To = 15m, Count = 5 }
+            };
+
+            string histogramas;
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+                histogramas = ReadEntry(zip, "xl/worksheets/sheet3.xml");
+
+            Assert.Contains("Peso", histogramas);
+            Assert.Contains("10-12", histogramas);
+            Assert.Contains("12-15", histogramas);
+        }
+
+        [Fact]
+        public void StatsXlsx_AgregaGraficosNativosParaCategoricasEHistogramas()
+        {
+            var stats = StatsConDosPreguntas();
+            stats.Questions[0].Histogram = new List<HistogramBin>
+            {
+                new HistogramBin { From = 10m, To = 12m, Count = 3 },
+                new HistogramBin { From = 12m, To = 15m, Count = 5 }
+            };
+
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            {
+                var entries = zip.Entries.Select(e => e.FullName).ToList();
+                Assert.Contains("xl/worksheets/sheet4.xml", entries);
+                Assert.Contains("xl/drawings/drawing1.xml", entries);
+                Assert.Contains("xl/charts/chart1.xml", entries); // barra de "dolor" (default sin ChartTypes)
+                Assert.Contains("xl/charts/chart2.xml", entries); // barra del histograma de "peso"
+
+                var categorica = ReadEntry(zip, "xl/charts/chart1.xml");
+                Assert.Contains("c:barChart", categorica); // sin indicacion explicita, por defecto es barra
+                Assert.Contains("Categorias", categorica);
+                Assert.Contains("c:showPercent val=\"1\"", categorica); // cantidad + % como etiqueta
+
+                var bar = ReadEntry(zip, "xl/charts/chart2.xml");
+                Assert.Contains("c:barChart", bar);
+                Assert.Contains("Histogramas", bar);
+            }
+        }
+
+        [Fact]
+        public void StatsXlsx_UsaTortaCuandoElChartTypeLoIndica()
+        {
+            var stats = StatsConDosPreguntas();
+            var chartTypes = new Dictionary<string, string> { { "dolor", "pie" } };
+
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats, null, chartTypes), ZipArchiveMode.Read))
+            {
+                var chart = ReadEntry(zip, "xl/charts/chart1.xml");
+                Assert.Contains("c:pieChart", chart);
+            }
+        }
+
+        [Fact]
+        public void StatsXlsx_ResumenIncluyeCuestionarioPeriodoYFiltros()
+        {
+            var stats = StatsConDosPreguntas();
+            stats.QuestionnaireTitle = "Control de embarazo";
+            stats.DateFrom = new DateTime(2026, 1, 1);
+            stats.DateTo = new DateTime(2026, 6, 30);
+            stats.FiltersSummary = "Peso >= 10";
+
+            string resumen;
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+                resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
+
+            Assert.Contains("Control de embarazo", resumen);
+            Assert.Contains("01/01/2026", resumen);
+            Assert.Contains("30/06/2026", resumen);
+            Assert.Contains("Peso &gt;= 10", resumen); // escapado XML de '>='
+        }
+
+        [Fact]
+        public void StatsXlsx_DistribuyeGraficosEnGrillaDeDosColumnas()
+        {
+            var stats = StatsConDosPreguntas();
+            stats.Questions.Add(new QuestionStats
+            {
+                LinkId = "otraCategorica", Text = "Fumador?", Type = "Boolean", Kind = "categorical",
+                Categories = new List<CategoryCount> { new CategoryCount { Label = "Sí", Count = 1, Pct = 100 } }
+            });
+
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            {
+                var drawing = ReadEntry(zip, "xl/drawings/drawing1.xml");
+                // El primer grafico arranca en col 0, el segundo (misma fila de la grilla) en col 9.
+                Assert.Contains("<xdr:col>0</xdr:col>", drawing);
+                Assert.Contains("<xdr:col>9</xdr:col>", drawing);
+            }
+        }
+
+        [Fact]
+        public void StatsXlsx_SinCategoricasNiHistogramas_NoAgregaHojaDeGraficos()
+        {
+            var stats = StatsConDosPreguntas();
+            stats.Questions.RemoveAll(q => q.Kind == "categorical"); // solo queda "peso" sin Histogram
+
+            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            {
+                var entries = zip.Entries.Select(e => e.FullName).ToList();
+                Assert.DoesNotContain("xl/worksheets/sheet4.xml", entries);
+                Assert.DoesNotContain("xl/drawings/drawing1.xml", entries);
+            }
+        }
+
     }
 }

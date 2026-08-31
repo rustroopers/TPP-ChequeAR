@@ -51,11 +51,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Skip((model.Page - 1) * pageSize)
                     .Take(pageSize));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Entries.Clear();
                 model.Total = 0;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -139,10 +139,11 @@ namespace ChequeAR.Api.Controllers.Mvc
             });
 
             var result = new ReportResult { Total = rows.Count, Rows = rows };
+            var dateSuffix = DateTime.Now.ToString("yyyy-MM-dd");
             if ((format ?? "xlsx").ToLowerInvariant() == "csv")
-                return File(new CsvExporter().Export(result), "text/csv", "auditoria.csv");
+                return File(new CsvExporter().Export(result), "text/csv", $"auditoria_{dateSuffix}.csv");
             return File(new XlsxExporter().Export(result),
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "auditoria.xlsx");
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"auditoria_{dateSuffix}.xlsx");
         }
 
         // A7
@@ -196,9 +197,9 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(detail);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new AuditDetailViewModel { Id = id });
             }
         }
