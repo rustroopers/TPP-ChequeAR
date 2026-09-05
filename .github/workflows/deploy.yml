@@ -1,0 +1,68 @@
+# Deploy de ChequeAR a Azure App Service (Windows, .NET Framework 4.8).
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AZURE_WEBAPP_NAME: chequear
+  PUBLISH_DIR: ${{ github.workspace }}\publish
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Cache de NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: msbuild src\ChequeAR.sln -t:Restore -v:minimal -nologo
+
+
+      - name: Publish a carpeta
+        run: >
+          msbuild src\ChequeAR.Api\ChequeAR.Api.csproj
+          -v:minimal -nologo
+          -p:Configuration=Release
+          -p:DeployOnBuild=true
+          -p:DeployDefaultTarget=WebPublish
+          -p:WebPublishMethod=FileSystem
+          -p:DeleteExistingFiles=true
+          -p:publishUrl=${{ env.PUBLISH_DIR }}
+
+
+      - name: Verificar el paquete
+        shell: pwsh
+        run: |
+          $webConfig = Join-Path $env:PUBLISH_DIR 'Web.config'
+          if (-not (Test-Path $webConfig)) {
+            throw "No se genero Web.config en $env:PUBLISH_DIR"
+          }
+          if ((Select-String -Path $webConfig -Pattern 'debug="true"' -Quiet)) {
+            throw "El Web.config publicado conserva debug=true: no se aplico Web.Release.config"
+          }
+
+      - name: Deploy a Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.PUBLISH_DIR }}

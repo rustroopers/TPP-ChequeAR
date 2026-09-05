@@ -141,6 +141,9 @@
   <ItemGroup>
     <Content Include="Global.asax" />
     <Content Include="Web.config" />
+    <Content Include="Web.Release.config">
+      <DependentUpon>Web.config</DependentUpon>
+    </Content>
     <Content Include="Views\Web.config" />
     <Content Include="Views\Home\Index.cshtml" />
     <Content Include="Views\Shared\_Layout.cshtml" />
@@ -173,7 +176,6 @@
     <Content Include="Views\Audit\Details.cshtml" />
     <Content Include="Views\Users\Index.cshtml" />
     <Content Include="Views\Users\Details.cshtml" />
-    <Content Include="Views\Admin\Integrations.cshtml" />
     <Content Include="Views\Admin\Capability.cshtml" />
     <Content Include="Scripts\cq-date-range.js" />
     <Content Include="Scripts\cq-autofilter.js" />
