@@ -13,7 +13,7 @@ using Newtonsoft.Json.Serialization;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
+    [Authorize]
     public class EncountersController : Controller
     {
         private readonly PatientService _patients;

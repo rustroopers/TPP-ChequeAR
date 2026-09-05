@@ -1,4 +1,4 @@
-@{
+﻿@{
     var userName = User != null && User.Identity != null && User.Identity.IsAuthenticated
         ? User.Identity.Name
         : "Invitado";
@@ -19,9 +19,18 @@
                 <span>@userName</span>
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" href="@Url.Action("Profile", "Account")"><i class="bi bi-person"></i> @Cq.T("navbar.profile")</a></li>
-                <li><hr class="dropdown-divider" /></li>
-                <li><a class="dropdown-item text-danger" href="@Url.Action("Logout", "Account")"><i class="bi bi-box-arrow-right"></i> @Cq.T("navbar.logout")</a></li>
+                @if (Request.IsAuthenticated)
+                {
+                    <li><a class="dropdown-item" href="@Url.Action("Profile", "Account")"><i class="bi bi-person"></i> @Cq.T("navbar.profile")</a></li>
+                    <li><hr class="dropdown-divider" /></li>
+                    <li><a class="dropdown-item text-danger" href="@Url.Action("Logout", "Account")"><i class="bi bi-box-arrow-right"></i> @Cq.T("navbar.logout")</a></li>
+                }
+                else
+                {
+                    @* Sin este link no hay forma de llegar al login desde la UI, y sin login
+                       las islas no reciben token: la pagina carga pero no deja guardar nada. *@
+                    <li><a class="dropdown-item" href="@Url.Action("Login", "Account")"><i class="bi bi-box-arrow-in-right"></i> Iniciar sesión</a></li>
+                }
             </ul>
         </div>
     </div>

@@ -14,6 +14,7 @@ using ChequeAR.Infrastructure.Fhir;
 using ChequeAR.Infrastructure.Oracle;
 using ChequeAR.Infrastructure.Repositories;
 using ChequeAR.Infrastructure.Storage;
+using Serilog;
 
 namespace ChequeAR.Api.App_Start
 {
@@ -112,8 +113,31 @@ namespace ChequeAR.Api.App_Start
             Register<IRefreshTokenRepository>(() => new RefreshTokenRepository(Resolve<ChequeARDbContext>()));
             Register<ISavedReportRepository>(() => new SavedReportRepository(Resolve<ChequeARDbContext>()));
 
-            Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
-            Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            // Sin servidor FHIR del hospital, se proyecta el mismo dataset que las vistas
+            // VW_* (ver MockHospitalFhirClient): una sola fuente, dos protocolos.
+            if (string.IsNullOrWhiteSpace(hospitalFhirUrl))
+            {
+                Log.Warning("HospitalFhir:BaseUrl vacio: se usa MockHospitalFhirClient sobre "
+                            + "el dataset de las vistas (datos de demostracion).");
+                Register<IHospitalFhirClient>(() => new MockHospitalFhirClient(Resolve<IOracleViewClient>()));
+            }
+            else
+            {
+                Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
+            }
+            // Sin URL configurada no hay login del hospital que llamar: en vez de fallar
+            // toda request contra un endpoint vacio, se sirve el mock. Misma convencion que
+            // Terminology:BaseUrl. Cuando exista el servicio real, basta configurar la URL.
+            if (string.IsNullOrWhiteSpace(hospitalAuthUrl))
+            {
+                Log.Warning("HospitalAuth:LoginUrl vacio: se usa MockHospitalAuthClient, "
+                            + "que acepta cualquier contrasena. No dejar asi en produccion real.");
+                Register<IHospitalAuthClient>(() => new MockHospitalAuthClient());
+            }
+            else
+            {
+                Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            }
             Register<ITerminologyClient>(() => new TerminologyClient(_termHttp, terminologyUrl, terminologyEcl, terminologyLang));
 
             // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.
@@ -124,7 +148,19 @@ namespace ChequeAR.Api.App_Start
             var allowedViews = File.Exists(allowlistPath)
                 ? AllowlistLoader.Load(allowlistPath)
                 : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
-            Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
+            // Sin conexion configurada no hay base del hospital que consultar. El mock de
+            // spec 008 es un contenedor Oracle, que no existe en App Service, asi que alla
+            // las vistas se sirven desde memoria respetando la misma allowlist.
+            if (string.IsNullOrWhiteSpace(oracleConn))
+            {
+                Log.Warning("Oracle:ConnectionString vacio: las vistas VW_* se sirven desde "
+                            + "MockOracleViewClient (datos de demostracion, no del hospital).");
+                Register<IOracleViewClient>(() => new MockOracleViewClient(allowedViews));
+            }
+            else
+            {
+                Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
+            }
             Register<IFhirValidator>(() => _fhirValidator);
             Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot, Resolve<ChequeARDbContext>()));
 

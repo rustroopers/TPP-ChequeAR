@@ -12,7 +12,7 @@ using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
+    [Authorize]
     public class QuestionnairesController : Controller
     {
         
