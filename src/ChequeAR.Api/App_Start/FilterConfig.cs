@@ -6,7 +6,12 @@ namespace ChequeAR.Api.App_Start
     {
         public static void RegisterGlobalFilters(GlobalFilterCollection filters)
         {
-            filters.Add(new HandleErrorAttribute());
+            // Sin HandleErrorAttribute a proposito. Renderiza una vista "Error" que este
+            // proyecto no tiene (la pagina de error es Views/Error/Index.cshtml, servida por
+            // ErrorController via customErrors defaultRedirect="~/Error"), asi que fallaba con
+            // "The view 'Error' or its master was not found" y tapaba la excepcion original.
+            // Ademas marcaba la excepcion como manejada, con lo cual Application_Error no
+            // corria y Serilog no llegaba a loguear nada.
         }
     }
 }
