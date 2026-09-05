@@ -113,7 +113,18 @@ namespace ChequeAR.Api.App_Start
             Register<IRefreshTokenRepository>(() => new RefreshTokenRepository(Resolve<ChequeARDbContext>()));
             Register<ISavedReportRepository>(() => new SavedReportRepository(Resolve<ChequeARDbContext>()));
 
-            Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
+            // Sin servidor FHIR del hospital, se proyecta el mismo dataset que las vistas
+            // VW_* (ver MockHospitalFhirClient): una sola fuente, dos protocolos.
+            if (string.IsNullOrWhiteSpace(hospitalFhirUrl))
+            {
+                Log.Warning("HospitalFhir:BaseUrl vacio: se usa MockHospitalFhirClient sobre "
+                            + "el dataset de las vistas (datos de demostracion).");
+                Register<IHospitalFhirClient>(() => new MockHospitalFhirClient(Resolve<IOracleViewClient>()));
+            }
+            else
+            {
+                Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
+            }
             // Sin URL configurada no hay login del hospital que llamar: en vez de fallar
             // toda request contra un endpoint vacio, se sirve el mock. Misma convencion que
             // Terminology:BaseUrl. Cuando exista el servicio real, basta configurar la URL.
