@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Configuration;
 using System.IO;
 using Serilog;
@@ -9,7 +9,8 @@ namespace ChequeAR.Api.App_Start
     {
         public static void Configure()
         {
-            var root = ConfigurationManager.AppSettings["Logging:Root"] ?? @"C:\ChequeAR\Logs";
+            var root = Environment.ExpandEnvironmentVariables(
+                ConfigurationManager.AppSettings["Logging:Root"] ?? @"C:\ChequeAR\Logs");
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Information()
