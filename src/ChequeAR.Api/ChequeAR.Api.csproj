@@ -152,6 +152,7 @@
     <Content Include="Views\Shared\_Toasts.cshtml" />
     <Content Include="Views\Shared\_Breadcrumbs.cshtml" />
     <Content Include="Views\Shared\_ProgressBar.cshtml" />
+    <Content Include="Views\Shared\_DataError.cshtml" />
     <Content Include="Views\Error\Index.cshtml" />
     <Content Include="Content\theme\chequear-theme.css" />
     <Content Include="Content\i18n\es-AR.json" />
@@ -168,6 +169,7 @@
     <Content Include="Views\Encounters\View.cshtml" />
     <Content Include="Views\Encounters\Timeline.cshtml" />
     <Content Include="Views\Encounters\Trend.cshtml" />
+    <Content Include="Views\Encounters\History.cshtml" />
     <Content Include="Views\Reports\Index.cshtml" />
     <Content Include="Views\Reports\Build.cshtml" />
     <Content Include="Views\Reports\Preview.cshtml" />
@@ -184,6 +186,7 @@
     <Content Include="Scripts\islands\questionnaire-renderer\index.js" />
     <Content Include="Scripts\islands\report-builder\index.js" />
     <Content Include="Scripts\islands\patient-trend\index.js" />
+    <Content Include="Scripts\islands\report-stats\index.js" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ChequeAR.Domain\ChequeAR.Domain.csproj">
