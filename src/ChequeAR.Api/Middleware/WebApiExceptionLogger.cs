@@ -1,0 +1,26 @@
+using System.Web.Http.ExceptionHandling;
+using Serilog;
+
+namespace ChequeAR.Api.Middleware
+{
+    /// Loguea las excepciones que revientan dentro del pipeline de Web API.
+    ///
+    /// Sin esto son invisibles: Web API atrapa la excepcion, responde 500 y no la deja
+    /// propagar, asi que Application_Error nunca corre y no se escribe ni en el event log
+    /// de ASP.NET ni en Serilog. El unico sintoma era un 500 sin cuerpo util, que es lo
+    /// mismo que pasaba en las vistas MVC antes de sacar HandleErrorAttribute.
+    ///
+    /// Es un logger, no un handler: no cambia la respuesta que ve el cliente (sigue siendo
+    /// el 500 generico, sin filtrar stack traces a la red), solo deja el rastro en disco.
+    public class WebApiExceptionLogger : ExceptionLogger
+    {
+        public override void Log(ExceptionLoggerContext context)
+        {
+            var request = context?.Request;
+            Serilog.Log.Error(context?.Exception,
+                "Excepcion no controlada en API {Method} {Path}",
+                request?.Method?.Method,
+                request?.RequestUri?.PathAndQuery);
+        }
+    }
+}
