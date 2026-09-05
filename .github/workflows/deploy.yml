@@ -1,4 +1,4 @@
-# Deploy de ChequeAR a Azure App Service (Windows, .NET Framework 4.8).
+﻿# Deploy de ChequeAR a Azure App Service (Windows, .NET Framework 4.8).
 
 name: deploy
 
@@ -56,7 +56,9 @@ jobs:
           JWT_SIGNING_SECRET: ${{ secrets.JWT_SIGNING_SECRET }}
           ORACLE_CONNECTIONSTRING: ${{ secrets.ORACLE_CONNECTIONSTRING }}
         run: |
-          foreach ($name in 'CONNSTR_CHEQUEAR', 'JWT_SIGNING_SECRET', 'ORACLE_CONNECTIONSTRING') {
+          # ORACLE_CONNECTIONSTRING es opcional a proposito: mientras el hospital no
+          # exponga su base, se publica vacio y la app entra en MockOracleViewClient.
+          foreach ($name in 'CONNSTR_CHEQUEAR', 'JWT_SIGNING_SECRET') {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
               throw "Falta el secret $name en el repositorio"
             }
@@ -65,7 +67,9 @@ jobs:
           # Escape para que una password con & o < no rompa el XML.
           $connStr = [System.Security.SecurityElement]::Escape($env:CONNSTR_CHEQUEAR)
           $jwt     = [System.Security.SecurityElement]::Escape($env:JWT_SIGNING_SECRET)
-          $oracle  = [System.Security.SecurityElement]::Escape($env:ORACLE_CONNECTIONSTRING)
+          # Escape(null) explota: sin secret, cadena vacia (=> MockOracleViewClient).
+          $oracleRaw = if ([string]::IsNullOrWhiteSpace($env:ORACLE_CONNECTIONSTRING)) { '' } else { $env:ORACLE_CONNECTIONSTRING }
+          $oracle  = [System.Security.SecurityElement]::Escape($oracleRaw)
 
           $conn = @(
             '<?xml version="1.0" encoding="utf-8"?>',

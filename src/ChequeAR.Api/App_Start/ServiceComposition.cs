@@ -137,7 +137,19 @@ namespace ChequeAR.Api.App_Start
             var allowedViews = File.Exists(allowlistPath)
                 ? AllowlistLoader.Load(allowlistPath)
                 : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
-            Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
+            // Sin conexion configurada no hay base del hospital que consultar. El mock de
+            // spec 008 es un contenedor Oracle, que no existe en App Service, asi que alla
+            // las vistas se sirven desde memoria respetando la misma allowlist.
+            if (string.IsNullOrWhiteSpace(oracleConn))
+            {
+                Log.Warning("Oracle:ConnectionString vacio: las vistas VW_* se sirven desde "
+                            + "MockOracleViewClient (datos de demostracion, no del hospital).");
+                Register<IOracleViewClient>(() => new MockOracleViewClient(allowedViews));
+            }
+            else
+            {
+                Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
+            }
             Register<IFhirValidator>(() => _fhirValidator);
             Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot, Resolve<ChequeARDbContext>()));
 
