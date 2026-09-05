@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
@@ -56,7 +56,8 @@ namespace ChequeAR.Api.App_Start
             var terminologyEcl = ConfigurationManager.AppSettings["Terminology:Ecl"] ?? "";
             var terminologyLang = ConfigurationManager.AppSettings["Terminology:DisplayLanguage"] ?? "es";
             var oracleConn = ConfigurationManager.AppSettings["Oracle:ConnectionString"] ?? "";
-            var attachmentsRoot = ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments";
+            var attachmentsRoot = Environment.ExpandEnvironmentVariables(
+                ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments");
             var sqlConn = ConfigurationManager.ConnectionStrings["ChequeAR"]?.ConnectionString ?? "";
 
             // ===== Singletons =====
