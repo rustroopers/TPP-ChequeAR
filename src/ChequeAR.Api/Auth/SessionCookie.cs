@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
@@ -71,6 +71,11 @@ namespace ChequeAR.Api.Auth
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.Name, ticket.Name),
+                // NameIdentifier no es decorativo: @Html.AntiForgeryToken() exige este claim
+                // (o el de identityprovider de ACS) en cualquier identidad claims-based
+                // autenticada, y sin el tira InvalidOperationException al renderizar el
+                // token, tumbando toda vista con formulario. Ver AntiForgeryConfig.
+                new Claim(ClaimTypes.NameIdentifier, ticket.Name),
                 new Claim("sub", ticket.Name),
                 new Claim("name", payload.DisplayName ?? ticket.Name)
             };

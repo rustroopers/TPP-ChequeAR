@@ -1,4 +1,6 @@
 ﻿using System.Configuration;
+using System.Security.Claims;
+using System.Web.Helpers;
 using System.Web.Http;
 using System.Web.Mvc;
 using System.Web.Routing;
@@ -26,6 +28,14 @@ namespace ChequeAR.Api
             AreaRegistration.RegisterAllAreas();
             GlobalConfiguration.Configure(WebApiConfig.Register);
             GlobalConfiguration.Configuration.DependencyResolver = ServiceComposition.WebApiResolver;
+
+            // El anti-forgery, ante una identidad claims-based, exige NameIdentifier Y el claim
+            // 'identityprovider' de ACS —el mensaje de error dice "or" pero pide los dos— y sin
+            // ellos tira InvalidOperationException al renderizar @Html.AntiForgeryToken(), o sea
+            // en toda vista con formulario. La sesion de ChequeAR no viene de un STS federado,
+            // asi que en vez de fabricar un identityprovider falso se declara cual es el claim
+            // que identifica al usuario.
+            AntiForgeryConfig.UniqueClaimTypeIdentifier = ClaimTypes.NameIdentifier;
 
             FilterConfig.RegisterGlobalFilters(GlobalFilters.Filters);
             RouteConfig.RegisterRoutes(RouteTable.Routes);
