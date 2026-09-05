@@ -106,6 +106,7 @@
     <Compile Include="Helpers\AuditPresentation.cs" />
     <Compile Include="Helpers\CqLocalizer.cs" />
     <Compile Include="Middleware\AuditMiddleware.cs" />
+    <Compile Include="Middleware\WebApiExceptionLogger.cs" />
     <Compile Include="Controllers\Mvc\HomeController.cs" />
     <Compile Include="Controllers\Mvc\AccountController.cs" />
     <Compile Include="Controllers\Mvc\ErrorController.cs" />
