@@ -14,6 +14,7 @@ using ChequeAR.Infrastructure.Fhir;
 using ChequeAR.Infrastructure.Oracle;
 using ChequeAR.Infrastructure.Repositories;
 using ChequeAR.Infrastructure.Storage;
+using Serilog;
 
 namespace ChequeAR.Api.App_Start
 {
@@ -113,7 +114,19 @@ namespace ChequeAR.Api.App_Start
             Register<ISavedReportRepository>(() => new SavedReportRepository(Resolve<ChequeARDbContext>()));
 
             Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
-            Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            // Sin URL configurada no hay login del hospital que llamar: en vez de fallar
+            // toda request contra un endpoint vacio, se sirve el mock. Misma convencion que
+            // Terminology:BaseUrl. Cuando exista el servicio real, basta configurar la URL.
+            if (string.IsNullOrWhiteSpace(hospitalAuthUrl))
+            {
+                Log.Warning("HospitalAuth:LoginUrl vacio: se usa MockHospitalAuthClient, "
+                            + "que acepta cualquier contrasena. No dejar asi en produccion real.");
+                Register<IHospitalAuthClient>(() => new MockHospitalAuthClient());
+            }
+            else
+            {
+                Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            }
             Register<ITerminologyClient>(() => new TerminologyClient(_termHttp, terminologyUrl, terminologyEcl, terminologyLang));
 
             // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.

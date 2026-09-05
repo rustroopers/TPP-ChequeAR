@@ -1,11 +1,15 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
 using System.Web.Security;
+using ChequeAR.Api.Auth;
+using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -45,7 +49,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     return View("Login");
                 }
 
-                FormsAuthentication.SetAuthCookie(info.Id ?? username, remember);
+                // SetAuthCookie guardaria solo el nombre y perderia info.Roles, que es
+                // justo lo que necesita SessionToken para firmar el bearer de las islas.
+                SessionCookie.Issue(HttpContext, info, remember);
 
                 if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
                 {
@@ -64,7 +70,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                     StringComparison.OrdinalIgnoreCase);
                 if (System.Web.HttpContext.Current.IsDebuggingEnabled && allowDebugFallback)
                 {
-                    FormsAuthentication.SetAuthCookie(username, remember);
+                    SessionCookie.Issue(HttpContext, new UserInfo
+                    {
+                        Id = username,
+                        DisplayName = username,
+                        Roles = new List<string> { Role.Medico },
+                        Specialties = new List<string>()
+                    }, remember);
                     return RedirectToAction("Index", "Home");
                 }
                 ModelState.AddModelError("", "No se pudo iniciar sesión. Intentá nuevamente.");
