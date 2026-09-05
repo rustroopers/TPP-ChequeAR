@@ -7,6 +7,19 @@ namespace ChequeAR.Infrastructure.EF
 {
     public class ChequeARDbContext : DbContext
     {
+        // Aplica las migraciones pendientes la primera vez que se usa el contexto, para
+        // que un deploy no necesite un paso manual contra la base.
+        //
+        // Va aca y no en Application_Start por dos razones: ChequeAR.Api no referencia
+        // EntityFramework (solo Infrastructure, y en csproj clasico las referencias no son
+        // transitivas), y siendo lazy una base inaccesible hace fallar unicamente las
+        // pantallas que la tocan en vez de tumbar el arranque entero de la app.
+        static ChequeARDbContext()
+        {
+            Database.SetInitializer(
+                new MigrateDatabaseToLatestVersion<ChequeARDbContext, Migrations.Configuration>());
+        }
+
         public ChequeARDbContext() : base("name=ChequeAR") { }
         public ChequeARDbContext(string connectionString) : base(connectionString) { }
 
