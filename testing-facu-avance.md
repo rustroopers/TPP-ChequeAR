@@ -11,7 +11,26 @@ inicial completo con feedback crudo).
 
 ## ✅ Hecho y pusheado
 
-### Commit pendiente — Etapa 3.1 wizard step-by-step
+### Commit pendiente — Etapa 3.2 verificación código↔término
+
+**Editor (`Scripts/islands/questionnaire-editor/index.js`):**
+- **3.2 validación**: nuevo botón "Verificar" al lado del input de código SNOMED
+  (aparece tanto en el panel Propiedades del paso Estructura como en el panel
+  de codificación del paso Códigos). Reusa `/fhir/r5/ValueSet/$expand` con el
+  código como filter (mismo endpoint que el autocomplete, ya autorizado y
+  cacheado — sin cirugía en el backend) y busca match exacto en `results`.
+  - Match ⇒ carga `codeDisplay` con el término oficial y muestra "Coincide:
+    <term>".
+  - Si el término escrito por el clínico difiere del oficial, muestra un aviso
+    amarillo "El término escrito no coincide con el oficial. Revisalo o dejá
+    el oficial."
+  - Sin match ⇒ "El código X no existe en SNOMED CT".
+  - Validación previa: si no son dígitos (6-18), avisa antes de pegarle al
+    server ("Un código SNOMED CT son solo dígitos").
+- Estado (`codeVerification`, `codeVerifying`) se limpia al cambiar de pregunta
+  o al modificar el código, para no arrastrar feedback de otra verificación.
+
+### Commit `b29eb31` — Etapa 3.1 wizard step-by-step
 
 **Editor de cuestionarios (`Scripts/islands/questionnaire-editor/index.js` + `chequear-theme.css`):**
 - **3.1** Reemplazado el editor "todo-en-una-pantalla" por un **wizard de 5 pasos**:
@@ -174,9 +193,10 @@ iteraciones cortas.** Detalle:
 - **3.2 Autocomplete SNOMED roto** — la request no aparece en Network. Investigar
   desde la isla Vue → endpoint del Api → cliente Snowstorm en `ChequeAR.Infrastructure`.
   Silencia el error en algún try/catch. **Bug funcional P0.**
-- **3.2 Validación código↔término** — sin chequeo hoy. Opciones: bloquear entrada
-  manual y forzar autocomplete; permitir manual con validación async contra Snowstorm;
-  mostrar el `preferredTerm` oficial al lado del código escrito.
+- **3.2 Validación código↔término** — ✅ hecho: botón "Verificar" que trae el
+  `preferredTerm` oficial vía `$expand?filter=<code>` y avisa si el término
+  escrito difiere. Se decidió NO bloquear la entrada manual (los usuarios que
+  ya saben el código no pierden tiempo escribiendo el término y buscando).
 - **3.3 Tipo de respuesta** — sacar gris claro que parece disabled; permitir edición
   in-place del tipo (hoy obliga a borrar la pregunta). *NOTA*: revisando el código,
   `onTypeChange` ya está implementado y el select del panel Propiedades es un

@@ -564,7 +564,72 @@
                 q.codeDisplay = r.display;
                 snomedOpen.value = false;
                 snomedResults.value = [];
+                codeVerification.value = null;
                 dirty.value = true;
+            }
+
+            // --- Verificación de código SNOMED tipeado a mano -------------------------
+            // El médico puede saltarse el autocomplete y tipear un código directo. Sin
+            // chequeo, un dígito de más pasa como si fuera válido y termina en la base:
+            // los reportes cruzan mal y el error aparece meses después. Verificar consulta
+            // $expand con el propio código como filter y busca match exacto; si aparece,
+            // ponemos codeDisplay con el término oficial y avisamos si el término escrito
+            // difiere. Reusa el mismo endpoint (ya autorizado, ya con caché) para no meter
+            // cirugía en el backend.
+            var codeVerification = Vue.ref(null);   // { ok:true, display, warnTerm } | { ok:false, msg }
+            var codeVerifying = Vue.ref(false);
+
+            // Cambiar de pregunta borra el estado de verificación anterior: pertenece a la
+            // pregunta que se estaba mirando, no a esta.
+            Vue.watch(selected, function () { codeVerification.value = null; });
+            Vue.watch(function () {
+                return selected.value && selected.value.question ? selected.value.question.code : null;
+            }, function () { codeVerification.value = null; });
+
+            function verifySnomedCode() {
+                var q = selected.value && selected.value.question;
+                var code = q ? (q.code || '').trim() : '';
+                codeVerification.value = null;
+                if (!code) {
+                    codeVerification.value = { ok: false, msg: 'Escribí un código para verificar.' };
+                    return;
+                }
+                if (!/^[0-9]{6,18}$/.test(code)) {
+                    codeVerification.value = { ok: false, msg: 'Un código SNOMED CT son solo dígitos (6-18). Revisá lo tipeado.' };
+                    return;
+                }
+                var token = getToken();
+                if (!token) { toast('No hay sesión: no se puede verificar (token ausente).', 'error'); return; }
+
+                codeVerifying.value = true;
+                fetch('/fhir/r5/ValueSet/$expand?count=5&filter=' + encodeURIComponent(code), {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                }).then(function (res) {
+                    return res.json().catch(function () { return null; }).then(function (body) {
+                        if (!res.ok) throw new Error(diagnosticoTerminologia(body, 'HTTP ' + res.status));
+                        return body;
+                    });
+                }).then(function (data) {
+                    var results = (data && data.results) || [];
+                    var match = null;
+                    for (var i = 0; i < results.length; i++) {
+                        if (results[i].code === code) { match = results[i]; break; }
+                    }
+                    if (!match) {
+                        codeVerification.value = { ok: false, msg: 'El código ' + code + ' no existe en SNOMED CT (o no está en el subset activo).' };
+                        return;
+                    }
+                    q.codeDisplay = match.display;
+                    var termEscrito = (q.term || '').trim().toLowerCase();
+                    var termOficial = (match.display || '').toLowerCase();
+                    var warnTerm = termEscrito && termOficial.indexOf(termEscrito) < 0 && termEscrito.indexOf(termOficial) < 0;
+                    codeVerification.value = { ok: true, display: match.display, warnTerm: warnTerm };
+                    dirty.value = true;
+                }).catch(function (err) {
+                    codeVerification.value = { ok: false, msg: err.message };
+                }).then(function () {
+                    codeVerifying.value = false;
+                });
             }
 
             // Saca el código pero conserva el término: qué mide la pregunta no deja de ser
@@ -1004,6 +1069,7 @@
                 snomedResults: snomedResults, snomedSearching: snomedSearching,
                 snomedError: snomedError, snomedOpen: snomedOpen,
                 searchSnomed: searchSnomed, pickSnomed: pickSnomed, clearSnomed: clearSnomed,
+                verifySnomedCode: verifySnomedCode, codeVerification: codeVerification, codeVerifying: codeVerifying,
                 onTypeChange: onTypeChange,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
@@ -1243,7 +1309,22 @@
             </div>\
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Código SNOMED CT</label>\
-                <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                <div class="input-group input-group-sm">\
+                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                    <button class="btn btn-outline-secondary-cq" type="button" @click="verifySnomedCode" :disabled="codeVerifying || !selected.question.code" title="Verificar el código contra SNOMED CT">\
+                        <span v-if="codeVerifying" class="spinner-border spinner-border-sm"></span>\
+                        <template v-else><i class="bi bi-shield-check"></i> Verificar</template>\
+                    </button>\
+                </div>\
+                <div v-if="codeVerification && codeVerification.ok" class="cq-text-xs mt-1" style="color:var(--cq-success);">\
+                    <i class="bi bi-check-circle-fill"></i> Coincide: <strong>{{ codeVerification.display }}</strong>\
+                    <div v-if="codeVerification.warnTerm" class="cq-text-xs mt-1" style="color:var(--cq-warning);">\
+                        <i class="bi bi-exclamation-triangle-fill"></i> El término escrito no coincide con el oficial. Revisalo o dejá el oficial.\
+                    </div>\
+                </div>\
+                <div v-else-if="codeVerification && !codeVerification.ok" class="cq-text-xs text-danger mt-1">\
+                    <i class="bi bi-x-circle-fill"></i> {{ codeVerification.msg }}\
+                </div>\
                 <div v-if="selected.question.codeDisplay" class="mt-1">\
                     <span class="cq-removable">\
                         <i class="bi bi-check-circle-fill"></i>\
@@ -1253,7 +1334,7 @@
                         </button>\
                     </span>\
                 </div>\
-                <p v-else class="cq-text-xs cq-text-muted mt-1">Elegí una sugerencia de arriba, o escribí el código a mano si ya lo sabés.</p>\
+                <p v-else class="cq-text-xs cq-text-muted mt-1">Elegí una sugerencia de arriba, o escribí el código a mano y verificalo.</p>\
             </div>\
 \
             <hr />\
@@ -1312,7 +1393,22 @@
                 </div>\
                 <div class="mb-2">\
                     <label class="form-label cq-text-sm">Código SNOMED CT</label>\
-                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                    <div class="input-group input-group-sm">\
+                        <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                        <button class="btn btn-outline-secondary-cq" type="button" @click="verifySnomedCode" :disabled="codeVerifying || !selected.question.code" title="Verificar el código contra SNOMED CT">\
+                            <span v-if="codeVerifying" class="spinner-border spinner-border-sm"></span>\
+                            <template v-else><i class="bi bi-shield-check"></i> Verificar</template>\
+                        </button>\
+                    </div>\
+                    <div v-if="codeVerification && codeVerification.ok" class="cq-text-xs mt-1" style="color:var(--cq-success);">\
+                        <i class="bi bi-check-circle-fill"></i> Coincide: <strong>{{ codeVerification.display }}</strong>\
+                        <div v-if="codeVerification.warnTerm" class="cq-text-xs mt-1" style="color:var(--cq-warning);">\
+                            <i class="bi bi-exclamation-triangle-fill"></i> El término escrito no coincide con el oficial.\
+                        </div>\
+                    </div>\
+                    <div v-else-if="codeVerification && !codeVerification.ok" class="cq-text-xs text-danger mt-1">\
+                        <i class="bi bi-x-circle-fill"></i> {{ codeVerification.msg }}\
+                    </div>\
                     <div v-if="selected.question.codeDisplay" class="mt-1">\
                         <span class="cq-removable">\
                             <i class="bi bi-check-circle-fill"></i>\
