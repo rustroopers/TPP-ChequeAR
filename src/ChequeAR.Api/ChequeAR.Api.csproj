@@ -150,7 +150,7 @@
     <Content Include="Views\Questionnaires\Edit.cshtml" />
     <Content Include="Views\Questionnaires\Preview.cshtml" />
     <Content Include="Views\Questionnaires\History.cshtml" />
-    <Content Include="Views\Encounters\Search.cshtml" />
+    <Content Include="Views\Encounters\Index.cshtml" />
     <Content Include="Views\Encounters\Load.cshtml" />
     <Content Include="Views\Encounters\View.cshtml" />
     <Content Include="Views\Encounters\Timeline.cshtml" />

@@ -27,8 +27,10 @@ namespace ChequeAR.Api.Controllers.Mvc
             _questionnaires = questionnaires;
         }
 
-        // R1
-        public async Task<ActionResult> Search(string q = null)
+        // R1 — pantalla de pacientes (buscador). El action se llama Index para que
+        // la URL canónica sea /Pacientes (via ruta nombrada) o /Encounters como
+        // fallback, en vez del ex "/Encounters/Search" que exponía el verbo interno.
+        public async Task<ActionResult> Index(string q = null)
         {
             ViewBag.Title = "Pacientes";
             ViewBag.PageId = "encounters";
@@ -106,7 +108,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
             {
                 System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Search")),
+                System.Tuple.Create("Pacientes", Url.Action("Index")),
                 System.Tuple.Create("Carga de ficha", (string)null)
             };
 
@@ -228,7 +230,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
             {
                 System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Search")),
+                System.Tuple.Create("Pacientes", Url.Action("Index")),
                 System.Tuple.Create("Ficha", (string)null)
             };
             try
@@ -359,7 +361,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
             {
                 System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Search")),
+                System.Tuple.Create("Pacientes", Url.Action("Index")),
                 System.Tuple.Create("Historial", (string)null)
             };
             var model = new PatientTimelineViewModel

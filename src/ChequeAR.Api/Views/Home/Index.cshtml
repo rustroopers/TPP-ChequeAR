@@ -100,7 +100,7 @@
             }
         </div>
         <div class="cq-demo-card__foot">
-            <a href="@Url.Action("Search", "Encounters")" class="btn btn-sm btn-tertiary">Buscar paciente</a>
+            <a href="@Url.Action("Index", "Encounters")" class="btn btn-sm btn-tertiary">Buscar paciente</a>
             @if (lastEncounter != null)
             {
                 <a href="@lastEncounter.OpenUrl" class="btn btn-sm btn-primary">Abrir ficha →</a>
@@ -152,7 +152,7 @@
             <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
             <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
             <div class="cq-empty__desc">@Cq.T("home.empty.desc")</div>
-            <a href="@Url.Action("Search", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("home.empty.cta")</a>
+            <a href="@Url.Action("Index", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("home.empty.cta")</a>
         </div>
     </div>
 }

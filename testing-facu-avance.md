@@ -11,7 +11,27 @@ inicial completo con feedback crudo).
 
 ## ✅ Hecho y pusheado
 
-### Commit pendiente — Etapa 3.2 verificación código↔término
+### Commit pendiente — Etapa 1.6 ruteo /Encounters/Search → /Pacientes
+
+- **`App_Start/RouteConfig.cs`**: nueva ruta nombrada `Pacientes` (`Pacientes/{id}`)
+  registrada ANTES de la default, mapea a `Encounters.Index`. Así
+  `Url.Action("Index","Encounters")` genera `/Pacientes` y otras acciones del
+  controller siguen cayendo por la default (`/Encounters/Load`, etc.).
+- **`Controllers/Mvc/EncountersController.cs`**: action `Search(string q)`
+  renombrada a `Index(string q)`. Los breadcrumbs internos que apuntaban a
+  `Url.Action("Search")` ahora usan `Url.Action("Index")`.
+- **`Views/Encounters/Search.cshtml`** → **`Views/Encounters/Index.cshtml`**
+  (`git mv` preserva historia). Actualizado `Html.BeginForm("Search",...)` a
+  `("Index",...)` para que el GET del buscador postee a la nueva URL.
+- **`ChequeAR.Api.csproj`**: `<Content Include="...Search.cshtml">` →
+  `Index.cshtml` (si no, MSBuild no lo copia y la view queda 404).
+- **Callers actualizados**: `Views/Shared/_Sidebar.cshtml`,
+  `Views/Encounters/Timeline.cshtml`, `Views/Home/Index.cshtml` (2 hits),
+  `scripts/Seed-Reumatologia.ps1` (mensaje informativo).
+
+### Commit `4c8fcee` — Etapa 3.8: help card del wizard responsive
+
+### Commit `5d730e7` — Etapa 3.2 verificación código↔término
 
 **Editor (`Scripts/islands/questionnaire-editor/index.js`):**
 - **3.2 validación**: nuevo botón "Verificar" al lado del input de código SNOMED
@@ -241,9 +261,7 @@ iteraciones cortas.** Detalle:
 
 ### Ruteo `/Encounters/Search` → `/Pacientes` (1.6 del plan)
 
-🟡 Cosmético. Renombrar toca varios `Url.Action("Search", "Encounters")` a lo largo de
-las views y controllers, y requiere decidir si además el action pasa a llamarse
-`Index`. Diferido hasta que haya oportunidad de tocar el `RouteConfig`.
+✅ Hecho (ver commit pendiente arriba).
 
 ### Decisiones pendientes (tabla D1–D11 del plan)
 
