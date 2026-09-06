@@ -1123,13 +1123,15 @@
         <span class="cq-stepper__label">{{ i + 1 }}. {{ s.label }}</span>\
     </button>\
 </nav>\
-<div class="cq-card mb-3 d-flex align-items-start gap-2" style="border-left:3px solid var(--cq-primary);">\
-    <i class="bi bi-info-circle" style="color:var(--cq-primary); font-size:20px; margin-top:2px;"></i>\
-    <div class="flex-fill">\
-        <div class="cq-text-sm"><strong>{{ STEPS[stepIndex].label }}</strong></div>\
-        <div class="cq-text-sm cq-text-muted">{{ currentStepHelp }}</div>\
+<div class="cq-card cq-wizard-help mb-3" style="border-left:3px solid var(--cq-primary);">\
+    <div class="cq-wizard-help__body">\
+        <i class="bi bi-info-circle" style="color:var(--cq-primary); font-size:20px; margin-top:2px;"></i>\
+        <div class="flex-fill">\
+            <div class="cq-text-sm"><strong>{{ STEPS[stepIndex].label }}</strong></div>\
+            <div class="cq-text-sm cq-text-muted">{{ currentStepHelp }}</div>\
+        </div>\
     </div>\
-    <div class="d-flex gap-1 flex-shrink-0">\
+    <div class="cq-wizard-help__nav">\
         <button class="btn btn-sm btn-outline-secondary-cq" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
         <button class="btn btn-sm btn-secondary" :disabled="stepIndex === STEPS.length - 1" @click="stepNext">Siguiente <i class="bi bi-chevron-right"></i></button>\
     </div>\

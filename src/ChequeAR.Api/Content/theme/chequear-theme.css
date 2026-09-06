@@ -1108,3 +1108,29 @@ body.cq-sidebar-collapsed .cq-sidebar__inner {
   .cq-stepper__label { display: none; }
   .cq-stepper__item { padding: 10px 12px; min-height: 44px; }
 }
+
+/* Card de ayuda contextual del wizard: en desktop va el texto a la izquierda
+   y Anterior/Siguiente a la derecha; en mobile stackea para no exprimir el
+   texto ni cortar los botones. */
+.cq-wizard-help {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cq-wizard-help__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.cq-wizard-help__nav {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .cq-wizard-help__nav { width: 100%; justify-content: space-between; }
+  .cq-wizard-help__nav .btn { min-height: 44px; flex: 1; }
+}
