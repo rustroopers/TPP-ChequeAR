@@ -66,8 +66,7 @@
                             code: q.code,
                             codeDisplay: q.codeDisplay,
                             term: q.term,
-                            options: q.options && q.options.length ? q.options.slice() : undefined,
-                            optionsText: q.options && q.options.length ? q.options.join('\n') : ''
+                            options: q.options && q.options.length ? q.options.slice() : undefined
                         };
                     })
                 };
@@ -98,6 +97,28 @@
             var lastSaved = Vue.ref(null);
 
             function selectQuestion(g, q) { selected.value = { group: g, question: q }; }
+
+            // Opciones de choice/openChoice: fuente única `options` (arreglo). El
+            // textarea del panel lo edita como texto multilínea via este computed:
+            // así no hay dos campos que puedan quedar desincronizados (bug reportado
+            // en Etapa 3.7: al cambiar de pregunta se veían opciones "colgadas" del
+            // estado anterior porque optionsText no se sincronizaba con options).
+            var optionsText = Vue.computed({
+                get: function () {
+                    var q = selected.value && selected.value.question;
+                    if (!q || !q.options) return '';
+                    return q.options.join('\n');
+                },
+                set: function (raw) {
+                    var q = selected.value && selected.value.question;
+                    if (!q) return;
+                    var lines = (raw || '').split('\n');
+                    // Mantener líneas vacías intermedias mientras se escribe, pero
+                    // filtrar al final (persistir "" como opción no tiene sentido).
+                    q.options = lines.filter(function (x) { return x !== ''; });
+                    dirty.value = true;
+                }
+            });
 
             // --- Lógica condicional (enableWhen) -------------------------------------
             // Solo se puede condicionar contra preguntas ANTERIORES: al responder, el
@@ -216,11 +237,9 @@
                 if (answerKind(newType) === 'choice') {
                     if (!(q.options && q.options.length)) {
                         q.options = ['Opción 1', 'Opción 2'];
-                        q.optionsText = q.options.join('\n');
                     }
                 } else if (answerKind(previo) === 'choice') {
                     q.options = undefined;
-                    q.optionsText = '';
                 }
 
                 if (answerKind(newType) !== answerKind(previo)) {
@@ -919,7 +938,7 @@
             });
 
             return {
-                groups: groups, types: types, selected: selected,
+                groups: groups, types: types, selected: selected, optionsText: optionsText,
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
                 qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
                 isPublished: isPublished, isArchived: isArchived, publish: publish,
@@ -972,19 +991,7 @@
     <span class="cq-text-sm">Este cuestionario está <strong>archivado</strong> y es de sólo lectura: no se puede editar ni guardar. Para reactivarlo, publicalo de nuevo desde el listado de Cuestionarios.</span>\
 </div>\
 <div class="row g-3">\
-    <div class="col-lg-2">\
-        <div class="cq-card" style="position:sticky; top:84px;">\
-            <h3 class="cq-section-title" style="margin-top:0;">Tipos</h3>\
-            <div class="d-flex flex-column gap-1">\
-                <div v-for="t in types" :key="t.code" class="cq-text-sm d-flex align-items-center gap-2 p-1" style="border-radius:6px; cursor:grab;">\
-                    <i :class="\'bi \' + t.icon"></i> {{ t.label }}\
-                </div>\
-            </div>\
-            <p class="cq-text-xs cq-text-muted mt-3 mb-0">Hacé click en + dentro de una sección para agregar.</p>\
-        </div>\
-    </div>\
-\
-    <div class="col-lg-6">\
+    <div class="col-lg-7">\
         <div class="cq-card mb-2">\
             <div class="row g-2">\
                 <div class="col-8">\
@@ -1045,7 +1052,7 @@
         <button class="btn btn-outline-secondary w-100" @click="addGroup"><i class="bi bi-plus-lg me-1"></i> Agregar sección</button>\
     </div>\
 \
-    <div class="col-lg-4">\
+    <div class="col-lg-5">\
         <div v-if="selected" class="cq-card" style="position:sticky; top:84px;">\
             <h3 class="cq-section-title" style="margin-top:0;">Propiedades</h3>\
             <div class="mb-2">\
@@ -1082,7 +1089,7 @@
             </div>\
             <div v-if="[\'choice\',\'openChoice\'].indexOf(selected.question.type) >= 0">\
                 <label class="form-label cq-text-sm">Opciones</label>\
-                <textarea v-model="selected.question.optionsText" @input="selected.question.options = $event.target.value.split(\'\\n\').filter(Boolean)" class="form-control form-control-sm" rows="3" :placeholder="(selected.question.options||[]).join(\'\\n\')">{{ (selected.question.options || []).join(\'\\n\') }}</textarea>\
+                <textarea v-model="optionsText" class="form-control form-control-sm" rows="3" placeholder="Opción 1&#10;Opción 2"></textarea>\
                 <p class="cq-text-xs cq-text-muted mt-1">Una opción por línea.</p>\
             </div>\
             <div v-if="selected.question.type === \'attachment\'">\

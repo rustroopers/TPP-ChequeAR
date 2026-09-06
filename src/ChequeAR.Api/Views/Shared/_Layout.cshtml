@@ -39,19 +39,46 @@
     <script src="~/Scripts/cq-date-range.js"></script>
     <script src="~/Scripts/cq-autofilter.js"></script>
     <script>
-        // Sidebar colapsable — persistencia en localStorage con fallback silencioso
-        // (private browsing / storage bloqueado). Se aplica antes de pintar para evitar flicker.
+        // Sidebar: en desktop (>1024px) colapsa a modo íconos y persiste en
+        // localStorage. En mobile (<=1024px) la sidebar es un drawer off-canvas:
+        // el mismo toggle abre/cierra `cq-sidebar-open` (sin persistir: no tiene
+        // sentido reabrirlo automáticamente en la próxima navegación), y un click
+        // fuera o en un item la cierra. Antes en mobile el sidebar estaba oculto y
+        // no había manera de navegar.
         (function () {
             var KEY = "cq.sidebar.collapsed";
             var root = document.body;
+            var mq = window.matchMedia("(max-width: 1024px)");
             var stored = null;
             try { stored = localStorage.getItem(KEY); } catch (e) {}
-            if (stored === "1") root.classList.add("cq-sidebar-collapsed");
+            if (stored === "1" && !mq.matches) root.classList.add("cq-sidebar-collapsed");
+
             document.addEventListener("click", function (e) {
                 var btn = e.target.closest("#cqSidebarToggle");
-                if (!btn) return;
-                var isCollapsed = root.classList.toggle("cq-sidebar-collapsed");
-                try { localStorage.setItem(KEY, isCollapsed ? "1" : "0"); } catch (e) {}
+                if (btn) {
+                    if (mq.matches) {
+                        root.classList.toggle("cq-sidebar-open");
+                    } else {
+                        var isCollapsed = root.classList.toggle("cq-sidebar-collapsed");
+                        try { localStorage.setItem(KEY, isCollapsed ? "1" : "0"); } catch (e) {}
+                    }
+                    return;
+                }
+                // Backdrop / item clickeado: en mobile cerramos el drawer.
+                if (mq.matches && root.classList.contains("cq-sidebar-open")) {
+                    var insideSidebar = e.target.closest(".cq-sidebar");
+                    if (!insideSidebar || e.target.closest(".cq-sidebar__item")) {
+                        root.classList.remove("cq-sidebar-open");
+                    }
+                }
+            });
+
+            // Al cruzar el breakpoint limpiamos el estado que no corresponde al
+            // nuevo modo (drawer abierto no tiene sentido en desktop y viceversa).
+            mq.addEventListener("change", function () {
+                root.classList.remove("cq-sidebar-open");
+                if (mq.matches) root.classList.remove("cq-sidebar-collapsed");
+                else if (stored === "1") root.classList.add("cq-sidebar-collapsed");
             });
         })();
 

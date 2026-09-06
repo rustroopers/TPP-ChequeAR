@@ -11,6 +11,32 @@ inicial completo con feedback crudo).
 
 ## ✅ Hecho y pusheado
 
+### Commit pendiente — Etapa 3 (parcial) + Etapa 3.8 mobile
+
+**Editor de cuestionarios (`Scripts/islands/questionnaire-editor/index.js`):**
+- **3.3** Card "TIPOS" (col-lg-2) eliminada: era decorativa, los tipos ya viven en el
+  dropdown "+ Agregar pregunta". El layout se redistribuye a `col-lg-7` estructura /
+  `col-lg-5` propiedades — más aire para editar y leer.
+- **3.7** Reactividad del panel Propiedades: el textarea de "Opciones" combinaba
+  `v-model="selected.question.optionsText"`, un `@input` que reescribía
+  `selected.question.options`, y contenido interpolado dentro del `<textarea>`. En
+  Vue 3 el contenido inline con v-model es ignorado y el par `options/optionsText`
+  quedaba fuera de sincronía al cambiar de pregunta (los datos "se perdían" desde
+  el punto de vista del usuario). Se reemplazó por una **fuente única `options`**
+  editada vía un `computed` con getter/setter (`optionsText`). El campo redundante
+  desapareció del modelo inicial y de `onTypeChange`.
+
+**Mobile — sidebar drawer (`chequear-theme.css` + `_Layout.cshtml`):**
+- **3.8 P0** En ≤1024px la sidebar estaba `display:none` — no había forma de
+  navegar. Ahora la sidebar pasa a **drawer off-canvas** (fixed, translateX -100%),
+  se abre con el mismo `#cqSidebarToggle` del navbar, tiene backdrop cliqueable
+  (pseudo `body::after`) y se cierra al tocar un item.
+- El JS del layout se volvió breakpoint-aware con `matchMedia("(max-width:1024px)")`:
+  en desktop sigue colapsando (persistido en localStorage), en mobile abre/cierra
+  el drawer (sin persistir). Al cruzar el breakpoint limpia el estado que no aplica.
+- Touch targets ≥44px en `.cq-sidebar__item` y `.cq-navbar__btn` dentro del media
+  mobile.
+
 ### Commit `0202a94` — Etapa 1: fixes rápidos y jerarquía de acciones
 
 **Tokens de color** en `src/ChequeAR.Api/Content/theme/chequear-theme.css`:
@@ -127,17 +153,24 @@ iteraciones cortas.** Detalle:
   manual y forzar autocomplete; permitir manual con validación async contra Snowstorm;
   mostrar el `preferredTerm` oficial al lado del código escrito.
 - **3.3 Tipo de respuesta** — sacar gris claro que parece disabled; permitir edición
-  in-place del tipo (hoy obliga a borrar la pregunta).
-- **3.3 Card "TIPOS"** — eliminarla, no aporta.
+  in-place del tipo (hoy obliga a borrar la pregunta). *NOTA*: revisando el código,
+  `onTypeChange` ya está implementado y el select del panel Propiedades es un
+  `<select>` normal, no disabled. El "gris claro" percibido probablemente venía de
+  la card "TIPOS" (ya eliminada). Verificar en runtime que el select responda.
+- **3.3 Card "TIPOS"** — ✅ hecha (ver commit pendiente arriba).
 - **3.4 Sección/carpeta** — si no agrupa visualmente las preguntas, eliminar el
   concepto. **Requiere definición D5.**
 - **3.6 Comentarios en cuestionarios/preguntas** — feature nueva. **Requiere
   definición D4.**
-- **3.7 Pérdida de datos en Propiedades** — bug: al cambiar de pregunta se resetean
-  campos. Probable problema de reactividad en la isla Vue (referencia compartida).
-  **Bug P0.**
-- **3.8 Mobile perfecto** — auditoría full de responsive de la app (sidebar → drawer,
-  editor → step-by-step, touch targets ≥44px). **P0 según el feedback.**
+- **3.7 Pérdida de datos en Propiedades** — ✅ hecho el fix más probable (textarea
+  de Opciones con doble binding + interpolación inline). Si vuelve a aparecer el
+  síntoma con OTROS campos, hay que reproducirlo con detalle (qué campo, qué
+  acción entre selecciones) porque el resto del panel usa `v-model` limpio contra
+  `selected.question.*`.
+- **3.8 Mobile — sidebar drawer** — ✅ hecho (drawer off-canvas + touch targets).
+  Queda pendiente el wizard step-by-step del editor (3.1), auditar el resto de
+  pantallas (Timeline, Reports, Editor) a 375/390/768 y meter los ajustes que
+  aparezcan.
 
 ### Etapa 4 — Lista de cuestionarios (pendientes menores)
 

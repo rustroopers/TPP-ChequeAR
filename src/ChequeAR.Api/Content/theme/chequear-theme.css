@@ -545,7 +545,10 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   }
 }
 
-/* ===== Responsive shell ===== */
+/* ===== Responsive shell =====
+   En mobile/tablet la sidebar deja de ocupar columna y pasa a ser un drawer
+   off-canvas que se abre con el mismo botón #cqSidebarToggle del navbar. Antes
+   estaba `display:none` y no había forma de navegar en celular (feedback 3.8). */
 @media (max-width: 1024px) {
   .cq-app {
     grid-template-areas:
@@ -554,7 +557,46 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
     grid-template-columns: 1fr;
   }
   .cq-sidebar {
-    display: none;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    bottom: 0;
+    width: min(280px, 82vw);
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+    box-shadow: var(--cq-shadow-3);
+  }
+  body.cq-sidebar-open .cq-sidebar {
+    transform: translateX(0);
+  }
+  /* Backdrop cliqueable para cerrar. Se pinta con un pseudo del body para no
+     agregar markup. */
+  body.cq-sidebar-open::after {
+    content: "";
+    position: fixed;
+    inset: 56px 0 0 0;
+    background: rgba(15, 23, 42, 0.4);
+    z-index: 35;
+  }
+  /* En mobile el "colapsado" no aplica: pasa a estar visible u oculto. */
+  body.cq-sidebar-collapsed .cq-sidebar__label,
+  body.cq-sidebar-collapsed .cq-sidebar__group-label {
+    display: block;
+  }
+  body.cq-sidebar-collapsed .cq-sidebar__item {
+    justify-content: flex-start;
+    padding: 10px 12px;
+    gap: 12px;
+  }
+  /* Touch targets: subir a ≥44px para uso con dedo. */
+  .cq-sidebar__item {
+    padding: 12px 14px;
+    min-height: 44px;
+  }
+  .cq-navbar__btn {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 
@@ -1013,10 +1055,5 @@ body.cq-sidebar-collapsed .cq-sidebar__inner {
 .cq-placeholder-chart .cq-ph-bar--hi { fill: var(--cq-primary-400); }
 .cq-placeholder-chart .cq-ph-axis { stroke: var(--cq-neutral-200); stroke-width: 1; }
 
-/* Responsive shell — la sidebar ya se ocultaba en <=1024px; en colapsado
-   mantenemos ese comportamiento. */
-@media (max-width: 1024px) {
-  body.cq-sidebar-collapsed .cq-app {
-    grid-template-columns: 1fr;
-  }
-}
+/* En mobile el comportamiento colapsado no aplica: la sidebar es un drawer
+   (ver bloque "Responsive shell" arriba). */
