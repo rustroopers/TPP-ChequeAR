@@ -120,6 +120,61 @@
                 }
             });
 
+            // --- Wizard (5 pasos) ----------------------------------------------------
+            // Meta / Estructura / Códigos / Vista previa / Publicación.
+            // El stepper es guía, no candado: se puede saltar libre porque los power
+            // users no necesitan la ceremonia (y el guard real vive en publish()).
+            // Persistir el paso no aporta valor: al recargar querés arrancar de meta
+            // si es nuevo, o del paso que estabas mirando pierde contexto igual.
+            var STEPS = [
+                { key: 'meta',      label: 'Metadatos',    icon: 'bi-info-circle',
+                  help: 'Ponele un título que un colega reconozca desde el listado. La especialidad determina bajo qué grupo aparece en los reportes.' },
+                { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3',
+                  help: 'Agregá secciones y preguntas. Arrastrá para reordenar. Podés condicionar preguntas a la respuesta de otras anteriores desde el panel de la derecha.' },
+                { key: 'codes',     label: 'Códigos SNOMED', icon: 'bi-tag',
+                  help: 'Elegí el concepto clínico oficial de cada pregunta. Codificar habilita reportes cruzados con otras historias clínicas y con SNOMED CT.' },
+                { key: 'preview',   label: 'Vista previa', icon: 'bi-eye',
+                  help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revisá sus condiciones.' },
+                { key: 'publish',   label: 'Publicación',  icon: 'bi-send',
+                  help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guardá los cambios antes.' }
+            ];
+            var step = Vue.ref(props.isNew ? 'meta' : 'structure');
+            function gotoStep(k) { step.value = k; }
+            var stepIndex = Vue.computed(function () {
+                for (var i = 0; i < STEPS.length; i++) if (STEPS[i].key === step.value) return i;
+                return 0;
+            });
+            function stepNext() { if (stepIndex.value < STEPS.length - 1) step.value = STEPS[stepIndex.value + 1].key; }
+            function stepPrev() { if (stepIndex.value > 0) step.value = STEPS[stepIndex.value - 1].key; }
+            var currentStepHelp = Vue.computed(function () { return STEPS[stepIndex.value].help; });
+
+            // Vista de códigos (paso 3): índice plano de todas las preguntas con su
+            // estado de codificación, para trabajarlas sin perder el contexto del árbol.
+            var allQuestionsFlat = Vue.computed(function () {
+                var out = [];
+                groups.value.forEach(function (g) {
+                    g.questions.forEach(function (q) { out.push({ group: g, question: q }); });
+                });
+                return out;
+            });
+            var codingProgress = Vue.computed(function () {
+                var all = allQuestionsFlat.value;
+                var codificadas = all.filter(function (x) { return !!x.question.code; }).length;
+                return { done: codificadas, total: all.length };
+            });
+
+            // Blockers para publicar, calculados una vez y reusados en el paso 5.
+            var publishBlockers = Vue.computed(function () {
+                var out = [];
+                if (isArchived.value) out.push('El cuestionario está archivado y no se puede publicar. Reactivalo desde el listado.');
+                if (conflict.value)   out.push('Hay un conflicto de edición sin resolver.');
+                if (dirty.value)      out.push('Hay cambios sin guardar. Guardá antes de publicar.');
+                if (isNew.value)      out.push('El cuestionario todavía no se guardó por primera vez.');
+                if (issues.value.length) out.push('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes.');
+                if (!allQuestionsFlat.value.length) out.push('No hay preguntas cargadas.');
+                return out;
+            });
+
             // --- Lógica condicional (enableWhen) -------------------------------------
             // Solo se puede condicionar contra preguntas ANTERIORES: al responder, el
             // valor de una pregunta posterior todavía no existe, y además evita ciclos.
@@ -955,7 +1010,11 @@
                 drag: drag, dropTarget: dropTarget,
                 onQuestionDragStart: onQuestionDragStart, onGroupDragStart: onGroupDragStart,
                 onDragEnd: onDragEnd, onQuestionDragOver: onQuestionDragOver, onGroupDragOver: onGroupDragOver,
-                onQuestionDrop: onQuestionDrop, onSectionDrop: onSectionDrop
+                onQuestionDrop: onQuestionDrop, onSectionDrop: onSectionDrop,
+                STEPS: STEPS, step: step, stepIndex: stepIndex, gotoStep: gotoStep,
+                stepNext: stepNext, stepPrev: stepPrev, currentStepHelp: currentStepHelp,
+                allQuestionsFlat: allQuestionsFlat, codingProgress: codingProgress,
+                publishBlockers: publishBlockers
             };
         },
         template: '\
@@ -990,26 +1049,52 @@
     <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
     <span class="cq-text-sm">Este cuestionario está <strong>archivado</strong> y es de sólo lectura: no se puede editar ni guardar. Para reactivarlo, publicalo de nuevo desde el listado de Cuestionarios.</span>\
 </div>\
-<div class="row g-3">\
-    <div class="col-lg-7">\
-        <div class="cq-card mb-2">\
-            <div class="row g-2">\
-                <div class="col-8">\
-                    <label class="form-label cq-text-sm">Título del cuestionario</label>\
-                    <input v-model="qTitle" class="form-control form-control-sm" placeholder="Ej: Cardio basal" />\
-                </div>\
-                <div class="col-4">\
-                    <label class="form-label cq-text-sm">Especialidad</label>\
-                    <select v-model="specialtyCode" class="form-select form-select-sm">\
-                        <option value="general">General</option>\
-                        <option value="cardio">Cardiología</option>\
-                        <option value="neumo">Neumonología</option>\
-                        <option value="onco">Oncología</option>\
-                        <option value="reuma">Reumatología</option>\
-                    </select>\
-                </div>\
+<nav class="cq-stepper mb-3" aria-label="Pasos para crear un cuestionario">\
+    <button v-for="(s, i) in STEPS" :key="s.key" type="button"\
+            class="cq-stepper__item" :class="{ \'is-active\': step === s.key, \'is-done\': i < stepIndex }"\
+            @click="gotoStep(s.key)" :aria-current="step === s.key ? \'step\' : null">\
+        <span class="cq-stepper__num"><i :class="\'bi \' + s.icon"></i></span>\
+        <span class="cq-stepper__label">{{ i + 1 }}. {{ s.label }}</span>\
+    </button>\
+</nav>\
+<div class="cq-card mb-3 d-flex align-items-start gap-2" style="border-left:3px solid var(--cq-primary);">\
+    <i class="bi bi-info-circle" style="color:var(--cq-primary); font-size:20px; margin-top:2px;"></i>\
+    <div class="flex-fill">\
+        <div class="cq-text-sm"><strong>{{ STEPS[stepIndex].label }}</strong></div>\
+        <div class="cq-text-sm cq-text-muted">{{ currentStepHelp }}</div>\
+    </div>\
+    <div class="d-flex gap-1 flex-shrink-0">\
+        <button class="btn btn-sm btn-outline-secondary-cq" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
+        <button class="btn btn-sm btn-secondary" :disabled="stepIndex === STEPS.length - 1" @click="stepNext">Siguiente <i class="bi bi-chevron-right"></i></button>\
+    </div>\
+</div>\
+\
+<div v-if="step === \'meta\'">\
+    <div class="cq-card">\
+        <h3 class="cq-section-title mt-0">Datos generales</h3>\
+        <div class="row g-3">\
+            <div class="col-md-8">\
+                <label class="form-label cq-text-sm">Título del cuestionario</label>\
+                <input v-model="qTitle" class="form-control" placeholder="Ej: Cardio basal" />\
+                <p class="cq-text-xs cq-text-muted mt-1 mb-0">Se muestra tal cual en el listado y en la ficha del paciente.</p>\
+            </div>\
+            <div class="col-md-4">\
+                <label class="form-label cq-text-sm">Especialidad</label>\
+                <select v-model="specialtyCode" class="form-select">\
+                    <option value="general">General</option>\
+                    <option value="cardio">Cardiología</option>\
+                    <option value="neumo">Neumonología</option>\
+                    <option value="onco">Oncología</option>\
+                    <option value="reuma">Reumatología</option>\
+                </select>\
+                <p class="cq-text-xs cq-text-muted mt-1 mb-0">Agrupa el cuestionario en los reportes.</p>\
             </div>\
         </div>\
+    </div>\
+</div>\
+\
+<div v-if="step === \'structure\'" class="row g-3">\
+    <div class="col-lg-7">\
         <div class="d-flex justify-content-between align-items-center mb-2">\
             <h3 class="m-0">Estructura</h3>\
             <span class="cq-text-xs" style="color:var(--cq-warning);" v-if="dirty">Cambios sin guardar</span>\
@@ -1177,6 +1262,128 @@
         <div v-else class="cq-card cq-text-sm cq-text-muted">Seleccioná una pregunta para editar sus propiedades.</div>\
     </div>\
 </div>\
+\
+<div v-if="step === \'codes\'">\
+    <div class="cq-card mb-2 d-flex align-items-center justify-content-between">\
+        <div>\
+            <div class="cq-text-sm"><strong>Progreso de codificación</strong></div>\
+            <div class="cq-text-xs cq-text-muted">{{ codingProgress.done }} de {{ codingProgress.total }} preguntas con código SNOMED CT.</div>\
+        </div>\
+        <div class="cq-text-xs cq-text-muted">Podés dejar sin código a las preguntas que no lo necesiten (pesadas, escalas propias, texto libre).</div>\
+    </div>\
+    <div v-if="!allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para codificar. Volvé al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a> y agregá al menos una.</div>\
+    <div v-else class="row g-3">\
+        <div class="col-lg-6">\
+            <div class="cq-card">\
+                <div v-for="(row, ri) in allQuestionsFlat" :key="ri"\
+                     class="d-flex align-items-center gap-2 py-2 px-2"\
+                     :style="{ borderRadius: \'6px\', cursor: \'pointer\', background: selected && selected.question === row.question ? \'var(--cq-primary-100)\' : \'transparent\', borderBottom: \'1px solid var(--cq-neutral-100)\' }"\
+                     @click="selectQuestion(row.group, row.question)">\
+                    <i v-if="row.question.code" class="bi bi-check-circle-fill" style="color:var(--cq-success);"></i>\
+                    <i v-else class="bi bi-circle cq-text-muted"></i>\
+                    <div class="flex-fill">\
+                        <div class="cq-text-sm">{{ row.question.text }}</div>\
+                        <div class="cq-text-xs cq-text-muted">{{ row.group.title }} · {{ row.question.type }}</div>\
+                    </div>\
+                    <span v-if="row.question.code" class="cq-text-xs cq-text-muted">{{ row.question.code }}</span>\
+                </div>\
+            </div>\
+        </div>\
+        <div class="col-lg-6">\
+            <div v-if="selected" class="cq-card" style="position:sticky; top:84px;">\
+                <h3 class="cq-section-title mt-0">{{ selected.question.text }}</h3>\
+                <div class="mb-2">\
+                    <label class="form-label cq-text-sm">Término clínico</label>\
+                    <div class="input-group input-group-sm">\
+                        <input v-model="selected.question.term" class="form-control form-control-sm" placeholder="ej: dolor torácico" />\
+                        <button class="btn btn-outline-primary" type="button" @click="searchSnomed" :disabled="snomedSearching" title="Buscar el término en SNOMED CT">\
+                            <span v-if="snomedSearching" class="spinner-border spinner-border-sm"></span>\
+                            <template v-else><i class="bi bi-search"></i> Buscar</template>\
+                        </button>\
+                    </div>\
+                    <div v-if="snomedError" class="cq-text-xs text-danger mt-1">{{ snomedError }}</div>\
+                    <ul v-if="snomedOpen && snomedResults.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
+                        <li v-for="r in snomedResults" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="pickSnomed(r)"\
+                            onmouseover="this.style.background=\'var(--cq-primary-100)\'" onmouseout="this.style.background=\'transparent\'">\
+                            {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
+                        </li>\
+                    </ul>\
+                    <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
+                </div>\
+                <div class="mb-2">\
+                    <label class="form-label cq-text-sm">Código SNOMED CT</label>\
+                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
+                    <div v-if="selected.question.codeDisplay" class="mt-1">\
+                        <span class="cq-removable">\
+                            <i class="bi bi-check-circle-fill"></i>\
+                            {{ selected.question.codeDisplay }}\
+                            <button type="button" class="cq-removable__remove" title="Quitar código" aria-label="Quitar código" @click="clearSnomed">\
+                                <i class="bi bi-x"></i>\
+                            </button>\
+                        </span>\
+                    </div>\
+                </div>\
+            </div>\
+            <div v-else class="cq-card cq-text-sm cq-text-muted">Elegí una pregunta de la lista para codificarla.</div>\
+        </div>\
+    </div>\
+</div>\
+\
+<div v-if="step === \'preview\'">\
+    <div v-if="!groups.length || !allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para previsualizar. Volvé al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a>.</div>\
+    <div v-else>\
+        <div class="cq-card mb-2">\
+            <h2 class="mt-0 mb-1">{{ qTitle }}</h2>\
+            <div class="cq-text-xs cq-text-muted">Especialidad: {{ specialtyCode }}</div>\
+        </div>\
+        <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2">\
+            <h3 class="cq-section-title mt-0"><i class="bi bi-folder me-1"></i>{{ g.title }}</h3>\
+            <div v-if="!g.questions.length" class="cq-text-xs cq-text-muted">Sección sin preguntas.</div>\
+            <div v-for="q in g.questions" :key="q.linkId" class="mb-3">\
+                <label class="form-label cq-text-sm fw-semibold">{{ q.text }} <span v-if="q.required" class="text-danger">*</span></label>\
+                <input v-if="[\'string\',\'text\'].indexOf(q.type) < 0 && [\'choice\',\'openChoice\',\'boolean\'].indexOf(q.type) < 0 && q.type !== \'attachment\'"\
+                       class="form-control form-control-sm" :placeholder="q.type" disabled />\
+                <input v-if="q.type === \'string\'" class="form-control form-control-sm" placeholder="Respuesta corta" disabled />\
+                <textarea v-if="q.type === \'text\'" class="form-control form-control-sm" rows="2" placeholder="Respuesta larga" disabled></textarea>\
+                <div v-if="q.type === \'boolean\'" class="form-check">\
+                    <input class="form-check-input" type="checkbox" disabled />\
+                    <label class="form-check-label cq-text-sm">Sí / No</label>\
+                </div>\
+                <div v-if="[\'choice\',\'openChoice\'].indexOf(q.type) >= 0">\
+                    <div v-for="opt in (q.options || [])" :key="opt" class="form-check">\
+                        <input class="form-check-input" :type="q.type === \'choice\' ? \'radio\' : \'checkbox\'" disabled />\
+                        <label class="form-check-label cq-text-sm">{{ opt }}</label>\
+                    </div>\
+                </div>\
+                <div v-if="q.type === \'attachment\'" class="cq-text-xs cq-text-muted"><i class="bi bi-paperclip"></i> Adjunto ({{ q.accept || \'imagen o PDF\' }})</div>\
+                <div v-if="q.code" class="cq-text-xs cq-text-muted mt-1"><i class="bi bi-tag"></i> {{ q.code }} — {{ q.codeDisplay || q.term }}</div>\
+                <div v-if="q.enableWhen" class="cq-text-xs cq-text-muted mt-1"><i class="bi bi-diagram-2"></i> Se muestra sólo si otra respuesta lo habilita.</div>\
+            </div>\
+        </div>\
+    </div>\
+</div>\
+\
+<div v-if="step === \'publish\'">\
+    <div class="cq-card mb-2">\
+        <h3 class="cq-section-title mt-0"><i class="bi bi-send me-1"></i>Publicación</h3>\
+        <p class="cq-text-sm cq-text-muted">Publicar congela una versión: los clínicos ven exactamente esta estructura hasta que publiques una nueva.</p>\
+        <div v-if="publishBlockers.length" class="cq-card mb-3" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
+            <div class="cq-text-sm"><strong>Antes de publicar, resolvé:</strong></div>\
+            <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
+                <li v-for="(b, bi) in publishBlockers" :key="bi">{{ b }}</li>\
+            </ul>\
+        </div>\
+        <div v-else class="cq-card mb-3" style="border-left:3px solid var(--cq-success); background:var(--cq-neutral-50);">\
+            <div class="cq-text-sm"><i class="bi bi-check-circle-fill" style="color:var(--cq-success);"></i> Todo listo para publicar.</div>\
+            <div v-if="isPublished" class="cq-text-xs cq-text-muted mt-1">Ya hay una versión publicada. Publicar de nuevo crea una versión posterior.</div>\
+        </div>\
+        <div class="d-flex gap-2">\
+            <button class="btn btn-primary" @click="publish" :disabled="publishBlockers.length || publishing"><i class="bi bi-send me-1"></i> Publicar ahora</button>\
+            <button class="btn btn-outline-secondary-cq" @click="gotoStep(\'structure\')"><i class="bi bi-arrow-left me-1"></i> Volver a la estructura</button>\
+        </div>\
+    </div>\
+</div>\
+\
 </div>'
     };
 

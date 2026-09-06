@@ -5,13 +5,40 @@ pendiente. Complementa [`testing-facu-feedback.md`](testing-facu-feedback.md) (e
 inicial completo con feedback crudo).
 
 > Rama: `testing-hecho-por-facu`
-> Última actualización: 2026-09-05
+> Última actualización: 2026-09-06
 
 ---
 
 ## ✅ Hecho y pusheado
 
-### Commit pendiente — Etapa 3 (parcial) + Etapa 3.8 mobile
+### Commit pendiente — Etapa 3.1 wizard step-by-step
+
+**Editor de cuestionarios (`Scripts/islands/questionnaire-editor/index.js` + `chequear-theme.css`):**
+- **3.1** Reemplazado el editor "todo-en-una-pantalla" por un **wizard de 5 pasos**:
+  Metadatos / Estructura / Códigos SNOMED / Vista previa / Publicación. El stepper
+  vive arriba (nav horizontal, scroll en mobile, chips clickeables — no fuerza
+  orden porque los power users no la necesitan). Cada paso trae una **card de
+  ayuda contextual** con "Anterior" / "Siguiente".
+- **Metadatos**: card dedicada para título y especialidad, con hints debajo de
+  cada campo.
+- **Estructura**: reusa el layout `col-lg-7` (secciones + preguntas + DnD) y
+  `col-lg-5` (propiedades) sin cambios funcionales.
+- **Códigos SNOMED**: **vista plana** de todas las preguntas con estado del
+  código (check verde si tiene, círculo vacío si no) + contador de progreso.
+  Click en una pregunta abre a la derecha SÓLO el bloque de búsqueda SNOMED y
+  código — trabajo dedicado, sin scroll infinito en el árbol.
+- **Vista previa**: render read-only del cuestionario con inputs deshabilitados
+  y hints de codificación / lógica condicional debajo de cada pregunta.
+- **Publicación**: computa `publishBlockers` (archivado, conflicto, dirty, isNew,
+  issues, sin preguntas) y los muestra. Botón "Publicar ahora" habilitado sólo
+  si no hay blockers, con card verde "Todo listo" cuando corresponde.
+
+**CSS nuevo (`chequear-theme.css`):**
+- `.cq-stepper` / `.cq-stepper__item` / `.cq-stepper__num` / `.cq-stepper__label`
+  — Estados: base, hover (borde primary), `is-active` (fondo primary), `is-done`
+  (borde verde menta). En ≤640px oculta labels y sube min-height a 44px.
+
+### Commit `4b628e1` — Etapa 3 (parcial) + Etapa 3.8 mobile
 
 **Editor de cuestionarios (`Scripts/islands/questionnaire-editor/index.js`):**
 - **3.3** Card "TIPOS" (col-lg-2) eliminada: era decorativa, los tipos ya viven en el
@@ -143,9 +170,7 @@ Es el bloque más grande y arriesgado. Vive en
 en template-string). **Recomendación: hacerlo con `/run-app` disponible en Windows y en
 iteraciones cortas.** Detalle:
 
-- **3.1 Wizard step-by-step** — reemplazar la pantalla actual por 5 pasos (metadatos
-  → estructura → códigos SNOMED → preview → publicación), con panel de ayuda contextual
-  en cada paso.
+- **3.1 Wizard step-by-step** — ✅ hecho (ver commit pendiente arriba).
 - **3.2 Autocomplete SNOMED roto** — la request no aparece en Network. Investigar
   desde la isla Vue → endpoint del Api → cliente Snowstorm en `ChequeAR.Infrastructure`.
   Silencia el error en algún try/catch. **Bug funcional P0.**

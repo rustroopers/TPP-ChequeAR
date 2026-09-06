@@ -1057,3 +1057,54 @@ body.cq-sidebar-collapsed .cq-sidebar__inner {
 
 /* En mobile el comportamiento colapsado no aplica: la sidebar es un drawer
    (ver bloque "Responsive shell" arriba). */
+
+/* ===== Etapa 3.1: stepper del editor de cuestionarios =====
+   Guía visual, no candado: cada botón es clickeable. En mobile scrolla
+   horizontal en vez de apretar los items ilegiblemente. */
+.cq-stepper {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.cq-stepper__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--cq-neutral-200);
+  border-radius: var(--cq-radius-sm);
+  background: #fff;
+  color: var(--cq-neutral-500);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.cq-stepper__item:hover { border-color: var(--cq-primary-400); color: var(--cq-neutral-900); }
+.cq-stepper__item.is-active {
+  background: var(--cq-primary);
+  border-color: var(--cq-primary);
+  color: #fff;
+}
+.cq-stepper__item.is-done {
+  color: var(--cq-neutral-700);
+  border-color: var(--cq-accent);
+}
+.cq-stepper__item.is-done .cq-stepper__num i {
+  color: var(--cq-accent-600);
+}
+.cq-stepper__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+.cq-stepper__num i { font-size: 16px; }
+.cq-stepper__item.is-active .cq-stepper__num i { color: #fff; }
+@media (max-width: 640px) {
+  .cq-stepper__label { display: none; }
+  .cq-stepper__item { padding: 10px 12px; min-height: 44px; }
+}
