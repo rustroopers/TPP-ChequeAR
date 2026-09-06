@@ -40,6 +40,15 @@
   --cq-danger: #b91c1c;
   --cq-info: #0369a1;
 
+  /* Jerarquía de acción — evita reusar el primary violeta en botones secundarios
+     (como Buscar, Ver evolución, Continuar) que quedaban indistinguibles del
+     Guardar/Publicar principal. */
+  --cq-secondary: var(--cq-accent-600);        /* verde menta profundo */
+  --cq-secondary-600: #3d8f74;
+  --cq-secondary-100: #d9efe4;
+  --cq-tertiary: var(--cq-neutral-700);        /* neutro fuerte para acciones utilitarias */
+  --cq-tertiary-100: var(--cq-neutral-100);
+
   /* Radii / shadows / spacing */
   --cq-radius-sm: 6px;
   --cq-radius-md: 10px;
@@ -712,3 +721,206 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 .cq-combo__opt:hover { background: var(--cq-primary-100); }
 .cq-combo__opt.is-active { background: var(--cq-primary); color: #fff; }
 .cq-combo__empty { padding: .5rem; color: var(--cq-neutral-500); font-size: .85rem; }
+
+/* ===== Etapa 1 UX polish =====
+   Feedback: los secundarios usaban el mismo violeta que Guardar/Publicar y los grises se
+   confundían con disabled. Los tokens --cq-secondary y --cq-tertiary abren dos jerarquías
+   nuevas sin tocar los estilos ya existentes de .btn-primary. */
+
+/* Acción secundaria (Ver historial, Ver evolución, Buscar) — verde menta */
+.btn-secondary {
+  --bs-btn-bg: var(--cq-secondary);
+  --bs-btn-border-color: var(--cq-secondary);
+  --bs-btn-color: #fff;
+  --bs-btn-hover-bg: var(--cq-secondary-600);
+  --bs-btn-hover-border-color: var(--cq-secondary-600);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: var(--cq-secondary-600);
+  --bs-btn-active-border-color: var(--cq-secondary-600);
+  --bs-btn-active-color: #fff;
+  --bs-btn-disabled-bg: var(--cq-secondary);
+  --bs-btn-disabled-border-color: var(--cq-secondary);
+  --bs-btn-disabled-color: #fff;
+  background: var(--cq-secondary);
+  border-color: var(--cq-secondary);
+  color: #fff;
+}
+.btn-secondary:hover, .btn-secondary:focus, .btn-secondary:active {
+  background: var(--cq-secondary-600);
+  border-color: var(--cq-secondary-600);
+  color: #fff;
+  box-shadow: none;
+}
+
+/* Variante outline del secondary — sólo activa cuando explícitamente se pide con .btn-outline-secondary-cq
+   para no pisar los cancel de modales que hoy usan .btn-outline-secondary. */
+.btn-outline-secondary-cq {
+  --bs-btn-color: var(--cq-secondary);
+  --bs-btn-border-color: var(--cq-secondary);
+  --bs-btn-hover-bg: var(--cq-secondary-100);
+  --bs-btn-hover-border-color: var(--cq-secondary);
+  --bs-btn-hover-color: var(--cq-secondary-600);
+  color: var(--cq-secondary);
+  border-color: var(--cq-secondary);
+  background: #fff;
+}
+.btn-outline-secondary-cq:hover {
+  background: var(--cq-secondary-100);
+  color: var(--cq-secondary-600);
+  border-color: var(--cq-secondary);
+}
+
+/* Acción terciaria (Editar, Abrir, cancelar en modal) — neutro fuerte, no gris flojo */
+.btn-tertiary {
+  --bs-btn-bg: #fff;
+  --bs-btn-border-color: var(--cq-neutral-300);
+  --bs-btn-color: var(--cq-tertiary);
+  --bs-btn-hover-bg: var(--cq-tertiary-100);
+  --bs-btn-hover-border-color: var(--cq-neutral-300);
+  --bs-btn-hover-color: var(--cq-neutral-900);
+  --bs-btn-active-bg: var(--cq-neutral-200);
+  --bs-btn-active-border-color: var(--cq-neutral-300);
+  --bs-btn-active-color: var(--cq-neutral-900);
+  background: #fff;
+  border-color: var(--cq-neutral-300);
+  color: var(--cq-tertiary);
+}
+.btn-tertiary:hover {
+  background: var(--cq-tertiary-100);
+  color: var(--cq-neutral-900);
+  border-color: var(--cq-neutral-300);
+}
+
+/* Dropdown de acciones — hover MUY explícito. El default de Bootstrap era casi
+   invisible en la tabla de cuestionarios: no se distinguía qué se estaba tocando. */
+.dropdown-menu {
+  border-color: var(--cq-neutral-200);
+  border-radius: var(--cq-radius-md);
+  box-shadow: var(--cq-shadow-2);
+  padding: 4px;
+}
+.dropdown-menu .dropdown-item {
+  border-radius: var(--cq-radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+.dropdown-menu .dropdown-item:hover,
+.dropdown-menu .dropdown-item:focus {
+  background: var(--cq-primary-100);
+  color: var(--cq-primary-600);
+}
+.dropdown-menu .dropdown-item.text-danger:hover,
+.dropdown-menu .dropdown-item.text-danger:focus {
+  background: #fee2e2;
+  color: var(--cq-danger) !important;
+}
+.dropdown-menu .dropdown-item.active,
+.dropdown-menu .dropdown-item:active {
+  background: var(--cq-primary);
+  color: #fff;
+}
+
+/* Icon buttons (tacho, X para quitar) — se veían como decoración plana.
+   Ahora son un cuadrado con hover claro y tooltip nativo por el title=".."  */
+.cq-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--cq-radius-sm);
+  background: transparent;
+  color: var(--cq-neutral-500);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.cq-icon-btn:hover {
+  background: var(--cq-neutral-100);
+  color: var(--cq-neutral-900);
+  border-color: var(--cq-neutral-200);
+}
+.cq-icon-btn:focus-visible {
+  outline: 2px solid var(--cq-primary-400);
+  outline-offset: 2px;
+}
+.cq-icon-btn--danger { color: var(--cq-danger); }
+.cq-icon-btn--danger:hover {
+  background: #fee2e2;
+  color: var(--cq-danger);
+  border-color: #fecaca;
+}
+
+/* Pill "quitar código" — reemplaza el link crudo "Quitar" al lado del check verde
+   con un badge tipo chip que trae un tacho en el hover y muestra el tooltip nativo. */
+.cq-removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #dcfce7;
+  color: var(--cq-success);
+  border: 1px solid transparent;
+}
+.cq-removable__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: background 100ms, opacity 100ms, color 100ms;
+}
+.cq-removable__remove:hover {
+  background: #fee2e2;
+  color: var(--cq-danger);
+  opacity: 1;
+}
+.cq-removable__remove:focus-visible {
+  outline: 2px solid var(--cq-danger);
+  outline-offset: 1px;
+}
+
+/* Fila entera clickeable en tablas (evita tener que apuntar al título exacto). */
+.cq-table tbody tr.cq-row--clickable { cursor: pointer; }
+.cq-table tbody tr.cq-row--clickable:hover { background: var(--cq-primary-100); }
+.cq-table tbody tr.cq-row--clickable td a,
+.cq-table tbody tr.cq-row--clickable td button {
+  position: relative;
+  z-index: 1; /* que los controles internos no propaguen el click de fila */
+}
+
+/* Botón Volver / breadcrumb visible cuando el flujo lo requiere. */
+.cq-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--cq-neutral-200);
+  border-radius: var(--cq-radius-sm);
+  background: #fff;
+  color: var(--cq-neutral-700);
+  font-size: 13px;
+  text-decoration: none;
+  transition: background 120ms, border-color 120ms;
+}
+.cq-back-btn:hover {
+  background: var(--cq-neutral-100);
+  border-color: var(--cq-neutral-300);
+  color: var(--cq-neutral-900);
+  text-decoration: none;
+}
+
+/* Un card empty state que se estire al ancho del contenedor: la card "Sin fichas
+   previas" quedaba corta a la derecha. */
+.cq-card--stretch { width: 100%; max-width: none; }

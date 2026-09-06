@@ -72,7 +72,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     model.Results.Add(new PatientSearchItem
                     {
                         HC = h.HospitalId, FullName = h.FullName,
+                        Document = h.Document,
                         AgeLabel = h.AgeLabel,
+                        BirthDateLabel = h.BirthDateLabel,
                         SpecialtyCode = h.SpecialtyCode ?? "general",
                         SpecialtyLabel = SpecialtyMap.Label(h.SpecialtyCode, h.SpecialtyLabel)
                     });

@@ -12,24 +12,38 @@
     <button class="btn btn-outline-secondary"><i class="bi bi-cloud-download me-1"></i> @Cq.T("users.import")</button>
 </header>
 
-<table class="cq-table">
-    <thead>
-        <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Especialidad</th><th>Estado</th><th class="text-end"></th></tr>
-    </thead>
-    <tbody>
-        @foreach (var u in Model.Users)
-        {
-            <tr>
-                <td><code>@u.Username</code></td>
-                <td>@u.FullName</td>
-                <td>@u.Role</td>
-                <td class="cq-text-sm">@u.Specialty</td>
-                <td>
-                    @if (u.Active) { <span class="cq-badge cq-badge--published">Activo</span> }
-                    else { <span class="cq-badge cq-badge--archived">Inactivo</span> }
-                </td>
-                <td class="text-end"><a href="@Url.Action("Details", new { username = u.Username })" class="btn btn-sm btn-outline-secondary">Editar →</a></td>
-            </tr>
-        }
-    </tbody>
-</table>
+@if (Model.Users == null || Model.Users.Count == 0)
+{
+    <div class="cq-card cq-card--stretch">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-people"></i></div>
+            <div class="cq-empty__title">No hay usuarios en el sistema</div>
+            <div class="cq-empty__desc">Todavía nadie inició sesión o fue importado desde el hospital. Importá el padrón para empezar.</div>
+            <button class="btn btn-primary"><i class="bi bi-cloud-download me-1"></i> @Cq.T("users.import")</button>
+        </div>
+    </div>
+}
+else
+{
+    <table class="cq-table">
+        <thead>
+            <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Especialidad</th><th>Estado</th><th class="text-end"></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var u in Model.Users)
+            {
+                <tr>
+                    <td><code>@u.Username</code></td>
+                    <td>@u.FullName</td>
+                    <td>@u.Role</td>
+                    <td class="cq-text-sm">@u.Specialty</td>
+                    <td>
+                        @if (u.Active) { <span class="cq-badge cq-badge--published">Activo</span> }
+                        else { <span class="cq-badge cq-badge--archived">Inactivo</span> }
+                    </td>
+                    <td class="text-end"><a href="@Url.Action("Details", new { username = u.Username })" class="btn btn-sm btn-tertiary">Editar →</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

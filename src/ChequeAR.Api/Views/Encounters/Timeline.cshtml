@@ -4,17 +4,25 @@
     ViewBag.Title = "Historial";
 }
 
+<div class="mb-2">
+    <a href="@Url.Action("Search", "Encounters")" class="cq-back-btn"><i class="bi bi-arrow-left"></i> Volver a pacientes</a>
+</div>
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Historial · @Model.Patient.FullName</h1>
+        <h1 class="cq-page-header__title">Historial</h1>
+        <p class="cq-page-header__subtitle">
+            @Model.Patient.FullName@if (!string.IsNullOrEmpty(Model.Patient.AgeLabel)) { <text> (@Model.Patient.AgeLabel)</text> }
+        </p>
     </div>
 </header>
 
 @using (Html.BeginForm("Timeline", "Encounters", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "patient-timeline" }))
 {
     @Html.Hidden("patientId", Model.Patient.HC)
-    <div class="row g-2 align-items-end" style="max-width:760px;">
-        <div class="col-md-3">
+    @* Feedback: Período estaba en un segundo renglón. Se pasan todos los filtros a la misma
+       fila reduciendo el ancho de cada select (col-md-2). *@
+    <div class="row g-2 align-items-end">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Cuestionario</label>
             <select class="form-select" name="cuestionario">
                 <option value="">Todos</option>
@@ -24,7 +32,7 @@
                 }
             </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Especialidad</label>
             <select class="form-select" name="especialidad">
                 <option value="">Todas</option>
@@ -34,7 +42,7 @@
                 }
             </select>
         </div>
-        <div class="col-md-2">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Autor</label>
             <select class="form-select" name="autor">
                 <option value="">Todos</option>
@@ -44,7 +52,7 @@
                 }
             </select>
         </div>
-        <div class="col-md-2">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Estado</label>
             <select class="form-select" name="estado">
                 <option value="">Todos</option>
@@ -52,14 +60,14 @@
                 <option value="finalizada" selected="@(Model.StatusFilter == "finalizada")">Finalizada</option>
             </select>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-4 col-lg-4">
             <label class="form-label cq-text-sm">Período</label>
             <cq-date-range name-from="from" name-to="to" value-from="@Model.From" value-to="@Model.To"></cq-date-range>
         </div>
     </div>
 }
 
-<div class="cq-card" style="max-width:760px;">
+<div class="cq-card cq-card--stretch">
     @if (Model.Entries.Count == 0)
     {
         <div class="cq-empty">
@@ -107,7 +115,7 @@
                         </div>
                         @if (e.Status == "completed")
                         {
-                            <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
+                            <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-tertiary">Abrir →</a>
                         }
                         else
                         {

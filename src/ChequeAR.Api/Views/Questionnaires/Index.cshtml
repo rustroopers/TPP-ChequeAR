@@ -70,8 +70,8 @@ else
         <tbody>
             @foreach (var q in Model.Items)
             {
-                <tr>
-                    <td><a href="@Url.Action("Preview", new { id = q.Id })" class="text-decoration-none">@q.Title</a></td>
+                <tr class="cq-row--clickable" data-href="@Url.Action("Preview", new { id = q.Id })">
+                    <td><a href="@Url.Action("Preview", new { id = q.Id })" class="text-decoration-none fw-semibold">@q.Title</a></td>
                     <td><span class="cq-chip cq-chip--@q.SpecialtyCode">@q.SpecialtyLabel</span></td>
                     <td>v@(q.Version)</td>
                     <td>
@@ -86,7 +86,7 @@ else
                     <td class="cq-text-sm cq-text-muted">@q.UpdatedAt</td>
                     <td class="text-end">
                         <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" aria-label="Acciones de @q.Title">
+                            <button class="btn btn-sm btn-tertiary" data-bs-toggle="dropdown" aria-label="Acciones de @q.Title" title="Acciones">
                                 <i class="bi bi-three-dots"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
@@ -186,6 +186,16 @@ else
             document.getElementById("archiveId").value = id;
             document.getElementById("archiveTitle").textContent = title;
         }
+    });
+
+    // Fila entera clickeable — feedback pedía no tener que apuntar al título exacto.
+    // Se ignora si el click salió de un link/botón interno para no interferir con el menú de acciones.
+    document.addEventListener("click", function (e) {
+        var row = e.target.closest("tr.cq-row--clickable");
+        if (!row) return;
+        if (e.target.closest("a, button, .dropdown, .dropdown-menu, input, label")) return;
+        var href = row.getAttribute("data-href");
+        if (href) window.location.href = href;
     });
 </script>
 }

@@ -1018,7 +1018,7 @@
                 <i class="bi bi-folder text-primary"></i>\
                 <input v-model="g.title" class="form-control form-control-sm fw-semibold" style="max-width:320px;" />\
                 <span class="cq-text-xs cq-text-muted">{{ g.questions.length }} preguntas</span>\
-                <button class="btn btn-sm btn-link text-danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title"><i class="bi bi-trash"></i></button>\
+                <button type="button" class="cq-icon-btn cq-icon-btn--danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title" :title="\'Eliminar sección \' + g.title"><i class="bi bi-trash"></i></button>\
             </div>\
             <ul class="list-unstyled mb-2">\
                 <li v-for="q in g.questions" :key="q.linkId"\
@@ -1032,7 +1032,7 @@
                     @click="selectQuestion(g, q)">\
                     <i class="bi bi-grip-vertical cq-text-muted" style="cursor:grab;"></i>\
                     <span class="cq-text-sm flex-fill">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.type }}{{ q.required ? \'*\' : \'\' }})</span></span>\
-                    <button class="btn btn-sm btn-link text-danger" @click.stop="removeQuestion(g, q)" :aria-label="\'Eliminar \' + q.text"><i class="bi bi-x-lg"></i></button>\
+                    <button type="button" class="cq-icon-btn cq-icon-btn--danger" @click.stop="removeQuestion(g, q)" :aria-label="\'Eliminar \' + q.text" :title="\'Eliminar pregunta\'"><i class="bi bi-x-lg"></i></button>\
                 </li>\
             </ul>\
             <div class="dropdown">\
@@ -1152,9 +1152,14 @@
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Código SNOMED CT</label>\
                 <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
-                <div v-if="selected.question.codeDisplay" class="cq-text-xs mt-1">\
-                    <i class="bi bi-check-circle-fill text-success"></i> {{ selected.question.codeDisplay }}\
-                    <a href="javascript:" class="ms-1" @click="clearSnomed">quitar</a>\
+                <div v-if="selected.question.codeDisplay" class="mt-1">\
+                    <span class="cq-removable">\
+                        <i class="bi bi-check-circle-fill"></i>\
+                        {{ selected.question.codeDisplay }}\
+                        <button type="button" class="cq-removable__remove" title="Quitar código" aria-label="Quitar código" @click="clearSnomed">\
+                            <i class="bi bi-x"></i>\
+                        </button>\
+                    </span>\
                 </div>\
                 <p v-else class="cq-text-xs cq-text-muted mt-1">Elegí una sugerencia de arriba, o escribí el código a mano si ya lo sabés.</p>\
             </div>\

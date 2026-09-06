@@ -47,8 +47,9 @@ else
         <thead>
             <tr>
                 <th>HC</th>
+                <th>DNI</th>
                 <th>Nombre</th>
-                <th>Edad</th>
+                <th>Fecha de nacimiento</th>
                 <th class="text-end">Acciones</th>
             </tr>
         </thead>
@@ -57,14 +58,32 @@ else
             {
                 <tr>
                     <td><code>@p.HC</code></td>
+                    <td class="cq-text-sm">@(string.IsNullOrEmpty(p.Document) ? "—" : p.Document)</td>
                     <td>@p.FullName</td>
-                    <td class="cq-text-sm">@p.AgeLabel</td>
+                    <td class="cq-text-sm">
+                        @if (!string.IsNullOrEmpty(p.BirthDateLabel))
+                        {
+                            @p.BirthDateLabel
+                            if (!string.IsNullOrEmpty(p.AgeLabel))
+                            {
+                                <span class="cq-text-muted"> (@p.AgeLabel)</span>
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(p.AgeLabel))
+                        {
+                            @p.AgeLabel
+                        }
+                        else
+                        {
+                            <text>—</text>
+                        }
+                    </td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#selectQModal"
                                 data-patient-id="@p.HC" data-patient-name="@p.FullName" data-patient-hc="@p.HC">
                             Cargar ficha →
                         </button>
-                        <a href="@Url.Action("Timeline", new { patientId = p.HC })" class="btn btn-sm btn-outline-secondary">Historial</a>
+                        <a href="@Url.Action("Timeline", new { patientId = p.HC })" class="btn btn-sm btn-secondary">Historial</a>
                     </td>
                 </tr>
             }
