@@ -14,7 +14,7 @@
 
 @using (Html.BeginForm("Search", "Encounters", FormMethod.Get, new { @class = "mb-4", data_cq_autofilter = "patients" }))
 {
-    <div class="input-group" style="max-width:640px;">
+    <div class="input-group" style="max-width:640px;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Escribí HC, DNI, apellido o nombre. La búsqueda es sobre el padrón del hospital.">
         <span class="input-group-text"><i class="bi bi-search"></i></span>
         <input type="search" name="q" value="@Model.Query" class="form-control"
                placeholder="@Cq.T("r1.placeholder")" aria-label="@Cq.T("r1.title")" autofocus />

@@ -1,9 +1,19 @@
 @model ChequeAR.Api.Models.HomeViewModel
+@using System.Linq
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("sidebar.home");
     ViewBag.PageId = "home";
     var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctor";
+    // "Ficha reciente" muestra la última fila de RecentEncounters. Si no hay, el card
+    // se renderiza vacío (empty state) pero sigue mostrando el bloque para que la UI
+    // se sienta habitada aún sin data.
+    var lastEncounter = Model.RecentEncounters != null && Model.RecentEncounters.Count > 0
+        ? Model.RecentEncounters[0]
+        : null;
+    var otherEncounters = Model.RecentEncounters != null && Model.RecentEncounters.Count > 1
+        ? Model.RecentEncounters.Skip(1).Take(4).ToList()
+        : new System.Collections.Generic.List<ChequeAR.Api.Models.RecentEncounter>();
 }
 
 <header class="cq-page-header">
@@ -13,45 +23,131 @@
     </div>
 </header>
 
-@* Acciones rápidas *@
+@* Bloques demostrativos — reemplazan los 3 botones "ir a X" por cards con
+   información real (o empty state si no hay data) y un dropdown para navegar
+   entre subitems. Feedback: la home antes era un menú duplicado del sidebar. *@
 <div class="cq-grid cq-grid--3 mb-4">
-    <a href="@Url.Action("Search", "Encounters")" class="cq-card cq-card--interactive text-decoration-none">
-        <div class="d-flex align-items-center gap-3">
-            <i class="bi bi-clipboard2-pulse fs-3 text-primary"></i>
-            <div>
-                <h3 class="cq-card__title">@Cq.T("home.action.load.title")</h3>
-                <p class="cq-card__desc">@Cq.T("home.action.load.desc")</p>
-            </div>
+
+    @* --------- Reportes --------- *@
+    <div class="cq-demo-card">
+        <div class="cq-demo-card__header">
+            <h3 class="cq-demo-card__title"><i class="bi bi-bar-chart-line"></i> Reportes</h3>
+            <select class="form-select form-select-sm" id="reportPicker" aria-label="Elegir reporte">
+                <option value="">Elegí un reporte…</option>
+                <option value="uso">Uso por cuestionario</option>
+                <option value="autores">Fichas por autor</option>
+                <option value="especialidad">Fichas por especialidad</option>
+            </select>
         </div>
-    </a>
-    <a href="@Url.Action("Index", "Questionnaires")" class="cq-card cq-card--interactive text-decoration-none">
-        <div class="d-flex align-items-center gap-3">
-            <i class="bi bi-journal-text fs-3 text-primary"></i>
-            <div>
-                <h3 class="cq-card__title">@Cq.T("home.action.questionnaires.title")</h3>
-                <p class="cq-card__desc">@Cq.T("home.action.questionnaires.desc")</p>
-            </div>
+        <div class="cq-demo-card__body">
+            @* Placeholder SVG: no hay reportes cargados aún o hay que abrir la sección. *@
+            <svg class="cq-placeholder-chart" viewBox="0 0 300 160" role="img" aria-label="Gráfico de ejemplo">
+                <line class="cq-ph-axis" x1="20" y1="140" x2="290" y2="140" />
+                <line class="cq-ph-axis" x1="20" y1="10" x2="20" y2="140" />
+                <rect class="cq-ph-bar" x="40" y="80" width="30" height="60" rx="3" />
+                <rect class="cq-ph-bar cq-ph-bar--hi" x="90" y="40" width="30" height="100" rx="3" />
+                <rect class="cq-ph-bar" x="140" y="60" width="30" height="80" rx="3" />
+                <rect class="cq-ph-bar cq-ph-bar--hi" x="190" y="25" width="30" height="115" rx="3" />
+                <rect class="cq-ph-bar" x="240" y="95" width="30" height="45" rx="3" />
+            </svg>
         </div>
-    </a>
-    <a href="@Url.Action("Index", "Reports")" class="cq-card cq-card--interactive text-decoration-none">
-        <div class="d-flex align-items-center gap-3">
-            <i class="bi bi-bar-chart-line fs-3 text-primary"></i>
-            <div>
-                <h3 class="cq-card__title">@Cq.T("home.action.reports.title")</h3>
-                <p class="cq-card__desc">@Cq.T("home.action.reports.desc")</p>
-            </div>
+        <div class="cq-demo-card__foot">
+            <span class="cq-text-sm cq-text-muted">Vista previa</span>
+            <a href="@Url.Action("Index", "Reports")" class="btn btn-sm btn-tertiary">Abrir reportes →</a>
         </div>
-    </a>
+    </div>
+
+    @* --------- Ficha reciente --------- *@
+    <div class="cq-demo-card">
+        <div class="cq-demo-card__header">
+            <h3 class="cq-demo-card__title"><i class="bi bi-clipboard2-pulse"></i> Ficha reciente</h3>
+            @if (otherEncounters.Count > 0)
+            {
+                <select class="form-select form-select-sm" id="encounterPicker" aria-label="Elegir ficha">
+                    <option value="@lastEncounter.OpenUrl">Última (@lastEncounter.PatientName)</option>
+                    @foreach (var e in otherEncounters)
+                    {
+                        <option value="@e.OpenUrl">@e.PatientName · @e.QuestionnaireTitle</option>
+                    }
+                </select>
+            }
+        </div>
+        <div class="cq-demo-card__body" style="align-items:stretch; justify-content:flex-start; flex-direction:column; gap:8px;">
+            @if (lastEncounter == null)
+            {
+                <div class="cq-empty" style="padding:24px 0;">
+                    <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
+                    <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
+                </div>
+            }
+            else
+            {
+                <div>
+                    <div class="cq-text-xs cq-text-muted text-uppercase" style="letter-spacing:.05em;">Paciente</div>
+                    <div class="fw-semibold" style="font-size:15px;">@lastEncounter.PatientName</div>
+                </div>
+                <div>
+                    <div class="cq-text-xs cq-text-muted text-uppercase" style="letter-spacing:.05em;">Cuestionario</div>
+                    <div>@lastEncounter.QuestionnaireTitle</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <span class="cq-chip cq-chip--@lastEncounter.SpecialtyCode">@lastEncounter.SpecialtyLabel</span>
+                    @if (lastEncounter.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
+                    else if (lastEncounter.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
+                    else { <span class="cq-badge cq-badge--archived">@lastEncounter.Status</span> }
+                    <span class="cq-text-xs cq-text-muted ms-auto">@lastEncounter.UpdatedAt</span>
+                </div>
+            }
+        </div>
+        <div class="cq-demo-card__foot">
+            <a href="@Url.Action("Search", "Encounters")" class="btn btn-sm btn-tertiary">Buscar paciente</a>
+            @if (lastEncounter != null)
+            {
+                <a href="@lastEncounter.OpenUrl" class="btn btn-sm btn-primary">Abrir ficha →</a>
+            }
+        </div>
+    </div>
+
+    @* --------- Cuestionarios --------- *@
+    <div class="cq-demo-card">
+        <div class="cq-demo-card__header">
+            <h3 class="cq-demo-card__title"><i class="bi bi-journal-text"></i> Cuestionarios</h3>
+        </div>
+        <div class="cq-demo-card__body" style="align-items:stretch; justify-content:flex-start; flex-direction:column; gap:6px;">
+            @* No cargamos aca la lista real para no meter otro repositorio en el HomeController.
+               Ofrecemos accesos a los estados mas usados como una cheat sheet demostrativa. *@
+            <a href="@Url.Action("Index", "Questionnaires", new { status = "published" })" class="d-flex align-items-center gap-2 p-2 rounded text-decoration-none cq-text-sm" style="border:1px solid var(--cq-neutral-200);">
+                <i class="bi bi-check-circle text-success"></i>
+                <span class="flex-fill" style="color:var(--cq-neutral-900);">Publicados</span>
+                <i class="bi bi-arrow-right text-muted"></i>
+            </a>
+            <a href="@Url.Action("Index", "Questionnaires", new { status = "draft" })" class="d-flex align-items-center gap-2 p-2 rounded text-decoration-none cq-text-sm" style="border:1px solid var(--cq-neutral-200);">
+                <i class="bi bi-pencil-square text-warning"></i>
+                <span class="flex-fill" style="color:var(--cq-neutral-900);">Borradores</span>
+                <i class="bi bi-arrow-right text-muted"></i>
+            </a>
+            <a href="@Url.Action("Index", "Questionnaires", new { status = "archived" })" class="d-flex align-items-center gap-2 p-2 rounded text-decoration-none cq-text-sm" style="border:1px solid var(--cq-neutral-200);">
+                <i class="bi bi-archive text-muted"></i>
+                <span class="flex-fill" style="color:var(--cq-neutral-900);">Archivados</span>
+                <i class="bi bi-arrow-right text-muted"></i>
+            </a>
+        </div>
+        <div class="cq-demo-card__foot">
+            <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-sm btn-tertiary">Ver todos</a>
+            <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" data-bs-placement="top" title="Crear un cuestionario nuevo (borrador)"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
+        </div>
+    </div>
+
 </div>
 
-@* Recientes *@
+@* Recientes (tabla) — se mantiene para dar detalle abajo del hero de cards *@
 <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="m-0">@Cq.T("home.recent.title")</h2>
 </div>
 
 @if (Model.RecentEncounters == null || Model.RecentEncounters.Count == 0)
 {
-    <div class="cq-card">
+    <div class="cq-card cq-card--stretch">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
             <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
@@ -94,7 +190,7 @@ else
                         }
                         else
                         {
-                            <a href="@enc.OpenUrl" class="btn btn-sm btn-outline-primary">@Cq.T("common.open") →</a>
+                            <a href="@enc.OpenUrl" class="btn btn-sm btn-tertiary">@Cq.T("common.open") →</a>
                         }
                     </td>
                 </tr>
@@ -124,4 +220,22 @@ else
             <div class="cq-kpi__value">@Model.Kpis.Specialties</div>
         </div>
     </div>
+}
+
+@section scripts {
+<script>
+    // Ambos pickers navegan al valor de la opcion elegida (los reportes van a la
+    // pantalla de Reports; las fichas al link ya calculado por el controller).
+    document.addEventListener("change", function (e) {
+        if (e.target.id === "reportPicker") {
+            var v = e.target.value;
+            if (!v) return;
+            window.location.href = "@Url.Action("Index", "Reports")" + "?tipo=" + encodeURIComponent(v);
+        }
+        if (e.target.id === "encounterPicker") {
+            var u = e.target.value;
+            if (u) window.location.href = u;
+        }
+    });
+</script>
 }

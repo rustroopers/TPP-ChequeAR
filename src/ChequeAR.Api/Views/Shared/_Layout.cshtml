@@ -38,6 +38,32 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/Scripts/cq-date-range.js"></script>
     <script src="~/Scripts/cq-autofilter.js"></script>
+    <script>
+        // Sidebar colapsable — persistencia en localStorage con fallback silencioso
+        // (private browsing / storage bloqueado). Se aplica antes de pintar para evitar flicker.
+        (function () {
+            var KEY = "cq.sidebar.collapsed";
+            var root = document.body;
+            var stored = null;
+            try { stored = localStorage.getItem(KEY); } catch (e) {}
+            if (stored === "1") root.classList.add("cq-sidebar-collapsed");
+            document.addEventListener("click", function (e) {
+                var btn = e.target.closest("#cqSidebarToggle");
+                if (!btn) return;
+                var isCollapsed = root.classList.toggle("cq-sidebar-collapsed");
+                try { localStorage.setItem(KEY, isCollapsed ? "1" : "0"); } catch (e) {}
+            });
+        })();
+
+        // Bootstrap tooltips — activa todo [data-bs-toggle="tooltip"] al cargar.
+        document.addEventListener("DOMContentLoaded", function () {
+            if (!window.bootstrap || !bootstrap.Tooltip) return;
+            var els = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            Array.prototype.forEach.call(els, function (el) {
+                new bootstrap.Tooltip(el, { delay: { show: 400, hide: 80 } });
+            });
+        });
+    </script>
     @RenderSection("scripts", required: false)
 </body>
 </html>
