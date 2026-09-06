@@ -1,5 +1,11 @@
+﻿using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.ModelConfiguration.Conventions;
+using System.Data.Entity.Validation;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Infrastructure.EF.Configurations;
 
@@ -104,5 +110,68 @@ namespace ChequeAR.Infrastructure.EF
 
             base.OnModelCreating(mb);
         }
+        // ---- Validacion: hacer legible el DbEntityValidationException ----
+        //
+        // El Message de esa excepcion es siempre el mismo texto generico ("Validation failed
+        // for one or more entities...") y remite a la propiedad EntityValidationErrors, que
+        // ningun logger serializa: en el archivo de log queda el stack trace sin una sola
+        // pista de que entidad ni que propiedad fallo. Al envolverla, el detalle viaja en el
+        // Message y aparece tal cual en Serilog, sin que Api ni Application tengan que
+        // referenciar EntityFramework para desarmarla.
+        //
+        // Se envuelve en vez de reemplazar: la original queda como InnerException, asi que
+        // nada que hoy la capture por tipo deja de funcionar.
+        public override int SaveChanges()
+        {
+            try
+            {
+                return base.SaveChanges();
+            }
+            catch (DbEntityValidationException ex)
+            {
+                throw Describe(ex);
+            }
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (DbEntityValidationException ex)
+            {
+                throw Describe(ex);
+            }
+        }
+
+        /// Arma "Entidad.Propiedad: mensaje" por cada regla violada, agrupado por entidad.
+        private static DbEntityValidationException Describe(DbEntityValidationException ex)
+        {
+            var detalle = new StringBuilder("Fallo la validacion de EF al guardar. Errores: ");
+            var partes = new List<string>();
+
+            foreach (var entry in ex.EntityValidationErrors)
+            {
+                // GetType().BaseType: con lazy loading EF entrega proxies dinamicos y el
+                // nombre del proxy no dice nada ("Questionnaire_A3F2...").
+                var tipo = entry.Entry.Entity.GetType();
+                var nombre = tipo.Namespace == "System.Data.Entity.DynamicProxies"
+                    ? tipo.BaseType.Name
+                    : tipo.Name;
+
+                foreach (var error in entry.ValidationErrors)
+                {
+                    partes.Add(nombre + "." + error.PropertyName + ": " + error.ErrorMessage);
+                }
+            }
+
+            detalle.Append(partes.Count == 0
+                ? "(la excepcion no trajo ningun detalle)"
+                : string.Join(" | ", partes));
+
+            return new DbEntityValidationException(detalle.ToString(), ex.EntityValidationErrors, ex);
+        }
+
     }
 }
