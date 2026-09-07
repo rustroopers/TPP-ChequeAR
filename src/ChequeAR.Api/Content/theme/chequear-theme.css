@@ -151,7 +151,7 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   top: 56px;
   max-height: calc(100vh - 56px);
   overflow-y: auto;
-  padding: 16px 8px;
+  padding: 16px 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -160,7 +160,7 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 10px 16px;
   border-radius: var(--cq-radius-sm);
   color: var(--cq-neutral-700);
   text-decoration: none;
@@ -969,26 +969,43 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
    previas" quedaba corta a la derecha. */
 .cq-card--stretch { width: 100%; max-width: none; }
 
-/* ===== Etapa 2: sidebar colapsable ===== */
+/* ===== Etapa 2: sidebar colapsable =====
+   Diseño hover-to-expand:
+   - En desktop la sidebar SIEMPRE arranca colapsada (columna del grid: 64px).
+   - .cq-sidebar__inner es el elemento que se anima: cambia sólo width.
+   - Los items MANTIENEN su padding, gap y justify siempre iguales — así el
+     fondo violeta del item activo no se estira ni se corre durante la
+     animación (que era lo que hacía que se viera feo).
+   - Los labels y group-labels están siempre en el DOM y quedan tapados por
+     overflow:hidden del inner cuando la columna es angosta; al expandirse
+     "aparecen" al aumentar el ancho, sin animación propia.
+   - .cq-sidebar--force-collapse la aplica el JS al clickear un item para
+     forzar el colapso antes de que arranque la navegación. */
 body.cq-sidebar-collapsed .cq-app {
   grid-template-columns: 64px 1fr;
 }
-body.cq-sidebar-collapsed .cq-sidebar__label,
-body.cq-sidebar-collapsed .cq-sidebar__group-label {
+.cq-sidebar__group-label {
   display: none;
 }
-body.cq-sidebar-collapsed .cq-sidebar__item {
-  justify-content: center;
-  padding: 12px 0;
-  gap: 0;
-}
-body.cq-sidebar-collapsed .cq-sidebar__item i {
-  font-size: 22px;
-  width: auto;
-}
-body.cq-sidebar-collapsed .cq-sidebar__inner {
-  padding: 12px 6px;
-  gap: 4px;
+
+@media (min-width: 769px) {
+  body.cq-sidebar-collapsed .cq-sidebar {
+    position: relative;
+    z-index: 25;
+  }
+  body.cq-sidebar-collapsed .cq-sidebar__inner {
+    width: 64px;
+    overflow-x: hidden;
+    transition: width 520ms cubic-bezier(0.22, 0.61, 0.36, 1);
+    will-change: width;
+  }
+  body.cq-sidebar-collapsed .cq-sidebar:hover:not(.cq-sidebar--force-collapse) .cq-sidebar__inner {
+    width: 300px;
+    min-height: calc(100vh - 56px);
+    background: #fff;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.08);
+    border-right: 1px solid var(--cq-neutral-200);
+  }
 }
 
 .cq-sidebar-toggle {

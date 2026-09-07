@@ -4,12 +4,6 @@
         : "Invitado";
 }
 <header class="cq-navbar" role="banner">
-    @* Toggle de la sidebar — colapsa a modo íconos. Se persiste en localStorage
-       desde el script inline al final del layout. *@
-    <button type="button" class="cq-navbar__btn cq-sidebar-toggle" id="cqSidebarToggle"
-            aria-label="Mostrar u ocultar menú lateral" title="Contraer / expandir menú">
-        <i class="bi bi-list" style="font-size:20px;"></i>
-    </button>
     <a href="@Url.Action("Index", "Home")" class="cq-navbar__brand" aria-label="@Cq.T("navbar.brand") — @Cq.T("sidebar.home")">
         @* TODO prod: vendor el logo a Content/img/garrahan-logo-white.svg *@
         <img src="https://www.garrahan.gov.ar/images/logo2.png" alt="Hospital Garrahan" />
