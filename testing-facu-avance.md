@@ -5,11 +5,46 @@ pendiente. Complementa [`testing-facu-feedback.md`](testing-facu-feedback.md) (e
 inicial completo con feedback crudo).
 
 > Rama: `testing-hecho-por-facu`
-> Última actualización: 2026-09-06
+> Última actualización: 2026-09-07
 
 ---
 
 ## ✅ Hecho y pusheado
+
+### Commit `01ac2f4` — Etapa 3.3+ botones verdes y toast de "guardar sin cambios"
+
+**Editor (`Scripts/islands/questionnaire-editor/index.js`):**
+- 3 botones que estaban con `btn-outline-secondary` (gris de Bootstrap → percibido
+  como disabled) pasan a `.btn-outline-secondary-cq` (verde del DS): "+ Agregar
+  pregunta", "Agregar sección" y "Dejarlas siempre visibles" del panel de
+  issues. "+ Agregar pregunta" gana el ícono `bi-plus-lg` para matchear con
+  "Agregar sección".
+- `save()`: cuando se aprieta Guardar sin cambios, el toast pasa de `'info'`
+  (azul feo, se leía como bug) a `'success'` con wording positivo
+  ("Ya está todo guardado"). Antes había un choque visual: la barra de
+  Estructura decía "Cambios sin guardar" y al guardar aparecía un cartel azul
+  que sonaba a error.
+- **3.3 verificado en código**: el `<select>` de Tipo en Propiedades es
+  `:value` + `@change="onTypeChange"`, sin `disabled`. El "gris claro"
+  percibido en el testing venía de la card TIPOS (ya eliminada en `4b628e1`).
+
+### Commit `4c6e5a2` — Etapa 2.1: sidebar hover-to-expand + cache-busting
+
+**Sidebar (`_Layout.cshtml` + `_Navbar.cshtml` + `chequear-theme.css`):**
+- En desktop la sidebar **siempre arranca colapsada (64px)** y se expande al
+  hover a 300px con overlay/shadow. Al clickear un item se aplica
+  `.cq-sidebar--force-collapse` para colapsar antes de que arranque la
+  navegación (evita flash raro). Se eliminó la hamburguesa del navbar y el
+  `localStorage` de estado: con hover no hace falta un toggle manual.
+- Mobile queda fuera de scope — el drawer off-canvas sigue en el CSS pero sin
+  trigger. Si vuelve a scope, hay que restaurar la hamburguesa con un
+  `@media (max-width: 1024px)` en el navbar.
+
+**Cache-busting (`_Layout.cshtml`):**
+- Helper `asset(path)` que appendea `?v=<mtime.Ticks>` a los assets locales
+  (`chequear-theme.css`, `cq-date-range.js`, `cq-autofilter.js`). En dev,
+  F5 normal alcanza para ver cambios; en prod el navegador cachea hasta que
+  el archivo realmente cambie.
 
 ### Commit pendiente — Etapa 1.6 ruteo /Encounters/Search → /Pacientes
 
@@ -217,11 +252,11 @@ iteraciones cortas.** Detalle:
   `preferredTerm` oficial vía `$expand?filter=<code>` y avisa si el término
   escrito difiere. Se decidió NO bloquear la entrada manual (los usuarios que
   ya saben el código no pierden tiempo escribiendo el término y buscando).
-- **3.3 Tipo de respuesta** — sacar gris claro que parece disabled; permitir edición
-  in-place del tipo (hoy obliga a borrar la pregunta). *NOTA*: revisando el código,
-  `onTypeChange` ya está implementado y el select del panel Propiedades es un
-  `<select>` normal, no disabled. El "gris claro" percibido probablemente venía de
-  la card "TIPOS" (ya eliminada). Verificar en runtime que el select responda.
+- **3.3 Tipo de respuesta** — ✅ verificado en código (commit `01ac2f4`). El
+  `<select>` de Tipo usa `:value` + `@change="onTypeChange"`, no está disabled,
+  cambia el tipo in-place y limpia opciones/condiciones que ya no aplican. El
+  "gris claro" percibido venía de la card TIPOS (eliminada en `4b628e1`). Falta
+  confirmarlo con la app corriendo, pero no hay bug de código.
 - **3.3 Card "TIPOS"** — ✅ hecha (ver commit pendiente arriba).
 - **3.4 Sección/carpeta** — si no agrupa visualmente las preguntas, eliminar el
   concepto. **Requiere definición D5.**
