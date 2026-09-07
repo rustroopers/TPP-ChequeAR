@@ -839,7 +839,10 @@
                 // server. Un cuestionario nuevo siempre tiene que crearse la primera vez,
                 // aunque todavía no se haya tocado nada.
                 if (!isNew.value && !dirty.value) {
-                    if (explicit) toast('No hay cambios para guardar', 'info');
+                    // El usuario apreto Guardar pero no hay nada pendiente. No es
+                    // un error: confirmamos con verde y wording positivo, en vez
+                    // del azul info que se leia como cartel de bug.
+                    if (explicit) toast('Ya esta todo guardado', 'success');
                     return Promise.resolve(true);
                 }
                 // El backend rechaza cualquier escritura sobre un archivado: cortar acá
@@ -1103,7 +1106,7 @@
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(i, ix) in issues" :key="ix">{{ i.detail }}</li>\
             </ul>\
-            <button class="btn btn-sm btn-outline-secondary mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Dejarlas siempre visibles</button>\
+            <button class="btn btn-sm btn-outline-secondary-cq mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Dejarlas siempre visibles</button>\
         </div>\
     </div>\
 </div>\
@@ -1196,13 +1199,13 @@
                 </li>\
             </ul>\
             <div class="dropdown">\
-                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">+ Agregar pregunta</button>\
+                <button class="btn btn-sm btn-outline-secondary-cq dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus-lg me-1"></i>Agregar pregunta</button>\
                 <ul class="dropdown-menu">\
                     <li v-for="t in types" :key="t.code"><a class="dropdown-item" href="javascript:" @click="addQuestion(g, t.code)"><i :class="\'bi \' + t.icon + \' me-1\'"></i> {{ t.label }}</a></li>\
                 </ul>\
             </div>\
         </div>\
-        <button class="btn btn-outline-secondary w-100" @click="addGroup"><i class="bi bi-plus-lg me-1"></i> Agregar sección</button>\
+        <button class="btn btn-outline-secondary-cq w-100" @click="addGroup"><i class="bi bi-plus-lg me-1"></i> Agregar sección</button>\
     </div>\
 \
     <div class="col-lg-5">\
