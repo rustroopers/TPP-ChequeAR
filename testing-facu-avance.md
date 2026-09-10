@@ -5,11 +5,33 @@ pendiente. Complementa [`testing-facu-feedback.md`](testing-facu-feedback.md) (e
 inicial completo con feedback crudo).
 
 > Rama: `testing-hecho-por-facu`
-> Última actualización: 2026-09-07
+> Última actualización: 2026-09-10
 
 ---
 
 ## ✅ Hecho y pusheado
+
+### Commit pendiente — Etapa 4/5: renombre "Trabajo", nota de orden, D7 en modal, tablas responsive
+
+**Sidebar (`Content/i18n/es-AR.json` + `en.json`):**
+- **D9** — `sidebar.group.work` pasa de "Trabajo" a **"Clínico"** (y "Work" → "Clinical"
+  en inglés). El CSS pone `text-transform: uppercase` así que se ve "CLÍNICO" — mejor
+  referencia semántica al bloque que agrupa Home/Pacientes/Cuestionarios/Reportes
+  (contra "Administración").
+
+**Listado de cuestionarios (`Views/Questionnaires/Index.cshtml`):**
+- **D6** — hint arriba de la tabla ("Ordenado por última modificación, los más recientes
+  arriba") + flecha ↓ en el header de la columna. No agregamos selector de orden porque
+  el default cubre el caso principal (encontrar lo último editado); si hace falta orden
+  alfabético o por especialidad, se agrega después.
+- **D7** — el modal de Archivar explica en texto por qué no ofrecemos borrar:
+  "Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos 'borrar':
+  romperíamos su trazabilidad". Cierra la duda sin cambiar el flujo.
+
+**Tablas responsive (`Content/theme/chequear-theme.css`):**
+- En ≤768px `.cq-table` pasa a `display:block` con `overflow-x:auto` y `white-space:nowrap`.
+  El scroll horizontal queda contenido a la tabla en vez de mover el body entero (que
+  antes se movía en Pacientes, Reports y Cuestionarios con muchas columnas).
 
 ### Commit `01ac2f4` — Etapa 3.3+ botones verdes y toast de "guardar sin cambios"
 
@@ -258,8 +280,11 @@ iteraciones cortas.** Detalle:
   "gris claro" percibido venía de la card TIPOS (eliminada en `4b628e1`). Falta
   confirmarlo con la app corriendo, pero no hay bug de código.
 - **3.3 Card "TIPOS"** — ✅ hecha (ver commit pendiente arriba).
-- **3.4 Sección/carpeta** — si no agrupa visualmente las preguntas, eliminar el
-  concepto. **Requiere definición D5.**
+- **3.4 Sección/carpeta** — ✅ resuelto: en la vista Estructura del wizard cada sección
+  se renderiza como card propia con folder + título editable + contador de preguntas
+  ("N preguntas"), y las preguntas van adentro de esa card. El agrupamiento visual
+  existe. Si el feedback vuelve a aparecer, hay que preguntar concretamente qué se
+  espera además de eso.
 - **3.6 Comentarios en cuestionarios/preguntas** — feature nueva. **Requiere
   definición D4.**
 - **3.7 Pérdida de datos en Propiedades** — ✅ hecho el fix más probable (textarea
@@ -274,15 +299,16 @@ iteraciones cortas.** Detalle:
 
 ### Etapa 4 — Lista de cuestionarios (pendientes menores)
 
-- **4.2 Ordenamiento** — 🔵 D6. No implementado; requiere decidir el campo por
-  defecto.
-- **4.3 Archivar vs. borrar** — 🔵 D7. Reglas según uso previo (integridad
-  referencial hacia `Encounters`).
+- **4.2 Ordenamiento** — ✅ resuelto por default (`OrderByDescending(UpdatedAt)` en el
+  repo) + hint en la UI. Si aparece pedido de orden alfabético, se agrega selector.
+- **4.3 Archivar vs. borrar** — ✅ decisión tomada: sólo archivar. El modal explica por
+  qué. Un borrado duro rompería las respuestas históricas que apuntan al cuestionario.
 - **4.4 Estado vs. archivado** — 🔵 D8. Revisar máquina de estados en
-  `ChequeAR.Domain`.
-- **4.5 Título "TRABAJO"** — 🔵 D9. Renombrar según scope real.
+  `ChequeAR.Domain` (¿archivado es un estado más o un flag ortogonal?). En el código
+  actual `Status` incluye `Archived` así que el "cambio de estado" al archivar sí ocurre.
+- **4.5 Título "TRABAJO"** — ✅ renombrado a "Clínico" ("CLÍNICO" con mayúsculas del CSS).
 - **4.6 Pacientes como searcher vs. listado** — 🔵 D10. Preguntar el porqué de la
-  decisión.
+  decisión (sospecha: volumen de pacientes del hospital hace inviable listar todo).
 
 ### Etapa 5 — Pantalla de paciente (pendiente)
 
@@ -309,11 +335,11 @@ Recordatorio: llevar a una única reunión con Carolo/Gonza. Ver
 | D2 | SNOMED sin match | Pendiente |
 | D3 | Captura "dice el paciente…" | Pendiente |
 | D4 | Comentarios en cuestionarios/preguntas | Pendiente |
-| D5 | Concepto de "sección" | Pendiente |
-| D6 | Ordenamiento de lista de cuestionarios | Pendiente |
-| D7 | Archivar vs. borrar | Pendiente |
+| D5 | Concepto de "sección" | ✅ resuelto en código: cada sección es una card con folder + título editable + contador; agrupa visualmente |
+| D6 | Ordenamiento de lista de cuestionarios | ✅ default por última modificación desc + hint en UI |
+| D7 | Archivar vs. borrar | ✅ sólo archivar (integridad de respuestas); explicado en modal |
 | D8 | Estado vs. archivado | Pendiente |
-| D9 | Título "TRABAJO" | Pendiente |
+| D9 | Título "TRABAJO" | ✅ renombrado a "Clínico" |
 | D10 | Pacientes como searcher | Pendiente |
 | D11 | Propósito del detalle de ficha | Pendiente |
 

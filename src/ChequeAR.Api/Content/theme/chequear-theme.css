@@ -304,6 +304,17 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 .cq-table tbody tr:hover { background: var(--cq-neutral-50); }
 .cq-table tbody tr:last-child td { border-bottom: none; }
 
+/* En mobile las tablas siempre alcanzaban a exceder el ancho de la pantalla
+   (varias columnas + acciones) y forzaban scroll horizontal del body entero.
+   Contenemos el desborde a la propia tabla: scroll horizontal interno y el
+   body de la página deja de moverse. `display:block` sacrifica el layout de
+   ancho de columnas nativo, pero es aceptable en pantallas donde igual se
+   scrollea. */
+@media (max-width: 768px) {
+  .cq-table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .cq-table th, .cq-table td { white-space: nowrap; }
+}
+
 /* ===== Badges de estado ===== */
 .cq-badge {
   display: inline-flex;

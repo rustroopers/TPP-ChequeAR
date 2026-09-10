@@ -56,6 +56,7 @@
 }
 else
 {
+    <p class="cq-text-xs cq-text-muted mt-3 mb-1">Ordenado por última modificación (los más recientes arriba).</p>
     <table class="cq-table">
         <thead>
             <tr>
@@ -63,7 +64,7 @@ else
                 <th>@Cq.T("table.col.specialty")</th>
                 <th>@Cq.T("table.col.version")</th>
                 <th>@Cq.T("table.col.status")</th>
-                <th>@Cq.T("table.col.updated")</th>
+                <th>@Cq.T("table.col.updated") <i class="bi bi-arrow-down" aria-hidden="true"></i></th>
                 <th class="text-end">@Cq.T("table.col.actions")</th>
             </tr>
         </thead>
@@ -163,7 +164,10 @@ else
             </div>
             <div class="modal-body">
                 <p>¿Querés archivar <strong id="archiveTitle"></strong>?</p>
-                <p class="cq-text-sm cq-text-muted mb-0">No se podrá usar para nuevas cargas. Las respuestas existentes se conservan.</p>
+                <p class="cq-text-sm cq-text-muted mb-0">
+                    No se podrá usar para nuevas cargas y desaparece del listado por defecto (queda visible con el filtro <em>Archivado</em>).
+                    Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos "borrar": romperíamos su trazabilidad.
+                </p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
