@@ -14,10 +14,16 @@
 
 @using (Html.BeginForm("Index", "Encounters", FormMethod.Get, new { @class = "mb-4", data_cq_autofilter = "patients" }))
 {
-    <div class="input-group" style="max-width:640px;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Escribí HC, DNI, apellido o nombre. La búsqueda es sobre el padrón del hospital.">
-        <span class="input-group-text"><i class="bi bi-search"></i></span>
-        <input type="search" name="q" value="@Model.Query" class="form-control"
-               placeholder="@Cq.T("r1.placeholder")" aria-label="@Cq.T("r1.title")" autofocus />
+    <div class="d-flex align-items-center" style="max-width:680px;">
+        <div class="input-group" style="max-width:640px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search" name="q" value="@Model.Query" class="form-control"
+                   placeholder="@Cq.T("r1.placeholder")" aria-label="@Cq.T("r1.title")" autofocus />
+        </div>
+        <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="right"
+                data-bs-title="¿Cómo buscar?"
+                data-bs-content="Escribí HC, DNI, apellido o nombre. La búsqueda va contra el padrón del hospital (decenas de miles de pacientes), por eso no listamos todo por defecto: elegís y traés sólo al que necesitás."
+                aria-label="Ayuda del buscador de pacientes"><i class="bi bi-question-lg"></i></button>
     </div>
 }
 

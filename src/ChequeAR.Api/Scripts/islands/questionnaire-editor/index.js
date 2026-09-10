@@ -1310,7 +1310,11 @@
                         {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
                     </li>\
                 </ul>\
-                <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
+                <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">\
+                    Sin resultados para ese término. Probá con sinónimos, o buscalo en el\
+                    <a :href="\'https://browser.ihtsdotools.org/?edition=MAIN&perspective=full&conceptId1=&edition=MAIN&release=&languages=es,en&searchMode=partialMatching&searchAfter=&searchTerm=\' + encodeURIComponent(selected && selected.question ? (selected.question.term || \'\') : \'\')" target="_blank" rel="noopener noreferrer">browser oficial de SNOMED CT <i class="bi bi-box-arrow-up-right"></i></a>\
+                    y pegá el código abajo (después le das "Verificar").\
+                </div>\
             </div>\
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Código SNOMED CT</label>\
@@ -1394,7 +1398,11 @@
                             {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
                         </li>\
                     </ul>\
-                    <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
+                    <div v-else-if="snomedOpen && !snomedSearching && !snomedError" class="cq-text-xs cq-text-muted mt-1">\
+                    Sin resultados para ese término. Probá con sinónimos, o buscalo en el\
+                    <a :href="\'https://browser.ihtsdotools.org/?edition=MAIN&perspective=full&conceptId1=&edition=MAIN&release=&languages=es,en&searchMode=partialMatching&searchAfter=&searchTerm=\' + encodeURIComponent(selected && selected.question ? (selected.question.term || \'\') : \'\')" target="_blank" rel="noopener noreferrer">browser oficial de SNOMED CT <i class="bi bi-box-arrow-up-right"></i></a>\
+                    y pegá el código abajo (después le das "Verificar").\
+                </div>\
                 </div>\
                 <div class="mb-2">\
                     <label class="form-label cq-text-sm">Código SNOMED CT</label>\

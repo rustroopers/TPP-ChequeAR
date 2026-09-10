@@ -315,6 +315,36 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   .cq-table th, .cq-table td { white-space: nowrap; }
 }
 
+/* Botón "?" de ayuda: reemplaza tooltips de guía sobre el elemento entero
+   (feedback: molestaba que el hover del item padre disparara texto largo).
+   Es un botón, no un ícono suelto, para funcionar en touch y con teclado. */
+.cq-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: 6px;
+  vertical-align: middle;
+  border: 1px solid var(--cq-neutral-300);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--cq-neutral-600);
+  font-size: 13px;
+  line-height: 1;
+  cursor: help;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.cq-help:hover,
+.cq-help:focus-visible {
+  background: var(--cq-primary-100);
+  border-color: var(--cq-primary-400);
+  color: var(--cq-primary);
+  outline: none;
+}
+.cq-help i { font-size: 13px; }
+
 /* ===== Badges de estado ===== */
 .cq-badge {
   display: inline-flex;

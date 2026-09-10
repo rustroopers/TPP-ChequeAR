@@ -11,9 +11,12 @@
         <h1 class="cq-page-header__title">@Cq.T("q1.title")</h1>
         <p class="cq-page-header__subtitle">@Cq.T("q1.subtitle")</p>
     </div>
-    <a href="@Url.Action("Edit")" class="btn btn-primary" data-bs-toggle="tooltip" data-bs-placement="left" title="Se crea como borrador. Publicalo cuando esté listo para uso clínico.">
-        <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
-    </a>
+    <div class="d-inline-flex align-items-center">
+        <a href="@Url.Action("Edit")" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
+        </a>
+        <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="left" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Publicalo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+    </div>
 </header>
 
 @using (Html.BeginForm("Index", "Questionnaires", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "questionnaires" }))
@@ -101,7 +104,7 @@ else
                                 }
                                 @if (q.Status != "archived")
                                 {
-                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title" title="Cambia el estado del cuestionario a Archivado"><i class="bi bi-archive me-1"></i> Archivar</button></li>
                                 }
                             </ul>
                         </div>
@@ -165,7 +168,9 @@ else
             <div class="modal-body">
                 <p>¿Querés archivar <strong id="archiveTitle"></strong>?</p>
                 <p class="cq-text-sm cq-text-muted mb-0">
-                    No se podrá usar para nuevas cargas y desaparece del listado por defecto (queda visible con el filtro <em>Archivado</em>).
+                    Archivar <strong>cambia el estado</strong> del cuestionario a <em>Archivado</em>: no se puede usar
+                    para nuevas cargas y desaparece del listado por defecto (queda visible con el filtro <em>Archivado</em>).
+                    Podés desarchivarlo publicando una nueva versión.
                     Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos "borrar": romperíamos su trazabilidad.
                 </p>
             </div>

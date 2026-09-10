@@ -134,7 +134,8 @@
         </div>
         <div class="cq-demo-card__foot">
             <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-sm btn-tertiary">Ver todos</a>
-            <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" data-bs-placement="top" title="Crear un cuestionario nuevo (borrador)"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
+            <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
+                    <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Podés editarlo cuantas veces quieras y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
         </div>
     </div>
 

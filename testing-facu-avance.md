@@ -11,7 +11,43 @@ inicial completo con feedback crudo).
 
 ## ✅ Hecho y pusheado
 
-### Commit pendiente — Etapa 4/5: renombre "Trabajo", nota de orden, D7 en modal, tablas responsive
+### Commit pendiente — Cierre de pendientes (D2/D8/D10/D11) y rework de tooltips
+
+**Tooltips → botón "?" con popover** (feedback explícito: molestaba que el hover
+sobre el item padre disparara texto largo):
+- Nuevo componente `.cq-help` en `chequear-theme.css` (círculo con "?") y init de
+  `bootstrap.Popover` en `_Layout.cshtml` con trigger `'hover focus click'` — hover
+  para exploradores, click/focus para touch/teclado.
+- Reemplazo del `data-bs-toggle="tooltip"` con texto largo por un botón "?" al lado
+  del elemento en: Home (Nuevo cuestionario), Cuestionarios/Index (CTA Nuevo) y
+  Encounters/Index (buscador de pacientes). El tooltip queda reservado sólo para
+  etiquetar íconos sin texto (Acciones, Quitar código, sidebar colapsada).
+- Sidebar: los tooltips de items ahora traen sólo el label (útil cuando la sidebar
+  está colapsada); el copy guía que traían adosado se movió al popover contextual
+  de cada pantalla.
+
+**D2 — SNOMED sin match** (`Scripts/islands/questionnaire-editor/index.js`):
+- El mensaje "Sin resultados" ahora ofrece link directo al browser oficial
+  (`browser.ihtsdotools.org`) con el término precargado en el query, y aclara que
+  se puede pegar el código a mano y validarlo con "Verificar".
+
+**D8 — Estado vs archivado** (`Views/Questionnaires/Index.cshtml`):
+- El modal de Archivar aclara: "Archivar **cambia el estado** a *Archivado*". Y el
+  ítem del dropdown tiene un `title` explicándolo. En el dominio ya era un estado
+  más (`QuestionnaireStatus.Archived`), sólo faltaba comunicarlo.
+
+**D10 — Pacientes como searcher** (`Views/Encounters/Index.cshtml`):
+- El popover del buscador explica el porqué: el padrón del hospital tiene decenas
+  de miles de pacientes, listarlos todos sería inútil. Buscamos y traemos sólo el
+  que necesitás.
+
+**D11 — Detalle de ficha** (`Views/Encounters/View.cshtml`):
+- Subtítulo "Registro completo de la ficha finalizada" explica el propósito.
+- Botón "← Volver al historial" arriba (antes estaba "Ver historial" a la derecha,
+  contradecía la convención de volver-a-la-izquierda que ya se aplicó a Timeline).
+- Card sin `max-width:820px` y con `.cq-card--stretch` para no quedar cortada.
+
+### Commit `f7b58b8` — Etapa 4/5: renombre "Trabajo", nota de orden, D7 en modal, tablas responsive
 
 **Sidebar (`Content/i18n/es-AR.json` + `en.json`):**
 - **D9** — `sidebar.group.work` pasa de "Trabajo" a **"Clínico"** (y "Work" → "Clinical"
@@ -332,16 +368,16 @@ Recordatorio: llevar a una única reunión con Carolo/Gonza. Ver
 | # | Tema | Estado |
 |---|---|---|
 | D1 | Ícono de Pacientes | Se dejó `bi-person-heart` como propuesta; validar |
-| D2 | SNOMED sin match | Pendiente |
-| D3 | Captura "dice el paciente…" | Pendiente |
-| D4 | Comentarios en cuestionarios/preguntas | Pendiente |
-| D5 | Concepto de "sección" | ✅ resuelto en código: cada sección es una card con folder + título editable + contador; agrupa visualmente |
+| D2 | SNOMED sin match | ✅ mensaje con link al browser oficial + código manual |
+| D3 | Captura "dice el paciente…" | Pendiente (requiere definición clínica) |
+| D4 | Comentarios en cuestionarios/preguntas | Pendiente (feature, requiere schema) |
+| D5 | Concepto de "sección" | ✅ resuelto en código: cada sección es una card con folder + título editable + contador |
 | D6 | Ordenamiento de lista de cuestionarios | ✅ default por última modificación desc + hint en UI |
 | D7 | Archivar vs. borrar | ✅ sólo archivar (integridad de respuestas); explicado en modal |
-| D8 | Estado vs. archivado | Pendiente |
+| D8 | Estado vs. archivado | ✅ modal + dropdown aclaran que archivar es un estado más |
 | D9 | Título "TRABAJO" | ✅ renombrado a "Clínico" |
-| D10 | Pacientes como searcher | Pendiente |
-| D11 | Propósito del detalle de ficha | Pendiente |
+| D10 | Pacientes como searcher | ✅ popover del buscador explica el porqué (volumen de padrón) |
+| D11 | Propósito del detalle de ficha | ✅ subtítulo + botón "Volver al historial" + card stretch |
 
 ---
 

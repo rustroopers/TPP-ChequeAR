@@ -86,11 +86,30 @@
         })();
 
         // Bootstrap tooltips — activa todo [data-bs-toggle="tooltip"] al cargar.
+        // Los tooltips ahora se reservan para etiquetar íconos sin texto (Acciones,
+        // Quitar código, sidebar colapsada). Los textos de ayuda de más de una línea
+        // van a un botón "?" con popover (ver abajo) porque el feedback fue que el
+        // hover del item padre era intrusivo.
         document.addEventListener("DOMContentLoaded", function () {
             if (!window.bootstrap || !bootstrap.Tooltip) return;
             var els = document.querySelectorAll('[data-bs-toggle="tooltip"]');
             Array.prototype.forEach.call(els, function (el) {
                 new bootstrap.Tooltip(el, { delay: { show: 400, hide: 80 } });
+            });
+        });
+
+        // Popovers de ayuda: se disparan sólo desde el botón "?" y aceptan tanto
+        // hover como click (el hover ayuda a exploradores; el click garantiza
+        // acceso desde touch/teclado).
+        document.addEventListener("DOMContentLoaded", function () {
+            if (!window.bootstrap || !bootstrap.Popover) return;
+            var els = document.querySelectorAll('[data-bs-toggle="popover"]');
+            Array.prototype.forEach.call(els, function (el) {
+                new bootstrap.Popover(el, {
+                    trigger: 'hover focus click',
+                    html: false,
+                    container: 'body'
+                });
             });
         });
     </script>

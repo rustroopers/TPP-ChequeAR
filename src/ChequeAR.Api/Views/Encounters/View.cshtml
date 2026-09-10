@@ -4,6 +4,9 @@
     ViewBag.Title = "Ficha #" + Model.EncounterId;
 }
 
+<div class="mb-2">
+    <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="cq-back-btn"><i class="bi bi-arrow-left"></i> Volver al historial</a>
+</div>
 <header class="cq-page-header">
     <div>
         <span class="cq-badge cq-badge--archived"><i class="bi bi-lock me-1"></i> Solo lectura</span>
@@ -20,12 +23,13 @@
                 <span class="cq-text-sm cq-text-muted" title="Ficha anterior al registro de versión">versión no registrada</span>
             }
         </h1>
-        <p class="cq-page-header__subtitle">cargada por @Model.Author · @Model.FinalizedAt</p>
+        <p class="cq-page-header__subtitle">
+            Registro completo de la ficha finalizada · cargada por @Model.Author · @Model.FinalizedAt
+        </p>
     </div>
-    <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-outline-secondary">Ver historial</a>
 </header>
 
-<div class="cq-card" style="max-width:820px;">
+<div class="cq-card cq-card--stretch">
     @foreach (var g in Model.Groups)
     {
         <h2 class="cq-section-title" style="margin-top:0;">@g.Title</h2>
