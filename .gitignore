@@ -82,6 +82,8 @@ ScaffoldingReadMe.txt
 appsettings.*.Local.json
 *.local.json
 secrets.json
+Web.Secrets.config
+Web.ConnectionStrings.config
 
 # ---------- OS ----------
 Thumbs.db
