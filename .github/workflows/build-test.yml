@@ -61,10 +61,15 @@ jobs:
       - name: Build (Release)
         run: msbuild src\ChequeAR.sln -v:minimal -nologo -p:Configuration=Release -m -warnaserror
 
+      # -p:CollectCoverage + Threshold=75 (fijado en el csproj): si la cobertura de
+      # Domain+Application cae por debajo del minimo, dotnet test devuelve exit code
+      # distinto de cero y el job se pone en rojo, igual que con -warnaserror arriba.
       - name: Tests unitarios
         run: >
           dotnet test src\ChequeAR.Tests\ChequeAR.Tests.csproj
           -c Release --no-build --nologo
+          -p:CollectCoverage=true
+          -p:CoverletOutput=..\..\TestResults\coverage\
           --logger "trx;LogFileName=unit.trx"
           --results-directory TestResults
 
@@ -85,5 +90,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            TestResults/coverage/*.xml
           if-no-files-found: warn
