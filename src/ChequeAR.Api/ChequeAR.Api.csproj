@@ -60,6 +60,12 @@
       no esta garantizado y sin esto el build falla con MSB3644.
     -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <!--
+      Este proyecto es old-style (no importa Microsoft.NET.Sdk), asi que no recibe los
+      analizadores que trae el SDK para los otros cuatro proyectos via EnableNETAnalyzers
+      (Directory.Build.props). Se agrega como paquete explicito para que tambien lo cubra.
+    -->
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNet.Mvc" Version="5.2.9" />
     <PackageReference Include="Microsoft.AspNet.Razor" Version="3.2.9" />
     <PackageReference Include="Microsoft.AspNet.WebApi" Version="5.2.9" />

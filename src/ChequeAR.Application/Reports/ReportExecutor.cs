@@ -100,7 +100,7 @@ namespace ChequeAR.Application.Reports
             };
         }
 
-        private class RawResult
+        private sealed class RawResult
         {
             public List<Dictionary<string, object>> Rows { get; set; }
             public int TotalResponses { get; set; }

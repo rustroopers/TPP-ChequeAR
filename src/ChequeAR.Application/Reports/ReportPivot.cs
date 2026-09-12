@@ -19,7 +19,7 @@ namespace ChequeAR.Application.Reports
 
             foreach (var r in longResult.Rows)
             {
-                var rid = Convert.ToString(Get(r, "ResponseId"));
+                var rid = Convert.ToString(Get(r, "ResponseId"), CultureInfo.InvariantCulture);
                 if (!byResponse.TryGetValue(rid, out var list))
                 {
                     list = new List<Dictionary<string, object>>();
@@ -44,7 +44,7 @@ namespace ChequeAR.Application.Reports
                 var valueByLink = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
                 foreach (var it in items)
                 {
-                    var link = Convert.ToString(Get(it, "LinkId"));
+                    var link = Convert.ToString(Get(it, "LinkId"), CultureInfo.InvariantCulture);
                     if (string.IsNullOrEmpty(link)) continue;
                     var val = Get(it, "ValueText");
                     if (val != null) valueByLink[link] = val;

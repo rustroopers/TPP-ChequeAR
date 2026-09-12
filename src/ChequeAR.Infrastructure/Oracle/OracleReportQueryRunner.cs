@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
@@ -28,7 +29,7 @@ namespace ChequeAR.Infrastructure.Oracle
             _connectionString = connectionString;
         }
 
-        public async Task<QueryRunResult> RunAsync(BuiltQuery built, bool paginate)
+        public async Task<QueryRunResult> RunAsync(BuiltQuery query, bool paginate)
         {
             var rows = new List<Dictionary<string, object>>();
             int total;
@@ -37,14 +38,14 @@ namespace ChequeAR.Infrastructure.Oracle
             {
                 await conn.OpenAsync();
 
-                using (var countCmd = new OracleCommand(built.CountSql, conn))
+                using (var countCmd = new OracleCommand(query.CountSql, conn))
                 {
                     countCmd.BindByName = true;
-                    countCmd.Parameters.AddRange(Traducir(built.Parameters));
-                    total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
+                    countCmd.Parameters.AddRange(Traducir(query.Parameters));
+                    total = Convert.ToInt32(await countCmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
                 }
 
-                using (var cmd = new OracleCommand(built.Sql, conn))
+                using (var cmd = new OracleCommand(query.Sql, conn))
                 {
                     // Bindeo por nombre: el constructor de consultas usa marcadores :nombre,
                     // no posicionales.
@@ -52,7 +53,7 @@ namespace ChequeAR.Infrastructure.Oracle
                     // Parámetros NUEVOS y no los mismos del conteo: un OracleParameter no se
                     // puede compartir entre dos OracleCommand — al asignarlo al segundo,
                     // ODP.NET tira "El parámetro ya está contenido en otra colección".
-                    cmd.Parameters.AddRange(Traducir(built.Parameters));
+                    cmd.Parameters.AddRange(Traducir(query.Parameters));
 
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {

@@ -24,7 +24,7 @@ namespace ChequeAR.Application.Exporters
         /// con un tipo fijo elegido de antemano. Sin entrada para una pregunta, o el
         /// diccionario en null, esa pregunta sale en barra.
         /// </param>
-        public Stream Export(ReportStats stats, IReadOnlyCollection<string> linkIds = null,
+        public static Stream Export(ReportStats stats, IReadOnlyCollection<string> linkIds = null,
             IDictionary<string, string> chartTypes = null)
         {
             var questions = Filtrar(stats.Questions, linkIds);
@@ -142,6 +142,10 @@ namespace ChequeAR.Application.Exporters
             { "n", "Media", "Mediana", "Desvio", "Minimo", "Maximo", "P25", "P75" };
         private static readonly string[] CategoricasHeaders =
             { "Categoria mas frecuente", "% de esa categoria", "Categorias distintas" };
+        private static readonly string[] CategoriasSheetHeaders =
+            { "Pregunta", "Categoria", "Cantidad", "%", "Categoria (n)" };
+        private static readonly string[] HistogramasSheetHeaders =
+            { "Pregunta", "Rango", "Cantidad" };
 
         /// <summary>
         /// Tres bloques separados -numéricas, categóricas, resto- en vez de una tabla ancha
@@ -214,7 +218,7 @@ namespace ChequeAR.Application.Exporters
             string[] headers, System.Func<QuestionStats, string[]> fila)
         {
             if (qs.Count == 0) return;
-            if (filas.Count > 0) filas.Add(new string[0]); // separador en blanco entre bloques
+            if (filas.Count > 0) filas.Add(System.Array.Empty<string>()); // separador en blanco entre bloques
 
             filas.Add(new[] { titulo });
             filas.Add(headers);
@@ -257,7 +261,7 @@ namespace ChequeAR.Application.Exporters
         /// BarChartXml): sin cache, algunos Excel no dibujan el grafico hasta forzar un
         /// recalculo manual, y para quien lo recibe por mail eso es peor que no tener grafico.
         /// </summary>
-        private class QuestionBlock
+        private sealed class QuestionBlock
         {
             public string LinkId;
             public string Text;
@@ -279,7 +283,7 @@ namespace ChequeAR.Application.Exporters
             // "Categoria (n)" es una columna aparte, no una alternativa a "Categoria": la
             // torta la usa para la leyenda -"Si (n=7)"- sin ensuciar la columna con la
             // categoria "pura" que el resto (filtros, la barra) sigue leyendo.
-            AppendRow(sb, 1, new[] { "Pregunta", "Categoria", "Cantidad", "%", "Categoria (n)" });
+            AppendRow(sb, 1, CategoriasSheetHeaders);
             int r = 2;
             foreach (var q in questions.Where(q => q.Kind == "categorical" && q.Categories != null && q.Categories.Count > 0))
             {
@@ -315,7 +319,7 @@ namespace ChequeAR.Application.Exporters
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
             sb.Append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>");
 
-            AppendRow(sb, 1, new[] { "Pregunta", "Rango", "Cantidad" });
+            AppendRow(sb, 1, HistogramasSheetHeaders);
             int r = 2;
             foreach (var q in questions.Where(q => q.Kind == "numeric" && q.Histogram != null && q.Histogram.Count > 0))
             {
@@ -344,10 +348,10 @@ namespace ChequeAR.Application.Exporters
         private static string Rango(HistogramBin b) =>
             b.From == b.To ? b.From.ToString(Ar) : b.From.ToString(Ar) + "-" + b.To.ToString(Ar);
 
-        private static void AppendRow(StringBuilder sb, int rowIdx, IReadOnlyList<string> values)
+        private static void AppendRow(StringBuilder sb, int rowIdx, string[] values)
         {
             sb.Append("<row r=\"").Append(rowIdx).Append("\">");
-            for (int c = 0; c < values.Count; c++)
+            for (int c = 0; c < values.Length; c++)
                 sb.Append(XlsxExporter.TextCell(XlsxExporter.CellRef(c, rowIdx), values[c] ?? ""));
             sb.Append("</row>");
         }
@@ -366,7 +370,7 @@ namespace ChequeAR.Application.Exporters
 
         // ---- hoja Graficos + drawing + charts ----------------------------------------------
 
-        private class ChartPart
+        private sealed class ChartPart
         {
             public string Xml;
         }
@@ -472,7 +476,7 @@ namespace ChequeAR.Application.Exporters
 
             var sb = new StringBuilder();
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
-            sb.Append("<c:chartSpace ").Append(ChartNamespaces()).Append(">");
+            sb.Append("<c:chartSpace ").Append(ChartNamespaces()).Append('>');
             sb.Append("<c:chart>");
             AppendTitle(sb, b.Text);
             sb.Append("<c:plotArea><c:layout/>");
@@ -496,7 +500,7 @@ namespace ChequeAR.Application.Exporters
 
             var sb = new StringBuilder();
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
-            sb.Append("<c:chartSpace ").Append(ChartNamespaces()).Append(">");
+            sb.Append("<c:chartSpace ").Append(ChartNamespaces()).Append('>');
             sb.Append("<c:chart>");
             AppendTitle(sb, b.Text);
             sb.Append("<c:plotArea><c:layout/>");

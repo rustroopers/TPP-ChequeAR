@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
@@ -32,7 +33,12 @@ namespace ChequeAR.Infrastructure.Repositories
         {
             var q = _ctx.Questionnaires.AsQueryable().Where(x => !x.IsDeleted);
             if (status.HasValue) q = q.Where(x => x.Status == status.Value);
-            if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(); q = q.Where(x => x.Title.ToLower().Contains(t)); }
+            // x.Title.ToLower() (sin Invariant) es una expresion LINQ-to-Entities que el
+            // proveedor de Oracle traduce a LOWER() en SQL; el overload con CultureInfo no
+            // es un metodo que EF6 sepa traducir.
+#pragma warning disable CA1304, CA1311
+            if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(CultureInfo.InvariantCulture); q = q.Where(x => x.Title.ToLower().Contains(t)); }
+#pragma warning restore CA1304, CA1311
             if (!string.IsNullOrEmpty(specialtyCode)) q = q.Where(x => x.SpecialtyCode == specialtyCode);
             return await q.OrderByDescending(x => x.UpdatedAt).Skip(skip).Take(take).ToListAsync();
         }
@@ -41,7 +47,9 @@ namespace ChequeAR.Infrastructure.Repositories
         {
             var q = _ctx.Questionnaires.AsQueryable().Where(x => !x.IsDeleted);
             if (status.HasValue) q = q.Where(x => x.Status == status.Value);
-            if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(); q = q.Where(x => x.Title.ToLower().Contains(t)); }
+#pragma warning disable CA1304, CA1311
+            if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(CultureInfo.InvariantCulture); q = q.Where(x => x.Title.ToLower().Contains(t)); }
+#pragma warning restore CA1304, CA1311
             if (!string.IsNullOrEmpty(specialtyCode)) q = q.Where(x => x.SpecialtyCode == specialtyCode);
             return q.CountAsync();
         }

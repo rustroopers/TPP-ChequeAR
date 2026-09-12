@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using ChequeAR.Application.Fhir;
 using Hl7.Fhir.Model;
@@ -74,7 +75,7 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public void SearchSet_SinResultados_EsUnBundleVacioValido()
         {
-            var bundle = FhirBundles.SearchSet(new Resource[0], total: 0, baseUrl: Base);
+            var bundle = FhirBundles.SearchSet(Array.Empty<Resource>(), total: 0, baseUrl: Base);
 
             Assert.Empty(bundle.Entry);
             Assert.Equal(0, bundle.Total);

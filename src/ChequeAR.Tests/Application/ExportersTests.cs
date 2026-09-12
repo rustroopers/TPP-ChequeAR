@@ -37,13 +37,13 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public void Csv_SinFilas_SoloBom()
         {
-            Assert.Equal(string.Empty, ReadCsv(new CsvExporter().Export(Result())));
+            Assert.Equal(string.Empty, ReadCsv(CsvExporter.Export(Result())));
         }
 
         [Fact]
         public void Csv_EscribeHeadersYFilas_ConEscapadoYFormatoArgentino()
         {
-            var csv = ReadCsv(new CsvExporter().Export(Result(
+            var csv = ReadCsv(CsvExporter.Export(Result(
                 new Dictionary<string, object> { { "Nombre", "Pérez; Juan" }, { "Peso", 3.5m }, { "Obs", null } })));
 
             var lines = csv.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
@@ -55,7 +55,7 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public void Csv_EscapaComillasDuplicandolas()
         {
-            var csv = ReadCsv(new CsvExporter().Export(Result(
+            var csv = ReadCsv(CsvExporter.Export(Result(
                 new Dictionary<string, object> { { "C", "dice \"hola\"" } })));
 
             var lines = csv.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
@@ -76,7 +76,7 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public void Xlsx_EsUnZipOpenXmlConLasPartesEsperadas()
         {
-            using (var zip = new ZipArchive(new XlsxExporter().Export(Result()), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(XlsxExporter.Export(Result()), ZipArchiveMode.Read))
             {
                 var entries = Entries(zip);
                 Assert.Contains("[Content_Types].xml", entries.Keys);
@@ -102,7 +102,7 @@ namespace ChequeAR.Tests.Application
             });
 
             string sheet;
-            using (var zip = new ZipArchive(new XlsxExporter().Export(result), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(XlsxExporter.Export(result), ZipArchiveMode.Read))
                 sheet = ReadEntry(zip, "xl/worksheets/sheet1.xml");
 
             Assert.Contains("a&lt;b&gt;&amp;c", sheet);          // texto escapado
@@ -122,7 +122,7 @@ namespace ChequeAR.Tests.Application
             for (int i = 0; i < 27; i++) row["c" + i] = i;
 
             string sheet;
-            using (var zip = new ZipArchive(new XlsxExporter().Export(Result(row)), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(XlsxExporter.Export(Result(row)), ZipArchiveMode.Read))
                 sheet = ReadEntry(zip, "xl/worksheets/sheet1.xml");
 
             Assert.Contains("r=\"AA1\"", sheet);   // header de la 27ª columna
@@ -160,7 +160,7 @@ namespace ChequeAR.Tests.Application
         public void StatsXlsx_EscribeResumenYCategoriasDeAmbasPreguntas()
         {
             string resumen, categorias;
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(StatsConDosPreguntas()), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(StatsConDosPreguntas()), ZipArchiveMode.Read))
             {
                 resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
                 categorias = ReadEntry(zip, "xl/worksheets/sheet2.xml");
@@ -177,7 +177,7 @@ namespace ChequeAR.Tests.Application
         public void StatsXlsx_FiltraPorLinkIdsSeleccionados()
         {
             string resumen;
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(StatsConDosPreguntas(), new[] { "peso" }), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(StatsConDosPreguntas(), new[] { "peso" }), ZipArchiveMode.Read))
                 resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
 
             Assert.Contains("Peso", resumen);
@@ -195,7 +195,7 @@ namespace ChequeAR.Tests.Application
             };
 
             string histogramas;
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(stats), ZipArchiveMode.Read))
                 histogramas = ReadEntry(zip, "xl/worksheets/sheet3.xml");
 
             Assert.Contains("Peso", histogramas);
@@ -213,7 +213,7 @@ namespace ChequeAR.Tests.Application
                 new HistogramBin { From = 12m, To = 15m, Count = 5 }
             };
 
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(stats), ZipArchiveMode.Read))
             {
                 var entries = zip.Entries.Select(e => e.FullName).ToList();
                 Assert.Contains("xl/worksheets/sheet4.xml", entries);
@@ -238,7 +238,7 @@ namespace ChequeAR.Tests.Application
             var stats = StatsConDosPreguntas();
             var chartTypes = new Dictionary<string, string> { { "dolor", "pie" } };
 
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats, null, chartTypes), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(stats, null, chartTypes), ZipArchiveMode.Read))
             {
                 var chart = ReadEntry(zip, "xl/charts/chart1.xml");
                 Assert.Contains("c:pieChart", chart);
@@ -255,7 +255,7 @@ namespace ChequeAR.Tests.Application
             stats.FiltersSummary = "Peso >= 10";
 
             string resumen;
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(stats), ZipArchiveMode.Read))
                 resumen = ReadEntry(zip, "xl/worksheets/sheet1.xml");
 
             Assert.Contains("Control de embarazo", resumen);
@@ -274,7 +274,7 @@ namespace ChequeAR.Tests.Application
                 Categories = new List<CategoryCount> { new CategoryCount { Label = "Sí", Count = 1, Pct = 100 } }
             });
 
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(stats), ZipArchiveMode.Read))
             {
                 var drawing = ReadEntry(zip, "xl/drawings/drawing1.xml");
                 // El primer grafico arranca en col 0, el segundo (misma fila de la grilla) en col 9.
@@ -289,7 +289,7 @@ namespace ChequeAR.Tests.Application
             var stats = StatsConDosPreguntas();
             stats.Questions.RemoveAll(q => q.Kind == "categorical"); // solo queda "peso" sin Histogram
 
-            using (var zip = new ZipArchive(new StatsXlsxExporter().Export(stats), ZipArchiveMode.Read))
+            using (var zip = new ZipArchive(StatsXlsxExporter.Export(stats), ZipArchiveMode.Read))
             {
                 var entries = zip.Entries.Select(e => e.FullName).ToList();
                 Assert.DoesNotContain("xl/worksheets/sheet4.xml", entries);

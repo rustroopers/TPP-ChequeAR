@@ -42,7 +42,13 @@ namespace ChequeAR.Infrastructure.Fhir
             "https://chequear.garrahan/ValueSet/ChequeARQuestionnaireItemType";
 
         private readonly FhirJsonParser _estricto = new FhirJsonParser();
+        // Se deja como interfaz a proposito (aunque CA1859 sugiera CachedResolver concreto):
+        // concretar el tipo hace que el compilador resuelva ResolveByCanonicalUri contra el
+        // overload de CachedResolver, que esta marcado [Obsolete] a favor de la version async.
+        // A traves de la interfaz se seguia llamando al metodo no obsoleto.
+#pragma warning disable CA1859
         private readonly IResourceResolver _resolver;
+#pragma warning restore CA1859
         private readonly HashSet<string> _tiposPermitidos;
 
         /// <param name="profilesDirectory">
@@ -169,6 +175,10 @@ namespace ChequeAR.Infrastructure.Fhir
             catch (Exception) { /* es una optimización: si falla, sólo se paga después */ }
         }
 
-        public void Dispose() => (_resolver as IDisposable)?.Dispose();
+        public void Dispose()
+        {
+            (_resolver as IDisposable)?.Dispose();
+            GC.SuppressFinalize(this);
+        }
     }
 }

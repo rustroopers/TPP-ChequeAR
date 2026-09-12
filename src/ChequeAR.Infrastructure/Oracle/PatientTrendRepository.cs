@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -123,7 +124,7 @@ namespace ChequeAR.Infrastructure.Oracle
         /// numérica/fecha llena exactamente una de las tres; las de tipo Date se transportan
         /// como epoch en milisegundos para que viajen como número (el frontend las re-formatea).
         /// </summary>
-        private static decimal? ReadValue(IDataRecord reader, int oDecimal, int oInteger, int oDate)
+        private static decimal? ReadValue(DbDataReader reader, int oDecimal, int oInteger, int oDate)
         {
             if (!reader.IsDBNull(oDecimal)) return reader.GetDecimal(oDecimal);
             if (!reader.IsDBNull(oInteger)) return reader.GetDecimal(oInteger);

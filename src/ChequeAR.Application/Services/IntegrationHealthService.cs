@@ -74,7 +74,7 @@ namespace ChequeAR.Application.Services
             catch (Exception ex) { return Down("Auth Hospital", ex.Message); }
         }
 
-        private IntegrationStatus ProbeValidator()
+        private static IntegrationStatus ProbeValidator()
         {
             return new IntegrationStatus
             {

@@ -765,7 +765,7 @@ namespace ChequeAR.Tests.Application
             return q;
         }
 
-        private QuestionnaireResponse PinnedToV1(Guid id, Guid questionnaireId, Guid v1Id, Guid lockToken = default)
+        private static QuestionnaireResponse PinnedToV1(Guid id, Guid questionnaireId, Guid v1Id, Guid lockToken = default)
         {
             return new QuestionnaireResponse
             {

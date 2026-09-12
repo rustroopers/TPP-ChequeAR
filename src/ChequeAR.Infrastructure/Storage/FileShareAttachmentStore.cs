@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
@@ -23,7 +24,7 @@ namespace ChequeAR.Infrastructure.Storage
         public async Task<Attachment> StoreAsync(Stream content, string originalFileName, string contentType, string uploadedBy)
         {
             var id = Guid.NewGuid();
-            var subdir = Path.Combine(_root, DateTime.UtcNow.ToString("yyyy"), DateTime.UtcNow.ToString("MM"));
+            var subdir = Path.Combine(_root, DateTime.UtcNow.ToString("yyyy", CultureInfo.InvariantCulture), DateTime.UtcNow.ToString("MM", CultureInfo.InvariantCulture));
             Directory.CreateDirectory(subdir);
 
             var safeName = id.ToString() + Path.GetExtension(originalFileName ?? string.Empty);

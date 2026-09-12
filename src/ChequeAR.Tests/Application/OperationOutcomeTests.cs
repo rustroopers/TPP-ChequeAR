@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Application.Fhir;
@@ -106,7 +107,7 @@ namespace ChequeAR.Tests.Application
         {
             // Un OperationOutcome sin issues es inválido en FHIR y además no le dice nada a
             // nadie. Preferimos un mensaje pobre antes que un recurso mal formado.
-            var outcome = OperationOutcomes.ForValidationErrors(new string[0]);
+            var outcome = OperationOutcomes.ForValidationErrors(Array.Empty<string>());
             Assert.Single(outcome.Issue);
         }
 

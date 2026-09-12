@@ -38,7 +38,8 @@ namespace ChequeAR.Infrastructure.Fhir
 
         public async Task<string> GetPatientAsync(string hospitalId)
         {
-            var row = (await ByPatient("VW_PACIENTE", hospitalId)).FirstOrDefault();
+            var rowsPaciente = await ByPatient("VW_PACIENTE", hospitalId);
+            var row = rowsPaciente.Count > 0 ? rowsPaciente[0] : null;
             // null = 404, misma convencion que HospitalFhirClient. IntegrationHealthService
             // pinguea con "__ping__": sin fila igual devuelve null y el probe sale Ok.
             if (row == null) return null;

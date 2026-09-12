@@ -18,7 +18,7 @@ namespace ChequeAR.Tests.Application
     /// es lo que la vuelve verificable — que es exactamente lo que afirma el documento de
     /// arquitectura sobre testing independiente.
     /// </summary>
-    public class SavedReportServiceTests
+    public class SavedReportServiceTests : IDisposable
     {
         private readonly Mock<ISavedReportRepository> _repo = new Mock<ISavedReportRepository>();
         private readonly Mock<IAuditRepository> _auditRepo = new Mock<IAuditRepository>();
@@ -32,6 +32,14 @@ namespace ChequeAR.Tests.Application
             // FlushAsync en la prueba que lo necesita, sin que el timer dispare durante el test.
             _audit = new AuditDispatcher(_auditRepo.Object, flushIntervalMs: 600000);
             _sut = new SavedReportService(_repo.Object, _audit);
+        }
+
+        // xUnit llama Dispose() despues de cada test: sin esto, el Timer interno de
+        // AuditDispatcher quedaba vivo (10 min de intervalo) por cada instancia de esta clase.
+        public void Dispose()
+        {
+            _audit.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         [Fact]
