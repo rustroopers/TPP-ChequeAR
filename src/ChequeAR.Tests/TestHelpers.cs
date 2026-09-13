@@ -1,3 +1,4 @@
+using System;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using Moq;
@@ -14,9 +15,9 @@ namespace ChequeAR.Tests
             => new AuditDispatcher(Mock.Of<IAuditRepository>(), flushIntervalMs: 600000);
 
         public static ValidationResult ValidOk()
-            => new ValidationResult { IsValid = true, Errors = new string[0], Warnings = new string[0] };
+            => new ValidationResult { IsValid = true, Errors = Array.Empty<string>(), Warnings = Array.Empty<string>() };
 
         public static ValidationResult ValidFail(params string[] errors)
-            => new ValidationResult { IsValid = false, Errors = errors, Warnings = new string[0] };
+            => new ValidationResult { IsValid = false, Errors = errors, Warnings = Array.Empty<string>() };
     }
 }

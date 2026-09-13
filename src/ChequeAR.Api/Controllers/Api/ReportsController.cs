@@ -96,7 +96,7 @@ namespace ChequeAR.Api.Controllers.Api
                 "Report/statsExport?questionnaire=" + request.Query.QuestionnaireId + "&questions=" + stats.Questions.Count,
                 userId, category: "export"));
 
-            var stream = new StatsXlsxExporter().Export(stats, request.LinkIds, request.ChartTypes);
+            var stream = StatsXlsxExporter.Export(stats, request.LinkIds, request.ChartTypes);
 
             var resp = Request.CreateResponse(HttpStatusCode.OK);
             resp.Content = new StreamContent(stream);
@@ -130,7 +130,7 @@ namespace ChequeAR.Api.Controllers.Api
                 userId, category: "export"));
 
             var format = (query.Format ?? "xlsx").ToLowerInvariant();
-            var stream = format == "csv" ? new CsvExporter().Export(result) : new XlsxExporter().Export(result);
+            var stream = format == "csv" ? CsvExporter.Export(result) : XlsxExporter.Export(result);
 
             var resp = Request.CreateResponse(HttpStatusCode.OK);
             resp.Content = new StreamContent(stream);

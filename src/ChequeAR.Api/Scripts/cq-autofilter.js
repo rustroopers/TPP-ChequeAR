@@ -63,17 +63,26 @@
     function wire(form) {
         var timer = null;
 
+        // Marca el form como "en curso" desde que hay actividad hasta que la
+        // navegación reemplaza la página. Cualquier elemento hijo puede reaccionar
+        // (típicamente un spinner) con selector [data-cq-loading].
+        function markLoading() { form.classList.add('is-loading'); }
+        function clearLoading() { form.classList.remove('is-loading'); }
+
         function submitNow(el) {
             if (timer) { clearTimeout(timer); timer = null; }
             saveFocus(form, el);
+            markLoading();
             if (form.requestSubmit) form.requestSubmit(); else form.submit();
         }
 
-        // Texto: debounce.
+        // Texto: debounce. Ya al tipear mostramos loading — al usuario le importa
+        // saber que "algo está por pasar", no distinguir entre debounce y network.
         form.addEventListener('input', function (e) {
             if (!isTextField(e.target)) return;
             var el = e.target;
             if (timer) clearTimeout(timer);
+            markLoading();
             timer = setTimeout(function () { submitNow(el); }, DEBOUNCE_MS);
         });
 
@@ -89,6 +98,12 @@
                 e.preventDefault();
                 submitNow(e.target);
             }
+        });
+
+        // Si la navegación se cancela (por ejemplo el usuario aprieta Escape antes
+        // del debounce), limpiar el loading al perder foco del input.
+        form.addEventListener('focusout', function () {
+            if (!timer) clearLoading();
         });
     }
 

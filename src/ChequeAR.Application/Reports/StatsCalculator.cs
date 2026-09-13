@@ -31,7 +31,7 @@ namespace ChequeAR.Application.Reports
             var byLink = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in longResult.Rows ?? new List<Dictionary<string, object>>())
             {
-                var link = Convert.ToString(Get(row, "LinkId"));
+                var link = Convert.ToString(Get(row, "LinkId"), CultureInfo.InvariantCulture);
                 if (string.IsNullOrEmpty(link)) continue;
                 if (!byLink.TryGetValue(link, out var list)) byLink[link] = list = new List<Dictionary<string, object>>();
                 list.Add(row);
@@ -50,7 +50,7 @@ namespace ChequeAR.Application.Reports
                     LinkId = col.Key,
                     Text = col.Value,
                     Type = tipo.ToString(),
-                    Answered = filas.Select(f => Convert.ToString(Get(f, "ResponseId")))
+                    Answered = filas.Select(f => Convert.ToString(Get(f, "ResponseId"), CultureInfo.InvariantCulture))
                                     .Where(id => !string.IsNullOrEmpty(id))
                                     .Distinct().Count()
                 };
@@ -119,11 +119,11 @@ namespace ChequeAR.Application.Reports
                 {
                     var b = Get(f, "ValueBoolean");
                     if (b == null) continue;
-                    etiqueta = Convert.ToDecimal(b) == 1 ? "Sí" : "No";
+                    etiqueta = Convert.ToDecimal(b, CultureInfo.InvariantCulture) == 1 ? "Sí" : "No";
                 }
                 else
                 {
-                    var guardado = Convert.ToString(Get(f, "ValueCode") ?? Get(f, "ValueText"));
+                    var guardado = Convert.ToString(Get(f, "ValueCode") ?? Get(f, "ValueText"), CultureInfo.InvariantCulture);
                     if (string.IsNullOrWhiteSpace(guardado)) continue;
                     // Distintas respuestas pueden haber guardado el código o el texto de la
                     // misma opción; sin normalizar, la categoría se parte en dos barras.

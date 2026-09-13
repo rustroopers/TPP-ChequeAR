@@ -1,0 +1,12 @@
+# Migraciones de EF6: cada DropIndex/CreateIndex se ejecuta una unica vez, al migrar. CA1861
+# supone que el array literal se re-crea en cada llamada dentro de un hot path, que no es el
+# caso aca; extraerlo a un campo estatico solo ensuciaria codigo scaffolded que Add-Migration
+# vuelve a generar en este mismo formato.
+[*.cs]
+dotnet_diagnostic.CA1861.severity = none
+
+# El "Q_" es el prefijo de convencion del equipo para nombrar migraciones (Add-Migration
+# Q_Algo). El Id real que EF usa para __MigrationHistory queda fijo como string literal en
+# el .Designer.cs de cada migracion, independiente del nombre de la clase - renombrarla acá
+# no cambia eso, solo arriesga desincronizar el recurso .resx embebido sin ganar nada.
+dotnet_diagnostic.CA1707.severity = none

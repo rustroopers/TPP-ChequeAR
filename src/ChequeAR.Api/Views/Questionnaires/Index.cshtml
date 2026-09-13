@@ -11,9 +11,12 @@
         <h1 class="cq-page-header__title">@Cq.T("q1.title")</h1>
         <p class="cq-page-header__subtitle">@Cq.T("q1.subtitle")</p>
     </div>
-    <a href="@Url.Action("Edit")" class="btn btn-primary">
-        <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
-    </a>
+    <div class="d-inline-flex align-items-center">
+        <a href="@Url.Action("Edit")" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
+        </a>
+        <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="left" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Publicalo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+    </div>
 </header>
 
 @using (Html.BeginForm("Index", "Questionnaires", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "questionnaires" }))
@@ -56,6 +59,7 @@
 }
 else
 {
+    <p class="cq-text-xs cq-text-muted mt-3 mb-1">Ordenado por última modificación (los más recientes arriba).</p>
     <table class="cq-table">
         <thead>
             <tr>
@@ -63,15 +67,15 @@ else
                 <th>@Cq.T("table.col.specialty")</th>
                 <th>@Cq.T("table.col.version")</th>
                 <th>@Cq.T("table.col.status")</th>
-                <th>@Cq.T("table.col.updated")</th>
+                <th>@Cq.T("table.col.updated") <i class="bi bi-arrow-down" aria-hidden="true"></i></th>
                 <th class="text-end">@Cq.T("table.col.actions")</th>
             </tr>
         </thead>
         <tbody>
             @foreach (var q in Model.Items)
             {
-                <tr>
-                    <td><a href="@Url.Action("Preview", new { id = q.Id })" class="text-decoration-none">@q.Title</a></td>
+                <tr class="cq-row--clickable" data-href="@Url.Action("Preview", new { id = q.Id })">
+                    <td><a href="@Url.Action("Preview", new { id = q.Id })" class="text-decoration-none fw-semibold">@q.Title</a></td>
                     <td><span class="cq-chip cq-chip--@q.SpecialtyCode">@q.SpecialtyLabel</span></td>
                     <td>v@(q.Version)</td>
                     <td>
@@ -85,36 +89,24 @@ else
                     </td>
                     <td class="cq-text-sm cq-text-muted">@q.UpdatedAt</td>
                     <td class="text-end">
-                        <div class="d-flex justify-content-end align-items-center gap-2">
-                            @* Publicar cambios pendientes es LA acción esperada en ese estado:
-                               enterrarla en el menú la hacía invisible justo cuando importa. *@
-                            @if (q.HasUnpublishedChanges)
-                            {
-                                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title">
-                                    <i class="bi bi-send me-1"></i> Publicar
-                                </button>
-                            }
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" aria-label="Acciones de @q.Title">
-                                    <i class="bi bi-three-dots"></i>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
-                                    <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
-                                    <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
-                                    <li><hr class="dropdown-divider" /></li>
-                                    @* Publicado con cambios pendientes ya tiene su botón afuera;
-                                       un publicado sin cambios no tiene nada que publicar. *@
-                                    @if (q.Status != "published")
-                                    {
-                                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
-                                    }
-                                    @if (q.Status != "archived")
-                                    {
-                                        <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
-                                    }
-                                </ul>
-                            </div>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-tertiary" data-bs-toggle="dropdown" aria-label="Acciones de @q.Title" title="Acciones">
+                                <i class="bi bi-three-dots"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
+                                <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
+                                <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
+                                <li><hr class="dropdown-divider" /></li>
+                                @if (!(q.Status == "published" && !q.HasUnpublishedChanges))
+                                {
+                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                }
+                                @if (q.Status != "archived")
+                                {
+                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title" title="Cambia el estado del cuestionario a Archivado"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                }
+                            </ul>
                         </div>
                     </td>
                 </tr>
@@ -155,7 +147,7 @@ else
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Publicar</button>
             </div>
         }
@@ -175,10 +167,15 @@ else
             </div>
             <div class="modal-body">
                 <p>¿Querés archivar <strong id="archiveTitle"></strong>?</p>
-                <p class="cq-text-sm cq-text-muted mb-0">No se podrá usar para nuevas cargas. Las respuestas existentes se conservan.</p>
+                <p class="cq-text-sm cq-text-muted mb-0">
+                    Archivar <strong>cambia el estado</strong> del cuestionario a <em>Archivado</em>: no se puede usar
+                    para nuevas cargas y desaparece del listado por defecto (queda visible con el filtro <em>Archivado</em>).
+                    Podés desarchivarlo publicando una nueva versión.
+                    Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos "borrar": romperíamos su trazabilidad.
+                </p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
                 <button type="submit" class="btn btn-danger">Archivar</button>
             </div>
         }
@@ -198,6 +195,16 @@ else
             document.getElementById("archiveId").value = id;
             document.getElementById("archiveTitle").textContent = title;
         }
+    });
+
+    // Fila entera clickeable — feedback pedía no tener que apuntar al título exacto.
+    // Se ignora si el click salió de un link/botón interno para no interferir con el menú de acciones.
+    document.addEventListener("click", function (e) {
+        var row = e.target.closest("tr.cq-row--clickable");
+        if (!row) return;
+        if (e.target.closest("a, button, .dropdown, .dropdown-menu, input, label")) return;
+        var href = row.getAttribute("data-href");
+        if (href) window.location.href = href;
     });
 </script>
 }

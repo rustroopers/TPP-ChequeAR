@@ -19,7 +19,7 @@ namespace ChequeAR.Infrastructure.Repositories
 
         public async Task<IReadOnlyList<SavedReport>> ListForUserAsync(string userId, IEnumerable<string> specialties)
         {
-            var specs = (specialties ?? new string[0]).ToList();
+            var specs = (specialties ?? Array.Empty<string>()).ToList();
             return await _ctx.SavedReports
                 .Where(r => r.CreatedBy == userId
                             || (r.Scope == "specialty" && specs.Contains(r.SpecialtyCode)))

@@ -1,0 +1,342 @@
+@model ChequeAR.Api.Models.PatientSearchViewModel
+@using System.Linq
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = Cq.T("sidebar.patients");
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">@Cq.T("r1.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("r1.subtitle")</p>
+    </div>
+</header>
+
+@using (Html.BeginForm("Index", "Encounters", FormMethod.Get, new { @class = "mb-4", data_cq_autofilter = "patients" }))
+{
+    <div class="d-flex align-items-center" style="max-width:680px;">
+        <div class="input-group" style="max-width:640px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search" name="q" value="@Model.Query" class="form-control"
+                   placeholder="@Cq.T("r1.placeholder")" aria-label="@Cq.T("r1.title")" autofocus />
+        </div>
+        <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="right"
+                data-bs-title="¿Cómo buscar?"
+                data-bs-content="Escribí HC, DNI, apellido o nombre. La búsqueda va contra el padrón del hospital (decenas de miles de pacientes), por eso no listamos todo por defecto: elegís y traés sólo al que necesitás."
+                aria-label="Ayuda del buscador de pacientes"><i class="bi bi-question-lg"></i></button>
+    </div>
+}
+
+@* Panel de resultados: un solo card blanco que contiene o el loader (centrado)
+   o el contenido (empty state / no-results / tabla). El toggle lo maneja CSS a
+   partir de la clase .is-loading que le pone cq-autofilter.js al <form>. *@
+<div class="cq-search-panel">
+    <div class="cq-search-loader" data-cq-loading>
+        <div class="spinner-border" role="status" style="color:var(--cq-primary); width:36px; height:36px;"></div>
+        <div class="cq-text-sm cq-text-muted mt-2">Buscando pacientes…</div>
+    </div>
+    <div class="cq-search-content">
+@if (!Model.HasSearched)
+{
+        @* Slot que rellena JS con los últimos pacientes guardados en localStorage.
+           Si no hay ninguno, el mismo JS deja visible el fallback #recentEmpty. *@
+        <div id="recentPatientsSlot"></div>
+        <div id="recentEmpty" class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-search"></i></div>
+            <div class="cq-empty__desc">@Cq.T("r1.empty.desc")</div>
+        </div>
+}
+else if (Model.Results == null || Model.Results.Count == 0)
+{
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-emoji-frown"></i></div>
+            <div class="cq-empty__title">@Cq.T("r1.noresults.title", new { q = Model.Query })</div>
+            <div class="cq-empty__desc">@Cq.T("r1.noresults.desc")</div>
+        </div>
+}
+else
+{
+        <table class="cq-table cq-table--flush">
+        <thead>
+            <tr>
+                <th>HC</th>
+                <th>DNI</th>
+                <th>Nombre</th>
+                <th>Fecha de nacimiento</th>
+                <th class="text-end">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Model.Results)
+            {
+                <tr>
+                    <td><code>@p.HC</code></td>
+                    <td class="cq-text-sm">@(string.IsNullOrEmpty(p.Document) ? "—" : p.Document)</td>
+                    <td>@p.FullName</td>
+                    <td class="cq-text-sm">
+                        @if (!string.IsNullOrEmpty(p.BirthDateLabel))
+                        {
+                            @p.BirthDateLabel
+                            if (!string.IsNullOrEmpty(p.AgeLabel))
+                            {
+                                <span class="cq-text-muted"> (@p.AgeLabel)</span>
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(p.AgeLabel))
+                        {
+                            @p.AgeLabel
+                        }
+                        else
+                        {
+                            <text>—</text>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-primary cq-track-recent" data-bs-toggle="modal" data-bs-target="#selectQModal"
+                                data-patient-id="@p.HC" data-patient-name="@p.FullName" data-patient-hc="@p.HC"
+                                data-patient-dni="@(p.Document ?? "")" data-patient-birth="@(p.BirthDateLabel ?? "")" data-patient-age="@(p.AgeLabel ?? "")">
+                            Cargar ficha →
+                        </button>
+                        <a href="@Url.Action("Timeline", new { patientId = p.HC })" class="btn btn-sm btn-tertiary cq-track-recent"
+                           data-patient-id="@p.HC" data-patient-name="@p.FullName" data-patient-hc="@p.HC"
+                           data-patient-dni="@(p.Document ?? "")" data-patient-birth="@(p.BirthDateLabel ?? "")" data-patient-age="@(p.AgeLabel ?? "")"><i class="bi bi-clock-history me-1"></i>Historial</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+        </table>
+}
+    </div>
+</div>
+
+@* R2 — Modal selector de cuestionario *@
+<div class="modal fade" id="selectQModal" tabindex="-1" aria-hidden="true" aria-labelledby="selectQTitle">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h3" id="selectQTitle">Seleccionar ficha clínica</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="cq-text-sm cq-text-muted mb-3" id="selectQSubtitle"></p>
+                @if (Model.Questionnaires.Count == 0)
+                {
+                    <div class="cq-empty">
+                        <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
+                        <div class="cq-empty__title">No hay cuestionarios publicados</div>
+                        <div class="cq-empty__desc">Solo se pueden cargar fichas de cuestionarios publicados.</div>
+                        <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-primary">Ir a Cuestionarios</a>
+                    </div>
+                }
+                else
+                {
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-8">
+                            <input type="search" id="qFilterText" class="form-control" placeholder="Buscar cuestionario…" />
+                        </div>
+                        <div class="col-md-4">
+                            @* Select nativo — el enhancer global cq-select-enhance.js lo
+                               convierte en un dropdown Bootstrap custom estilado. *@
+                            <select id="qFilterSpecialty" class="form-select">
+                                <option value="">Todas las especialidades</option>
+                                @foreach (var sp in Model.Questionnaires.Select(x => new { x.SpecialtyCode, x.SpecialtyLabel }).Distinct().OrderBy(x => x.SpecialtyLabel))
+                                {
+                                    <option value="@sp.SpecialtyCode">@sp.SpecialtyLabel</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="list-group" id="qList">
+                        @foreach (var sq in Model.Questionnaires)
+                        {
+                            <label class="list-group-item d-flex align-items-center gap-3 cq-q-option"
+                                   data-title="@sq.Title.ToLowerInvariant()" data-specialty="@sq.SpecialtyCode">
+                                <input class="form-check-input me-2" type="radio" name="qchoice" value="@sq.Id" />
+                                <div class="flex-fill">
+                                    <div class="fw-semibold">@sq.Title <span class="cq-text-xs cq-text-muted ms-1">v@(sq.Version)</span></div>
+                                    <div class="cq-text-sm cq-text-muted cq-q-last" data-qid="@sq.Id"></div>
+                                </div>
+                                <span class="cq-chip cq-chip--@sq.SpecialtyCode">@sq.SpecialtyLabel</span>
+                            </label>
+                        }
+                    </div>
+                    <p id="qNoMatch" class="cq-text-sm cq-text-muted mt-2 d-none">Ningún cuestionario coincide con el filtro.</p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="selectQStartBtn">Comenzar carga</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section scripts {
+<script>
+    // --- Pacientes recientes -------------------------------------------------
+    // Persistimos en localStorage los últimos pacientes que el usuario abrió
+    // (por Cargar ficha o Historial). Al entrar a Buscar paciente sin haber
+    // buscado, mostramos esa lista en vez del empty state genérico "Buscá por…".
+    var RECENT_KEY = "cq-recent-patients";
+    var RECENT_MAX = 5;
+
+    function loadRecents() {
+        try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); }
+        catch (e) { return []; }
+    }
+    function saveRecent(p) {
+        if (!p || !p.hc) return;
+        var list = loadRecents().filter(function (x) { return x.hc !== p.hc; });
+        list.unshift(p);
+        list = list.slice(0, RECENT_MAX);
+        try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch (e) { /* quota: sin más */ }
+    }
+
+    document.addEventListener("click", function (e) {
+        var t = e.target.closest(".cq-track-recent");
+        if (!t) return;
+        saveRecent({
+            hc:    t.getAttribute("data-patient-hc"),
+            id:    t.getAttribute("data-patient-id"),
+            name:  t.getAttribute("data-patient-name"),
+            dni:   t.getAttribute("data-patient-dni") || "",
+            birth: t.getAttribute("data-patient-birth") || "",
+            age:   t.getAttribute("data-patient-age") || ""
+        });
+    });
+
+    // Escapado mínimo para inyectar valores del usuario en innerHTML.
+    function esc(s) {
+        return String(s == null ? "" : s)
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
+
+    // Al cargar la página, si el server dejó el slot de recientes disponible y
+    // hay pacientes guardados, renderizamos la tabla y ocultamos el fallback.
+    (function renderRecents() {
+        var slot = document.getElementById("recentPatientsSlot");
+        var fallback = document.getElementById("recentEmpty");
+        if (!slot) return;
+        var recents = loadRecents();
+        if (!recents.length) return;
+        var timelineBase = "@Url.Action("Timeline", "Encounters")";
+        var rows = recents.map(function (p) {
+            var dash = "&mdash;";
+            var age = p.age ? ' <span class="cq-text-muted">(' + esc(p.age) + ')</span>' : '';
+            var birth = p.birth ? esc(p.birth) + age : (p.age ? esc(p.age) : dash);
+            var dni = p.dni ? esc(p.dni) : dash;
+            var attrs = 'data-patient-id="' + esc(p.id || p.hc) + '"' +
+                        ' data-patient-name="' + esc(p.name) + '"' +
+                        ' data-patient-hc="' + esc(p.hc) + '"' +
+                        ' data-patient-dni="' + esc(p.dni || "") + '"' +
+                        ' data-patient-birth="' + esc(p.birth || "") + '"' +
+                        ' data-patient-age="' + esc(p.age || "") + '"';
+            return '<tr>' +
+                '<td><code>' + esc(p.hc) + '</code></td>' +
+                '<td class="cq-text-sm">' + dni + '</td>' +
+                '<td>' + esc(p.name) + '</td>' +
+                '<td class="cq-text-sm">' + birth + '</td>' +
+                '<td class="text-end">' +
+                    '<button class="btn btn-sm btn-primary cq-track-recent" data-bs-toggle="modal" data-bs-target="#selectQModal" ' + attrs + '>Cargar ficha →</button> ' +
+                    '<a href="' + timelineBase + '?patientId=' + encodeURIComponent(p.hc) + '" class="btn btn-sm btn-tertiary cq-track-recent" ' + attrs + '><i class="bi bi-clock-history me-1"></i>Historial</a>' +
+                '</td>' +
+            '</tr>';
+        }).join("");
+        slot.innerHTML =
+            '<div class="d-flex align-items-center justify-content-between px-3 pt-3 pb-2">' +
+                '<h2 class="h5 m-0"><i class="bi bi-clock-history me-1"></i>Últimos pacientes</h2>' +
+                '<button type="button" id="clearRecents" class="btn btn-sm btn-tertiary">Limpiar</button>' +
+            '</div>' +
+            '<table class="cq-table cq-table--flush">' +
+                '<thead><tr><th>HC</th><th>DNI</th><th>Nombre</th><th>Fecha de nacimiento</th><th class="text-end">Acciones</th></tr></thead>' +
+                '<tbody>' + rows + '</tbody>' +
+            '</table>';
+        if (fallback) fallback.style.display = "none";
+        var btn = document.getElementById("clearRecents");
+        if (btn) btn.addEventListener("click", function () {
+            try { localStorage.removeItem(RECENT_KEY); } catch (e) { /* noop */ }
+            slot.innerHTML = "";
+            if (fallback) fallback.style.display = "";
+        });
+    })();
+
+    document.addEventListener("click", function (e) {
+        var trigger = e.target.closest("[data-bs-target='#selectQModal']");
+        if (!trigger) return;
+        var pid = trigger.getAttribute("data-patient-id");
+        var name = trigger.getAttribute("data-patient-name");
+        var hc = trigger.getAttribute("data-patient-hc");
+        // En dev el "nombre" del paciente suele ser el mismo HC (padrón sintético):
+        // no repetimos entonces "PAC-000002 (HC PAC-000002)", mostramos sólo el HC.
+        var subtitle = (name && name !== hc)
+            ? "Paciente: " + name + " (HC " + hc + ")"
+            : "Paciente: HC " + hc;
+        document.getElementById("selectQSubtitle").textContent = subtitle;
+        loadLastEntries(pid);
+        document.getElementById("selectQStartBtn").onclick = function () {
+            var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
+            if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "warning"); return; }
+            location.href = "@Url.Action("Load", "Encounters")" + "?patientId=" + pid + "&questionnaireId=" + qid;
+        };
+    });
+
+    // "Última carga para este paciente": se consulta al abrir el modal. Si la consulta
+    // falla no se escribe nada — es preferible el silencio a inventar una fecha.
+    function loadLastEntries(patientId) {
+        var labels = document.querySelectorAll(".cq-q-last");
+        Array.prototype.forEach.call(labels, function (el) { el.textContent = ""; });
+        var meta = document.querySelector('meta[name="cq-token"]');
+        if (!meta) return;
+        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200", {
+            headers: { "Authorization": "Bearer " + meta.getAttribute("content") }
+        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
+            if (!bundle) return;
+            // Bundle conforme: los resultados vienen en entry[].resource, y el cuestionario
+            // se referencia por su canonical (.../Questionnaire/{id}), no por un campo propio.
+            var entries = bundle.entry || [];
+            var lastByQ = {};
+            entries.forEach(function (e) {
+                var r = e.resource;
+                if (!r) return;
+                var canonical = r.questionnaire || "";
+                var qid = canonical.substring(canonical.lastIndexOf("/") + 1).toLowerCase();
+                var when = r.authored;
+                if (!qid || !when) return;
+                if (!lastByQ[qid] || when > lastByQ[qid]) lastByQ[qid] = when;
+            });
+            Array.prototype.forEach.call(labels, function (el) {
+                var when = lastByQ[(el.getAttribute("data-qid") || "").toLowerCase()];
+                el.textContent = when
+                    ? "Última carga para este paciente: " + String(when).slice(0, 10)
+                    : "Nunca cargado";
+            });
+        }).catch(function () { /* sin dato: se deja vacío */ });
+    }
+
+    // Filtros del selector, sobre la lista real.
+    document.addEventListener("input", function (e) {
+        if (e.target.id !== "qFilterText" && e.target.id !== "qFilterSpecialty") return;
+        applyQFilter();
+    });
+    document.addEventListener("change", function (e) {
+        if (e.target.id === "qFilterSpecialty") applyQFilter();
+    });
+    function applyQFilter() {
+        var textEl = document.getElementById("qFilterText");
+        var spEl = document.getElementById("qFilterSpecialty");
+        if (!textEl || !spEl) return;
+        var text = textEl.value.trim().toLowerCase();
+        var sp = spEl.value;
+        var visible = 0;
+        Array.prototype.forEach.call(document.querySelectorAll(".cq-q-option"), function (el) {
+            var okText = !text || (el.getAttribute("data-title") || "").indexOf(text) >= 0;
+            var okSp = !sp || el.getAttribute("data-specialty") === sp;
+            var show = okText && okSp;
+            el.classList.toggle("d-none", !show);
+            if (show) visible++;
+        });
+        document.getElementById("qNoMatch").classList.toggle("d-none", visible > 0);
+    }
+</script>
+}

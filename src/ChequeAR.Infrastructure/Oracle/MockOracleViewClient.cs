@@ -130,7 +130,7 @@ namespace ChequeAR.Infrastructure.Oracle
 
         /// Copia defensiva: los diccionarios del dataset son estaticos y compartidos
         /// entre requests. Sin esto, quien mutase una fila envenenaria el mock entero.
-        private static IReadOnlyList<IDictionary<string, object>> Copy(IEnumerable<IDictionary<string, object>> rows)
+        private static List<IDictionary<string, object>> Copy(IEnumerable<IDictionary<string, object>> rows)
             => rows.Select(r => (IDictionary<string, object>)new Dictionary<string, object>(r, StringComparer.OrdinalIgnoreCase)).ToList();
 
         private static bool Matches(IDictionary<string, object> row, string column, object expected)
@@ -268,6 +268,7 @@ namespace ChequeAR.Infrastructure.Oracle
         private static readonly string[] EstadosTurno = { "PROGRAMADO","ATENDIDO","AUSENTE","CANCELADO" };
         private static readonly string[] EstadosAlergia = { "CONFIRMADA","SOSPECHADA","DESCONOCIDAS","DESCARTADA" };
         private static readonly string[] Severidades = { "LEVE","MODERADA","SEVERA" };
+        private static readonly string[] ReaccionesAlergicas = { "Erupcion cutanea", "Broncoespasmo", "Angioedema", "Vomitos", "Prurito" };
 
         private static readonly string[] EspCod = { "PED","NEO","CARP","NEUM","GAST","INFE","NEFRO","ENDO" };
 
@@ -299,7 +300,7 @@ namespace ChequeAR.Infrastructure.Oracle
             {
                 var esp = i % EspCod.Length;
                 profesionales.Add(Row(
-                    ("ID_PROFESIONAL", "PRO-" + i.ToString("D6")),
+                    ("ID_PROFESIONAL", "PRO-" + i.ToString("D6", CultureInfo.InvariantCulture)),
                     ("MATRICULA", "MN-" + (10000 + i * 137)),
                     ("NOMBRE", Pick(rnd, Nombres)),
                     ("APELLIDO", Pick(rnd, Apellidos)),
@@ -311,7 +312,7 @@ namespace ChequeAR.Infrastructure.Oracle
 
             for (var p = 1; p <= TotalPacientes; p++)
             {
-                var idPaciente = "PAC-" + p.ToString("D6");
+                var idPaciente = "PAC-" + p.ToString("D6", CultureInfo.InvariantCulture);
 
                 // 0 a 17 anios: poblacion pediatrica (FR del spec 008).
                 var edadMeses = rnd.Next(0, 216);
@@ -330,7 +331,7 @@ namespace ChequeAR.Infrastructure.Oracle
                 var nEpisodios = rnd.Next(1, 6);
                 for (var k = 0; k < nEpisodios; k++)
                 {
-                    var idEpisodio = "EPI-" + episodios.Count.ToString("D6");
+                    var idEpisodio = "EPI-" + episodios.Count.ToString("D6", CultureInfo.InvariantCulture);
                     var espIdx = rnd.Next(EspCod.Length);
                     var inicio = Anclaje.AddDays(-rnd.Next(1, 730)).AddHours(rnd.Next(7, 20));
                     var tipo = Pick(rnd, TiposEpi);
@@ -348,7 +349,7 @@ namespace ChequeAR.Infrastructure.Oracle
 
                     var dx = rnd.Next(Cie10Cod.Length);
                     diagnosticos.Add(Row(
-                        ("ID_DIAGNOSTICO", "DX-" + (++seqDx).ToString("D6")),
+                        ("ID_DIAGNOSTICO", "DX-" + (++seqDx).ToString("D6", CultureInfo.InvariantCulture)),
                         ("ID_EPISODIO", idEpisodio),
                         ("ID_PACIENTE", idPaciente),
                         ("COD_CIE10", Cie10Cod[dx]),
@@ -362,7 +363,7 @@ namespace ChequeAR.Infrastructure.Oracle
                         var l = rnd.Next(LoincCod.Length);
                         var valor = Math.Round(LoincMin[l] + rnd.NextDouble() * (LoincMax[l] - LoincMin[l]), 2);
                         observaciones.Add(Row(
-                            ("ID_OBSERVACION", "OBS-" + (++seqObs).ToString("D6")),
+                            ("ID_OBSERVACION", "OBS-" + (++seqObs).ToString("D6", CultureInfo.InvariantCulture)),
                             ("ID_PACIENTE", idPaciente),
                             ("ID_EPISODIO", idEpisodio),
                             ("COD_LOINC", LoincCod[l]),
@@ -375,7 +376,7 @@ namespace ChequeAR.Infrastructure.Oracle
 
                     var anios = edadMeses / 12.0;
                     signos.Add(Row(
-                        ("ID_SIGNO", "SIG-" + (++seqSig).ToString("D6")),
+                        ("ID_SIGNO", "SIG-" + (++seqSig).ToString("D6", CultureInfo.InvariantCulture)),
                         ("ID_EPISODIO", idEpisodio),
                         ("ID_PACIENTE", idPaciente),
                         ("FECHA_TOMA", inicio.AddMinutes(rnd.Next(5, 90))),
@@ -392,7 +393,7 @@ namespace ChequeAR.Infrastructure.Oracle
                     {
                         var a = rnd.Next(AtcCod.Length);
                         medicaciones.Add(Row(
-                            ("ID_MEDICACION", "MED-" + (++seqMed).ToString("D6")),
+                            ("ID_MEDICACION", "MED-" + (++seqMed).ToString("D6", CultureInfo.InvariantCulture)),
                             ("ID_EPISODIO", idEpisodio),
                             ("ID_PACIENTE", idPaciente),
                             ("COD_ATC", AtcCod[a]),
@@ -408,10 +409,10 @@ namespace ChequeAR.Infrastructure.Oracle
                 for (var a = 0; a < nAle; a++)
                 {
                     alergias.Add(Row(
-                        ("ID_ALERGIA", "ALE-" + (++seqAle).ToString("D6")),
+                        ("ID_ALERGIA", "ALE-" + (++seqAle).ToString("D6", CultureInfo.InvariantCulture)),
                         ("ID_PACIENTE", idPaciente),
                         ("SUSTANCIA", Pick(rnd, Alergenos)),
-                        ("REACCION", Pick(rnd, new[] { "Erupcion cutanea", "Broncoespasmo", "Angioedema", "Vomitos", "Prurito" })),
+                        ("REACCION", Pick(rnd, ReaccionesAlergicas)),
                         ("SEVERIDAD", Pick(rnd, Severidades)),
                         ("ESTADO", Pick(rnd, EstadosAlergia)),
                         ("FECHA_REGISTRO", Anclaje.AddDays(-rnd.Next(30, 1500)))));
@@ -422,9 +423,9 @@ namespace ChequeAR.Infrastructure.Oracle
                 {
                     var espIdx = rnd.Next(EspCod.Length);
                     turnos.Add(Row(
-                        ("ID_TURNO", "TUR-" + (++seqTur).ToString("D6")),
+                        ("ID_TURNO", "TUR-" + (++seqTur).ToString("D6", CultureInfo.InvariantCulture)),
                         ("ID_PACIENTE", idPaciente),
-                        ("ID_PROFESIONAL", "PRO-" + rnd.Next(1, 13).ToString("D6")),
+                        ("ID_PROFESIONAL", "PRO-" + rnd.Next(1, 13).ToString("D6", CultureInfo.InvariantCulture)),
                         ("COD_ESPECIALIDAD", EspCod[espIdx]),
                         ("ESPECIALIDAD", EspNom[espIdx]),
                         ("FECHA_HORA", Anclaje.AddDays(rnd.Next(-60, 60)).AddHours(rnd.Next(8, 18))),
@@ -449,7 +450,7 @@ namespace ChequeAR.Infrastructure.Oracle
 
         private static string Pick(Random rnd, string[] options) => options[rnd.Next(options.Length)];
 
-        private static IDictionary<string, object> Row(params (string Column, object Value)[] cells)
+        private static Dictionary<string, object> Row(params (string Column, object Value)[] cells)
         {
             var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             foreach (var c in cells) row[c.Column] = c.Value;

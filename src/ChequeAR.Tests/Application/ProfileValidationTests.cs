@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Application.Fhir;
@@ -50,7 +51,7 @@ namespace ChequeAR.Tests.Application
         public void SinSubjectTypePatient_Falla()
         {
             var q = Valido();
-            q.SubjectType = new ResourceType?[0];
+            q.SubjectType = Array.Empty<ResourceType?>();
 
             Assert.Contains(ErroresDe(q), e => e.Contains("subjectType"));
         }

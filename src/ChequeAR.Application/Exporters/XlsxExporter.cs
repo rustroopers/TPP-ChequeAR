@@ -15,7 +15,7 @@ namespace ChequeAR.Application.Exporters
     {
         private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
 
-        public Stream Export(ReportResult result)
+        public static Stream Export(ReportResult result)
         {
             var ms = new MemoryStream();
             using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
@@ -57,7 +58,7 @@ namespace ChequeAR.Application.Services
             {
                 var rows = await _oracle.QueryAsync(PatientView,
                     new Dictionary<string, object> { { "ID_PACIENTE", hospitalId } });
-                var row = rows.FirstOrDefault();
+                var row = rows.Count > 0 ? rows[0] : null;
                 if (row != null) return MapRow(row, hospitalId);
             }
             catch { /* hospital no disponible */ }
@@ -115,6 +116,7 @@ namespace ChequeAR.Application.Services
                 HospitalId = hospitalId,
                 FullName = demo?.Name ?? hospitalId,
                 AgeLabel = demo?.AgeLabel,
+                BirthDateLabel = demo?.BirthDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 SpecialtyCode = specialtyCode ?? "general",
                 SpecialtyLabel = specialtyLabel ?? "General"
             };
@@ -138,7 +140,9 @@ namespace ChequeAR.Application.Services
             {
                 HospitalId = row.TryGetValue("ID_PACIENTE", out var id) ? id?.ToString() : fallbackId,
                 FullName = fullName,
+                Document = row.TryGetValue("DOCUMENTO", out var doc) ? doc?.ToString() : null,
                 AgeLabel = row.TryGetValue("FECHA_NACIMIENTO", out var fn) ? AgeLabelFrom(fn) : null,
+                BirthDateLabel = row.TryGetValue("FECHA_NACIMIENTO", out var fn2) && fn2 is DateTime dob ? dob.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) : null,
                 SpecialtyCode = null,
                 SpecialtyLabel = null
             };
@@ -164,7 +168,9 @@ namespace ChequeAR.Application.Services
     {
         public string HospitalId { get; set; }
         public string FullName { get; set; }
+        public string Document { get; set; }
         public string AgeLabel { get; set; }
+        public string BirthDateLabel { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
     }

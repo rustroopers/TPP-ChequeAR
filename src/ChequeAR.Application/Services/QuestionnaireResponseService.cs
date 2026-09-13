@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
@@ -598,9 +599,9 @@ namespace ChequeAR.Application.Services
         {
             if (item == null) return "—";
             if (item.ValueBoolean.HasValue) return item.ValueBoolean.Value ? "Sí" : "No";
-            if (item.ValueInteger.HasValue) return item.ValueInteger.Value.ToString();
-            if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value.ToString();
-            if (item.ValueDate.HasValue) return item.ValueDate.Value.ToString("yyyy-MM-dd");
+            if (item.ValueInteger.HasValue) return item.ValueInteger.Value.ToString(CultureInfo.InvariantCulture);
+            if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value.ToString(CultureInfo.InvariantCulture);
+            if (item.ValueDate.HasValue) return item.ValueDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
             if (!string.IsNullOrEmpty(item.ValueCode)) return item.ValueCode;
             return "—";

@@ -161,19 +161,19 @@ namespace ChequeAR.Application.Reports
                     // Oracle no tiene BOOLEAN en tablas: ValueBoolean es NUMBER(1).
                     var b = raw is bool flag
                         ? flag
-                        : string.Equals(Convert.ToString(raw), "true", StringComparison.OrdinalIgnoreCase);
+                        : string.Equals(Convert.ToString(raw, CultureInfo.InvariantCulture), "true", StringComparison.OrdinalIgnoreCase);
                     return b ? 1 : 0;
 
                 case QuestionType.Date:
                 case QuestionType.DateTime:
                     if (raw is DateTime dt) return dt;
-                    if (!DateTime.TryParse(Convert.ToString(raw), CultureInfo.InvariantCulture,
+                    if (!DateTime.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), CultureInfo.InvariantCulture,
                                            DateTimeStyles.None, out var parsed))
                         throw new ArgumentException("'" + raw + "' no es una fecha válida.");
                     return parsed;
 
                 default:
-                    return Convert.ToString(raw);
+                    return Convert.ToString(raw, CultureInfo.InvariantCulture);
             }
         }
     }

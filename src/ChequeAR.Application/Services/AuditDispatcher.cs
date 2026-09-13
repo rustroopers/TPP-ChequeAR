@@ -52,6 +52,7 @@ namespace ChequeAR.Application.Services
             if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
             _timer.Dispose();
             FlushAsync().GetAwaiter().GetResult();
+            GC.SuppressFinalize(this);
         }
     }
 }

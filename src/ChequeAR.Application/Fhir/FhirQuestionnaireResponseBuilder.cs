@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ChequeAR.Domain.Enums;
 using Hl7.Fhir.Model;
@@ -33,7 +34,7 @@ namespace ChequeAR.Application.Fhir
                 Id = response.Id.ToString(),
                 Questionnaire = QuestionnaireBaseUrl + response.QuestionnaireId,
                 Status = FhirStatus(response.Status),
-                Authored = response.AuthoredAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
+                Authored = response.AuthoredAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
                 Subject = new ResourceReference
                 {
                     Identifier = new Identifier(PatientIdentifierSystem, response.PatientHospitalId),
@@ -72,7 +73,7 @@ namespace ChequeAR.Application.Fhir
                 contained.GenderElement = new Code<AdministrativeGender>(
                     Hl7.Fhir.Utility.EnumUtility.ParseLiteral<AdministrativeGender>(patient.Gender));
             if (patient.BirthDate.HasValue)
-                contained.BirthDate = patient.BirthDate.Value.ToString("yyyy-MM-dd");
+                contained.BirthDate = patient.BirthDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             resource.Contained.Add(contained);
         }
@@ -125,7 +126,7 @@ namespace ChequeAR.Application.Fhir
             if (item.ValueInteger.HasValue) return new Integer(item.ValueInteger.Value);
             if (item.ValueDecimal.HasValue) return new FhirDecimal(item.ValueDecimal.Value);
             if (item.ValueDate.HasValue)
-                return new FhirDateTime(item.ValueDate.Value.ToString("yyyy-MM-dd'T'HH:mm:ss"));
+                return new FhirDateTime(item.ValueDate.Value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
             if (!string.IsNullOrEmpty(item.ValueCode))
                 return new Coding(null, item.ValueCode, item.ValueCode);
             if (!string.IsNullOrEmpty(item.ValueString)) return new FhirString(item.ValueString);

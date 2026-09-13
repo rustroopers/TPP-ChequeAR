@@ -5,7 +5,7 @@ namespace ChequeAR.Application.Validation
 {
     public class EnableWhenEvaluator
     {
-        public bool IsEnabled(EnableWhenRule rule, IReadOnlyDictionary<string, object> answers)
+        public static bool IsEnabled(EnableWhenRule rule, IReadOnlyDictionary<string, object> answers)
         {
             if (rule == null) return true;
             if (!answers.TryGetValue(rule.QuestionLinkId, out var actual)) return false;

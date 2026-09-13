@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using ChequeAR.Application.Dtos;
@@ -28,8 +29,13 @@ namespace ChequeAR.Application.Reports
         /// La previsualización pagina; la exportación no (si no, el archivo saldría cortado
         /// en la primera página sin que nadie lo note).
         /// </param>
+        // No se marca static (aunque no toque estado de instancia): QueryBuilder se registra
+        // e inyecta por DI en ReportExecutor (ver ServiceComposition.cs) precisamente para
+        // poder sustituirse; forzar static rompería esa inyección.
+#pragma warning disable CA1822
         public BuiltQuery Build(ReportQuery q, ReportSchema schema, bool paginate = true)
         {
+#pragma warning restore CA1822
             if (q == null) throw new ArgumentNullException(nameof(q));
             if (q.QuestionnaireId == Guid.Empty) throw new ArgumentException("QuestionnaireId required");
             if (schema == null) throw new ArgumentException("Falta la metadata del cuestionario.");
@@ -75,7 +81,7 @@ namespace ChequeAR.Application.Reports
             return new BuiltQuery { Sql = sql.ToString(), CountSql = countSql, Parameters = ps };
         }
 
-        private string BuildWhere(ReportQuery q, ReportSchema schema, List<QueryParameter> ps)
+        private static string BuildWhere(ReportQuery q, ReportSchema schema, List<QueryParameter> ps)
         {
             var sb = new StringBuilder();
             sb.Append(Alias).Append(".\"QuestionnaireId\" = :QuestionnaireId");
@@ -104,7 +110,7 @@ namespace ChequeAR.Application.Reports
             // Version del cuestionario con la que se completo la ficha. La vista ya expone la
             // columna; hasta ahora el campo viajaba en el DTO y no lo leia nadie.
             var versions = (q.QuestionnaireVersions ?? new List<int>()).Distinct().ToList();
-            if (versions.Any())
+            if (versions.Count > 0)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"QuestionnaireVersion\" IN (");
                 for (int i = 0; i < versions.Count; i++)
@@ -113,12 +119,12 @@ namespace ChequeAR.Application.Reports
                     sb.Append(":qv").Append(i);
                     ps.Add(QueryParameter.Int("qv" + i, versions[i]));
                 }
-                sb.Append(")");
+                sb.Append(')');
             }
 
             var authors = (q.Authors ?? new List<string>())
                 .Where(a => !string.IsNullOrWhiteSpace(a)).Distinct().ToList();
-            if (authors.Any())
+            if (authors.Count > 0)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"AuthorUserId\" IN (");
                 for (int i = 0; i < authors.Count; i++)
@@ -127,10 +133,10 @@ namespace ChequeAR.Application.Reports
                     sb.Append(":au").Append(i);
                     ps.Add(QueryParameter.Text("au" + i, authors[i]));
                 }
-                sb.Append(")");
+                sb.Append(')');
             }
 
-            if (q.Filters?.Predicates != null && q.Filters.Predicates.Any())
+            if (q.Filters?.Predicates != null && q.Filters.Predicates.Count > 0)
             {
                 sb.Append(" AND ");
                 BuildNode(q.Filters, schema, sb, ps);
@@ -138,10 +144,10 @@ namespace ChequeAR.Application.Reports
             return sb.ToString();
         }
 
-        private void BuildNode(FilterNode node, ReportSchema schema, StringBuilder sql, List<QueryParameter> ps)
+        private static void BuildNode(FilterNode node, ReportSchema schema, StringBuilder sql, List<QueryParameter> ps)
         {
             var logic = string.Equals(node.Logic, "OR", StringComparison.OrdinalIgnoreCase) ? " OR " : " AND ";
-            sql.Append("(");
+            sql.Append('(');
             bool first = true;
             foreach (var p in node.Predicates)
             {
@@ -163,13 +169,13 @@ namespace ChequeAR.Application.Reports
                    .Append(" AND qri.\"LinkId\" = :li").Append(idx);
                 ps.Add(QueryParameter.Text("li" + idx, p.LinkId));
 
-                sql.Append(" AND ").Append(Predicate(p, schema, col, idx, ps)).Append(")");
+                sql.Append(" AND ").Append(Predicate(p, schema, col, idx, ps)).Append(')');
             }
-            sql.Append(")");
+            sql.Append(')');
         }
 
         /// <summary>Condición sobre la columna tipada, según el operador.</summary>
-        private string Predicate(FilterPredicate p, ReportSchema schema, string col, int idx, List<QueryParameter> ps)
+        private static string Predicate(FilterPredicate p, ReportSchema schema, string col, int idx, List<QueryParameter> ps)
         {
             var target = "qri.\"" + col + "\"";
 
@@ -178,7 +184,7 @@ namespace ChequeAR.Application.Reports
 
             if (string.Equals(p.Op, "contains", StringComparison.OrdinalIgnoreCase))
             {
-                ps.Add(QueryParameter.Text("p" + idx, "%" + Convert.ToString(p.Value) + "%"));
+                ps.Add(QueryParameter.Text("p" + idx, "%" + Convert.ToString(p.Value, CultureInfo.InvariantCulture) + "%"));
                 return "UPPER(" + target + ") LIKE UPPER(:p" + idx + ")";
             }
 

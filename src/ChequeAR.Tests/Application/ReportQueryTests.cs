@@ -173,7 +173,7 @@ namespace ChequeAR.Tests.Application
             var built = new QueryBuilder().Build(Query(Un("dx", "in", new List<object> { "A", "B", "C" })), schema);
 
             Assert.Contains("IN (:p1_0, :p1_1, :p1_2)", built.Sql);
-            Assert.Equal(3, built.Parameters.Count(p => p.Name.StartsWith("p1_")));
+            Assert.Equal(3, built.Parameters.Count(p => p.Name.StartsWith("p1_", StringComparison.Ordinal)));
         }
 
         [Fact]

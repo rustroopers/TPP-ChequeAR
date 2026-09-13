@@ -141,8 +141,8 @@ namespace ChequeAR.Api.Controllers.Mvc
             var result = new ReportResult { Total = rows.Count, Rows = rows };
             var dateSuffix = DateTime.Now.ToString("yyyy-MM-dd");
             if ((format ?? "xlsx").ToLowerInvariant() == "csv")
-                return File(new CsvExporter().Export(result), "text/csv", $"auditoria_{dateSuffix}.csv");
-            return File(new XlsxExporter().Export(result),
+                return File(CsvExporter.Export(result), "text/csv", $"auditoria_{dateSuffix}.csv");
+            return File(XlsxExporter.Export(result),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"auditoria_{dateSuffix}.xlsx");
         }
 

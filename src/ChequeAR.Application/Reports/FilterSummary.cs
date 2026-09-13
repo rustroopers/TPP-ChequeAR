@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Domain.Enums;
@@ -51,7 +52,7 @@ namespace ChequeAR.Application.Reports
             }
             if (op == "exists")
             {
-                var tieneValor = p.Value == null || !string.Equals(Convert.ToString(p.Value), "false", StringComparison.OrdinalIgnoreCase);
+                var tieneValor = p.Value == null || !string.Equals(Convert.ToString(p.Value, CultureInfo.InvariantCulture), "false", StringComparison.OrdinalIgnoreCase);
                 return texto + (tieneValor ? " tiene valor cargado" : " no tiene valor cargado");
             }
 

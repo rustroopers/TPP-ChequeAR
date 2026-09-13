@@ -60,6 +60,12 @@
       no esta garantizado y sin esto el build falla con MSB3644.
     -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <!--
+      Este proyecto es old-style (no importa Microsoft.NET.Sdk), asi que no recibe los
+      analizadores que trae el SDK para los otros cuatro proyectos via EnableNETAnalyzers
+      (Directory.Build.props). Se agrega como paquete explicito para que tambien lo cubra.
+    -->
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNet.Mvc" Version="5.2.9" />
     <PackageReference Include="Microsoft.AspNet.Razor" Version="3.2.9" />
     <PackageReference Include="Microsoft.AspNet.WebApi" Version="5.2.9" />
@@ -158,6 +164,8 @@
     <Content Include="Views\Shared\_DataError.cshtml" />
     <Content Include="Views\Error\Index.cshtml" />
     <Content Include="Content\theme\chequear-theme.css" />
+    <Content Include="Content\img\logo-violeta-garrahan.png" />
+    <Content Include="Content\img\favicon-512.png" />
     <Content Include="Content\i18n\es-AR.json" />
     <Content Include="Content\i18n\en.json" />
     <Content Include="Views\Account\Login.cshtml" />
@@ -167,7 +175,7 @@
     <Content Include="Views\Questionnaires\Edit.cshtml" />
     <Content Include="Views\Questionnaires\Preview.cshtml" />
     <Content Include="Views\Questionnaires\History.cshtml" />
-    <Content Include="Views\Encounters\Search.cshtml" />
+    <Content Include="Views\Encounters\Index.cshtml" />
     <Content Include="Views\Encounters\Load.cshtml" />
     <Content Include="Views\Encounters\View.cshtml" />
     <Content Include="Views\Encounters\Timeline.cshtml" />
@@ -184,6 +192,7 @@
     <Content Include="Views\Admin\Capability.cshtml" />
     <Content Include="Scripts\cq-date-range.js" />
     <Content Include="Scripts\cq-autofilter.js" />
+    <Content Include="Scripts\cq-select-enhance.js" />
     <Content Include="Scripts\islands\bootstrap.js" />
     <Content Include="Scripts\islands\questionnaire-editor\index.js" />
     <Content Include="Scripts\islands\questionnaire-renderer\index.js" />

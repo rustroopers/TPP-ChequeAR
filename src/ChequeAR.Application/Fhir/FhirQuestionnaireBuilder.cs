@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -53,15 +54,15 @@ namespace ChequeAR.Application.Fhir
                     // La versión del REGISTRO (contador de escrituras para concurrencia
                     // optimista), no el número de versión publicada. Es el mecanismo nativo
                     // del estándar y viaja además en el ETag.
-                    VersionId = q.ConcurrencyVersion.ToString()
+                    VersionId = q.ConcurrencyVersion.ToString(CultureInfo.InvariantCulture)
                 },
                 Url = BaseUrl + q.Id,
-                Version = versionNumber.ToString(),
+                Version = versionNumber.ToString(CultureInfo.InvariantCulture),
                 Title = q.Title,
                 Name = q.Title,
                 Status = PublicationStatus.Active,
                 SubjectType = new ResourceType?[] { ResourceType.Patient },
-                Date = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
+                Date = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
                 Publisher = "Hospital Garrahan"
             };
 

@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    Analizadores de .NET (Roslyn) para toda la solucion. Se separa de -warnaserror en CI
+    a proposito: hasta que el build no quede en cero con esto prendido, no se promueve a
+    error (mismo criterio que se uso para prender -warnaserror sobre warnings del compilador).
+  -->
+  <PropertyGroup>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+  </PropertyGroup>
+
+</Project>

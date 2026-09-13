@@ -12,36 +12,34 @@ namespace ChequeAR.Tests.Application
     /// </summary>
     public class EnableWhenEvaluatorTests
     {
-        private readonly EnableWhenEvaluator _sut = new EnableWhenEvaluator();
-
         private static Dictionary<string, object> Answers(string linkId, object value)
             => new Dictionary<string, object> { { linkId, value } };
 
         [Fact]
         public void ReglaNula_SiempreHabilita()
         {
-            Assert.True(_sut.IsEnabled(null, new Dictionary<string, object>()));
+            Assert.True(EnableWhenEvaluator.IsEnabled(null, new Dictionary<string, object>()));
         }
 
         [Fact]
         public void PreguntaSinResponder_NoHabilita()
         {
             var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "exists" };
-            Assert.False(_sut.IsEnabled(rule, new Dictionary<string, object>()));
+            Assert.False(EnableWhenEvaluator.IsEnabled(rule, new Dictionary<string, object>()));
         }
 
         [Fact]
         public void Exists_ConValorPresente_Habilita()
         {
             var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "exists" };
-            Assert.True(_sut.IsEnabled(rule, Answers("q1", "cualquier cosa")));
+            Assert.True(EnableWhenEvaluator.IsEnabled(rule, Answers("q1", "cualquier cosa")));
         }
 
         [Fact]
         public void Exists_ConValorNulo_NoHabilita()
         {
             var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "exists" };
-            Assert.False(_sut.IsEnabled(rule, Answers("q1", null)));
+            Assert.False(EnableWhenEvaluator.IsEnabled(rule, Answers("q1", null)));
         }
 
         [Theory]
@@ -60,14 +58,14 @@ namespace ChequeAR.Tests.Application
         public void Operadores_ComparanCorrectamente(string op, int actual, int expected, bool enabled)
         {
             var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = op, Answer = expected };
-            Assert.Equal(enabled, _sut.IsEnabled(rule, Answers("q1", actual)));
+            Assert.Equal(enabled, EnableWhenEvaluator.IsEnabled(rule, Answers("q1", actual)));
         }
 
         [Fact]
         public void OperadorNoSoportado_Lanza()
         {
             var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "~=", Answer = 1 };
-            Assert.Throws<NotSupportedException>(() => _sut.IsEnabled(rule, Answers("q1", 1)));
+            Assert.Throws<NotSupportedException>(() => EnableWhenEvaluator.IsEnabled(rule, Answers("q1", 1)));
         }
 
         [Fact]
@@ -76,7 +74,7 @@ namespace ChequeAR.Tests.Application
             // Dos object planos no implementan IComparable: la comparación cae a string.Compare
             // de sus ToString() ("System.Object" == "System.Object") -> 0, así que ">=" habilita.
             var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = ">=", Answer = new object() };
-            Assert.True(_sut.IsEnabled(rule, Answers("q1", new object())));
+            Assert.True(EnableWhenEvaluator.IsEnabled(rule, Answers("q1", new object())));
         }
     }
 }

@@ -117,7 +117,7 @@ namespace ChequeAR.Infrastructure.Fhir
                     Cache.TryRemove(kv.Key, out _);
         }
 
-        private class CacheEntry
+        private sealed class CacheEntry
         {
             public string Json;
             public DateTime ExpiresUtc;

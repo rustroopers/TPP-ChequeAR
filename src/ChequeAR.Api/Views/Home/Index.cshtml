@@ -1,9 +1,19 @@
 @model ChequeAR.Api.Models.HomeViewModel
+@using System.Linq
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("sidebar.home");
     ViewBag.PageId = "home";
     var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctor";
+    // "Ficha reciente" muestra la última fila de RecentEncounters. Si no hay, el card
+    // se renderiza vacío (empty state) pero sigue mostrando el bloque para que la UI
+    // se sienta habitada aún sin data.
+    var lastEncounter = Model.RecentEncounters != null && Model.RecentEncounters.Count > 0
+        ? Model.RecentEncounters[0]
+        : null;
+    var otherEncounters = Model.RecentEncounters != null && Model.RecentEncounters.Count > 1
+        ? Model.RecentEncounters.Skip(1).Take(4).ToList()
+        : new System.Collections.Generic.List<ChequeAR.Api.Models.RecentEncounter>();
 }
 
 <header class="cq-page-header">
@@ -13,49 +23,139 @@
     </div>
 </header>
 
-@* Acciones rápidas *@
-<div class="cq-grid cq-grid--3 mb-4">
-    <a href="@Url.Action("Search", "Encounters")" class="cq-card cq-card--interactive text-decoration-none">
-        <div class="d-flex align-items-center gap-3">
-            <i class="bi bi-clipboard2-pulse fs-3 text-primary"></i>
-            <div>
-                <h3 class="cq-card__title">@Cq.T("home.action.load.title")</h3>
-                <p class="cq-card__desc">@Cq.T("home.action.load.desc")</p>
+@* Bloques demostrativos — reemplazan los 3 botones "ir a X" por cards con
+   información real (o empty state si no hay data) y un dropdown para navegar
+   entre subitems. Feedback: la home antes era un menú duplicado del sidebar. *@
+<div class="row g-3 mb-4 cq-home-grid">
+
+    @* --------- Reportes (ancho doble: gráfico real del primer saved report) --------- *@
+    <div class="col-lg-6">
+    <div class="cq-demo-card">
+        <div class="cq-demo-card__header">
+            <h3 class="cq-demo-card__title"><i class="bi bi-bar-chart-line"></i> Reportes</h3>
+            <select class="form-select form-select-sm" id="reportPicker" aria-label="Elegir reporte" hidden></select>
+        </div>
+        <div class="cq-demo-card__body" id="reportCardBody" style="justify-content:center; align-items:center;">
+            <div id="reportLoading" class="cq-text-sm cq-text-muted" style="display:flex; align-items:center; gap:8px;">
+                <span class="spinner-border spinner-border-sm"></span> Cargando…
+            </div>
+            <div id="reportEmpty" class="cq-empty" hidden>
+                <div class="cq-empty__icon"><i class="bi bi-bar-chart"></i></div>
+                <div class="cq-empty__title">No hay reportes aún</div>
+                <div class="cq-empty__desc cq-text-xs cq-text-muted">Guardá una consulta desde Reportes para verla acá.</div>
+            </div>
+            <svg id="reportChart" hidden style="width:100%; height:180px;" viewBox="0 0 300 180" role="img" aria-label="Gráfico del reporte seleccionado"></svg>
+        </div>
+        <div class="cq-demo-card__foot">
+            <span id="reportCaption" class="cq-text-sm cq-text-muted"></span>
+            <a href="@Url.Action("Index", "Reports")" class="btn btn-sm btn-tertiary">Abrir reportes →</a>
+        </div>
+    </div>
+    </div>
+
+    @* --------- Ficha reciente --------- *@
+    <div class="col-lg-3">
+    <div class="cq-demo-card">
+        <div class="cq-demo-card__header">
+            <h3 class="cq-demo-card__title"><i class="bi bi-clipboard2-pulse"></i> Ficha reciente</h3>
+            @if (otherEncounters.Count > 0)
+            {
+                <select class="form-select form-select-sm" id="encounterPicker" aria-label="Elegir ficha">
+                    <option value="@lastEncounter.OpenUrl">Última (@lastEncounter.PatientName)</option>
+                    @foreach (var e in otherEncounters)
+                    {
+                        <option value="@e.OpenUrl">@e.PatientName · @e.QuestionnaireTitle</option>
+                    }
+                </select>
+            }
+        </div>
+        <div class="cq-demo-card__body" style="align-items:stretch; justify-content:flex-start; flex-direction:column; gap:8px;">
+            @if (lastEncounter == null)
+            {
+                <div class="cq-empty" style="padding:24px 0;">
+                    <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
+                    <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
+                </div>
+            }
+            else
+            {
+                <div>
+                    <div class="cq-text-xs cq-text-muted text-uppercase" style="letter-spacing:.05em;">Paciente</div>
+                    <div class="fw-semibold" style="font-size:15px;">@lastEncounter.PatientName</div>
+                </div>
+                <div>
+                    <div class="cq-text-xs cq-text-muted text-uppercase" style="letter-spacing:.05em;">Cuestionario</div>
+                    <div>@lastEncounter.QuestionnaireTitle</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <span class="cq-chip cq-chip--@lastEncounter.SpecialtyCode">@lastEncounter.SpecialtyLabel</span>
+                    @if (lastEncounter.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
+                    else if (lastEncounter.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
+                    else { <span class="cq-badge cq-badge--archived">@lastEncounter.Status</span> }
+                    <span class="cq-text-xs cq-text-muted ms-auto">@lastEncounter.UpdatedAt</span>
+                </div>
+            }
+        </div>
+        <div class="cq-demo-card__foot">
+            <a href="@Url.Action("Index", "Encounters")" class="btn btn-sm btn-tertiary">Buscar paciente</a>
+            @if (lastEncounter != null)
+            {
+                <a href="@lastEncounter.OpenUrl" class="btn btn-sm btn-primary">Abrir ficha →</a>
+            }
+        </div>
+    </div>
+    </div>
+
+    @* --------- Cuestionarios --------- *@
+    <div class="col-lg-3">
+    <div class="cq-demo-card">
+        <div class="cq-demo-card__header">
+            <h3 class="cq-demo-card__title"><i class="bi bi-journal-text"></i> Cuestionarios</h3>
+        </div>
+        <div class="cq-demo-card__body" style="align-items:stretch; justify-content:flex-start; flex-direction:column; gap:6px;">
+            @* No cargamos aca la lista real para no meter otro repositorio en el HomeController.
+               Ofrecemos accesos a los estados mas usados como una cheat sheet demostrativa. *@
+            <a href="@Url.Action("Index", "Questionnaires", new { status = "published" })" class="d-flex align-items-center gap-2 p-2 rounded text-decoration-none cq-text-sm" style="border:1px solid var(--cq-neutral-200);">
+                <i class="bi bi-check-circle text-success"></i>
+                <span class="flex-fill" style="color:var(--cq-neutral-900);">Publicados</span>
+                <i class="bi bi-arrow-right text-muted"></i>
+            </a>
+            <a href="@Url.Action("Index", "Questionnaires", new { status = "draft" })" class="d-flex align-items-center gap-2 p-2 rounded text-decoration-none cq-text-sm" style="border:1px solid var(--cq-neutral-200);">
+                <i class="bi bi-pencil-square text-warning"></i>
+                <span class="flex-fill" style="color:var(--cq-neutral-900);">Borradores</span>
+                <i class="bi bi-arrow-right text-muted"></i>
+            </a>
+            <a href="@Url.Action("Index", "Questionnaires", new { status = "archived" })" class="d-flex align-items-center gap-2 p-2 rounded text-decoration-none cq-text-sm" style="border:1px solid var(--cq-neutral-200);">
+                <i class="bi bi-archive text-muted"></i>
+                <span class="flex-fill" style="color:var(--cq-neutral-900);">Archivados</span>
+                <i class="bi bi-arrow-right text-muted"></i>
+            </a>
+        </div>
+        <div class="cq-demo-card__foot">
+            <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-sm btn-tertiary">Ver todos</a>
+            <div class="d-flex align-items-center gap-2">
+                <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
+                <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Podés editarlo cuantas veces quieras y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
             </div>
         </div>
-    </a>
-    <a href="@Url.Action("Index", "Questionnaires")" class="cq-card cq-card--interactive text-decoration-none">
-        <div class="d-flex align-items-center gap-3">
-            <i class="bi bi-journal-text fs-3 text-primary"></i>
-            <div>
-                <h3 class="cq-card__title">@Cq.T("home.action.questionnaires.title")</h3>
-                <p class="cq-card__desc">@Cq.T("home.action.questionnaires.desc")</p>
-            </div>
-        </div>
-    </a>
-    <a href="@Url.Action("Index", "Reports")" class="cq-card cq-card--interactive text-decoration-none">
-        <div class="d-flex align-items-center gap-3">
-            <i class="bi bi-bar-chart-line fs-3 text-primary"></i>
-            <div>
-                <h3 class="cq-card__title">@Cq.T("home.action.reports.title")</h3>
-                <p class="cq-card__desc">@Cq.T("home.action.reports.desc")</p>
-            </div>
-        </div>
-    </a>
+    </div>
+    </div>
+
 </div>
 
-@* Recientes *@
+@* Recientes (tabla) — se mantiene para dar detalle abajo del hero de cards *@
 <div class="d-flex align-items-center justify-content-between mb-2">
     <h2 class="m-0">@Cq.T("home.recent.title")</h2>
 </div>
 
 @if (Model.RecentEncounters == null || Model.RecentEncounters.Count == 0)
 {
-    <div class="cq-card">
+    <div class="cq-card cq-card--stretch">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
             <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
-            <a href="@Url.Action("Search", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("home.empty.cta")</a>
+            <div class="cq-empty__desc">@Cq.T("home.empty.desc")</div>
+            <a href="@Url.Action("Index", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("home.empty.cta")</a>
         </div>
     </div>
 }
@@ -93,7 +193,7 @@ else
                         }
                         else
                         {
-                            <a href="@enc.OpenUrl" class="btn btn-sm btn-outline-primary">@Cq.T("common.open") →</a>
+                            <a href="@enc.OpenUrl" class="btn btn-sm btn-tertiary">@Cq.T("common.open") →</a>
                         }
                     </td>
                 </tr>
@@ -123,4 +223,193 @@ else
             <div class="cq-kpi__value">@Model.Kpis.Specialties</div>
         </div>
     </div>
+}
+
+@section scripts {
+<script>
+    // Picker de fichas: navega al link ya calculado por el controller.
+    document.addEventListener("change", function (e) {
+        if (e.target.id === "encounterPicker") {
+            var u = e.target.value;
+            if (u) window.location.href = u;
+        }
+    });
+
+    // --- Card de Reportes: lista los reportes guardados del usuario, muestra
+    // el primero por default como gráfico y permite cambiar de reporte. Si no
+    // hay reportes, o el seleccionado no devuelve categorías, mostramos empty.
+    (function () {
+        var picker  = document.getElementById("reportPicker");
+        var loading = document.getElementById("reportLoading");
+        var empty   = document.getElementById("reportEmpty");
+        var chart   = document.getElementById("reportChart");
+        var caption = document.getElementById("reportCaption");
+        if (!picker) return;
+
+        function authHeaders() {
+            var h = { "Content-Type": "application/json" };
+            var m = document.querySelector('meta[name="cq-token"]');
+            if (m) h["Authorization"] = "Bearer " + m.getAttribute("content");
+            return h;
+        }
+
+        // [hidden] tiene prioridad sobre display:flex/none inline, así que no hace
+        // falta pelearse con !important de las clases utility de Bootstrap.
+        function showEmpty(msg) {
+            loading.hidden = true;
+            chart.hidden = true;
+            empty.hidden = false;
+            if (msg) empty.querySelector(".cq-empty__title").textContent = msg;
+        }
+        function showLoading() {
+            empty.hidden = true;
+            chart.hidden = true;
+            loading.hidden = false;
+        }
+        function showChart() {
+            empty.hidden = true;
+            loading.hidden = true;
+            chart.hidden = false;
+        }
+
+        // Dibuja barras verticales con etiquetas cortas. `data` = [{label, value}, ...].
+        // Los elementos SVG se crean con createElementNS: si se hace innerHTML sobre
+        // un <svg>, algunos navegadores no aplican bien el namespace y los <rect>
+        // no rendean (aparecen en el DOM pero no se ven), que es lo que estaba pasando.
+        function renderChart(data) {
+            var SVG_NS = "http://www.w3.org/2000/svg";
+            var pad = { l: 32, r: 12, t: 12, b: 40 };
+            var w = 300, h = 180;
+            var innerW = w - pad.l - pad.r, innerH = h - pad.t - pad.b;
+            var max = 0;
+            data.forEach(function (d) { if (d.value > max) max = d.value; });
+            if (max === 0) max = 1;
+            var barW = Math.min(40, Math.max(8, innerW / data.length - 8));
+            var gap = (innerW - barW * data.length) / (data.length + 1);
+
+            function el(name, attrs, textContent) {
+                var e = document.createElementNS(SVG_NS, name);
+                Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+                if (textContent != null) e.textContent = textContent;
+                return e;
+            }
+            // Limpio y armo desde cero.
+            while (chart.firstChild) chart.removeChild(chart.firstChild);
+
+            chart.appendChild(el("line", { x1: pad.l, y1: pad.t + innerH, x2: pad.l + innerW, y2: pad.t + innerH, stroke: "#cbd5e1", "stroke-width": 1 }));
+            chart.appendChild(el("line", { x1: pad.l, y1: pad.t, x2: pad.l, y2: pad.t + innerH, stroke: "#cbd5e1", "stroke-width": 1 }));
+
+            data.forEach(function (d, i) {
+                var x = pad.l + gap + i * (barW + gap);
+                var barH = Math.max(2, Math.round((d.value / max) * innerH));
+                var y = pad.t + innerH - barH;
+                var color = i % 2 === 0 ? "#6f5fa5" : "#9283be";
+                var rect = el("rect", { x: x, y: y, width: barW, height: barH, rx: 3, fill: color });
+                rect.appendChild(el("title", {}, d.label + ": " + d.value));
+                chart.appendChild(rect);
+                var label = d.label.length > 10 ? d.label.slice(0, 9) + "…" : d.label;
+                chart.appendChild(el("text", { x: x + barW / 2, y: pad.t + innerH + 14, "text-anchor": "middle", "font-size": 10, fill: "#334155" }, label));
+                chart.appendChild(el("text", { x: x + barW / 2, y: y - 3, "text-anchor": "middle", "font-size": 10, "font-weight": 600, fill: "#1e293b" }, String(d.value)));
+            });
+            showChart();
+        }
+
+        function loadReportStats(rep) {
+            showLoading();
+            var title = rep.Name || rep.name || "Reporte";
+            caption.textContent = title;
+            var q = {};
+            try { q = JSON.parse(rep.QueryJson || rep.queryJson || "{}"); } catch (e) { q = {}; }
+            if (!q.questionnaireId) q.questionnaireId = rep.QuestionnaireId || rep.questionnaireId;
+            if (!q.questionnaireId) { showEmpty("Reporte sin cuestionario asociado"); return; }
+            fetch("/api/reports/stats", { method: "POST", headers: authHeaders(), body: JSON.stringify(q) })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (data) {
+                    if (!data || !data.Questions || !data.Questions.length) { showEmpty("No hay datos para este reporte"); return; }
+                    // Buscamos la primera pregunta con datos graficables: prioridad a la
+                    // Distribution (choice/openChoice), y como fallback el Histogram
+                    // (integer/decimal/scale) — con estos últimos se pueden armar barras
+                    // por rango de valores igual.
+                    var found = null;
+                    for (var i = 0; i < data.Questions.length; i++) {
+                        var q2 = data.Questions[i];
+                        if (q2.Distribution && q2.Distribution.length) { found = { q: q2, kind: "dist" }; break; }
+                        if (q2.Histogram && q2.Histogram.length && !found) { found = { q: q2, kind: "hist" }; }
+                    }
+                    if (!found) { showEmpty("No hay datos para este reporte"); return; }
+                    var bars;
+                    if (found.kind === "dist") {
+                        bars = found.q.Distribution.slice(0, 6).map(function (d) {
+                            return { label: String(d.Value || "—"), value: Number(d.Count || 0) };
+                        });
+                    } else {
+                        bars = found.q.Histogram.slice(0, 6).map(function (b) {
+                            var label = (b.From === b.To) ? String(b.From) : (b.From + "–" + b.To);
+                            return { label: label, value: Number(b.Count || 0) };
+                        });
+                    }
+                    caption.textContent = (rep.Name || rep.name || "Reporte") + " · " + (found.q.Text || found.q.LinkId || "");
+                    renderChart(bars);
+                })
+                .catch(function () { showEmpty("No se pudo cargar el reporte"); });
+        }
+
+        function onPickerChange() {
+            var id = picker.value;
+            if (!id) { showEmpty("No hay reportes aún"); return; }
+            var rep = picker._reports[id];
+            if (rep) loadReportStats(rep);
+        }
+
+        // Bootstrap: traigo la lista y armo el picker.
+        fetch("/api/reports/saved", { headers: authHeaders() })
+            .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+            .then(function (data) {
+                var results = (data && data.results) || [];
+                picker.innerHTML = "";
+                picker._reports = {};
+                // El wrapper del enhancer (cq-select) es el elemento visible; el
+                // <select> original queda oculto por CSS. Escondemos/mostramos el
+                // wrapper si existe, si no el propio <select>.
+                function toggleWrap(hide) {
+                    var wrap = picker.closest(".cq-select");
+                    if (wrap) wrap.hidden = hide;
+                    else picker.hidden = hide;
+                }
+                if (!results.length) {
+                    // Sin reportes: escondemos el picker (no tiene sentido un dropdown
+                    // vacío) y dejamos sólo el empty state centrado.
+                    toggleWrap(true);
+                    caption.textContent = "";
+                    showEmpty("No hay reportes aún");
+                    return;
+                }
+                results.forEach(function (rep) {
+                    var id = rep.Id || rep.id;
+                    picker._reports[id] = rep;
+                    var opt = document.createElement("option");
+                    opt.value = id;
+                    opt.textContent = rep.Name || rep.name || "Sin título";
+                    picker.appendChild(opt);
+                });
+                picker.addEventListener("change", onPickerChange);
+                var firstId = results[0].Id || results[0].id;
+                picker.value = firstId;
+                // Recién ahora que hay <option>s reconstruimos el menú del wrapper
+                // que el enhancer armó vacío al DOMContentLoaded (o enhance-amos
+                // si por alguna razón todavía no está wrappeado).
+                picker.hidden = false;
+                if (window.cqRebuildSelect) window.cqRebuildSelect(picker);
+                else if (window.cqEnhanceSelects) window.cqEnhanceSelects();
+                toggleWrap(false);
+                loadReportStats(results[0]);
+            })
+            .catch(function () {
+                var wrap = picker.closest(".cq-select");
+                if (wrap) wrap.hidden = true; else picker.hidden = true;
+                caption.textContent = "";
+                showEmpty("No se pudo cargar la lista de reportes");
+            });
+    })();
+</script>
 }

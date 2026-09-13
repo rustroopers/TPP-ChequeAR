@@ -208,7 +208,7 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
 
-            var series = await _sut.GetTrendAsync("PAC-1", id, new string[0]);
+            var series = await _sut.GetTrendAsync("PAC-1", id, Array.Empty<string>());
 
             Assert.Empty(series);
             _trends.Verify(t => t.GetSeriesAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IEnumerable<string>>()), Times.Never);
