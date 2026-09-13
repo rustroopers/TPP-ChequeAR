@@ -127,14 +127,24 @@
         // Popovers de ayuda: se disparan sólo desde el botón "?" y aceptan tanto
         // hover como click (el hover ayuda a exploradores; el click garantiza
         // acceso desde touch/teclado).
+        // NO combinar 'click' con 'hover'/'focus' en el trigger de Bootstrap: es
+        // un bug conocido que deja el popover "pegado" sin cerrarse (el toggle
+        // interno de click y el show/hide de hover/focus pisan el mismo estado).
+        // 'focus' solo ya cubre click (el botón recibe foco al clickearlo) y
+        // cierra al perder el foco (click afuera, Tab, Esc); el hover se agrega
+        // a mano solo para mostrar, sin interferir con ese cierre.
         document.addEventListener("DOMContentLoaded", function () {
             if (!window.bootstrap || !bootstrap.Popover) return;
             var els = document.querySelectorAll('[data-bs-toggle="popover"]');
             Array.prototype.forEach.call(els, function (el) {
-                new bootstrap.Popover(el, {
-                    trigger: 'hover focus click',
+                var popover = new bootstrap.Popover(el, {
+                    trigger: 'focus',
                     html: false,
                     container: 'body'
+                });
+                el.addEventListener("mouseenter", function () { popover.show(); });
+                el.addEventListener("mouseleave", function () {
+                    if (document.activeElement !== el) popover.hide();
                 });
             });
         });

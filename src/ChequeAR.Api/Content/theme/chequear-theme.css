@@ -457,6 +457,16 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   color: var(--cq-primary-600);
 }
 .cq-select .cq-select__opt > i { color: var(--cq-primary); width: 18px; text-align: center; }
+/* El <span> del texto es hijo de un flex item: sin min-width:0 no puede
+   encogerse por debajo de su contenido y el texto largo (p. ej. "Paciente ·
+   Cuestionario") se sale del menú en vez de truncarse. */
+.cq-select .cq-select__opt > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* El <select> nativo original queda dentro del wrapper como storage para el
    form submit / la API de JS existente. Se lo oculta completamente pero SIN

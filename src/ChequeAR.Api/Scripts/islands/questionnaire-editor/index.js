@@ -1060,8 +1060,10 @@
                     });
                 }).then(function () {
                     dirty.value = false;
-                    // Recargar: versión, estado y "cambios sin publicar" los calcula el server.
-                    window.location.reload();
+                    // Publicar es un punto final del flujo de edición: volver al listado en
+                    // vez de recargar el editor, que es donde se ve el resultado (versión,
+                    // estado) sobre todos los cuestionarios, no sólo este.
+                    window.location.href = '/Questionnaires';
                 }).catch(function (err) {
                     toast('No se pudo publicar: ' + err.message, 'error');
                     publishing.value = false;
@@ -1242,7 +1244,6 @@
                 <label class="form-label cq-text-sm">Título del cuestionario <span style="color:var(--cq-danger);">*</span></label>\
                 <input v-model="qTitle" class="form-control" :class="{ \'is-invalid\': isNew && !qTitle.trim() }" placeholder="Ej: Cardio basal" required />\
                 <p v-if="isNew && !qTitle.trim()" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">Obligatorio: cargá un título para poder continuar.</p>\
-                <p v-else class="cq-text-xs cq-text-muted mt-1 mb-0">Se muestra tal cual en el listado y en la ficha del paciente.</p>\
             </div>\
             <div class="col-md-4">\
                 <label class="form-label cq-text-sm">Especialidad</label>\
