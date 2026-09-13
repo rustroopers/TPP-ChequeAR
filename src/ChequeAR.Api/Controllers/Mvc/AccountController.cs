@@ -1,10 +1,15 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
+using System.Configuration;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
 using System.Web.Security;
+using ChequeAR.Api.Auth;
+using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
@@ -44,7 +49,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     return View("Login");
                 }
 
-                FormsAuthentication.SetAuthCookie(info.Id ?? username, remember);
+                // SetAuthCookie guardaria solo el nombre y perderia info.Roles, que es
+                // justo lo que necesita SessionToken para firmar el bearer de las islas.
+                SessionCookie.Issue(HttpContext, info, remember);
 
                 if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
                 {
@@ -52,15 +59,27 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return RedirectToAction("Index", "Home");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                // En dev sin endpoint del hospital: aceptamos cualquier credencial para demo.
-                if (System.Web.HttpContext.Current.IsDebuggingEnabled)
+                // Fallback de demo cuando el hospital no está disponible: requiere debug=true
+                // (Web.config) Y un opt-in explícito por entorno (Auth:AllowDebugLoginFallback en
+                // Web.Secrets.config, no versionado), para que no baste con un debug="true" suelto
+                // en un ambiente que no sea la máquina de un dev.
+                var allowDebugFallback = string.Equals(
+                    ConfigurationManager.AppSettings["Auth:AllowDebugLoginFallback"], "true",
+                    StringComparison.OrdinalIgnoreCase);
+                if (System.Web.HttpContext.Current.IsDebuggingEnabled && allowDebugFallback)
                 {
-                    FormsAuthentication.SetAuthCookie(username, remember);
+                    SessionCookie.Issue(HttpContext, new UserInfo
+                    {
+                        Id = username,
+                        DisplayName = username,
+                        Roles = new List<string> { Role.Medico },
+                        Specialties = new List<string>()
+                    }, remember);
                     return RedirectToAction("Index", "Home");
                 }
-                ModelState.AddModelError("", "Error de autenticación: " + ex.Message);
+                ModelState.AddModelError("", "No se pudo iniciar sesión. Intentá nuevamente.");
                 return View("Login");
             }
         }

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
-using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -665,6 +664,85 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("—", answers.Single(a => a.Text == "Altura (cm)").Answer);   // sin responder
         }
 
+        // Al finalizar mandando el baseline de la sesión, además de la foto completa se audita
+        // el diff de lo que cambió en esa última tanda (A→B), igual que "Guardar avance".
+        [Fact]
+        public async Task FinalizeAsync_WithBaseline_AlsoAuditsSessionDiff()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                // Estado final guardado: el peso quedó en 80.
+                Items = { new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "peso", ValueDecimal = 80 } }
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            var fhir = "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+                       "{\"linkId\":\"peso\",\"text\":\"Peso (kg)\",\"type\":\"decimal\"}]}";
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId, fhir));
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
+
+            var captured = CapturingAudit(out var events);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+
+            // Baseline: al abrir la sesión el peso era 70; se finaliza con 80 -> diff 70→80.
+            var baseline = new List<QuestionnaireResponseItem>
+            {
+                new QuestionnaireResponseItem { LinkId = "peso", ValueDecimal = 70 }
+            };
+            await sut.FinalizeAsync(id, "u", token, baseline);
+            await captured.FlushAsync();
+
+            var save = events.Single(e => (e.EntityRef ?? "").Contains("$save"));
+            var changes = Newtonsoft.Json.JsonConvert.DeserializeObject<List<ResponseFieldChange>>(save.FhirJson);
+            var peso = changes.Single(c => c.LinkId == "peso");
+            Assert.Equal("70", peso.Before);
+            Assert.Equal("80", peso.After);
+            // Y además queda el evento de finalización con la foto completa.
+            Assert.Contains(events, e => (e.EntityRef ?? "").Contains("$finalize"));
+        }
+
+        // Finalizar sin baseline (fichas viejas / cliente que no lo manda): sólo la foto
+        // completa, sin evento de diff de sesión.
+        [Fact]
+        public async Task FinalizeAsync_WithoutBaseline_NoSessionDiff()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var token = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                Status = ResponseStatus.InProgress,
+                LockToken = token,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                Items = { new QuestionnaireResponseItem { Id = Guid.NewGuid(), ResponseId = id, LinkId = "peso", ValueDecimal = 80 } }
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            var fhir = "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+                       "{\"linkId\":\"peso\",\"text\":\"Peso (kg)\",\"type\":\"decimal\"}]}";
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId, fhir));
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
+
+            var captured = CapturingAudit(out var events);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+
+            await sut.FinalizeAsync(id, "u", token);   // sin baseline
+            await captured.FlushAsync();
+
+            Assert.DoesNotContain(events, e => (e.EntityRef ?? "").Contains("$save"));
+            Assert.Contains(events, e => (e.EntityRef ?? "").Contains("$finalize"));
+        }
+
         // --- Pasar a la versión vigente (retarget) -------------------------------------
 
         // v1: [edad, rigidez]   v2 (vigente): [edad (enunciado cambiado), score]
@@ -687,7 +765,7 @@ namespace ChequeAR.Tests.Application
             return q;
         }
 
-        private QuestionnaireResponse PinnedToV1(Guid id, Guid questionnaireId, Guid v1Id, Guid lockToken = default)
+        private static QuestionnaireResponse PinnedToV1(Guid id, Guid questionnaireId, Guid v1Id, Guid lockToken = default)
         {
             return new QuestionnaireResponse
             {
@@ -766,8 +844,13 @@ namespace ChequeAR.Tests.Application
             var sink = new List<AuditEvent>();
             events = sink;
             var repo = new Mock<IAuditRepository>();
+            // El batch diferido (flush por timer) para eventos vía Enqueue…
             repo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
                 .Callback<IEnumerable<AuditEvent>>(batch => sink.AddRange(batch))
+                .Returns(Task.CompletedTask);
+            // …y la persistencia inmediata (PersistImmediatelyAsync) para finalizar/guardar avance.
+            repo.Setup(r => r.AddAsync(It.IsAny<AuditEvent>()))
+                .Callback<AuditEvent>(evt => sink.Add(evt))
                 .Returns(Task.CompletedTask);
             return new AuditDispatcher(repo.Object, flushIntervalMs: 600000);
         }

@@ -7,13 +7,13 @@ namespace ChequeAR.Infrastructure.Migrations
     using System.Resources;
     
     [GeneratedCode("EntityFramework.Migrations", "6.5.1")]
-    public sealed partial class DropQuestionnaireCodingJson : IMigrationMetadata
+    public sealed partial class QuestionnaireSnomedCoding : IMigrationMetadata
     {
-        private readonly ResourceManager Resources = new ResourceManager(typeof(DropQuestionnaireCodingJson));
+        private readonly ResourceManager Resources = new ResourceManager(typeof(QuestionnaireSnomedCoding));
         
         string IMigrationMetadata.Id
         {
-            get { return "202609070041041_DropQuestionnaireCodingJson"; }
+            get { return "202608181304255_QuestionnaireSnomedCoding"; }
         }
         
         string IMigrationMetadata.Source

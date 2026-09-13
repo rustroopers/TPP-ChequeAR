@@ -51,11 +51,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Skip((model.Page - 1) * pageSize)
                     .Take(pageSize));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Entries.Clear();
                 model.Total = 0;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -80,7 +80,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             foreach (var e in items)
             {
                 var av = AuditPresentation.Describe(e.EntityRef, e.Action);
-                var label = ResourceLabel(av, titles);
+                var label = ResourceLabel(av, titles, e.FhirJson);
                 if (res.Length > 0 && (label ?? string.Empty).IndexOf(res, StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
                 entries.Add(new AuditEntry
@@ -139,10 +139,11 @@ namespace ChequeAR.Api.Controllers.Mvc
             });
 
             var result = new ReportResult { Total = rows.Count, Rows = rows };
+            var dateSuffix = DateTime.Now.ToString("yyyy-MM-dd");
             if ((format ?? "xlsx").ToLowerInvariant() == "csv")
-                return File(new CsvExporter().Export(result), "text/csv", "auditoria.csv");
-            return File(new XlsxExporter().Export(result),
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "auditoria.xlsx");
+                return File(CsvExporter.Export(result), "text/csv", $"auditoria_{dateSuffix}.csv");
+            return File(XlsxExporter.Export(result),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"auditoria_{dateSuffix}.xlsx");
         }
 
         // A7
@@ -172,13 +173,17 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = ResourceLabel(av, titles),
+                    Resource = ResourceLabel(av, titles, e.FhirJson),
                     IP = e.AgentIp
                 };
 
                 // Para una publicación mostramos de qué versión a qué versión pasó y el diff.
                 if (av.Operation == AuditPresentation.Op.Publish && av.ResourceId.HasValue)
                     await FillVersionDiffAsync(detail, av.ResourceId.Value, e.Recorded);
+
+                // Para una consulta guardada mostramos su nombre, alcance y condiciones.
+                if (av.ResourceType == "SavedReport")
+                    await FillReportDetailAsync(detail, e.FhirJson);
 
                 // Para una ficha: al finalizar se guardó la foto COMPLETA (todas las
                 // respuestas); en un guardado de avance, sólo el diff de esa sesión.
@@ -192,9 +197,9 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(detail);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new AuditDetailViewModel { Id = id });
             }
         }
@@ -266,6 +271,52 @@ namespace ChequeAR.Api.Controllers.Mvc
             catch (Newtonsoft.Json.JsonException) { /* payload viejo o ilegible: sin foto */ }
         }
 
+        /// <summary>
+        /// Carga el detalle de una consulta guardada desde la foto del evento: nombre, alcance,
+        /// cuestionario base y las condiciones ya traducidas a texto legible (resolviendo cada
+        /// linkId contra las preguntas del cuestionario). Si la foto no es interpretable, no
+        /// agrega nada: es un extra de presentación, no un dato crítico.
+        /// </summary>
+        private async Task FillReportDetailAsync(AuditDetailViewModel detail, string fhirJson)
+        {
+            var snap = AuditPresentation.ReadSavedReport(fhirJson);
+            if (snap == null) return;
+
+            detail.HasReportDetail = true;
+            detail.ReportName = snap.Name;
+            detail.ReportScope = ScopeLabel(snap.Scope, snap.SpecialtyCode);
+
+            IReadOnlyDictionary<string, string> linkTexts = new Dictionary<string, string>();
+            if (snap.QuestionnaireId != Guid.Empty)
+            {
+                var q = await _questionnaires.GetAsync(snap.QuestionnaireId);
+                if (q != null)
+                {
+                    detail.ReportQuestionnaire = q.Title;
+                    if (q.Questions != null)
+                    {
+                        var map = new Dictionary<string, string>();
+                        foreach (var qq in q.Questions)
+                            if (!string.IsNullOrEmpty(qq.LinkId) && !map.ContainsKey(qq.LinkId))
+                                map[qq.LinkId] = qq.Text;
+                        linkTexts = map;
+                    }
+                }
+            }
+
+            detail.ReportConditions = AuditPresentation.DescribeReportConditions(snap.QueryJson, linkTexts);
+        }
+
+        /// <summary>Alcance legible: privada, o compartida con una especialidad.</summary>
+        private static string ScopeLabel(string scope, string specialtyCode)
+        {
+            if (string.Equals(scope, "specialty", StringComparison.OrdinalIgnoreCase))
+                return string.IsNullOrWhiteSpace(specialtyCode)
+                    ? "Compartida con la especialidad"
+                    : "Compartida con la especialidad " + specialtyCode;
+            return "Privada (sólo el autor)";
+        }
+
         private async Task<IReadOnlyDictionary<Guid, string>> ResolveTitlesAsync(IEnumerable<AuditEvent> events)
         {
             var ids = new List<Guid>();
@@ -279,13 +330,18 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         /// <summary>Recurso legible: título del cuestionario si lo hay; si no, una ref limpia.</summary>
-        private static string ResourceLabel(AuditPresentation.ActionView av, IReadOnlyDictionary<Guid, string> titles)
+        private static string ResourceLabel(AuditPresentation.ActionView av, IReadOnlyDictionary<Guid, string> titles, string fhirJson = null)
         {
             if (av.ResourceType == "Questionnaire" && av.ResourceId.HasValue
                 && titles.TryGetValue(av.ResourceId.Value, out var title)
                 && !string.IsNullOrWhiteSpace(title))
                 return title;
 
+            if (av.ResourceType == "SavedReport")
+            {
+                var snap = AuditPresentation.ReadSavedReport(fhirJson);
+                return !string.IsNullOrWhiteSpace(snap?.Name) ? snap.Name : "Reporte guardado";
+            }
             if (av.ResourceType == "QuestionnaireResponse") return "Respuesta de cuestionario";
             if (av.ResourceType == "Report") return "Exportación de reporte";
             if (!string.IsNullOrWhiteSpace(av.ResourceType)) return av.ResourceType;

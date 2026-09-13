@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
@@ -39,6 +40,37 @@ namespace ChequeAR.Tests.Application
             _repo.Verify(r => r.AddAsync(It.IsAny<Questionnaire>()), Times.Once);
         }
 
+        // Candidatos para "importar preguntas": misma especialidad, excluye archivados y el propio.
+        [Fact]
+        public async Task GetImportCandidates_ExcluyeArchivadosYElPropio()
+        {
+            var self = Guid.NewGuid();
+            var draft = new Questionnaire { Id = Guid.NewGuid(), Title = "Borrador", Status = QuestionnaireStatus.Draft, SpecialtyCode = "reuma" };
+            var active = new Questionnaire { Id = Guid.NewGuid(), Title = "Publicado", Status = QuestionnaireStatus.Active, SpecialtyCode = "reuma" };
+            var retired = new Questionnaire { Id = Guid.NewGuid(), Title = "Archivado", Status = QuestionnaireStatus.Retired, SpecialtyCode = "reuma" };
+            var itself = new Questionnaire { Id = self, Title = "El que edito", Status = QuestionnaireStatus.Draft, SpecialtyCode = "reuma" };
+            _repo.Setup(r => r.SearchAsync(null, null, "reuma", 0, 200))
+                 .ReturnsAsync((IReadOnlyList<Questionnaire>)new[] { draft, active, retired, itself }.ToList());
+
+            var result = await _sut.GetImportCandidatesAsync("reuma", self);
+
+            Assert.Equal(new[] { draft.Id, active.Id }, result.Select(q => q.Id));
+        }
+
+        // Sin excludeId (cuestionario nuevo todavía sin id real) igual filtra los archivados.
+        [Fact]
+        public async Task GetImportCandidates_SinExcludeId_SoloFiltraArchivados()
+        {
+            var active = new Questionnaire { Id = Guid.NewGuid(), Status = QuestionnaireStatus.Active, SpecialtyCode = "cardio" };
+            var retired = new Questionnaire { Id = Guid.NewGuid(), Status = QuestionnaireStatus.Retired, SpecialtyCode = "cardio" };
+            _repo.Setup(r => r.SearchAsync(null, null, "cardio", 0, 200))
+                 .ReturnsAsync((IReadOnlyList<Questionnaire>)new[] { active, retired }.ToList());
+
+            var result = await _sut.GetImportCandidatesAsync("cardio", null);
+
+            Assert.Equal(new[] { active.Id }, result.Select(q => q.Id));
+        }
+
         // Editar un cuestionario que no existe debe fallar (no se puede actualizar la nada).
         [Fact]
         public async Task UpdateAsync_NotFound_Throws()
@@ -75,6 +107,40 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("desc", updated.Description);   // unchanged because patch was null
             Assert.Equal("REU", updated.SpecialtyCode);
             _repo.Verify(r => r.UpdateAsync(existing), Times.Once);
+        }
+
+        // La codificación clínica del cuestionario se persiste igual que el resto: viene en el
+        // patch y queda guardada.
+        [Fact]
+        public async Task UpdateAsync_PersistsQuestionnaireCoding()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire { Id = id, Title = "old", Status = QuestionnaireStatus.Draft };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var coding = "{\"system\":\"http://snomed.info/sct\",\"code\":\"302760001\",\"term\":\"control\"}";
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "old", CodingJson = coding }, "u");
+
+            Assert.Equal(coding, updated.CodingJson);
+        }
+
+        // A diferencia de título/descripción, la codificación es OPCIONAL y tiene que poder
+        // QUITARSE: un patch sin código ni término (null) la borra, no la conserva. Es la
+        // paridad con la codificación por pregunta, donde quitarla también es posible.
+        [Fact]
+        public async Task UpdateAsync_NullCoding_ClearsExistingCoding()
+        {
+            var id = Guid.NewGuid();
+            var existing = new Questionnaire
+            {
+                Id = id, Title = "old", Status = QuestionnaireStatus.Draft,
+                CodingJson = "{\"code\":\"302760001\"}"
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "old", CodingJson = null }, "u");
+
+            Assert.Null(updated.CodingJson);
         }
 
         // Publicar un cuestionario inexistente debe fallar.
@@ -371,6 +437,7 @@ namespace ChequeAR.Tests.Application
                 Id = id,
                 Title = "Original",
                 SpecialtyCode = "REU",
+                CodingJson = "{\"system\":\"http://snomed.info/sct\",\"code\":\"302760001\",\"term\":\"control\"}",
                 Status = QuestionnaireStatus.Active,
                 CurrentVersionId = Guid.NewGuid()
             };
@@ -397,6 +464,8 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(QuestionnaireStatus.Draft, copy.Status);
             Assert.Null(copy.CurrentVersionId);
             Assert.Empty(copy.Versions);
+            // La codificación del cuestionario también se clona: un clon comparte qué mide.
+            Assert.Equal(source.CodingJson, copy.CodingJson);
 
             var clonedQuestion = copy.Groups.Single().Questions.Single();
             Assert.Equal("edad", clonedQuestion.LinkId);          // linkId se conserva

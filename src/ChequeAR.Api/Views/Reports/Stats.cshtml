@@ -35,14 +35,14 @@ else if (string.IsNullOrEmpty(Model.QueryJson))
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-graph-up"></i></div>
             <div class="cq-empty__title">No hay ningún reporte que analizar</div>
-            <div class="cq-empty__desc">Las estadísticas se calculan sobre un grupo de fichas. Armá un reporte y pedí las estadísticas desde ahí.</div>
+            <div class="cq-empty__desc">Las estadísticas se calculan sobre un grupo de fichas. Arme un reporte y pida las estadísticas desde ahí.</div>
             <a href="@Url.Action("Build")" class="btn btn-primary">Nuevo reporte</a>
         </div>
     </div>
 }
 else
 {
-    <div data-vue-island="report-stats" data-props='@Html.Raw("{\"autoQuery\":" + Model.QueryJson + "}")'>
+    <div data-vue-island="report-stats" data-props='@Html.Raw("{\"autoQuery\":" + Model.QueryJson + ",\"reportName\":" + Newtonsoft.Json.JsonConvert.ToString(Model.ReportName ?? "") + "}")'>
         <div class="cq-card">
             <div class="cq-loading">
                 <div class="cq-spinner cq-spinner--lg"></div>

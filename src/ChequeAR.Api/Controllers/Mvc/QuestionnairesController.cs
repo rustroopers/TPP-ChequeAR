@@ -12,7 +12,7 @@ using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
+    [Authorize]
     public class QuestionnairesController : Controller
     {
         
@@ -64,11 +64,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Items.Clear();
                 model.Total = 0;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -86,7 +86,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             var editorId = id ?? Guid.NewGuid();
             var isNew = !id.HasValue;
-            var title = "Nuevo cuestionario";
+            var title = "";
             var specialty = "general";
             // Número de la versión PUBLICADA (0 = nunca se publicó), no el de la próxima:
             // el editor tiene que decir cuál es la que están usando los clínicos.
@@ -95,6 +95,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             var pendingChanges = false;
             var concurrencyVersion = 0;
             var groups = new List<QuestionGroupView>();
+            // Codificación clínica del cuestionario completo (opcional). Mismo contrato que la
+            // de cada pregunta: se lo desarma en la capa de negocio y acá sólo se pasa al editor.
+            string code = null, codeDisplay = null, term = null;
 
             if (id.HasValue)
             {
@@ -112,13 +115,21 @@ namespace ChequeAR.Api.Controllers.Mvc
                         // El editor se hidrata con la estructura real desde el server; antes
                         // arrancaba con datos de ejemplo hardcodeados y pisaba lo guardado.
                         groups = BuildEditorGroups(q);
+
+                        var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
+                        if (coding != null)
+                        {
+                            code = coding.Code;
+                            codeDisplay = coding.Display;
+                            term = coding.Term;
+                        }
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     title = null;
                     publishedVersion = 0;
-                    ViewBag.DataError = ex.Message;
+                    ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 }
             }
 
@@ -132,9 +143,52 @@ namespace ChequeAR.Api.Controllers.Mvc
             // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
             // status manda: el editor no autoguarda un cuestionario publicado.
             ViewBag.EditorProps = JsonConvert.SerializeObject(
-                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges },
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges, code, codeDisplay, term },
                 new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
+        }
+
+        // Modelo interno del editor (secciones → preguntas) para la versión ACTUAL en base,
+        // en el MISMO formato que props.groups. Lo consume el merge de conflictos del editor
+        // para traer "la versión de la otra persona" y compararla, sin reparsear FHIR en el
+        // cliente. Es de sólo lectura y reutiliza el mismo armado que hidrata el editor.
+        public async Task<ActionResult> EditorModel(Guid id)
+        {
+            var q = await _svc.GetAsync(id);
+            if (q == null) return HttpNotFound();
+            var payload = new { concurrencyVersion = q.ConcurrencyVersion, groups = BuildEditorGroups(q) };
+            return Content(
+                JsonConvert.SerializeObject(payload,
+                    new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
+                "application/json");
+        }
+
+        // Candidatos para "importar preguntas" en el editor: cuestionarios de la MISMA
+        // especialidad (no archivados, distinto del actual). Devuelve JSON liviano —sin las
+        // preguntas, para no disparar N+1—; la estructura completa se trae recién al elegir uno,
+        // reutilizando EditorModel. La lógica de filtrado vive en el service (testeable).
+        public async Task<ActionResult> ImportCandidates(string specialty, Guid? excludeId = null)
+        {
+            try
+            {
+                var candidatos = await _svc.GetImportCandidatesAsync(specialty, excludeId);
+                var payload = candidatos.Select(q => new
+                {
+                    id = q.Id,
+                    title = q.Title,
+                    status = QuestionnaireStatusMap.ToUi(q.Status),
+                    specialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay),
+                    version = q.Versions?.Count ?? 0
+                }).ToList();
+                return Content(
+                    JsonConvert.SerializeObject(payload,
+                        new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
+                    "application/json");
+            }
+            catch (Exception)
+            {
+                return new HttpStatusCodeResult(500, "Ocurrió un error al procesar la solicitud.");
+            }
         }
 
         // Versión viva: la que apunta CurrentVersionId. Si por lo que sea quedó colgado,
@@ -255,9 +309,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 model.Groups.AddRange(BuildEditorGroups(q));
                 return View(model);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new QuestionnaireDetailViewModel { Id = id });
             }
         }
@@ -290,10 +344,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     }).ToList();
                 return View(list);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 ViewBag.QuestionnaireTitle = null;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new List<QuestionnaireVersionView>());
             }
         }
@@ -308,9 +362,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "Cuestionario publicado.";
                 TempData["ToastLevel"] = "success";
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                TempData["Toast"] = "No se pudo publicar: " + ex.Message;
+                TempData["Toast"] = "No se pudo publicar el cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");
@@ -326,9 +380,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "Cuestionario archivado.";
                 TempData["ToastLevel"] = "success";
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                TempData["Toast"] = "No se pudo archivar: " + ex.Message;
+                TempData["Toast"] = "No se pudo archivar el cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");

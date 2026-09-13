@@ -1,0 +1,9 @@
+root = true
+
+[*.cs]
+# CA1720 (identificador coincide con un nombre de tipo) dispara sobre vocabulario de dominio
+# deliberado y muy usado (QuestionType.String/Integer/Decimal, QueryParameterType.Int32/Decimal,
+# QueryParameter.Int(...)). Renombrarlos tocaria decenas de call sites y, peor, valores que ya
+# viajan serializados a FHIR/DB - el costo de "arreglarlo" supera lejos lo que la regla previene
+# en este contexto.
+dotnet_diagnostic.CA1720.severity = none

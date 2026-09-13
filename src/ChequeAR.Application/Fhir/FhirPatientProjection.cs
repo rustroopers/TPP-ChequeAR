@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using Hl7.Fhir.Model;
@@ -65,7 +66,7 @@ namespace ChequeAR.Application.Fhir
                 },
                 ActualPeriod = new Period
                 {
-                    Start = r.AuthoredAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+                    Start = r.AuthoredAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)
                 }
             };
         }

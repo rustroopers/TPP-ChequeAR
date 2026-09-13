@@ -8,7 +8,9 @@ namespace ChequeAR.Application.Exporters
 {
     public class CsvExporter
     {
-        public Stream Export(ReportResult result)
+        private static readonly char[] CharsQueRequierenComillas = { ';', '"', '\n', '\r' };
+
+        public static Stream Export(ReportResult result)
         {
             var ms = new MemoryStream();
             var bom = new byte[] { 0xEF, 0xBB, 0xBF };
@@ -42,7 +44,7 @@ namespace ChequeAR.Application.Exporters
             string s;
             if (value is System.IFormattable f) s = f.ToString(null, CultureInfo.GetCultureInfo("es-AR"));
             else s = value.ToString();
-            if (s.IndexOfAny(new[] { ';', '"', '\n', '\r' }) >= 0)
+            if (s.IndexOfAny(CharsQueRequierenComillas) >= 0)
                 s = "\"" + s.Replace("\"", "\"\"") + "\"";
             return s;
         }

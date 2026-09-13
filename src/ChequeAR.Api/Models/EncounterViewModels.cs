@@ -77,6 +77,17 @@ namespace ChequeAR.Api.Models
         public List<string> AvailableAuthors { get; set; } = new List<string>();
     }
 
+    public class PatientTrendViewModel
+    {
+        public PatientSearchItem Patient { get; set; }
+        /// <summary>El cuestionario elegido en el selector (null si todavía no eligió ninguno).</summary>
+        public Guid? SelectedQuestionnaireId { get; set; }
+        /// <summary>Cuestionarios que el paciente completó al menos una vez: los únicos con datos para graficar.</summary>
+        public List<TimelineFilterOption> AvailableQuestionnaires { get; set; } = new List<TimelineFilterOption>();
+        /// <summary>Si el paciente tiene alguna ficha finalizada (distingue "sin historial" de "no eligió cuestionario").</summary>
+        public bool HasAnyCompleted { get; set; }
+    }
+
     public class EncounterReadonlyViewModel
     {
         public Guid EncounterId { get; set; }
@@ -94,11 +105,41 @@ namespace ChequeAR.Api.Models
         public List<AnsweredQuestion> Questions { get; set; } = new List<AnsweredQuestion>();
     }
 
+    /// <summary>
+    /// Historial de UNA ficha: quién y cuándo tocó qué cosa, reconstruido de los eventos de
+    /// auditoría de esa respuesta (<c>QuestionnaireResponse/{id}$save|$finalize|$lock…</c>).
+    /// Es la vista por-ficha de lo que Auditoría muestra a nivel global.
+    /// </summary>
+    public class EncounterHistoryViewModel
+    {
+        public Guid EncounterId { get; set; }
+        public PatientSearchItem Patient { get; set; }
+        public Guid QuestionnaireId { get; set; }
+        public string QuestionnaireTitle { get; set; }
+        public int QuestionnaireVersion { get; set; }
+        /// <summary>"completed" / "inprogress": decide si se ofrece "Ver ficha" (solo finalizadas) y el texto de "volver a completar".</summary>
+        public string Status { get; set; }
+        public List<EncounterHistoryEntry> Entries { get; set; } = new List<EncounterHistoryEntry>();
+    }
+
+    public class EncounterHistoryEntry
+    {
+        public string Timestamp { get; set; }
+        public string Username { get; set; }
+        public string Label { get; set; }
+        public string BadgeClass { get; set; }
+        public string Icon { get; set; }
+        /// <summary>Diff de la sesión, sólo presente en los "Avance guardado" ($save).</summary>
+        public List<ChequeAR.Application.Services.ResponseFieldChange> Changes { get; set; } = new List<ChequeAR.Application.Services.ResponseFieldChange>();
+    }
+
     public class AnsweredQuestion
     {
         public string Text { get; set; }
         public string Answer { get; set; }
         public string Unit { get; set; }
         public bool Prefilled { get; set; }
+        /// <summary>Sólo para preguntas tipo adjunto: id para armar el link de descarga.</summary>
+        public Guid? AttachmentId { get; set; }
     }
 }

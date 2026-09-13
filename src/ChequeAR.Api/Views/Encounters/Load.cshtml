@@ -13,6 +13,12 @@
     @* La ficha puede completarse de forma asincrónica (ej. seguimiento telefónico
        semana a semana): el renderer resume una ficha InProgress existente, toma un
        lock de sesión y autoguarda con PUT + $lock/$renew-lock/$unlock. *@
+    @* "Detalle": historial de quién/cuándo tocó esta ficha. Sólo si ya existe la ficha
+       (un borrado previo); una carga nueva todavía no generó eventos que mostrar. *@
+    @if (ViewBag.ExistingResponseId != null)
+    {
+        <a href="@Url.Action("History", new { id = (Guid)ViewBag.ExistingResponseId })" class="btn btn-primary" title="Quién y cuándo completó cada cambio"><i class="bi bi-clock-history me-1"></i> Detalle</a>
+    }
 </header>
 
 @if (!string.IsNullOrEmpty(loadError))

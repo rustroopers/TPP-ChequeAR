@@ -1,5 +1,7 @@
-using System.Web.Http;
+﻿using System.Web.Http;
+using System.Web.Http.ExceptionHandling;
 using ChequeAR.Api.Fhir;
+using ChequeAR.Api.Middleware;
 
 namespace ChequeAR.Api.App_Start
 {
@@ -7,6 +9,10 @@ namespace ChequeAR.Api.App_Start
     {
         public static void Register(HttpConfiguration config)
         {
+            // Sin esto, cualquier excepcion del pipeline de Web API se convierte en un 500
+            // mudo: no propaga a Application_Error, asi que no queda rastro en ningun lado.
+            config.Services.Add(typeof(IExceptionLogger), new WebApiExceptionLogger());
+
             config.MapHttpAttributeRoutes();
 
             // Rutas FHIR R5

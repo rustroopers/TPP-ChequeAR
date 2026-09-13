@@ -60,6 +60,13 @@ namespace ChequeAR.Api.Models
         public bool HasResponseSnapshot { get; set; }
         public List<ChequeAR.Application.Services.ResponseSnapshotSection> ResponseSnapshot { get; set; }
             = new List<ChequeAR.Application.Services.ResponseSnapshotSection>();
+
+        // Foto de una consulta guardada (evento de reporte creado / modificado / eliminado).
+        public bool HasReportDetail { get; set; }
+        public string ReportName { get; set; }
+        public string ReportScope { get; set; }              // etiqueta legible del alcance
+        public string ReportQuestionnaire { get; set; }      // título del cuestionario base
+        public List<string> ReportConditions { get; set; } = new List<string>();
     }
 
     public class UserListItem

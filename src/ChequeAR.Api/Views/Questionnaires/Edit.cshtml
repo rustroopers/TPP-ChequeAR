@@ -40,7 +40,7 @@
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">@title</h1>
+        <h1 class="cq-page-header__title">@(string.IsNullOrEmpty(title) ? "Nuevo cuestionario" : title)</h1>
         <p class="cq-page-header__subtitle">@subtitle</p>
     </div>
     <div class="d-flex gap-2">

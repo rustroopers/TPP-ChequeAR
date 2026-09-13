@@ -84,6 +84,8 @@ appsettings.*.Local.json
 secrets.json
 Web.Secrets.config
 Web.ConnectionStrings.config
+src/ChequeAR.Api/Web.Secrets.config
+src/ChequeAR.Api/Web.ConnectionStrings.config
 
 # ---------- OS ----------
 Thumbs.db
@@ -98,3 +100,6 @@ Desktop.ini
 .vscode/
 *.swp
 *.swo
+
+# Resultados de tests (.trx) — los genera el workflow build-test y correrlo en local
+TestResults/

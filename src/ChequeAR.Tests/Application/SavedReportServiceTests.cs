@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
@@ -16,12 +18,29 @@ namespace ChequeAR.Tests.Application
     /// es lo que la vuelve verificable — que es exactamente lo que afirma el documento de
     /// arquitectura sobre testing independiente.
     /// </summary>
-    public class SavedReportServiceTests
+    public class SavedReportServiceTests : IDisposable
     {
         private readonly Mock<ISavedReportRepository> _repo = new Mock<ISavedReportRepository>();
+        private readonly Mock<IAuditRepository> _auditRepo = new Mock<IAuditRepository>();
+        private readonly AuditDispatcher _audit;
         private readonly SavedReportService _sut;
 
-        public SavedReportServiceTests() { _sut = new SavedReportService(_repo.Object); }
+        public SavedReportServiceTests()
+        {
+            _auditRepo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>())).Returns(Task.CompletedTask);
+            // Intervalo de flush largo: los eventos quedan en la cola y se drenan a mano con
+            // FlushAsync en la prueba que lo necesita, sin que el timer dispare durante el test.
+            _audit = new AuditDispatcher(_auditRepo.Object, flushIntervalMs: 600000);
+            _sut = new SavedReportService(_repo.Object, _audit);
+        }
+
+        // xUnit llama Dispose() despues de cada test: sin esto, el Timer interno de
+        // AuditDispatcher quedaba vivo (10 min de intervalo) por cada instancia de esta clase.
+        public void Dispose()
+        {
+            _audit.Dispose();
+            GC.SuppressFinalize(this);
+        }
 
         [Fact]
         public async Task Actualizar_DeOtraPersona_SeRechaza_YNoTocaLaBase()
@@ -116,6 +135,27 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("dr.gomez", creada.CreatedBy);
             Assert.NotEqual(default(DateTime), creada.CreatedAt);
             _repo.Verify(r => r.AddAsync(It.IsAny<SavedReport>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task Crear_RegistraEventoDeAuditoria_ConFotoDeLaConsulta()
+        {
+            IEnumerable<AuditEvent> emitidos = null;
+            _auditRepo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
+                      .Callback<IEnumerable<AuditEvent>>(b => emitidos = b.ToList())
+                      .Returns(Task.CompletedTask);
+
+            var creada = await _sut.CreateAsync(
+                new SavedReport { Name = "Cohorte cardio", QueryJson = "{\"filters\":{}}" }, "dr.gomez");
+            await _audit.FlushAsync();
+
+            Assert.NotNull(emitidos);
+            var evt = Assert.Single(emitidos);
+            Assert.Equal("C", evt.Action);                          // create
+            Assert.Equal("SavedReport/" + creada.Id, evt.EntityRef);
+            Assert.Equal("dr.gomez", evt.AgentUserId);
+            var snap = Newtonsoft.Json.JsonConvert.DeserializeObject<SavedReportAuditSnapshot>(evt.FhirJson);
+            Assert.Equal("Cohorte cardio", snap.Name);              // el detalle podrá mostrar el nombre
         }
 
         private static SavedReport Consulta(Guid id, string creadaPor) => new SavedReport

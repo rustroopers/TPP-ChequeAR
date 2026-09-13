@@ -263,7 +263,7 @@
                 }).then(function (att) {
                     onChange(q, { attachmentId: att.id, fileName: file.name, size: att.size });
                 }).catch(function (err) {
-                    uploadErrors[q.linkId] = 'No se pudo subir: ' + err.message + '. Elegí el archivo de nuevo.';
+                    uploadErrors[q.linkId] = 'No se pudo subir: ' + err.message + '. Seleccione el archivo de nuevo.';
                     errors[q.linkId] = uploadErrors[q.linkId];
                 }).then(function () {
                     uploading[q.linkId] = false;
@@ -274,6 +274,29 @@
                 delete uploadErrors[q.linkId];
                 onChange(q, '');
                 delete errors[q.linkId];
+            }
+
+            // El link directo a /api/attachments/{id} no sirve: el endpoint pide JWT por
+            // Authorization header, y una navegación de <a href> no lo manda. Se trae el
+            // archivo por fetch (mismo header que el resto de la app) y se abre como blob.
+            var viewingAttachment = Vue.reactive({});
+            function viewAttachment(attachmentId, linkId) {
+                if (!attachmentId) return;
+                viewingAttachment[linkId] = true;
+                fetch('/api/attachments/' + attachmentId, { headers: { 'Authorization': 'Bearer ' + token() } })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.blob();
+                    })
+                    .then(function (blob) {
+                        var url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+                    })
+                    .catch(function () {
+                        window.cqToast && window.cqToast('No se pudo abrir el adjunto.', 'error');
+                    })
+                    .then(function () { viewingAttachment[linkId] = false; });
             }
 
             // Opción múltiple: la respuesta es un array de opciones marcadas.
@@ -613,11 +636,18 @@
                 });
                 return n;
             }
-            // Todas las preguntas visibles están respondidas: no queda nada para "guardar sin
-            // terminar", así que el guardado parcial se bloquea y la ficha se finaliza.
+            // Todas las preguntas obligatorias visibles están respondidas: habilita "Finalizar
+            // y enviar" (las opcionales pueden quedar vacías, igual que en submit()/validate()).
+            // "Guardar y continuar después" sigue disponible igual, por si el médico prefiere
+            // dejarla pendiente (ej. quiere revisarla o completar algo más luego).
             function isComplete() {
-                var total = totalQuestions();
-                return total > 0 && answeredCount() === total;
+                var ok = true;
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) {
+                        if (isVisible(q) && q.required && isEmptyAnswer(answers[q.linkId])) ok = false;
+                    });
+                });
+                return ok;
             }
 
             // Un valor del formulario -> la columna tipada que espera
@@ -695,9 +725,11 @@
                     .then(function () {
                         return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$finalize', {
                             method: 'POST',
-                            headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
-                            // La auditoría de la finalización guarda la ficha COMPLETA desde el
-                            // estado del server; no hace falta mandar baseline acá.
+                            headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
+                            // Además de la foto completa, el server audita el diff de lo que
+                            // cambió en esta última sesión: se manda el baseline (respuestas al
+                            // abrirla) igual que en "Guardar avance", para que el Detalle muestre A→B.
+                            body: JSON.stringify({ Items: sessionBaseline.value })
                         });
                     }).then(function (r) {
                         if (!r.ok) throw new Error('HTTP ' + r.status + ' al finalizar');
@@ -831,6 +863,7 @@
                 completedResponseId: completedResponseId,
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
+                viewAttachment: viewAttachment, viewingAttachment: viewingAttachment,
                 totalQuestions: totalQuestions, answeredCount: answeredCount, isComplete: isComplete,
                 submit: submit, finishPartial: finishPartial,
                 lockedByOther: lockedByOther, showRenewPrompt: showRenewPrompt,
@@ -846,8 +879,8 @@
 <div v-if="blockedByBack" class="cq-card">\
     <div class="cq-empty">\
         <div class="cq-empty__icon"><i class="bi bi-check2-circle"></i></div>\
-        <div class="cq-empty__title">Ya cargaste esta ficha</div>\
-        <div class="cq-empty__desc">La finalizaste recién. Si necesitás cargar otra, entrá de nuevo desde Pacientes.</div>\
+        <div class="cq-empty__title">Ya se cargó esta ficha</div>\
+        <div class="cq-empty__desc">Si se necesita otra, entrar de nuevo desde Pacientes.</div>\
         <a v-if="completedResponseId" :href="\'/Encounters/View/\' + completedResponseId" class="btn btn-outline-secondary">Ver ficha cargada</a>\
     </div>\
 </div>\
@@ -873,7 +906,7 @@
     <div v-else-if="showRenewPrompt" class="col-12">\
         <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
             <i class="bi bi-clock-history"></i>\
-            <div class="flex-grow-1">Tu sesión de edición se cierra en {{ lockSecondsLeft }}s por inactividad.</div>\
+            <div class="flex-grow-1">Su sesión de edición se cierra en {{ lockSecondsLeft }}s por inactividad.</div>\
             <button class="btn btn-sm btn-primary" @click="renewLock">Seguir completando</button>\
         </div>\
     </div>\
@@ -933,7 +966,7 @@
 \
                         <select v-else-if="q.type === \'choice\'" class="form-select" style="max-width:340px;" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                 :value="answers[q.linkId] || \'\'" @change="onChange(q, $event.target.value)">\
-                            <option value="">Seleccioná…</option>\
+                            <option value="">Seleccione…</option>\
                             <option v-for="opt in q.options" :key="opt" :value="opt">{{ opt }}</option>\
                         </select>\
 \
@@ -965,6 +998,7 @@
                             <div v-if="answers[q.linkId] && answers[q.linkId].attachmentId" class="d-flex align-items-center gap-2">\
                                 <i class="bi bi-paperclip"></i>\
                                 <span class="cq-text-sm">{{ answers[q.linkId].fileName }}</span>\
+                                <button class="btn btn-sm btn-link" :disabled="viewingAttachment[q.linkId]" @click="viewAttachment(answers[q.linkId].attachmentId, q.linkId)">{{ viewingAttachment[q.linkId] ? \'Abriendo…\' : \'Ver\' }}</button>\
                                 <button class="btn btn-sm btn-link text-danger" @click="clearFile(q)">Quitar</button>\
                             </div>\
                             <div v-else class="d-flex align-items-center gap-2">\
@@ -983,10 +1017,10 @@
 \
             <div class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
-                    <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther || isComplete()" :title="isComplete() ? \'Ya respondiste todo: usá Finalizar y enviar\' : null" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
-                    <button class="btn btn-primary" :disabled="submitting || lockedByOther || !isComplete()" :title="!isComplete() ? \'Respondé todas las preguntas para poder finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
+                    <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
+                    <button class="btn btn-primary" :disabled="submitting || lockedByOther || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
                 </div>\
-                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Ya respondiste todas las preguntas: finalizá para dejar la ficha completa.\' : \'Guardá lo cargado y retomá esta ficha más tarde desde el historial del paciente, o finalizá para dejarla completa.\' }}</p>\
+                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Ya están todas las preguntas obligatorias respondidas: puede finalizar la ficha o guardar el avance para retomarla más tarde.\' : \'Guarde lo cargado y retome esta ficha más tarde desde el historial del paciente, o finalice para dejarla completa.\' }}</p>\
             </div>\
         </div>\
     </div>\
@@ -994,7 +1028,7 @@
     <div v-if="showRetargetModal && retargetPreview" class="col-12" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeRetargetModal">\
         <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
             <h2 class="cq-section-title" style="margin-top:0;">Pasar a la versión v{{ retargetPreview.ToVersion }}</h2>\
-            <p class="cq-text-sm cq-text-muted">Estás completando la v{{ retargetPreview.FromVersion }}. Así queda tu ficha si pasás a la v{{ retargetPreview.ToVersion }}:</p>\
+            <p class="cq-text-sm cq-text-muted">Está completando la v{{ retargetPreview.FromVersion }}. Así queda su ficha si pasa a la v{{ retargetPreview.ToVersion }}:</p>\
             <div class="mb-3">\
                 <div class="cq-text-sm fw-semibold"><i class="bi bi-check2 text-success me-1"></i>Se conservan ({{ retargetPreview.Carried.length }})</div>\
                 <ul class="cq-text-sm mb-0" v-if="retargetPreview.Carried.length">\

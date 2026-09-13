@@ -253,8 +253,12 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
+        // El body (opcional) lleva el baseline de la sesión: las respuestas como estaban al
+        // abrirla. Con él, la finalización audita también el diff de lo que cambió en la última
+        // tanda (A→B), además de la foto completa. Fichas viejas / clientes que no lo mandan
+        // siguen funcionando: sólo no habrá diff de la sesión final.
         [HttpPost, Route("{id:guid}/$finalize"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
-        public async Task<IHttpActionResult> Finalize(Guid id)
+        public async Task<IHttpActionResult> Finalize(Guid id, [FromBody] SaveProgressBody body)
         {
             var lockToken = ParseLockToken(Request);
             if (!lockToken.HasValue)
@@ -263,7 +267,7 @@ namespace ChequeAR.Api.Controllers.Api
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             try
             {
-                var r = await _service.FinalizeAsync(id, userId, lockToken.Value);
+                var r = await _service.FinalizeAsync(id, userId, lockToken.Value, body?.Items);
                 var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
                 response.Headers.ETag = ETagFor(r);
                 return ResponseMessage(response);

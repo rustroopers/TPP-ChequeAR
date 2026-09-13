@@ -1,5 +1,11 @@
+﻿using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.ModelConfiguration.Conventions;
+using System.Data.Entity.Validation;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Infrastructure.EF.Configurations;
 
@@ -7,6 +13,19 @@ namespace ChequeAR.Infrastructure.EF
 {
     public class ChequeARDbContext : DbContext
     {
+        // Aplica las migraciones pendientes la primera vez que se usa el contexto, para
+        // que un deploy no necesite un paso manual contra la base.
+        //
+        // Va aca y no en Application_Start por dos razones: ChequeAR.Api no referencia
+        // EntityFramework (solo Infrastructure, y en csproj clasico las referencias no son
+        // transitivas), y siendo lazy una base inaccesible hace fallar unicamente las
+        // pantallas que la tocan en vez de tumbar el arranque entero de la app.
+        static ChequeARDbContext()
+        {
+            Database.SetInitializer(
+                new MigrateDatabaseToLatestVersion<ChequeARDbContext, Migrations.Configuration>());
+        }
+
         public ChequeARDbContext() : base("name=ChequeAR") { }
         public ChequeARDbContext(string connectionString) : base(connectionString) { }
 
@@ -29,63 +48,130 @@ namespace ChequeAR.Infrastructure.EF
         public DbSet<ExportArtifact> ExportArtifacts { get; set; }
         public DbSet<ExportJob> ExportJobs { get; set; }
 
-        protected override void OnModelCreating(DbModelBuilder mb)
+        protected override void OnModelCreating(DbModelBuilder modelBuilder)
         {
             // En Oracle el "schema" es el usuario dueño de los objetos.
-            mb.HasDefaultSchema("CHEQUEAR");
+            modelBuilder.HasDefaultSchema("CHEQUEAR");
 
             // Tablas = nombre de entidad (singular), no pluralizado: predecible y alineado
             // con el SQL crudo del motor de reportes (ej. "QuestionnaireResponseItem").
-            mb.Conventions.Remove<PluralizingTableNameConvention>();
+            modelBuilder.Conventions.Remove<PluralizingTableNameConvention>();
             // Todas las PK las asigna la app (Guid.NewGuid() o el id de usuario del hospital),
             // ninguna es identity/secuencia generada por la base.
-            mb.Conventions.Remove<StoreGeneratedIdentityKeyConvention>();
+            modelBuilder.Conventions.Remove<StoreGeneratedIdentityKeyConvention>();
             // "User" es palabra reservada en Oracle → tabla AppUser.
-            mb.Entity<User>().ToTable("AppUser");
+            modelBuilder.Entity<User>().ToTable("AppUser");
 
             // Por defecto, todo string es VARCHAR2 acotado (no unicode → evita NVARCHAR2,
             // la base XE/prod usa AL32UTF8 y soporta acentos en VARCHAR2). Sin acotar, EF
             // mapearía a (N)CLOB, que en Oracle no puede ser PK/FK ni compararse en un WHERE.
             // Los campos JSON/largos se sobreescriben explícitamente a CLOB más abajo.
-            mb.Properties<string>().Configure(p => p.HasMaxLength(2000).IsUnicode(false));
+            modelBuilder.Properties<string>().Configure(p => p.HasMaxLength(2000).IsUnicode(false));
 
-            mb.Configurations.Add(new QuestionnaireConfig());
-            mb.Configurations.Add(new QuestionnaireVersionConfig());
-            mb.Configurations.Add(new QuestionnaireResponseConfig());
-            mb.Configurations.Add(new AuditEventConfig());
+            modelBuilder.Configurations.Add(new QuestionnaireConfig());
+            modelBuilder.Configurations.Add(new QuestionnaireVersionConfig());
+            modelBuilder.Configurations.Add(new QuestionnaireResponseConfig());
+            modelBuilder.Configurations.Add(new AuditEventConfig());
 
             // Sin esto, EF no asocia QuestionGroup.Questions con Question.GroupId (no hay
             // navegación inversa en Question) y crea una FK sombra "QuestionGroup_Id" que
             // no existe en el esquema Oracle -> ORA-00904 al guardar.
-            mb.Entity<QuestionGroup>().HasMany(g => g.Questions).WithOptional().HasForeignKey(q => q.GroupId).WillCascadeOnDelete(false);
+            modelBuilder.Entity<QuestionGroup>().HasMany(g => g.Questions).WithOptional().HasForeignKey(q => q.GroupId).WillCascadeOnDelete(false);
 
             // Claves string: acotadas para que sean PK/FK indexables en Oracle.
-            mb.Entity<User>().Property(x => x.Id).HasMaxLength(128);
-            mb.Entity<UserRole>().HasKey(x => new { x.UserId, x.Role });
-            mb.Entity<UserRole>().Property(x => x.UserId).HasMaxLength(128);
-            mb.Entity<UserRole>().Property(x => x.Role).HasMaxLength(32);
-            mb.Entity<UserSpecialty>().HasKey(x => new { x.UserId, x.SpecialtyCode });
-            mb.Entity<UserSpecialty>().Property(x => x.UserId).HasMaxLength(128);
-            mb.Entity<UserSpecialty>().Property(x => x.SpecialtyCode).HasMaxLength(64);
-            mb.Entity<Specialty>().HasKey(x => x.Code);
-            mb.Entity<Specialty>().Property(x => x.Code).HasMaxLength(64);
-            mb.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
+            modelBuilder.Entity<User>().Property(x => x.Id).HasMaxLength(128);
+            modelBuilder.Entity<UserRole>().HasKey(x => new { x.UserId, x.Role });
+            modelBuilder.Entity<UserRole>().Property(x => x.UserId).HasMaxLength(128);
+            modelBuilder.Entity<UserRole>().Property(x => x.Role).HasMaxLength(32);
+            modelBuilder.Entity<UserSpecialty>().HasKey(x => new { x.UserId, x.SpecialtyCode });
+            modelBuilder.Entity<UserSpecialty>().Property(x => x.UserId).HasMaxLength(128);
+            modelBuilder.Entity<UserSpecialty>().Property(x => x.SpecialtyCode).HasMaxLength(64);
+            modelBuilder.Entity<Specialty>().HasKey(x => x.Code);
+            modelBuilder.Entity<Specialty>().Property(x => x.Code).HasMaxLength(64);
+            modelBuilder.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
 
-            // Campos JSON / texto largo → CLOB. HasMaxLength(null) suelta el límite de 2000
-            // que impone la convención de arriba: sin esto, EF valida client-side contra
-            // 2000 caracteres y un FHIR Questionnaire real (mayor a eso) revienta al publicar
-            // con "Validation failed for one or more entities", aunque la columna CLOB lo acepte.
-            mb.Entity<QuestionnaireVersion>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<QuestionnaireResponse>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<AuditEvent>().Property(x => x.FhirJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<Question>().Property(x => x.ValidationJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<Question>().Property(x => x.EnableWhenJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
-            mb.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").HasMaxLength(null);
+            // Campos JSON / texto largo → CLOB. IsMaxLength() suelta el límite de 2000 que
+            // impone la convención de arriba: sin esto, EF valida client-side contra 2000
+            // caracteres y un FHIR Questionnaire real (mayor a eso) revienta al publicar con
+            // "Validation failed for one or more entities", aunque la columna CLOB lo acepte.
+            // OJO: HasMaxLength(null) NO alcanza acá — para EF6 equivale a "no configurado",
+            // así que la convención de arriba (Properties<string>().Configure) sigue ganando
+            // y el límite de 2000 queda puesto igual. Hay que pedir explícitamente el máximo.
+            modelBuilder.Entity<QuestionnaireVersion>().Property(x => x.FhirJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<QuestionnaireResponse>().Property(x => x.FhirJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<AuditEvent>().Property(x => x.FhirJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<Question>().Property(x => x.ValidationJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<Question>().Property(x => x.EnableWhenJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<Questionnaire>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
+            modelBuilder.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
 
-            base.OnModelCreating(mb);
+            base.OnModelCreating(modelBuilder);
         }
+        // ---- Validacion: hacer legible el DbEntityValidationException ----
+        //
+        // El Message de esa excepcion es siempre el mismo texto generico ("Validation failed
+        // for one or more entities...") y remite a la propiedad EntityValidationErrors, que
+        // ningun logger serializa: en el archivo de log queda el stack trace sin una sola
+        // pista de que entidad ni que propiedad fallo. Al envolverla, el detalle viaja en el
+        // Message y aparece tal cual en Serilog, sin que Api ni Application tengan que
+        // referenciar EntityFramework para desarmarla.
+        //
+        // Se envuelve en vez de reemplazar: la original queda como InnerException, asi que
+        // nada que hoy la capture por tipo deja de funcionar.
+        public override int SaveChanges()
+        {
+            try
+            {
+                return base.SaveChanges();
+            }
+            catch (DbEntityValidationException ex)
+            {
+                throw Describe(ex);
+            }
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (DbEntityValidationException ex)
+            {
+                throw Describe(ex);
+            }
+        }
+
+        /// Arma "Entidad.Propiedad: mensaje" por cada regla violada, agrupado por entidad.
+        private static DbEntityValidationException Describe(DbEntityValidationException ex)
+        {
+            var detalle = new StringBuilder("Fallo la validacion de EF al guardar. Errores: ");
+            var partes = new List<string>();
+
+            foreach (var entry in ex.EntityValidationErrors)
+            {
+                // GetType().BaseType: con lazy loading EF entrega proxies dinamicos y el
+                // nombre del proxy no dice nada ("Questionnaire_A3F2...").
+                var tipo = entry.Entry.Entity.GetType();
+                var nombre = tipo.Namespace == "System.Data.Entity.DynamicProxies"
+                    ? tipo.BaseType.Name
+                    : tipo.Name;
+
+                foreach (var error in entry.ValidationErrors)
+                {
+                    partes.Add(nombre + "." + error.PropertyName + ": " + error.ErrorMessage);
+                }
+            }
+
+            detalle.Append(partes.Count == 0
+                ? "(la excepcion no trajo ningun detalle)"
+                : string.Join(" | ", partes));
+
+            return new DbEntityValidationException(detalle.ToString(), ex.EntityValidationErrors, ex);
+        }
+
     }
 }

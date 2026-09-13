@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copiar como Web.ConnectionStrings.config (sin ".example") y completar con valores reales.
+     Web.ConnectionStrings.config NO se versiona (ver .gitignore). -->
+<connectionStrings>
+  <add name="ChequeAR" connectionString="User Id=CHEQUEAR;Password=REPLACE_ME;Data Source=localhost:1521/XEPDB1;" providerName="Oracle.ManagedDataAccess.Client" />
+</connectionStrings>

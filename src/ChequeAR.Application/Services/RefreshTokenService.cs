@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -55,7 +56,7 @@ namespace ChequeAR.Application.Services
             {
                 var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
                 var sb = new StringBuilder(64);
-                foreach (var b in bytes) sb.Append(b.ToString("x2"));
+                foreach (var b in bytes) sb.Append(b.ToString("x2", CultureInfo.InvariantCulture));
                 return sb.ToString();
             }
         }

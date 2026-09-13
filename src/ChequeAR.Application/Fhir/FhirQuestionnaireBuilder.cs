@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -53,20 +54,21 @@ namespace ChequeAR.Application.Fhir
                     // La versión del REGISTRO (contador de escrituras para concurrencia
                     // optimista), no el número de versión publicada. Es el mecanismo nativo
                     // del estándar y viaja además en el ETag.
-                    VersionId = q.ConcurrencyVersion.ToString()
+                    VersionId = q.ConcurrencyVersion.ToString(CultureInfo.InvariantCulture)
                 },
                 Url = BaseUrl + q.Id,
-                Version = versionNumber.ToString(),
+                Version = versionNumber.ToString(CultureInfo.InvariantCulture),
                 Title = q.Title,
                 Name = q.Title,
                 Status = PublicationStatus.Active,
                 SubjectType = new ResourceType?[] { ResourceType.Patient },
-                Date = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
+                Date = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
                 Publisher = "Hospital Garrahan"
             };
 
             if (!string.IsNullOrWhiteSpace(q.Description)) resource.Description = new Markdown(q.Description);
             if (!string.IsNullOrWhiteSpace(q.SpecialtyCode)) resource.UseContext.Add(SpecialtyContext(q));
+            AddQuestionnaireCoding(resource, q);
 
             // Índice linkId -> pregunta: enableWhen tipa su answer[x] según la pregunta
             // REFERENCIADA, no según la que declara la condición. Sin este índice no hay
@@ -78,6 +80,25 @@ namespace ChequeAR.Application.Fhir
 
             foreach (var item in BuildItems(q, byLinkId)) resource.Item.Add(item);
             return resource;
+        }
+
+        /// <summary>
+        /// Codificación clínica del cuestionario completo. El concepto SNOMED va en
+        /// Questionnaire.code —campo nativo del estándar para "un identificador de este conjunto
+        /// de preguntas en una terminología"—; el término de autoría, en la extensión propia. La
+        /// simetría con <see cref="AddCoding"/> a nivel pregunta es deliberada: mismo contrato,
+        /// mismo par code/term que puede existir por separado.
+        /// </summary>
+        private static void AddQuestionnaireCoding(FhirQuestionnaire resource, DomainQuestionnaire q)
+        {
+            var coding = TryParse(q.CodingJson);
+            if (coding == null) return;
+
+            var code = (string)coding["code"];
+            if (!string.IsNullOrWhiteSpace(code))
+                resource.Code.Add(new Coding((string)coding["system"], code, (string)coding["display"]));
+
+            ChequeARExtensions.SetQuestionnaireTerm(resource, (string)coding["term"]);
         }
 
         private static UsageContext SpecialtyContext(DomainQuestionnaire q)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
@@ -14,6 +14,7 @@ using ChequeAR.Infrastructure.Fhir;
 using ChequeAR.Infrastructure.Oracle;
 using ChequeAR.Infrastructure.Repositories;
 using ChequeAR.Infrastructure.Storage;
+using Serilog;
 
 namespace ChequeAR.Api.App_Start
 {
@@ -56,7 +57,8 @@ namespace ChequeAR.Api.App_Start
             var terminologyEcl = ConfigurationManager.AppSettings["Terminology:Ecl"] ?? "";
             var terminologyLang = ConfigurationManager.AppSettings["Terminology:DisplayLanguage"] ?? "es";
             var oracleConn = ConfigurationManager.AppSettings["Oracle:ConnectionString"] ?? "";
-            var attachmentsRoot = ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments";
+            var attachmentsRoot = Environment.ExpandEnvironmentVariables(
+                ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments");
             var sqlConn = ConfigurationManager.ConnectionStrings["ChequeAR"]?.ConnectionString ?? "";
 
             // ===== Singletons =====
@@ -92,8 +94,11 @@ namespace ChequeAR.Api.App_Start
             _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             _authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
             // El terminológico puede ser un server externo (más lento que el hospital local):
-            // le damos algo más de aire.
-            _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            // le damos bastante más aire. En arranque en frío, la PRIMERA expansión de los ECL
+            // grandes de la config (<<404684003 "Clinical finding" entero, etc.) se pasaba de 8s
+            // hasta que Elasticsearch calienta sus cachés, y el autocomplete del editor moría en
+            // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
+            _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(25) };
 
             // AuditDispatcher requiere repo; usamos una factory que crea su propio contexto.
             _audit = new AuditDispatcher(NewAuditRepository(), 1000);
@@ -108,8 +113,31 @@ namespace ChequeAR.Api.App_Start
             Register<IRefreshTokenRepository>(() => new RefreshTokenRepository(Resolve<ChequeARDbContext>()));
             Register<ISavedReportRepository>(() => new SavedReportRepository(Resolve<ChequeARDbContext>()));
 
-            Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
-            Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            // Sin servidor FHIR del hospital, se proyecta el mismo dataset que las vistas
+            // VW_* (ver MockHospitalFhirClient): una sola fuente, dos protocolos.
+            if (string.IsNullOrWhiteSpace(hospitalFhirUrl))
+            {
+                Log.Warning("HospitalFhir:BaseUrl vacio: se usa MockHospitalFhirClient sobre "
+                            + "el dataset de las vistas (datos de demostracion).");
+                Register<IHospitalFhirClient>(() => new MockHospitalFhirClient(Resolve<IOracleViewClient>()));
+            }
+            else
+            {
+                Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
+            }
+            // Sin URL configurada no hay login del hospital que llamar: en vez de fallar
+            // toda request contra un endpoint vacio, se sirve el mock. Misma convencion que
+            // Terminology:BaseUrl. Cuando exista el servicio real, basta configurar la URL.
+            if (string.IsNullOrWhiteSpace(hospitalAuthUrl))
+            {
+                Log.Warning("HospitalAuth:LoginUrl vacio: se usa MockHospitalAuthClient, "
+                            + "que acepta cualquier contrasena. No dejar asi en produccion real.");
+                Register<IHospitalAuthClient>(() => new MockHospitalAuthClient());
+            }
+            else
+            {
+                Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+            }
             Register<ITerminologyClient>(() => new TerminologyClient(_termHttp, terminologyUrl, terminologyEcl, terminologyLang));
 
             // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.
@@ -120,9 +148,21 @@ namespace ChequeAR.Api.App_Start
             var allowedViews = File.Exists(allowlistPath)
                 ? AllowlistLoader.Load(allowlistPath)
                 : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
-            Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
+            // Sin conexion configurada no hay base del hospital que consultar. El mock de
+            // spec 008 es un contenedor Oracle, que no existe en App Service, asi que alla
+            // las vistas se sirven desde memoria respetando la misma allowlist.
+            if (string.IsNullOrWhiteSpace(oracleConn))
+            {
+                Log.Warning("Oracle:ConnectionString vacio: las vistas VW_* se sirven desde "
+                            + "MockOracleViewClient (datos de demostracion, no del hospital).");
+                Register<IOracleViewClient>(() => new MockOracleViewClient(allowedViews));
+            }
+            else
+            {
+                Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
+            }
             Register<IFhirValidator>(() => _fhirValidator);
-            Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot));
+            Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot, Resolve<ChequeARDbContext>()));
 
             Register<JwtIssuer>(() => _jwt);
             Register<AuditDispatcher>(() => _audit);
@@ -135,7 +175,7 @@ namespace ChequeAR.Api.App_Start
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
                 Resolve<IFhirValidator>(), _audit));
             Register<AuditQueryService>(() => new AuditQueryService(Resolve<IAuditRepository>()));
-            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>()));
+            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>(), Resolve<AuditDispatcher>()));
             Register<UserService>(() => new UserService(Resolve<IUserRepository>()));
             Register<TerminologyService>(() => new TerminologyService(Resolve<ITerminologyClient>()));
             Register<HomeDashboardService>(() => new HomeDashboardService(
@@ -146,6 +186,13 @@ namespace ChequeAR.Api.App_Start
             Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
             Register<ReportExecutor>(() => new ReportExecutor(
                 Resolve<IReportQueryRunner>(), Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>()));
+
+            // Evolución longitudinal de parámetros (spec 010): consulta dedicada contra
+            // vw_FlatResponses (misma conexión Oracle que los reportes) + service que arma las
+            // series desde la definición del cuestionario.
+            Register<IPatientTrendRepository>(() => new PatientTrendRepository(sqlConn));
+            Register<PatientTrendService>(() => new PatientTrendService(
+                Resolve<IQuestionnaireRepository>(), Resolve<IPatientTrendRepository>()));
 
             Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), hospitalAuthUrl));
@@ -167,6 +214,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
             Register<Controllers.Api.TerminologyController>(() => new Controllers.Api.TerminologyController(Resolve<ITerminologyClient>()));
             Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
+            Register<Controllers.Api.PatientTrendController>(() => new Controllers.Api.PatientTrendController(Resolve<PatientTrendService>()));
             Register<Controllers.Api.EncounterController>(() => new Controllers.Api.EncounterController(Resolve<PatientService>()));
             Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<UserService>()));
             Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));
@@ -179,7 +227,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Mvc.QuestionnairesController>(() => new Controllers.Mvc.QuestionnairesController(
                 Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(
-                Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>()));
+                Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>(), Resolve<AuditQueryService>()));
             Register<Controllers.Mvc.ReportsController>(() => new Controllers.Mvc.ReportsController(
                 Resolve<SavedReportService>(), Resolve<ReportExecutor>(), Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -54,6 +55,27 @@ namespace ChequeAR.Api.Controllers.Api
                     hash = attachment.Hash
                 });
             }
+        }
+
+        /// <summary>
+        /// Devuelve el contenido de un adjunto ya subido. "inline" (no "attachment") a
+        /// propósito: los tres tipos permitidos (jpeg/png/pdf) los renderiza el navegador
+        /// solo, así que abre en una pestaña en vez de forzar la descarga.
+        /// </summary>
+        [HttpGet, Route("{id:guid}"), Authorize]
+        public async Task<HttpResponseMessage> Download(Guid id)
+        {
+            var meta = await _store.GetAsync(id);
+            if (meta == null) return Request.CreateResponse(HttpStatusCode.NotFound);
+
+            var stream = await _store.OpenReadAsync(id);
+            if (stream == null) return Request.CreateResponse(HttpStatusCode.NotFound);
+
+            var resp = Request.CreateResponse(HttpStatusCode.OK);
+            resp.Content = new StreamContent(stream);
+            resp.Content.Headers.ContentType = new MediaTypeHeaderValue(meta.ContentType ?? "application/octet-stream");
+            resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline") { FileName = meta.OriginalFileName };
+            return resp;
         }
     }
 }

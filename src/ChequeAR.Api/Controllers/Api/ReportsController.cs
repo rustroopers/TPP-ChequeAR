@@ -69,6 +69,42 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
+        /// <summary>
+        /// Exporta las estadísticas descriptivas (FR-008) a Excel, opcionalmente acotadas a
+        /// las preguntas que la persona haya seleccionado en pantalla. Solo Excel: un export a
+        /// Word sin los gráficos nativos (torta/barra) sería una versión pobre de este mismo
+        /// archivo, así que no se ofrece.
+        /// </summary>
+        [HttpPost, Route("stats/export"), Authorize]
+        public async Task<HttpResponseMessage> StatsExport([FromBody] StatsExportRequest request)
+        {
+            if (request == null || request.Query == null) return Request.CreateResponse(HttpStatusCode.BadRequest);
+
+            ReportStats stats;
+            try
+            {
+                stats = await _executor.ExecuteStatsAsync(request.Query);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.BadRequest, ex.Message);
+            }
+
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            _audit.Enqueue(AuditEventBuilder.For(
+                "execute",
+                "Report/statsExport?questionnaire=" + request.Query.QuestionnaireId + "&questions=" + stats.Questions.Count,
+                userId, category: "export"));
+
+            var stream = StatsXlsxExporter.Export(stats, request.LinkIds, request.ChartTypes);
+
+            var resp = Request.CreateResponse(HttpStatusCode.OK);
+            resp.Content = new StreamContent(stream);
+            resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"estadisticas_{DateTime.Now:yyyy-MM-dd}.xlsx" };
+            return resp;
+        }
+
         [HttpPost, Route("export"), Authorize]
         public async Task<HttpResponseMessage> Export([FromBody] ReportQuery query)
         {
@@ -94,19 +130,19 @@ namespace ChequeAR.Api.Controllers.Api
                 userId, category: "export"));
 
             var format = (query.Format ?? "xlsx").ToLowerInvariant();
-            var stream = format == "csv" ? new CsvExporter().Export(result) : new XlsxExporter().Export(result);
+            var stream = format == "csv" ? CsvExporter.Export(result) : XlsxExporter.Export(result);
 
             var resp = Request.CreateResponse(HttpStatusCode.OK);
             resp.Content = new StreamContent(stream);
             if (format == "csv")
             {
                 resp.Content.Headers.ContentType = new MediaTypeHeaderValue("text/csv") { CharSet = "utf-8" };
-                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = "reporte.csv" };
+                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"reporte_{DateTime.Now:yyyy-MM-dd}.csv" };
             }
             else
             {
                 resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = "reporte.xlsx" };
+                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"reporte_{DateTime.Now:yyyy-MM-dd}.xlsx" };
             }
             return resp;
         }

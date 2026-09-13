@@ -95,11 +95,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                     };
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.RecentEncounters.Clear();
                 model.Kpis = null;
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
 
             return View(model);

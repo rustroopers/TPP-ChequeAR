@@ -57,7 +57,7 @@ namespace ChequeAR.Application.Services
             {
                 var rows = await _oracle.QueryAsync(PatientView,
                     new Dictionary<string, object> { { "ID_PACIENTE", hospitalId } });
-                var row = rows.FirstOrDefault();
+                var row = rows.Count > 0 ? rows[0] : null;
                 if (row != null) return MapRow(row, hospitalId);
             }
             catch { /* hospital no disponible */ }

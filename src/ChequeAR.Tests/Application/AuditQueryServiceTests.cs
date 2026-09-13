@@ -83,18 +83,79 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(e.Id, (await _sut.GetAsync(e.Id)).Id);
         }
 
+        // ---- ForResponseAsync: historial de UNA ficha (pantalla "Detalle") ----
+
+        [Fact]
+        public async Task ForResponse_TraeCreacionYOperacionesDeEsaFicha()
+        {
+            var id = Guid.NewGuid();
+            var otra = Guid.NewGuid();
+            Devuelve(
+                Evento("QuestionnaireResponse/" + id),
+                Evento("QuestionnaireResponse/" + id + "$save"),
+                Evento("QuestionnaireResponse/" + id + "$finalize"),
+                Evento("QuestionnaireResponse/" + otra + "$save"),   // otra ficha
+                Evento("Questionnaire/" + id));                      // otro recurso, mismo guid
+
+            var eventos = await _sut.ForResponseAsync(id);
+
+            Assert.Equal(3, eventos.Count);
+            Assert.All(eventos, e => Assert.StartsWith("QuestionnaireResponse/" + id, e.EntityRef));
+        }
+
+        [Fact]
+        public async Task ForResponse_OrdenaDelMasRecienteAlMasViejo()
+        {
+            var id = Guid.NewGuid();
+            var t0 = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+            Devuelve(
+                EventoEn("QuestionnaireResponse/" + id + "$save", t0),
+                EventoEn("QuestionnaireResponse/" + id + "$finalize", t0.AddMinutes(5)),
+                EventoEn("QuestionnaireResponse/" + id, t0.AddMinutes(-5)));
+
+            var refs = (await _sut.ForResponseAsync(id)).Select(e => e.EntityRef).ToArray();
+
+            Assert.Equal(new[]
+            {
+                "QuestionnaireResponse/" + id + "$finalize",
+                "QuestionnaireResponse/" + id + "$save",
+                "QuestionnaireResponse/" + id
+            }, refs);
+        }
+
+        [Fact]
+        public async Task ForResponse_NoConfundeFichasDistintas()
+        {
+            var id = Guid.NewGuid();
+            Devuelve(Evento("QuestionnaireResponse/" + Guid.NewGuid() + "$finalize"));
+
+            Assert.Empty(await _sut.ForResponseAsync(id));
+        }
+
+        [Fact]
+        public async Task ForResponse_ExigeSeparadorExacto_NoMatcheaPorPrefijoTextual()
+        {
+            var id = Guid.NewGuid();
+            // Mismo id como prefijo pero sin el separador '$': no es un evento de esta ficha.
+            Devuelve(Evento("QuestionnaireResponse/" + id + "-otro"));
+
+            Assert.Empty(await _sut.ForResponseAsync(id));
+        }
+
         private void Devuelve(params AuditEvent[] eventos)
             => _repo.Setup(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
                                               It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()))
                     .ReturnsAsync((IReadOnlyList<AuditEvent>)eventos.ToList());
 
-        private static AuditEvent Evento(string entityRef) => new AuditEvent
+        private static AuditEvent Evento(string entityRef) => EventoEn(entityRef, DateTime.UtcNow);
+
+        private static AuditEvent EventoEn(string entityRef, DateTime recorded) => new AuditEvent
         {
             Id = Guid.NewGuid(),
             EntityRef = entityRef,
             Action = "U",
             AgentUserId = "dr.gomez",
-            Recorded = DateTime.UtcNow
+            Recorded = recorded
         };
     }
 }

@@ -12,6 +12,9 @@ namespace ChequeAR.Tests.MockHospital
     /// La allowlist es la primera línea; los grants Oracle son la segunda.
     /// </summary>
     [Collection("MockHospital")]
+    // Necesita el Oracle XE del mock levantado. El CI de build/test lo excluye
+    // con --filter "Requires!=Oracle"; el job de integracion lo incluye.
+    [Trait("Requires", "Oracle")]
     public class ViewContractTests
     {
         private readonly MockHospitalFixture _fx;

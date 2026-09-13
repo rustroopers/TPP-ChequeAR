@@ -1,4 +1,4 @@
-@{
+﻿@{
     var pageId = ViewBag.PageId as string ?? "";
     var pageTitle = ViewBag.Title as string ?? "ChequeAR";
     var lang = (Request.Cookies["chequear_lang"] != null ? Request.Cookies["chequear_lang"].Value : "es-AR");
@@ -18,10 +18,12 @@
     <title>ChequeAR</title>
     <link rel="icon" type="image/png" href="@asset("~/Content/img/favicon-512.png")" />
 
-    @* Dev-only: token Bearer para que las islas llamen a la API sin login del hospital. *@
-    @if (System.Web.HttpContext.Current != null && System.Web.HttpContext.Current.IsDebuggingEnabled)
+    @* Token Bearer para que las islas Vue llamen a la API. Solo para sesion iniciada:
+       lleva los roles reales del ticket, asi que no habilita nada que la persona no pueda
+       ya hacer. Sin login no se estampa y las islas avisan "token ausente". *@
+    @if (Request.IsAuthenticated)
     {
-        <meta name="cq-token" content="@ChequeAR.Api.Auth.DevToken.IssueFor(User)" />
+        <meta name="cq-token" content="@ChequeAR.Api.Auth.SessionToken.IssueFor(User)" />
     }
 
     @* TODO prod: vendor a wwwroot/lib/ y servir local (spec 006 NFR-FE assumptions). *@

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -12,7 +12,7 @@ using Newtonsoft.Json.Serialization;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    // TODO: re-habilitar [Authorize] cuando FormsAuth esté wired contra el hospital.
+    [Authorize]
     public class ReportsController : Controller
     {
         private readonly SavedReportService _saved;
@@ -39,7 +39,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportListViewModel();
             try
             {
-                // Misma identidad que estampa DevToken al emitir el bearer: sin login es
+                // Misma identidad que estampa SessionToken al emitir el bearer: sin login es
                 // "dev", con login el usuario real. Antes esta pantalla usaba "anonymous",
                 // así que nunca listaba los reportes que la API guardaba bajo "dev" —el
                 // listado salía siempre vacío aunque hubiera consultas guardadas.
@@ -63,10 +63,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 model.Items.Clear();
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -136,9 +136,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     model.Rows.Add(previewRow);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }
@@ -173,9 +173,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     NullValueHandling = NullValueHandling.Ignore
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ViewBag.DataError = ex.Message;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
         }

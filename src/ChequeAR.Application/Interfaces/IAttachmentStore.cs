@@ -7,6 +7,7 @@ namespace ChequeAR.Application.Interfaces
     public interface IAttachmentStore
     {
         Task<Attachment> StoreAsync(Stream content, string originalFileName, string contentType, string uploadedBy);
+        Task<Attachment> GetAsync(System.Guid attachmentId);
         Task<Stream> OpenReadAsync(System.Guid attachmentId);
     }
 }

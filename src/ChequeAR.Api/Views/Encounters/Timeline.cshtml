@@ -14,6 +14,7 @@
             @Model.Patient.FullName@if (!string.IsNullOrEmpty(Model.Patient.AgeLabel)) { <text> (@Model.Patient.AgeLabel)</text> }
         </p>
     </div>
+    <a href="@Url.Action("Trend", new { patientId = Model.Patient.HC })" class="btn btn-outline-primary"><i class="bi bi-graph-up me-1"></i> Ver evolución</a>
 </header>
 
 @using (Html.BeginForm("Timeline", "Encounters", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "patient-timeline" }))
