@@ -141,6 +141,8 @@
     <Content Include="Views\Shared\_ProgressBar.cshtml" />
     <Content Include="Views\Error\Index.cshtml" />
     <Content Include="Content\theme\chequear-theme.css" />
+    <Content Include="Content\img\logo-violeta-garrahan.png" />
+    <Content Include="Content\img\favicon-512.png" />
     <Content Include="Content\i18n\es-AR.json" />
     <Content Include="Content\i18n\en.json" />
     <Content Include="Views\Account\Login.cshtml" />
@@ -166,6 +168,7 @@
     <Content Include="Views\Admin\Capability.cshtml" />
     <Content Include="Scripts\cq-date-range.js" />
     <Content Include="Scripts\cq-autofilter.js" />
+    <Content Include="Scripts\cq-select-enhance.js" />
     <Content Include="Scripts\islands\bootstrap.js" />
     <Content Include="Scripts\islands\questionnaire-editor\index.js" />
     <Content Include="Scripts\islands\questionnaire-renderer\index.js" />
