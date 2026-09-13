@@ -1472,6 +1472,12 @@ body.cq-sidebar-collapsed .cq-app {
     position: relative;
     z-index: 25;
   }
+  /* Estado base (colapsado): las transitions aplican al VOLVER a este estado
+     — o sea al salir del hover. Un transition-delay de 350ms hace que la
+     sidebar se quede expandida unos milisegundos despues de sacar el mouse
+     antes de empezar a contraerse (menos flicker si el usuario se sale sin
+     querer y vuelve rapido). El estado :hover pisa este transition sin delay
+     para que la apertura sea inmediata. */
   body.cq-sidebar-collapsed .cq-sidebar__inner {
     width: 64px;
     min-height: calc(100vh - 56px);
@@ -1480,25 +1486,29 @@ body.cq-sidebar-collapsed .cq-app {
     box-shadow: 0 0 0 rgba(0, 0, 0, 0);
     border-right: 1px solid transparent;
     transition:
-      width 520ms cubic-bezier(0.22, 0.61, 0.36, 1),
-      box-shadow 520ms cubic-bezier(0.22, 0.61, 0.36, 1),
-      border-color 520ms cubic-bezier(0.22, 0.61, 0.36, 1);
+      width 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 350ms,
+      box-shadow 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 350ms,
+      border-color 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 350ms;
     will-change: width;
   }
   body.cq-sidebar-collapsed .cq-sidebar__label,
   body.cq-sidebar-collapsed .cq-sidebar__group-label {
     opacity: 0;
-    transition: opacity 200ms ease;
+    transition: opacity 300ms ease 350ms;
   }
   body.cq-sidebar-collapsed .cq-sidebar:hover:not(.cq-sidebar--force-collapse) .cq-sidebar__inner {
     width: 340px;
     box-shadow: 4px 0 12px rgba(0, 0, 0, 0.08);
     border-right-color: var(--cq-neutral-200);
+    transition:
+      width 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 0ms,
+      box-shadow 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 0ms,
+      border-color 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 0ms;
   }
   body.cq-sidebar-collapsed .cq-sidebar:hover:not(.cq-sidebar--force-collapse) .cq-sidebar__label,
   body.cq-sidebar-collapsed .cq-sidebar:hover:not(.cq-sidebar--force-collapse) .cq-sidebar__group-label {
     opacity: 1;
-    transition: opacity 300ms ease 200ms;
+    transition: opacity 400ms ease 300ms;
   }
 }
 
