@@ -26,38 +26,35 @@
 @* Bloques demostrativos — reemplazan los 3 botones "ir a X" por cards con
    información real (o empty state si no hay data) y un dropdown para navegar
    entre subitems. Feedback: la home antes era un menú duplicado del sidebar. *@
-<div class="cq-grid cq-grid--3 mb-4">
+<div class="row g-3 mb-4 cq-home-grid">
 
-    @* --------- Reportes --------- *@
+    @* --------- Reportes (ancho doble: gráfico real del primer saved report) --------- *@
+    <div class="col-lg-6">
     <div class="cq-demo-card">
         <div class="cq-demo-card__header">
             <h3 class="cq-demo-card__title"><i class="bi bi-bar-chart-line"></i> Reportes</h3>
-            <select class="form-select form-select-sm" id="reportPicker" aria-label="Elegir reporte">
-                <option value="">Elegí un reporte…</option>
-                <option value="uso">Uso por cuestionario</option>
-                <option value="autores">Fichas por autor</option>
-                <option value="especialidad">Fichas por especialidad</option>
-            </select>
+            <select class="form-select form-select-sm" id="reportPicker" aria-label="Elegir reporte" hidden></select>
         </div>
-        <div class="cq-demo-card__body">
-            @* Placeholder SVG: no hay reportes cargados aún o hay que abrir la sección. *@
-            <svg class="cq-placeholder-chart" viewBox="0 0 300 160" role="img" aria-label="Gráfico de ejemplo">
-                <line class="cq-ph-axis" x1="20" y1="140" x2="290" y2="140" />
-                <line class="cq-ph-axis" x1="20" y1="10" x2="20" y2="140" />
-                <rect class="cq-ph-bar" x="40" y="80" width="30" height="60" rx="3" />
-                <rect class="cq-ph-bar cq-ph-bar--hi" x="90" y="40" width="30" height="100" rx="3" />
-                <rect class="cq-ph-bar" x="140" y="60" width="30" height="80" rx="3" />
-                <rect class="cq-ph-bar cq-ph-bar--hi" x="190" y="25" width="30" height="115" rx="3" />
-                <rect class="cq-ph-bar" x="240" y="95" width="30" height="45" rx="3" />
-            </svg>
+        <div class="cq-demo-card__body" id="reportCardBody" style="justify-content:center; align-items:center;">
+            <div id="reportLoading" class="cq-text-sm cq-text-muted" style="display:flex; align-items:center; gap:8px;">
+                <span class="spinner-border spinner-border-sm"></span> Cargando…
+            </div>
+            <div id="reportEmpty" class="cq-empty" hidden>
+                <div class="cq-empty__icon"><i class="bi bi-bar-chart"></i></div>
+                <div class="cq-empty__title">No hay reportes aún</div>
+                <div class="cq-empty__desc cq-text-xs cq-text-muted">Guardá una consulta desde Reportes para verla acá.</div>
+            </div>
+            <svg id="reportChart" hidden style="width:100%; height:180px;" viewBox="0 0 300 180" role="img" aria-label="Gráfico del reporte seleccionado"></svg>
         </div>
         <div class="cq-demo-card__foot">
-            <span class="cq-text-sm cq-text-muted">Vista previa</span>
+            <span id="reportCaption" class="cq-text-sm cq-text-muted"></span>
             <a href="@Url.Action("Index", "Reports")" class="btn btn-sm btn-tertiary">Abrir reportes →</a>
         </div>
     </div>
+    </div>
 
     @* --------- Ficha reciente --------- *@
+    <div class="col-lg-3">
     <div class="cq-demo-card">
         <div class="cq-demo-card__header">
             <h3 class="cq-demo-card__title"><i class="bi bi-clipboard2-pulse"></i> Ficha reciente</h3>
@@ -107,8 +104,10 @@
             }
         </div>
     </div>
+    </div>
 
     @* --------- Cuestionarios --------- *@
+    <div class="col-lg-3">
     <div class="cq-demo-card">
         <div class="cq-demo-card__header">
             <h3 class="cq-demo-card__title"><i class="bi bi-journal-text"></i> Cuestionarios</h3>
@@ -134,9 +133,12 @@
         </div>
         <div class="cq-demo-card__foot">
             <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-sm btn-tertiary">Ver todos</a>
-            <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
-                    <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Podés editarlo cuantas veces quieras y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+            <div class="d-flex align-items-center gap-2">
+                <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
+                <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Podés editarlo cuantas veces quieras y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+            </div>
         </div>
+    </div>
     </div>
 
 </div>
@@ -225,18 +227,189 @@ else
 
 @section scripts {
 <script>
-    // Ambos pickers navegan al valor de la opcion elegida (los reportes van a la
-    // pantalla de Reports; las fichas al link ya calculado por el controller).
+    // Picker de fichas: navega al link ya calculado por el controller.
     document.addEventListener("change", function (e) {
-        if (e.target.id === "reportPicker") {
-            var v = e.target.value;
-            if (!v) return;
-            window.location.href = "@Url.Action("Index", "Reports")" + "?tipo=" + encodeURIComponent(v);
-        }
         if (e.target.id === "encounterPicker") {
             var u = e.target.value;
             if (u) window.location.href = u;
         }
     });
+
+    // --- Card de Reportes: lista los reportes guardados del usuario, muestra
+    // el primero por default como gráfico y permite cambiar de reporte. Si no
+    // hay reportes, o el seleccionado no devuelve categorías, mostramos empty.
+    (function () {
+        var picker  = document.getElementById("reportPicker");
+        var loading = document.getElementById("reportLoading");
+        var empty   = document.getElementById("reportEmpty");
+        var chart   = document.getElementById("reportChart");
+        var caption = document.getElementById("reportCaption");
+        if (!picker) return;
+
+        function authHeaders() {
+            var h = { "Content-Type": "application/json" };
+            var m = document.querySelector('meta[name="cq-token"]');
+            if (m) h["Authorization"] = "Bearer " + m.getAttribute("content");
+            return h;
+        }
+
+        // [hidden] tiene prioridad sobre display:flex/none inline, así que no hace
+        // falta pelearse con !important de las clases utility de Bootstrap.
+        function showEmpty(msg) {
+            loading.hidden = true;
+            chart.hidden = true;
+            empty.hidden = false;
+            if (msg) empty.querySelector(".cq-empty__title").textContent = msg;
+        }
+        function showLoading() {
+            empty.hidden = true;
+            chart.hidden = true;
+            loading.hidden = false;
+        }
+        function showChart() {
+            empty.hidden = true;
+            loading.hidden = true;
+            chart.hidden = false;
+        }
+
+        // Dibuja barras verticales con etiquetas cortas. `data` = [{label, value}, ...].
+        // Los elementos SVG se crean con createElementNS: si se hace innerHTML sobre
+        // un <svg>, algunos navegadores no aplican bien el namespace y los <rect>
+        // no rendean (aparecen en el DOM pero no se ven), que es lo que estaba pasando.
+        function renderChart(data) {
+            var SVG_NS = "http://www.w3.org/2000/svg";
+            var pad = { l: 32, r: 12, t: 12, b: 40 };
+            var w = 300, h = 180;
+            var innerW = w - pad.l - pad.r, innerH = h - pad.t - pad.b;
+            var max = 0;
+            data.forEach(function (d) { if (d.value > max) max = d.value; });
+            if (max === 0) max = 1;
+            var barW = Math.min(40, Math.max(8, innerW / data.length - 8));
+            var gap = (innerW - barW * data.length) / (data.length + 1);
+
+            function el(name, attrs, textContent) {
+                var e = document.createElementNS(SVG_NS, name);
+                Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+                if (textContent != null) e.textContent = textContent;
+                return e;
+            }
+            // Limpio y armo desde cero.
+            while (chart.firstChild) chart.removeChild(chart.firstChild);
+
+            chart.appendChild(el("line", { x1: pad.l, y1: pad.t + innerH, x2: pad.l + innerW, y2: pad.t + innerH, stroke: "#cbd5e1", "stroke-width": 1 }));
+            chart.appendChild(el("line", { x1: pad.l, y1: pad.t, x2: pad.l, y2: pad.t + innerH, stroke: "#cbd5e1", "stroke-width": 1 }));
+
+            data.forEach(function (d, i) {
+                var x = pad.l + gap + i * (barW + gap);
+                var barH = Math.max(2, Math.round((d.value / max) * innerH));
+                var y = pad.t + innerH - barH;
+                var color = i % 2 === 0 ? "#6f5fa5" : "#9283be";
+                var rect = el("rect", { x: x, y: y, width: barW, height: barH, rx: 3, fill: color });
+                rect.appendChild(el("title", {}, d.label + ": " + d.value));
+                chart.appendChild(rect);
+                var label = d.label.length > 10 ? d.label.slice(0, 9) + "…" : d.label;
+                chart.appendChild(el("text", { x: x + barW / 2, y: pad.t + innerH + 14, "text-anchor": "middle", "font-size": 10, fill: "#334155" }, label));
+                chart.appendChild(el("text", { x: x + barW / 2, y: y - 3, "text-anchor": "middle", "font-size": 10, "font-weight": 600, fill: "#1e293b" }, String(d.value)));
+            });
+            showChart();
+        }
+
+        function loadReportStats(rep) {
+            showLoading();
+            var title = rep.Name || rep.name || "Reporte";
+            caption.textContent = title;
+            var q = {};
+            try { q = JSON.parse(rep.QueryJson || rep.queryJson || "{}"); } catch (e) { q = {}; }
+            if (!q.questionnaireId) q.questionnaireId = rep.QuestionnaireId || rep.questionnaireId;
+            if (!q.questionnaireId) { showEmpty("Reporte sin cuestionario asociado"); return; }
+            fetch("/api/reports/stats", { method: "POST", headers: authHeaders(), body: JSON.stringify(q) })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (data) {
+                    if (!data || !data.Questions || !data.Questions.length) { showEmpty("No hay datos para este reporte"); return; }
+                    // Buscamos la primera pregunta con datos graficables: prioridad a la
+                    // Distribution (choice/openChoice), y como fallback el Histogram
+                    // (integer/decimal/scale) — con estos últimos se pueden armar barras
+                    // por rango de valores igual.
+                    var found = null;
+                    for (var i = 0; i < data.Questions.length; i++) {
+                        var q2 = data.Questions[i];
+                        if (q2.Distribution && q2.Distribution.length) { found = { q: q2, kind: "dist" }; break; }
+                        if (q2.Histogram && q2.Histogram.length && !found) { found = { q: q2, kind: "hist" }; }
+                    }
+                    if (!found) { showEmpty("No hay datos para este reporte"); return; }
+                    var bars;
+                    if (found.kind === "dist") {
+                        bars = found.q.Distribution.slice(0, 6).map(function (d) {
+                            return { label: String(d.Value || "—"), value: Number(d.Count || 0) };
+                        });
+                    } else {
+                        bars = found.q.Histogram.slice(0, 6).map(function (b) {
+                            var label = (b.From === b.To) ? String(b.From) : (b.From + "–" + b.To);
+                            return { label: label, value: Number(b.Count || 0) };
+                        });
+                    }
+                    caption.textContent = (rep.Name || rep.name || "Reporte") + " · " + (found.q.Text || found.q.LinkId || "");
+                    renderChart(bars);
+                })
+                .catch(function () { showEmpty("No se pudo cargar el reporte"); });
+        }
+
+        function onPickerChange() {
+            var id = picker.value;
+            if (!id) { showEmpty("No hay reportes aún"); return; }
+            var rep = picker._reports[id];
+            if (rep) loadReportStats(rep);
+        }
+
+        // Bootstrap: traigo la lista y armo el picker.
+        fetch("/api/reports/saved", { headers: authHeaders() })
+            .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+            .then(function (data) {
+                var results = (data && data.results) || [];
+                picker.innerHTML = "";
+                picker._reports = {};
+                // El wrapper del enhancer (cq-select) es el elemento visible; el
+                // <select> original queda oculto por CSS. Escondemos/mostramos el
+                // wrapper si existe, si no el propio <select>.
+                function toggleWrap(hide) {
+                    var wrap = picker.closest(".cq-select");
+                    if (wrap) wrap.hidden = hide;
+                    else picker.hidden = hide;
+                }
+                if (!results.length) {
+                    // Sin reportes: escondemos el picker (no tiene sentido un dropdown
+                    // vacío) y dejamos sólo el empty state centrado.
+                    toggleWrap(true);
+                    caption.textContent = "";
+                    showEmpty("No hay reportes aún");
+                    return;
+                }
+                results.forEach(function (rep) {
+                    var id = rep.Id || rep.id;
+                    picker._reports[id] = rep;
+                    var opt = document.createElement("option");
+                    opt.value = id;
+                    opt.textContent = rep.Name || rep.name || "Sin título";
+                    picker.appendChild(opt);
+                });
+                picker.addEventListener("change", onPickerChange);
+                var firstId = results[0].Id || results[0].id;
+                picker.value = firstId;
+                // Recién ahora que hay <option>s reconstruimos el menú del wrapper
+                // que el enhancer armó vacío al DOMContentLoaded (o enhance-amos
+                // si por alguna razón todavía no está wrappeado).
+                picker.hidden = false;
+                if (window.cqRebuildSelect) window.cqRebuildSelect(picker);
+                else if (window.cqEnhanceSelects) window.cqEnhanceSelects();
+                toggleWrap(false);
+                loadReportStats(results[0]);
+            })
+            .catch(function () {
+                var wrap = picker.closest(".cq-select");
+                if (wrap) wrap.hidden = true; else picker.hidden = true;
+                caption.textContent = "";
+                showEmpty("No se pudo cargar la lista de reportes");
+            });
+    })();
 </script>
 }
