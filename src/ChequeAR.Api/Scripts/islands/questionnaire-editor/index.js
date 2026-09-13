@@ -47,7 +47,10 @@
             // guardaban como si fueran del usuario).
             var initial = (props.groups || []).map(function (g) {
                 return {
-                    title: g.title,
+                    // Coerción a string: si el server manda una sección sin title,
+                    // el template hace `!g.title.trim()` y sin default explota con
+                    // TypeError; en Vue prod eso deja la isla en blanco sin errores.
+                    title: g.title || '',
                     questions: (g.questions || []).map(function (q) {
                         return {
                             linkId: q.linkId,
@@ -1111,10 +1114,19 @@
                 // Publicar queda deshabilitado mientras haya cambios sin guardar (o sea un
                 // cuestionario nuevo aún sin persistir): publicar exige guardar antes, así el
                 // botón lo comunica y no sólo el toast del guard.
-                Vue.watch([saving, publishing, dirty, isNew], function () {
+                // Guardar: sólo si hay cambios sin guardar (dirty). Sin dirty no hay
+                // nada que persistir, y el botón deshabilitado sirve además como
+                // confirmación visual de "todo persistido".
+                // Publicar: no permitir si hay cambios sin guardar ni si es un
+                // cuestionario nuevo sin persistir; y si ya está publicado, exigir
+                // que haya cambios pendientes (si no, publicar sería un no-op).
+                Vue.watch([saving, publishing, dirty, isNew, isPublished, hasPendingChanges], function () {
                     var busy = saving.value || publishing.value;
-                    if (btn) btn.disabled = busy;
-                    if (pub) pub.disabled = busy || dirty.value || isNew.value;
+                    if (btn) btn.disabled = busy || !dirty.value;
+                    if (pub) {
+                        var noPendientes = isPublished.value && !hasPendingChanges.value;
+                        pub.disabled = busy || dirty.value || isNew.value || noPendientes;
+                    }
                 }, { immediate: true });
             });
             Vue.onUnmounted(function () {
