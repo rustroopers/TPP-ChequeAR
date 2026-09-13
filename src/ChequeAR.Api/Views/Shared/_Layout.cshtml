@@ -62,6 +62,30 @@
             var mq = window.matchMedia("(max-width: 1024px)");
             if (!mq.matches) root.classList.add("cq-sidebar-collapsed");
 
+            // Fresh page load en desktop: si el usuario venia clickeando un
+            // item de la sidebar (o entra con el mouse ya sobre ella), el
+            // :hover CSS dispararia la expansion apenas se mueva un pixel.
+            // Aplicamos force-collapse hasta la primera "salida real" del
+            // sidebar — mouseleave si estaba dentro, o mousemove fuera del
+            // sidebar si nunca estuvo — y ahi limpiamos para que el siguiente
+            // hover expanda normal.
+            if (!mq.matches) {
+                var initSb = document.querySelector(".cq-sidebar");
+                if (initSb) {
+                    initSb.classList.add("cq-sidebar--force-collapse");
+                    var clearFn = function () {
+                        initSb.classList.remove("cq-sidebar--force-collapse");
+                        initSb.removeEventListener("mouseleave", clearFn);
+                        document.removeEventListener("mousemove", maybeClear);
+                    };
+                    var maybeClear = function (ev) {
+                        if (!initSb.contains(ev.target)) clearFn();
+                    };
+                    initSb.addEventListener("mouseleave", clearFn);
+                    document.addEventListener("mousemove", maybeClear);
+                }
+            }
+
             document.addEventListener("click", function (e) {
                 // Al clickear un item, forzamos colapso visual inmediato antes
                 // de que arranque la navegación. La clase se limpia sola al
