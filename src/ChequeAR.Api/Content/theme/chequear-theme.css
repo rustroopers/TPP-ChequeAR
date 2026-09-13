@@ -1403,6 +1403,14 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
 }
 .btn-neutral i { color: var(--cq-neutral-500); }
 .btn-neutral:hover i { color: var(--cq-neutral-700); }
+.btn-neutral[disabled],
+.btn-neutral:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  background: #fff;
+  border-color: var(--cq-neutral-200);
+  color: var(--cq-neutral-500);
+}
 /* Standalone (sin .btn de Bootstrap): sizing chico pensado para acciones de fila. */
 :not(.btn).btn-neutral {
   display: inline-flex;
