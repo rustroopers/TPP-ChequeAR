@@ -31,6 +31,11 @@
             // En "nuevo" arranca vacío para forzar al usuario a titular explícitamente:
             // isStepDone(0) exige título no-vacío, así la timeline bloquea Siguiente.
             var qTitle = Vue.ref(props.title || '');
+            // Marca si la persona ya pasó por el campo (blur): antes de eso no tuvo
+            // oportunidad de escribir nada, así que mostrar el error de "obligatorio" ni bien
+            // se entra a la pantalla es ruido, no ayuda. Un título existente nunca dispara el
+            // error igual, entre por acá o no.
+            var qTitleTouched = Vue.ref(false);
             var specialtyCode = Vue.ref(props.specialtyCode || 'general');
             // Codificación del cuestionario completo. Objeto reactivo (no tres refs sueltos)
             // para que el mismo buscador SNOMED que usan las preguntas pueda escribir aquí
@@ -1509,7 +1514,7 @@
             return {
                 groups: groups, types: types, selected: selected,
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
-                qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
+                qTitle: qTitle, qTitleTouched: qTitleTouched, specialtyCode: specialtyCode, isNew: isNew,
                 isPublished: isPublished, isArchived: isArchived, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
                 merging: merging, mergeAutoCount: mergeAutoCount, conflictEntries: conflictEntries,
@@ -1670,8 +1675,8 @@
         <div class="row g-3">\
             <div class="col-md-8">\
                 <label class="form-label cq-text-sm">Título del cuestionario <span style="color:var(--cq-danger);">*</span></label>\
-                <input v-model="qTitle" class="form-control" :class="{ \'is-invalid\': isNew && !qTitle.trim() }" placeholder="Ej: Cardio basal" required />\
-                <p v-if="isNew && !qTitle.trim()" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">Obligatorio: cargá un título para poder continuar.</p>\
+                <input v-model="qTitle" class="form-control" :class="{ \'is-invalid\': qTitleTouched && isNew && !qTitle.trim() }" placeholder="Ej: Cardio basal" required @blur="qTitleTouched = true" />\
+                <p v-if="qTitleTouched && isNew && !qTitle.trim()" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">Obligatorio: cargá un título para poder continuar.</p>\
             </div>\
             <div class="col-md-4">\
                 <label class="form-label cq-text-sm">Especialidad</label>\
@@ -1716,9 +1721,11 @@
                 </div>\
             </div>\
         </div>\
-        <div class="mb-2" v-if="!isArchived">\
-            <button class="btn btn-sm btn-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
-        </div>\
+    </div>\
+    <div class="cq-card mt-3" v-if="!isArchived">\
+        <h3 class="cq-section-title mt-0">Importar desde otro cuestionario</h3>\
+        <p class="cq-text-xs cq-text-muted mb-2">Trae las secciones y preguntas de otro cuestionario de la misma especialidad para partir de ahí en vez de empezar de cero.</p>\
+        <button class="btn btn-sm btn-outline-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
     </div>\
 </div>\
 \
@@ -1737,7 +1744,7 @@
                    @dragstart="onGroupDragStart(g, $event)" @dragend="onDragEnd"\
                    :aria-label="\'Arrastrar para reordenar la sección \' + g.title" title="Arrastrar para reordenar la sección"></i>\
                 <i class="bi bi-folder text-primary"></i>\
-                <input v-model="g.title" class="form-control form-control-sm fw-semibold" :class="{ \'is-invalid\': !g.title.trim() }" style="max-width:320px;" placeholder="Nombre de la sección" required :title="!g.title.trim() ? \'Obligatorio: cargá un nombre para la sección\' : \'\'" />\
+                <input v-model="g.title" class="form-control form-control-sm fw-semibold" :class="{ \'is-invalid\': g.titleTouched && !g.title.trim() }" style="max-width:320px;" placeholder="Nombre de la sección" required @blur="g.titleTouched = true" :title="(g.titleTouched && !g.title.trim()) ? \'Obligatorio: cargá un nombre para la sección\' : \'\'" />\
                 <span class="cq-text-xs cq-text-muted">{{ g.questions.length }} preguntas</span>\
                 <button type="button" class="cq-icon-btn cq-icon-btn--danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title" :title="\'Eliminar sección \' + g.title">\
                     <i class="bi bi-trash cq-icon-btn__idle"></i>\
