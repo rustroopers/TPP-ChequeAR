@@ -89,15 +89,20 @@
             {
                 var e = Model.Entries[i];
                 var isLast = i == Model.Entries.Count - 1;
-                <div style="position:relative; padding-bottom:24px;">
+                <div class="cq-timeline-entry" style="position:relative; padding-bottom:24px;">
                     @if (!isLast)
                     {
                         <span style="position:absolute; left:-22px; top:18px; bottom:-12px; width:2px; background:var(--cq-neutral-200);"></span>
                     }
-                    <span style="position:absolute; left:-27px; top:6px; width:12px; height:12px; border-radius:50%; background:var(--cq-primary); border:2px solid #fff;"></span>
-                    <div class="cq-text-sm cq-text-muted">@e.Date</div>
-                    <div class="d-flex justify-content-between align-items-center mt-1">
-                        <div class="d-flex align-items-center gap-2">
+                    <span style="position:absolute; left:-27px; top:14px; width:12px; height:12px; border-radius:50%; background:var(--cq-primary); border:2px solid #fff;"></span>
+                    <div class="d-flex align-items-center gap-3">
+                        @* Columna 1: fecha + autor (ancho fijo, ancla visual del thread) *@
+                        <div style="min-width:150px;">
+                            <div class="cq-text-sm cq-text-muted">@e.Date</div>
+                            <div class="cq-text-xs cq-text-muted">por @e.Author</div>
+                        </div>
+                        @* Columna 2: título + versión + chips (crece para llenar el espacio) *@
+                        <div class="flex-fill d-flex align-items-center flex-wrap gap-2">
                             <strong>@e.QuestionnaireTitle</strong>
                             @if (e.QuestionnaireVersion > 0)
                             {
@@ -113,6 +118,7 @@
                                 <span class="cq-badge cq-badge--info">Pendiente</span>
                             }
                         </div>
+                        @* Columna 3: acción alineada a la derecha *@
                         @if (e.Status == "completed")
                         {
                             <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-tertiary">Abrir →</a>
@@ -122,7 +128,6 @@
                             <a href="@Url.Action("Load", new { patientId = Model.Patient.HC, questionnaireId = e.QuestionnaireId })" class="btn btn-sm btn-primary"><i class="bi bi-pencil-square me-1"></i>Continuar edición</a>
                         }
                     </div>
-                    <div class="cq-text-sm cq-text-muted mt-1">por @e.Author</div>
                 </div>
             }
         </div>
