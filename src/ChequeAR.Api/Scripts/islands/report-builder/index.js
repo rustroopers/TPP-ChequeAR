@@ -150,6 +150,10 @@
                                 });
                             }
                             rehydrating = false;
+                            // Cargar desde el server es el estado "sin cambios pendientes"
+                            // más literal posible: los watchers que corren durante la
+                            // rehidratación ya fueron ignorados por markDirty().
+                            dirty.value = false;
                         });
                     })
                     .catch(function () { error.value = 'No se pudo cargar el reporte guardado.'; rehydrating = false; });
@@ -235,6 +239,16 @@
             }
             Vue.watch([selectedId, dateFrom, dateTo, combineMode], scheduleAuto);
             Vue.watch(filters, scheduleAuto, { deep: true });
+
+            // "Guardar cambios" tiene que apagarse cuando no hay nada nuevo que
+            // guardar. Feedback: apenas se guardaba, el botón quedaba clickeable
+            // permitiendo re-POST/PUT vacíos y confundía si el guardado había
+            // funcionado. Marca cambios en el query y en el nombre; se limpia al
+            // rehidratar desde el server o después de un save exitoso.
+            var dirty = Vue.ref(false);
+            function markDirty() { if (!rehydrating) dirty.value = true; }
+            Vue.watch([selectedId, dateFrom, dateTo, combineMode, reportName], markDirty);
+            Vue.watch(filters, markDirty, { deep: true });
 
             function addFilter() {
                 if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar', 'info'); return; }
@@ -350,6 +364,7 @@
                             }
                         }
                         showSave.value = false;
+                        dirty.value = false;
                         toast(editing ? 'Reporte actualizado' : 'Reporte guardado', 'success');
                     })
                     .catch(function (e) { toast('No se pudo guardar: ' + e.message, 'error'); })
@@ -384,6 +399,7 @@
                 stats: stats,
                 currentReportId: currentReportId, reportName: reportName,
                 saving: saving, showSave: showSave, openSave: openSave, saveReport: saveReport,
+                dirty: dirty,
                 opsFor: opsFor, questionByLink: questionByLink,
                 addFilter: addFilter, removeFilter: removeFilter, onQuestionChange: onQuestionChange,
                 preview: preview,
@@ -447,7 +463,7 @@
         </div>\
     </div>\
     <div class="d-flex align-items-center gap-3 mb-3">\
-        <button class="btn btn-sm btn-outline-secondary" @click="addFilter"><i class="bi bi-plus-lg me-1"></i> Agregar condición</button>\
+        <button class="btn btn-sm btn-primary" @click="addFilter"><i class="bi bi-plus-lg me-1"></i> Agregar condición</button>\
         <div v-if="filters.length > 1" class="d-inline-flex gap-3 cq-text-sm">\
             <span class="cq-text-muted">Las fichas deben:</span>\
             <label><input type="radio" v-model="combineMode" value="AND" /> cumplir todas</label>\
@@ -460,14 +476,25 @@
         <span v-else-if="total === null">Elegí un cuestionario para ver los resultados.</span>\
     </div>\
 \
-    <div v-if="showSave" class="cq-card mt-3 mb-0" style="border-left:3px solid var(--cq-primary);">\
-        <label class="form-label cq-text-sm">Nombre del reporte</label>\
-        <div class="d-flex gap-2">\
-            <input v-model="reportName" class="form-control form-control-sm" style="max-width:360px;" placeholder="Ej: AIJ oligoarticular 2026" @keyup.enter="saveReport" />\
-            <button class="btn btn-sm btn-primary" @click="saveReport" :disabled="saving">{{ saving ? \'Guardando…\' : \'Guardar\' }}</button>\
-            <button class="btn btn-sm btn-link" @click="showSave = false">Cancelar</button>\
+    <div v-if="showSave" class="modal-backdrop fade show" style="z-index:1050;"></div>\
+    <div v-if="showSave" class="modal fade show d-block" tabindex="-1" role="dialog" style="z-index:1055;" @click.self="showSave = false">\
+        <div class="modal-dialog modal-dialog-centered" role="document" @click.stop>\
+            <div class="modal-content">\
+                <div class="modal-header">\
+                    <h3 class="modal-title h5 m-0">{{ currentReportId ? \'Guardar cambios\' : \'Guardar reporte\' }}</h3>\
+                    <button type="button" class="btn-close" aria-label="Cerrar" @click="showSave = false"></button>\
+                </div>\
+                <div class="modal-body">\
+                    <label class="form-label cq-text-sm">Nombre del reporte</label>\
+                    <input v-model="reportName" class="form-control" placeholder="Ej: AIJ oligoarticular 2026" @keyup.enter="saveReport" autofocus />\
+                    <p class="cq-text-xs cq-text-muted mt-2 mb-0"><strong>Aclaración:</strong> el reporte guarda la definición (cuestionario y condiciones), no los resultados. Lo podés volver a correr desde el listado de reportes.</p>\
+                </div>\
+                <div class="modal-footer">\
+                    <button type="button" class="btn btn-outline-danger" @click="showSave = false">Cancelar</button>\
+                    <button type="button" class="btn btn-primary" @click="saveReport" :disabled="saving">{{ saving ? \'Guardando…\' : \'Guardar\' }}</button>\
+                </div>\
+            </div>\
         </div>\
-        <p class="cq-text-xs cq-text-muted mt-1 mb-0">El reporte guarda la definición (cuestionario y condiciones), no los resultados. Lo podés volver a correr desde el listado de reportes.</p>\
     </div>\
 \
     <div v-if="error" class="alert alert-danger mt-3 mb-0">{{ error }}</div>\
@@ -498,7 +525,12 @@
     </div>\
 \
     <div class="d-flex justify-content-end gap-2 mt-3">\
-        <button class="btn btn-outline-secondary" @click="openSave"><i class="bi bi-bookmark me-1"></i> {{ currentReportId ? \'Guardar cambios\' : \'Guardar reporte\' }}</button>\
+        <button class="btn btn-secondary" @click="openSave"\
+                :disabled="!!currentReportId && !dirty"\
+                :title="(!!currentReportId && !dirty) ? \'No hay cambios para guardar\' : \'\'">\
+            <i class="bi" :class="(!!currentReportId && !dirty) ? \'bi-check2\' : \'bi-bookmark\'"></i>\
+            {{ currentReportId ? (dirty ? \'Guardar cambios\' : \'Guardado\') : \'Guardar reporte\' }}\
+        </button>\
         <div class="dropdown">\
             <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" :disabled="exporting || !selectedId">\
                 <i class="bi bi-download me-1"></i> {{ exporting ? \'Exportando…\' : \'Exportar\' }}\
