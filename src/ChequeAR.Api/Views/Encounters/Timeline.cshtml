@@ -4,9 +4,15 @@
     ViewBag.Title = "Historial";
 }
 
+<div class="mb-2">
+    <a href="@Url.Action("Index", "Encounters")" class="cq-back-btn"><i class="bi bi-arrow-left"></i> Volver a pacientes</a>
+</div>
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Historial · @Model.Patient.FullName</h1>
+        <h1 class="cq-page-header__title">Historial</h1>
+        <p class="cq-page-header__subtitle">
+            @Model.Patient.FullName@if (!string.IsNullOrEmpty(Model.Patient.AgeLabel)) { <text> (@Model.Patient.AgeLabel)</text> }
+        </p>
     </div>
     <a href="@Url.Action("Trend", new { patientId = Model.Patient.HC })" class="btn btn-outline-primary"><i class="bi bi-graph-up me-1"></i> Ver evolución</a>
 </header>
@@ -14,8 +20,10 @@
 @using (Html.BeginForm("Timeline", "Encounters", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "patient-timeline" }))
 {
     @Html.Hidden("patientId", Model.Patient.HC)
-    <div class="row g-2 align-items-end" style="max-width:760px;">
-        <div class="col-md-3">
+    @* Feedback: Período estaba en un segundo renglón. Se pasan todos los filtros a la misma
+       fila reduciendo el ancho de cada select (col-md-2). *@
+    <div class="row g-2 align-items-end">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Cuestionario</label>
             <select class="form-select" name="cuestionario">
                 <option value="">Todos</option>
@@ -25,7 +33,7 @@
                 }
             </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Especialidad</label>
             <select class="form-select" name="especialidad">
                 <option value="">Todas</option>
@@ -35,7 +43,7 @@
                 }
             </select>
         </div>
-        <div class="col-md-2">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Autor</label>
             <select class="form-select" name="autor">
                 <option value="">Todos</option>
@@ -45,7 +53,7 @@
                 }
             </select>
         </div>
-        <div class="col-md-2">
+        <div class="col-md-2 col-lg-2">
             <label class="form-label cq-text-sm">Estado</label>
             <select class="form-select" name="estado">
                 <option value="">Todos</option>
@@ -53,14 +61,14 @@
                 <option value="finalizada" selected="@(Model.StatusFilter == "finalizada")">Finalizada</option>
             </select>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-4 col-lg-4">
             <label class="form-label cq-text-sm">Período</label>
             <cq-date-range name-from="from" name-to="to" value-from="@Model.From" value-to="@Model.To"></cq-date-range>
         </div>
     </div>
 }
 
-<div class="cq-card" style="max-width:760px;">
+<div class="cq-card cq-card--stretch">
     @if (Model.Entries.Count == 0)
     {
         <div class="cq-empty">
@@ -82,15 +90,20 @@
             {
                 var e = Model.Entries[i];
                 var isLast = i == Model.Entries.Count - 1;
-                <div style="position:relative; padding-bottom:24px;">
+                <div class="cq-timeline-entry" style="position:relative; padding-bottom:24px;">
                     @if (!isLast)
                     {
                         <span style="position:absolute; left:-22px; top:18px; bottom:-12px; width:2px; background:var(--cq-neutral-200);"></span>
                     }
-                    <span style="position:absolute; left:-27px; top:6px; width:12px; height:12px; border-radius:50%; background:var(--cq-primary); border:2px solid #fff;"></span>
-                    <div class="cq-text-sm cq-text-muted">@e.Date</div>
-                    <div class="d-flex justify-content-between align-items-center mt-1">
-                        <div class="d-flex align-items-center gap-2">
+                    <span style="position:absolute; left:-27px; top:14px; width:12px; height:12px; border-radius:50%; background:var(--cq-primary); border:2px solid #fff;"></span>
+                    <div class="d-flex align-items-center gap-3">
+                        @* Columna 1: fecha + autor (ancho fijo, ancla visual del thread) *@
+                        <div style="min-width:150px;">
+                            <div class="cq-text-sm cq-text-muted">@e.Date</div>
+                            <div class="cq-text-xs cq-text-muted">por @e.Author</div>
+                        </div>
+                        @* Columna 2: título + versión + chips (crece para llenar el espacio) *@
+                        <div class="flex-fill d-flex align-items-center flex-wrap gap-2">
                             <strong>@e.QuestionnaireTitle</strong>
                             @if (e.QuestionnaireVersion > 0)
                             {
@@ -106,16 +119,16 @@
                                 <span class="cq-badge cq-badge--info">Pendiente</span>
                             }
                         </div>
+                        @* Columna 3: acción alineada a la derecha *@
                         @if (e.Status == "completed")
                         {
-                            <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-outline-secondary">Abrir →</a>
+                            <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-tertiary">Abrir →</a>
                         }
                         else
                         {
                             <a href="@Url.Action("Load", new { patientId = Model.Patient.HC, questionnaireId = e.QuestionnaireId })" class="btn btn-sm btn-primary"><i class="bi bi-pencil-square me-1"></i>Continuar edición</a>
                         }
                     </div>
-                    <div class="cq-text-sm cq-text-muted mt-1">por @e.Author</div>
                 </div>
             }
         </div>

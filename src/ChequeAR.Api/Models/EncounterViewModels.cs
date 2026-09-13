@@ -8,6 +8,10 @@ namespace ChequeAR.Api.Models
         public string HC { get; set; }   // hospital id (string en el sistema del hospital)
         public string FullName { get; set; }
         public string AgeLabel { get; set; }
+        /// <summary>DNI / documento del paciente (VW_PACIENTE.DOCUMENTO). Null si no viene.</summary>
+        public string Document { get; set; }
+        /// <summary>Fecha de nacimiento formateada dd/MM/yyyy. Null si no viene.</summary>
+        public string BirthDateLabel { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
     }

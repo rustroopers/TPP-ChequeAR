@@ -28,7 +28,14 @@
             // ahí pasamos a modo edición (PUT) usando el id devuelto.
             var currentId = Vue.ref(props.id);
             var isNew = Vue.ref(!!props.isNew);
+            // En "nuevo" arranca vacío para forzar al usuario a titular explícitamente:
+            // isStepDone(0) exige título no-vacío, así la timeline bloquea Siguiente.
             var qTitle = Vue.ref(props.title || '');
+            // Marca si la persona ya pasó por el campo (blur): antes de eso no tuvo
+            // oportunidad de escribir nada, así que mostrar el error de "obligatorio" ni bien
+            // se entra a la pantalla es ruido, no ayuda. Un título existente nunca dispara el
+            // error igual, entre por acá o no.
+            var qTitleTouched = Vue.ref(false);
             var specialtyCode = Vue.ref(props.specialtyCode || 'general');
             // Codificación del cuestionario completo. Objeto reactivo (no tres refs sueltos)
             // para que el mismo buscador SNOMED que usan las preguntas pueda escribir aquí
@@ -63,7 +70,10 @@
             // guardaban como si fueran del usuario).
             var initial = (props.groups || []).map(function (g) {
                 return {
-                    title: g.title,
+                    // Coerción a string: si el server manda una sección sin title,
+                    // el template hace `!g.title.trim()` y sin default explota con
+                    // TypeError; en Vue prod eso deja la isla en blanco sin errores.
+                    title: g.title || '',
                     questions: (g.questions || []).map(function (q) {
                         return {
                             linkId: q.linkId,
@@ -130,6 +140,116 @@
             var lastSaved = Vue.ref(null);
 
             function selectQuestion(g, q) { selected.value = { group: g, question: q }; }
+
+            // --- Wizard (5 pasos) ----------------------------------------------------
+            // Meta / Estructura / Códigos / Vista previa / Publicación.
+            // Ahora el stepper SÍ es candado: no se puede saltar a un paso si el
+            // anterior no está completo. Cada paso define qué significa "listo" en
+            // `isDone(i)` y `stepReachable(i)` compone la cadena.
+            // La codificación SNOMED se resuelve automáticamente desde el panel
+            // Propiedades del paso Estructura (verificación on-blur/on-input contra
+            // Snowstorm). No hay un paso dedicado: publicar sin códigos es válido.
+            var STEPS = [
+                { key: 'meta',      label: 'Metadatos',    icon: 'bi-info-circle',
+                  help: 'Ponele un título que un colega reconozca desde el listado. La especialidad determina bajo qué grupo aparece en los reportes.' },
+                { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3',
+                  help: 'Agregá secciones y preguntas. Los códigos SNOMED se cargan y verifican solos desde el panel Propiedades. Podés condicionar preguntas a otras anteriores.' },
+                { key: 'preview',   label: 'Vista previa', icon: 'bi-eye',
+                  help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revisá sus condiciones.' },
+                { key: 'publish',   label: 'Publicación',  icon: 'bi-send',
+                  help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guardá los cambios antes.' }
+            ];
+            var step = Vue.ref(props.isNew ? 'meta' : 'structure');
+            var stepIndex = Vue.computed(function () {
+                for (var i = 0; i < STEPS.length; i++) if (STEPS[i].key === step.value) return i;
+                return 0;
+            });
+            // Vista previa no tiene condición objetiva: se marca vista cuando el
+            // usuario la abre, así el paso siguiente (publicar) se destraba.
+            var previewSeen = Vue.ref(false);
+            function isStepDone(i) {
+                if (i === 0) return !!(qTitle.value && qTitle.value.trim());
+                if (i === 1) {
+                    var hay = false;
+                    var faltaTitulo = false;
+                    groups.value.forEach(function (g) {
+                        if (g.questions.length) hay = true;
+                        if (!g.title || !g.title.trim()) faltaTitulo = true;
+                    });
+                    return hay && !faltaTitulo;
+                }
+                if (i === 2) return previewSeen.value;
+                return false;
+            }
+            function stepReachable(i) {
+                for (var k = 0; k < i; k++) if (!isStepDone(k)) return false;
+                return true;
+            }
+            function stepStatus(i) {
+                if (i === stepIndex.value) return 'active';
+                if (isStepDone(i)) return 'done';
+                if (stepReachable(i)) return 'available';
+                return 'locked';
+            }
+            function gotoStep(k) {
+                var idx = -1;
+                for (var i = 0; i < STEPS.length; i++) if (STEPS[i].key === k) { idx = i; break; }
+                if (idx < 0) return;
+                if (!stepReachable(idx)) return;
+                step.value = k;
+                if (k === 'preview') previewSeen.value = true;
+            }
+            function stepNext() {
+                var next = stepIndex.value + 1;
+                if (next >= STEPS.length) return;
+                if (!isStepDone(stepIndex.value)) return;
+                step.value = STEPS[next].key;
+                if (STEPS[next].key === 'preview') previewSeen.value = true;
+            }
+            function stepPrev() { if (stepIndex.value > 0) step.value = STEPS[stepIndex.value - 1].key; }
+            var currentStepHelp = Vue.computed(function () { return STEPS[stepIndex.value].help; });
+            var canGoNext = Vue.computed(function () {
+                return stepIndex.value < STEPS.length - 1 && isStepDone(stepIndex.value);
+            });
+            var nextBlockedReason = Vue.computed(function () {
+                if (canGoNext.value || stepIndex.value >= STEPS.length - 1) return '';
+                var i = stepIndex.value;
+                if (i === 0) return 'Cargá un título para continuar.';
+                if (i === 1) {
+                    var sinTitulo = groups.value.some(function (g) { return !g.title || !g.title.trim(); });
+                    if (sinTitulo) return 'Todas las secciones necesitan un título.';
+                    return 'Agregá al menos una pregunta para continuar.';
+                }
+                if (i === 2) return 'Abrí la vista previa para continuar.';
+                return '';
+            });
+
+            // Vista de códigos (paso 3): índice plano de todas las preguntas con su
+            // estado de codificación, para trabajarlas sin perder el contexto del árbol.
+            var allQuestionsFlat = Vue.computed(function () {
+                var out = [];
+                groups.value.forEach(function (g) {
+                    g.questions.forEach(function (q) { out.push({ group: g, question: q }); });
+                });
+                return out;
+            });
+            var codingProgress = Vue.computed(function () {
+                var all = allQuestionsFlat.value;
+                var codificadas = all.filter(function (x) { return !!x.question.code; }).length;
+                return { done: codificadas, total: all.length };
+            });
+
+            // Blockers para publicar, calculados una vez y reusados en el paso 5.
+            var publishBlockers = Vue.computed(function () {
+                var out = [];
+                if (isArchived.value) out.push('El cuestionario está archivado y no se puede publicar. Reactivalo desde el listado.');
+                if (conflict.value)   out.push('Hay un conflicto de edición sin resolver.');
+                if (dirty.value)      out.push('Hay cambios sin guardar. Guardá antes de publicar.');
+                if (isNew.value)      out.push('El cuestionario todavía no se guardó por primera vez.');
+                if (issues.value.length) out.push('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes.');
+                if (!allQuestionsFlat.value.length) out.push('No hay preguntas cargadas.');
+                return out;
+            });
 
             // --- Lógica condicional (enableWhen) -------------------------------------
             // Solo se puede condicionar contra preguntas ANTERIORES: al responder, el
@@ -222,6 +342,41 @@
                 toast((questions.length === 1
                     ? '"' + questions[0].text + '" quedó siempre visible'
                     : questions.length + ' preguntas quedaron siempre visibles') + ': ' + motivo, 'warning');
+                dirty.value = true;
+            }
+
+            /// Familia de valor que produce cada tipo al responderse. Cambiar de tipo
+            /// dentro de la misma familia no invalida una condición existente; cambiar de
+            /// familia sí, porque el valor esperado guardado deja de ser comparable.
+            function answerKind(type) {
+                if (type === 'boolean') return 'boolean';
+                if (['integer', 'decimal', 'scale'].indexOf(type) >= 0) return 'number';
+                if (['choice', 'openChoice'].indexOf(type) >= 0) return 'choice';
+                if (type === 'attachment') return 'attachment';   // no comparable: familia propia
+                return 'text';
+            }
+
+            function onTypeChange(newType) {
+                var q = selected.value.question;
+                var previo = q.type;
+                if (!newType || newType === previo) return;
+                q.type = newType;
+
+                // Las opciones pertenecen a los tipos de opción. Si quedan colgadas al
+                // salir de esa familia, buildPayload las sigue mandando y el cuestionario
+                // se publica con answerOption en una pregunta de texto.
+                if (answerKind(newType) === 'choice') {
+                    if (!(q.options && q.options.length)) {
+                        q.options = ['Opción 1', 'Opción 2'];
+                    }
+                } else if (answerKind(previo) === 'choice') {
+                    q.options = undefined;
+                }
+
+                if (answerKind(newType) !== answerKind(previo)) {
+                    dropConditions(dependentsOf([q.linkId]),
+                        'dependían de "' + q.text + '", que cambió de tipo');
+                }
                 dirty.value = true;
             }
 
@@ -499,26 +654,6 @@
                     .then(function () { importBusy.value = false; });
             }
 
-            // Aviso que tiene que sobrevivir al window.location.reload() de publicar: un
-            // toast disparado antes de recargar se pinta y desaparece en el mismo instante.
-            // Queda anotado acá y lo levanta onMounted, ya con la versión nueva en pantalla.
-            // Se guarda el id para no mostrar el aviso de un cuestionario sobre otro si la
-            // recarga no llegó a ocurrir (por ejemplo, si se navegó a otra ficha).
-            var PUBLISH_TOAST_KEY = 'cq.publishedToast';
-            function stashPublishToast() {
-                try { sessionStorage.setItem(PUBLISH_TOAST_KEY, String(currentId.value)); }
-                catch (e) { /* sessionStorage no disponible: se pierde el aviso, sin más */ }
-            }
-            function flushPublishToast() {
-                var pendiente = null;
-                try {
-                    pendiente = sessionStorage.getItem(PUBLISH_TOAST_KEY);
-                    sessionStorage.removeItem(PUBLISH_TOAST_KEY);
-                } catch (e) { return; }
-                if (!pendiente || pendiente !== String(currentId.value)) return;
-                toast('Cuestionario publicado exitosamente', 'success');
-            }
-
             function getToken() {
                 var meta = document.querySelector('meta[name="cq-token"]');
                 return meta ? meta.getAttribute('content') : null;
@@ -676,12 +811,88 @@
             });
 
             // Buscador del CUESTIONARIO completo: escribe sobre el objeto de codificación
-            // reactivo. No hay "cambio de selección" que suprimir; el término lo edita una
+            // reactiva. No hay "cambio de selección" que suprimir; el término lo edita una
             // sola caja fija en el encabezado.
             var questionnaireSnomed = createSnomedSearch(function () { return questionnaireCoding; });
             Vue.watch(function () { return questionnaireCoding.term; }, function (term) {
                 questionnaireSnomed.schedule(term);
             });
+
+            // --- Verificación de código SNOMED tipeado a mano -------------------------
+            // El médico puede saltarse el autocomplete y tipear un código directo. Sin
+            // chequeo, un dígito de más pasa como si fuera válido y termina en la base:
+            // los reportes cruzan mal y el error aparece meses después. Verificar consulta
+            // $expand con el propio código como filter y busca match exacto; si aparece,
+            // ponemos codeDisplay con el término oficial y avisamos si el término escrito
+            // difiere. Reusa el mismo endpoint (ya autorizado, ya con caché) para no meter
+            // cirugía en el backend.
+            var codeVerification = Vue.ref(null);   // { ok:true, display, warnTerm } | { ok:false, msg }
+            var codeVerifying = Vue.ref(false);
+
+            // Cambiar de pregunta borra el estado de verificación anterior: pertenece a la
+            // pregunta que se estaba mirando, no a esta.
+            Vue.watch(selected, function () { codeVerification.value = null; });
+            // Auto-verificación: al tipear/pegar un código, esperamos 500ms de calma
+            // y disparamos verifySnomedCode() sin que el usuario apriete nada. Antes
+            // era un botón "Verificar" — feedback: molestaba tener que confirmar algo
+            // que la máquina puede hacer sola.
+            var codeVerifyDebounce = null;
+            Vue.watch(function () {
+                return selected.value && selected.value.question ? selected.value.question.code : null;
+            }, function (newVal) {
+                codeVerification.value = null;
+                if (codeVerifyDebounce) clearTimeout(codeVerifyDebounce);
+                var code = (newVal || '').trim();
+                if (!code) return;
+                codeVerifyDebounce = setTimeout(function () { verifySnomedCode(); }, 500);
+            });
+
+            function verifySnomedCode() {
+                var q = selected.value && selected.value.question;
+                var code = q ? (q.code || '').trim() : '';
+                codeVerification.value = null;
+                if (!code) {
+                    codeVerification.value = { ok: false, msg: 'Escribí un código para verificar.' };
+                    return;
+                }
+                if (!/^[0-9]{6,18}$/.test(code)) {
+                    codeVerification.value = { ok: false, msg: 'Un código SNOMED CT son solo dígitos (6-18). Revisá lo tipeado.' };
+                    return;
+                }
+                var token = getToken();
+                if (!token) { toast('No hay sesión: no se puede verificar (token ausente).', 'error'); return; }
+
+                codeVerifying.value = true;
+                fetch('/fhir/r5/ValueSet/$expand?count=5&filter=' + encodeURIComponent(code), {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                }).then(function (res) {
+                    return res.json().catch(function () { return null; }).then(function (body) {
+                        if (!res.ok) throw new Error(diagnosticoTerminologia(body, 'HTTP ' + res.status));
+                        return body;
+                    });
+                }).then(function (data) {
+                    var results = (data && data.results) || [];
+                    var match = null;
+                    for (var i = 0; i < results.length; i++) {
+                        if (results[i].code === code) { match = results[i]; break; }
+                    }
+                    if (!match) {
+                        codeVerification.value = { ok: false, msg: 'El código ' + code + ' no existe en SNOMED CT (o no está en el subset activo).' };
+                        return;
+                    }
+                    q.codeDisplay = match.display;
+                    var termEscrito = (q.term || '').trim().toLowerCase();
+                    var termOficial = (match.display || '').toLowerCase();
+                    var warnTerm = termEscrito && termOficial.indexOf(termEscrito) < 0 && termEscrito.indexOf(termOficial) < 0;
+                    codeVerification.value = { ok: true, display: match.display, warnTerm: warnTerm };
+                    dirty.value = true;
+                }).catch(function (err) {
+                    codeVerification.value = { ok: false, msg: err.message };
+                }).then(function () {
+                    codeVerifying.value = false;
+                });
+            }
+
             // ---- Serialización a FHIR R5 ----
             //
             // Desde la feature 009 el editor habla FHIR directamente: hay UNA sola
@@ -894,7 +1105,10 @@
                 // server. Un cuestionario nuevo siempre tiene que crearse la primera vez,
                 // aunque todavía no se haya tocado nada.
                 if (!isNew.value && !dirty.value) {
-                    if (explicit) toast('No hay cambios para guardar', 'info');
+                    // El usuario apreto Guardar pero no hay nada pendiente. No es
+                    // un error: confirmamos con verde y wording positivo, en vez
+                    // del azul info que se leia como cartel de bug.
+                    if (explicit) toast('Ya esta todo guardado', 'success');
                     return Promise.resolve(true);
                 }
                 // El backend rechaza cualquier escritura sobre un archivado: cortar acá
@@ -1212,9 +1426,10 @@
                     });
                 }).then(function () {
                     dirty.value = false;
-                    // Recargar: versión, estado y "cambios sin publicar" los calcula el server.
-                    stashPublishToast();
-                    window.location.reload();
+                    // Publicar es un punto final del flujo de edición: volver al listado en
+                    // vez de recargar el editor, que es donde se ve el resultado (versión,
+                    // estado) sobre todos los cuestionarios, no sólo este.
+                    window.location.href = '/Questionnaires';
                 }).catch(function (err) {
                     toast('No se pudo publicar: ' + err.message, 'error');
                     publishing.value = false;
@@ -1257,7 +1472,6 @@
             // Engancha los botones del header (viven fuera de la isla). Ojo: el listener
             // recibe el Event, así que va el wrapper y no save directamente.
             Vue.onMounted(function () {
-                flushPublishToast();
                 var btn = document.getElementById('saveBtn');
                 if (btn) btn.addEventListener('click', saveExplicit);
                 var pub = document.getElementById('publishBtn');
@@ -1271,10 +1485,19 @@
                 // Publicar queda deshabilitado mientras haya cambios sin guardar (o sea un
                 // cuestionario nuevo aún sin persistir): publicar exige guardar antes, así el
                 // botón lo comunica y no sólo el toast del guard.
-                Vue.watch([saving, publishing, dirty, isNew], function () {
+                // Guardar: sólo si hay cambios sin guardar (dirty). Sin dirty no hay
+                // nada que persistir, y el botón deshabilitado sirve además como
+                // confirmación visual de "todo persistido".
+                // Publicar: no permitir si hay cambios sin guardar ni si es un
+                // cuestionario nuevo sin persistir; y si ya está publicado, exigir
+                // que haya cambios pendientes (si no, publicar sería un no-op).
+                Vue.watch([saving, publishing, dirty, isNew, isPublished, hasPendingChanges], function () {
                     var busy = saving.value || publishing.value;
-                    if (btn) btn.disabled = busy;
-                    if (pub) pub.disabled = busy || dirty.value || isNew.value;
+                    if (btn) btn.disabled = busy || !dirty.value;
+                    if (pub) {
+                        var noPendientes = isPublished.value && !hasPendingChanges.value;
+                        pub.disabled = busy || dirty.value || isNew.value || noPendientes;
+                    }
                 }, { immediate: true });
             });
             Vue.onUnmounted(function () {
@@ -1291,7 +1514,7 @@
             return {
                 groups: groups, types: types, selected: selected,
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
-                qTitle: qTitle, specialtyCode: specialtyCode, isNew: isNew,
+                qTitle: qTitle, qTitleTouched: qTitleTouched, specialtyCode: specialtyCode, isNew: isNew,
                 isPublished: isPublished, isArchived: isArchived, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
                 merging: merging, mergeAutoCount: mergeAutoCount, conflictEntries: conflictEntries,
@@ -1301,6 +1524,8 @@
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 questionSnomed: questionSnomed,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
+                verifySnomedCode: verifySnomedCode, codeVerification: codeVerification, codeVerifying: codeVerifying,
+                onTypeChange: onTypeChange,
                 selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
                 addOption: addOption, removeOption: removeOption,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
@@ -1311,7 +1536,13 @@
                 drag: drag, dropTarget: dropTarget,
                 onQuestionDragStart: onQuestionDragStart, onGroupDragStart: onGroupDragStart,
                 onDragEnd: onDragEnd, onQuestionDragOver: onQuestionDragOver, onGroupDragOver: onGroupDragOver,
-                onQuestionDrop: onQuestionDrop, onSectionDrop: onSectionDrop
+                onQuestionDrop: onQuestionDrop, onSectionDrop: onSectionDrop,
+                STEPS: STEPS, step: step, stepIndex: stepIndex, gotoStep: gotoStep,
+                stepNext: stepNext, stepPrev: stepPrev, currentStepHelp: currentStepHelp,
+                stepStatus: stepStatus, isStepDone: isStepDone, stepReachable: stepReachable,
+                canGoNext: canGoNext, nextBlockedReason: nextBlockedReason,
+                allQuestionsFlat: allQuestionsFlat, codingProgress: codingProgress,
+                publishBlockers: publishBlockers
             };
         },
         template: '\
@@ -1392,7 +1623,7 @@
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(i, ix) in issues" :key="ix">{{ i.detail }}</li>\
             </ul>\
-            <button class="btn btn-sm btn-outline-secondary mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Dejarlas siempre visibles</button>\
+            <button class="btn btn-sm btn-outline-secondary-cq mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Dejarlas siempre visibles</button>\
         </div>\
     </div>\
 </div>\
@@ -1404,36 +1635,59 @@
     <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
     <span class="cq-text-sm">Este cuestionario está <strong>archivado</strong> y es de sólo lectura: no se puede editar ni guardar. Para reactivarlo, publíquelo de nuevo desde el listado de Cuestionarios.</span>\
 </div>\
-<div class="row g-3">\
-    <div class="col-lg-2">\
-        <div class="cq-card" style="position:sticky; top:84px;">\
-            <h3 class="cq-section-title" style="margin-top:0;">Tipos</h3>\
-            <div class="d-flex flex-column gap-1">\
-                <div v-for="t in types" :key="t.code" class="cq-text-sm d-flex align-items-center gap-2 p-1" style="border-radius:6px; cursor:grab;">\
-                    <i :class="\'bi \' + t.icon"></i> {{ t.label }}\
-                </div>\
-            </div>\
-            <p class="cq-text-xs cq-text-muted mt-3 mb-0">Haga clic en + dentro de una sección para agregar.</p>\
+<ol class="cq-timeline mb-3" aria-label="Pasos para crear un cuestionario">\
+    <li v-for="(s, i) in STEPS" :key="s.key"\
+        class="cq-timeline__item"\
+        :class="[\'is-\' + stepStatus(i)]"\
+        :aria-current="step === s.key ? \'step\' : null">\
+        <button type="button" class="cq-timeline__dot"\
+                @click="gotoStep(s.key)"\
+                :disabled="!stepReachable(i) && step !== s.key"\
+                :aria-label="(i + 1) + \'. \' + s.label + (stepStatus(i) === \'locked\' ? \' (bloqueado)\' : \'\')"\
+                :title="stepStatus(i) === \'locked\' ? \'Completá los pasos anteriores para desbloquear\' : s.label">\
+            <i v-if="isStepDone(i) && step !== s.key" class="bi bi-check-lg"></i>\
+            <i v-else-if="stepStatus(i) === \'locked\'" class="bi bi-lock-fill"></i>\
+            <span v-else>{{ i + 1 }}</span>\
+        </button>\
+        <div class="cq-timeline__label">\
+            <div class="cq-timeline__title">{{ s.label }}</div>\
+            <div class="cq-timeline__sub"><i :class="\'bi \' + s.icon"></i></div>\
+        </div>\
+    </li>\
+</ol>\
+<div class="cq-card cq-wizard-help mb-3" style="border-left:3px solid var(--cq-info);">\
+    <div class="cq-wizard-help__body">\
+        <span class="cq-help" style="cursor:default;" aria-hidden="true"><i class="bi bi-question-lg"></i></span>\
+        <div class="flex-fill">\
+            <div class="cq-text-sm"><strong>{{ STEPS[stepIndex].label }}</strong></div>\
+            <div class="cq-text-sm cq-text-muted">{{ currentStepHelp }}</div>\
         </div>\
     </div>\
+    <div class="cq-wizard-help__nav">\
+        <button class="btn btn-sm btn-outline-secondary-cq" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
+        <button class="btn btn-sm btn-secondary" :disabled="!canGoNext" @click="stepNext" :title="nextBlockedReason">Siguiente <i class="bi bi-chevron-right"></i></button>\
+    </div>\
+</div>\
 \
-    <div class="col-lg-6">\
-        <div class="cq-card mb-2">\
-            <div class="row g-2">\
-                <div class="col-8">\
-                    <label class="form-label cq-text-sm">Título del cuestionario</label>\
-                    <input v-model="qTitle" class="form-control form-control-sm" placeholder="Ej: Cardio basal" />\
-                </div>\
-                <div class="col-4">\
-                    <label class="form-label cq-text-sm">Especialidad</label>\
-                    <select v-model="specialtyCode" class="form-select form-select-sm">\
-                        <option value="general">General</option>\
-                        <option value="cardio">Cardiología</option>\
-                        <option value="neumo">Neumonología</option>\
-                        <option value="onco">Oncología</option>\
-                        <option value="reuma">Reumatología</option>\
-                    </select>\
-                </div>\
+<div v-if="step === \'meta\'">\
+    <div class="cq-card">\
+        <h3 class="cq-section-title mt-0">Datos generales</h3>\
+        <div class="row g-3">\
+            <div class="col-md-8">\
+                <label class="form-label cq-text-sm">Título del cuestionario <span style="color:var(--cq-danger);">*</span></label>\
+                <input v-model="qTitle" class="form-control" :class="{ \'is-invalid\': qTitleTouched && isNew && !qTitle.trim() }" placeholder="Ej: Cardio basal" required @blur="qTitleTouched = true" />\
+                <p v-if="qTitleTouched && isNew && !qTitle.trim()" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">Obligatorio: cargá un título para poder continuar.</p>\
+            </div>\
+            <div class="col-md-4">\
+                <label class="form-label cq-text-sm">Especialidad</label>\
+                <select v-model="specialtyCode" class="form-select">\
+                    <option value="general">General</option>\
+                    <option value="cardio">Cardiología</option>\
+                    <option value="neumo">Neumonología</option>\
+                    <option value="onco">Oncología</option>\
+                    <option value="reuma">Reumatología</option>\
+                </select>\
+                <p class="cq-text-xs cq-text-muted mt-1 mb-0">Agrupa el cuestionario en los reportes.</p>\
             </div>\
             <hr class="my-2" />\
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica del cuestionario <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
@@ -1467,10 +1721,17 @@
                 </div>\
             </div>\
         </div>\
-        <div class="mb-2" v-if="!isArchived">\
-            <button class="btn btn-sm btn-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
-        </div>\
-        <div class="d-flex justify-content-between align-items-center mb-2">\
+    </div>\
+    <div class="cq-card mt-3" v-if="!isArchived">\
+        <h3 class="cq-section-title mt-0">Importar desde otro cuestionario</h3>\
+        <p class="cq-text-xs cq-text-muted mb-2">Trae las secciones y preguntas de otro cuestionario de la misma especialidad para partir de ahí en vez de empezar de cero.</p>\
+        <button class="btn btn-sm btn-outline-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
+    </div>\
+</div>\
+\
+<div v-if="step === \'structure\'" class="row g-3">\
+    <div class="col-lg-6">\
+        <div class="d-flex justify-content-between align-items-center mb-2" style="min-height:31px;">\
             <h3 class="m-0">Estructura</h3>\
             <span class="cq-text-xs" style="color:var(--cq-warning);" v-if="dirty">Cambios sin guardar</span>\
             <span class="cq-text-xs cq-text-muted" v-else-if="lastSaved">Guardado {{ lastSaved }}</span>\
@@ -1483,9 +1744,12 @@
                    @dragstart="onGroupDragStart(g, $event)" @dragend="onDragEnd"\
                    :aria-label="\'Arrastrar para reordenar la sección \' + g.title" title="Arrastrar para reordenar la sección"></i>\
                 <i class="bi bi-folder text-primary"></i>\
-                <input v-model="g.title" class="form-control form-control-sm fw-semibold" style="max-width:320px;" placeholder="Nueva sección" />\
+                <input v-model="g.title" class="form-control form-control-sm fw-semibold" :class="{ \'is-invalid\': g.titleTouched && !g.title.trim() }" style="max-width:320px;" placeholder="Nombre de la sección" required @blur="g.titleTouched = true" :title="(g.titleTouched && !g.title.trim()) ? \'Obligatorio: cargá un nombre para la sección\' : \'\'" />\
                 <span class="cq-text-xs cq-text-muted">{{ g.questions.length }} preguntas</span>\
-                <button class="btn btn-sm btn-link text-danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title"><i class="bi bi-trash"></i></button>\
+                <button type="button" class="cq-icon-btn cq-icon-btn--danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title" :title="\'Eliminar sección \' + g.title">\
+                    <i class="bi bi-trash cq-icon-btn__idle"></i>\
+                    <i class="bi bi-trash-fill cq-icon-btn__hover"></i>\
+                </button>\
             </div>\
             <ul class="list-unstyled mb-2">\
                 <li v-for="q in g.questions" :key="q.linkId"\
@@ -1494,30 +1758,42 @@
                     @dragover.prevent.stop="onQuestionDragOver(q)"\
                     @drop.prevent.stop="onQuestionDrop(g, q)"\
                     @dragend="onDragEnd"\
-                    class="d-flex align-items-center gap-2 py-1 px-2"\
-                    :style="{ borderRadius: \'6px\', cursor: \'pointer\', background: selected && selected.question === q ? \'var(--cq-primary-100)\' : \'transparent\', borderTop: (dropTarget === q && drag && drag.type === \'question\') ? \'2px solid var(--cq-primary)\' : \'2px solid transparent\' }"\
+                    class="cq-question-card"\
+                    :class="{ \'is-selected\': selected && selected.question === q, \'is-drop-target\': dropTarget === q && drag && drag.type === \'question\' }"\
                     @click="selectQuestion(g, q)">\
-                    <i class="bi bi-grip-vertical cq-text-muted" style="cursor:grab;"></i>\
-                    <span class="cq-text-sm flex-fill">{{ q.text || \'Nueva pregunta\' }} <span class="cq-text-xs cq-text-muted">({{ q.type }}{{ q.required ? \'*\' : \'\' }})</span></span>\
-                    <button class="btn btn-sm btn-link text-danger" @click.stop="removeQuestion(g, q)" :aria-label="\'Eliminar \' + q.text"><i class="bi bi-x-lg"></i></button>\
+                    <i class="bi bi-grip-vertical cq-question-card__grip"></i>\
+                    <span class="cq-question-card__text">{{ q.text || \'Nueva pregunta\' }}<span v-if="q.required" class="cq-question-card__req">*</span></span>\
+                    <button type="button" class="cq-icon-btn cq-icon-btn--danger" @click.stop="removeQuestion(g, q)" :aria-label="\'Eliminar \' + q.text" :title="\'Eliminar pregunta\'">\
+                        <i class="bi bi-trash cq-icon-btn__idle"></i>\
+                        <i class="bi bi-trash-fill cq-icon-btn__hover"></i>\
+                    </button>\
                 </li>\
             </ul>\
             <div class="dropdown">\
-                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">+ Agregar pregunta</button>\
+                <button class="btn btn-sm btn-primary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus-lg me-1"></i>Agregar pregunta</button>\
                 <ul class="dropdown-menu">\
-                    <li v-for="t in types" :key="t.code"><a class="dropdown-item" href="javascript:" @click="addQuestion(g, t.code)"><i :class="\'bi \' + t.icon + \' me-1\'"></i> {{ t.label }}</a></li>\
+                    <li v-for="t in types" :key="t.code"><a class="dropdown-item" href="javascript:" @click="addQuestion(g, t.code)"><i :class="\'bi \' + t.icon"></i><span>{{ t.label }}</span></a></li>\
                 </ul>\
             </div>\
         </div>\
-        <button class="btn btn-outline-secondary w-100" @click="addGroup"><i class="bi bi-plus-lg me-1"></i> Agregar sección</button>\
+        <button class="btn btn-primary w-100" @click="addGroup"><i class="bi bi-plus-lg me-1"></i> Agregar sección</button>\
     </div>\
 \
-    <div class="col-lg-4">\
+    <div class="col-lg-6">\
+        <div class="d-flex justify-content-between align-items-center mb-2" style="min-height:31px;">\
+            <h3 class="m-0">Propiedades</h3>\
+            <span v-if="!selected" class="cq-text-xs cq-text-muted">Elegí una pregunta</span>\
+        </div>\
         <div v-if="selected" class="cq-card" style="position:sticky; top:84px;">\
-            <h3 class="cq-section-title" style="margin-top:0;">Propiedades</h3>\
             <div class="mb-2">\
                 <label class="form-label cq-text-sm">Texto</label>\
                 <input v-model="selected.question.text" class="form-control form-control-sm" placeholder="Nueva pregunta" />\
+            </div>\
+            <div class="mb-2">\
+                <label class="form-label cq-text-sm">Tipo</label>\
+                <select :value="selected.question.type" @change="onTypeChange($event.target.value)" class="form-select form-select-sm">\
+                    <option v-for="t in types" :key="t.code" :value="t.code">{{ t.label }}</option>\
+                </select>\
             </div>\
             <div class="form-check mb-2">\
                 <input v-model="selected.question.required" type="checkbox" class="form-check-input" id="reqCk" />\
@@ -1611,15 +1887,39 @@
                         {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
                     </li>\
                 </ul>\
-                <div v-else-if="questionSnomed.open && !questionSnomed.searching && !questionSnomed.error" class="cq-text-xs cq-text-muted mt-1">Sin resultados.</div>\
+                <div v-else-if="questionSnomed.open && !questionSnomed.searching && !questionSnomed.error" class="cq-text-xs cq-text-muted mt-1">\
+                    Sin resultados para ese término. Probá con sinónimos, o buscalo en el\
+                    <a :href="\'https://browser.ihtsdotools.org/?edition=MAIN&perspective=full&conceptId1=&edition=MAIN&release=&languages=es,en&searchMode=partialMatching&searchAfter=&searchTerm=\' + encodeURIComponent(selected && selected.question ? (selected.question.term || \'\') : \'\')" target="_blank" rel="noopener noreferrer">browser oficial de SNOMED CT <i class="bi bi-box-arrow-up-right"></i></a>\
+                    y pegá el código abajo (después le das "Verificar").\
+                </div>\
             </div>\
             <div class="mb-2">\
-                <label class="form-label cq-text-sm">Código SNOMED CT</label>\
-                <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
-                <div v-if="selected.question.codeDisplay" class="cq-text-xs mt-1">\
-                    <i class="bi bi-check-circle-fill text-success"></i> {{ selected.question.codeDisplay }}\
-                    <a href="javascript:" class="ms-1" @click="questionSnomed.clear">quitar</a>\
+                <label class="form-label cq-text-sm d-flex align-items-center gap-2">\
+                    Código SNOMED CT\
+                    <span v-if="codeVerifying" class="cq-text-xs cq-text-muted d-inline-flex align-items-center gap-1"><span class="spinner-border spinner-border-sm" style="width:12px; height:12px;"></span> Verificando…</span>\
+                </label>\
+                <div class="input-group input-group-sm">\
+                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
                 </div>\
+                <div v-if="codeVerification && codeVerification.ok" class="cq-text-xs mt-1" style="color:var(--cq-success);">\
+                    <i class="bi bi-check-circle-fill"></i> Coincide: <strong>{{ codeVerification.display }}</strong>\
+                    <div v-if="codeVerification.warnTerm" class="cq-text-xs mt-1" style="color:var(--cq-warning);">\
+                        <i class="bi bi-exclamation-triangle-fill"></i> El término escrito no coincide con el oficial. Revisalo o dejá el oficial.\
+                    </div>\
+                </div>\
+                <div v-else-if="codeVerification && !codeVerification.ok" class="cq-text-xs text-danger mt-1">\
+                    <i class="bi bi-x-circle-fill"></i> {{ codeVerification.msg }}\
+                </div>\
+                <div v-if="selected.question.codeDisplay" class="mt-1">\
+                    <span class="cq-removable">\
+                        <i class="bi bi-check-circle-fill"></i>\
+                        {{ selected.question.codeDisplay }}\
+                        <button type="button" class="cq-removable__remove" title="Quitar código" aria-label="Quitar código" @click="questionSnomed.clear">\
+                            <i class="bi bi-x"></i>\
+                        </button>\
+                    </span>\
+                </div>\
+                <p v-else class="cq-text-xs cq-text-muted mt-1">Elegí una sugerencia de arriba, o escribí el código a mano y verificalo.</p>\
             </div>\
 \
             <hr />\
@@ -1628,6 +1928,62 @@
         <div v-else class="cq-card cq-text-sm cq-text-muted">Seleccione una pregunta para editar sus propiedades.</div>\
     </div>\
 </div>\
+\
+<div v-if="step === \'preview\'">\
+    <div v-if="!groups.length || !allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para previsualizar. Volvé al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a>.</div>\
+    <div v-else>\
+        <div class="cq-card mb-2">\
+            <h2 class="mt-0 mb-1">{{ qTitle }}</h2>\
+            <div class="cq-text-xs cq-text-muted">Especialidad: {{ specialtyCode }}</div>\
+        </div>\
+        <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2">\
+            <h3 class="cq-section-title mt-0"><i class="bi bi-folder me-1"></i>{{ g.title }}</h3>\
+            <div v-if="!g.questions.length" class="cq-text-xs cq-text-muted">Sección sin preguntas.</div>\
+            <div v-for="q in g.questions" :key="q.linkId" class="mb-3">\
+                <label class="form-label cq-text-sm fw-semibold">{{ q.text }} <span v-if="q.required" class="text-danger">*</span></label>\
+                <input v-if="[\'string\',\'text\'].indexOf(q.type) < 0 && [\'choice\',\'openChoice\',\'boolean\'].indexOf(q.type) < 0 && q.type !== \'attachment\'"\
+                       class="form-control form-control-sm" :placeholder="q.type" disabled />\
+                <input v-if="q.type === \'string\'" class="form-control form-control-sm" placeholder="Respuesta corta" disabled />\
+                <textarea v-if="q.type === \'text\'" class="form-control form-control-sm" rows="2" placeholder="Respuesta larga" disabled></textarea>\
+                <div v-if="q.type === \'boolean\'" class="form-check">\
+                    <input class="form-check-input" type="checkbox" disabled />\
+                    <label class="form-check-label cq-text-sm">Sí / No</label>\
+                </div>\
+                <div v-if="[\'choice\',\'openChoice\'].indexOf(q.type) >= 0">\
+                    <div v-for="opt in (q.options || [])" :key="opt" class="form-check">\
+                        <input class="form-check-input" :type="q.type === \'choice\' ? \'radio\' : \'checkbox\'" disabled />\
+                        <label class="form-check-label cq-text-sm">{{ opt }}</label>\
+                    </div>\
+                </div>\
+                <div v-if="q.type === \'attachment\'" class="cq-text-xs cq-text-muted"><i class="bi bi-paperclip"></i> Adjunto ({{ q.accept || \'imagen o PDF\' }})</div>\
+                <div v-if="q.code" class="cq-text-xs cq-text-muted mt-1"><i class="bi bi-tag"></i> {{ q.code }} — {{ q.codeDisplay || q.term }}</div>\
+                <div v-if="q.enableWhen" class="cq-text-xs cq-text-muted mt-1"><i class="bi bi-diagram-2"></i> Se muestra sólo si otra respuesta lo habilita.</div>\
+            </div>\
+        </div>\
+    </div>\
+</div>\
+\
+<div v-if="step === \'publish\'">\
+    <div class="cq-card mb-2">\
+        <h3 class="cq-section-title mt-0"><i class="bi bi-send me-1"></i>Publicación</h3>\
+        <p class="cq-text-sm cq-text-muted">Publicar congela una versión: los clínicos ven exactamente esta estructura hasta que publiques una nueva.</p>\
+        <div v-if="publishBlockers.length" class="cq-card mb-3" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
+            <div class="cq-text-sm"><strong>Antes de publicar, resolvé:</strong></div>\
+            <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
+                <li v-for="(b, bi) in publishBlockers" :key="bi">{{ b }}</li>\
+            </ul>\
+        </div>\
+        <div v-else class="cq-card mb-3" style="border-left:3px solid var(--cq-success); background:var(--cq-neutral-50);">\
+            <div class="cq-text-sm"><i class="bi bi-check-circle-fill" style="color:var(--cq-success);"></i> Todo listo para publicar.</div>\
+            <div v-if="isPublished" class="cq-text-xs cq-text-muted mt-1">Ya hay una versión publicada. Publicar de nuevo crea una versión posterior.</div>\
+        </div>\
+        <div class="d-flex gap-2">\
+            <button class="btn btn-primary" @click="publish" :disabled="publishBlockers.length || publishing"><i class="bi bi-send me-1"></i> Publicar ahora</button>\
+            <button class="btn btn-outline-secondary-cq" @click="gotoStep(\'structure\')"><i class="bi bi-arrow-left me-1"></i> Volver a la estructura</button>\
+        </div>\
+    </div>\
+</div>\
+\
 </div>'
     };
 

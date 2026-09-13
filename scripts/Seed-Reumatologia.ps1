@@ -391,4 +391,4 @@ foreach ($def in $questionnaires) {
 
 Write-Host ""
 Write-Host ("Listo. Cuestionarios: {0} | Respuestas creadas: {1}" -f $qByTitle.Count, $respCount) -ForegroundColor Cyan
-Write-Host "Probá en: $BaseUrl/Questionnaires   y   $BaseUrl/Encounters/Search"
+Write-Host "Probá en: $BaseUrl/Questionnaires   y   $BaseUrl/Pacientes"
