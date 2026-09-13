@@ -259,6 +259,88 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   outline-offset: 2px;
 }
 
+/* Bootstrap compila --bs-btn-color hardcoded a #0d6efd para .btn-outline-primary,
+   así que el override de --bs-primary no alcanza y sale azul. En este tema los
+   outlines son VERDES (secondary) porque los filled son lila (primary): así
+   toda familia "outline" comparte color y toda familia "filled" también, y la
+   jerarquía se lee por variante (lleno vs. borde), no por hue. */
+/* Todas las variantes outline que la app usa como "acción secundaria"
+   (bootstrap .btn-outline-secondary, .btn-outline-primary sin tema, y la
+   variante .btn-outline-secondary-cq) apuntan al MISMO --cq-secondary.
+   Hover con tinte suave: no llenar full para que el secondary mantenga
+   menos peso visual que el primary en TODOS los estados. */
+.btn-outline-primary,
+.btn-outline-secondary {
+  --bs-btn-color: var(--cq-secondary);
+  --bs-btn-border-color: var(--cq-secondary);
+  --bs-btn-bg: transparent;
+  --bs-btn-hover-bg: var(--cq-secondary-100);
+  --bs-btn-hover-border-color: var(--cq-secondary);
+  --bs-btn-hover-color: var(--cq-secondary-600);
+  --bs-btn-active-bg: var(--cq-secondary-100);
+  --bs-btn-active-border-color: var(--cq-secondary-600);
+  --bs-btn-active-color: var(--cq-secondary-600);
+  --bs-btn-disabled-color: var(--cq-secondary);
+  --bs-btn-disabled-border-color: var(--cq-secondary);
+  color: var(--cq-secondary);
+  border-color: var(--cq-secondary);
+  background: transparent;
+}
+.btn-outline-primary:hover,
+.btn-outline-primary:focus,
+.btn-outline-primary:active,
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus,
+.btn-outline-secondary:active,
+.show > .btn-outline-primary.dropdown-toggle,
+.show > .btn-outline-secondary.dropdown-toggle {
+  background: var(--cq-secondary-100);
+  border-color: var(--cq-secondary);
+  color: var(--cq-secondary-600);
+}
+/* Radios segmentados (btn-check + label.btn-outline-secondary): al SELECCIONAR
+   sí queremos fill verde para marcar el estado activo, no tinte suave. */
+.btn-check:checked + .btn-outline-secondary,
+.btn-check:active + .btn-outline-secondary {
+  background: var(--cq-secondary);
+  border-color: var(--cq-secondary);
+  color: #fff;
+}
+.btn-outline-primary:focus-visible,
+.btn-outline-secondary:focus-visible {
+  outline: 2px solid var(--cq-accent);
+  outline-offset: 2px;
+}
+
+/* Botón Cancelar de los modales: rojo suave (red-500) para leer como "abandonar"
+   sin la carga visual del rojo fuerte del danger. Escala pensada:
+     cancelar (outline red-500)  <  tacho (bg red-50 + red-700)  <  destructiva (filled red-700). */
+.btn-outline-danger {
+  --bs-btn-color: #ef4444;
+  --bs-btn-border-color: #ef4444;
+  --bs-btn-bg: transparent;
+  --bs-btn-hover-bg: #fef2f2;
+  --bs-btn-hover-border-color: #ef4444;
+  --bs-btn-hover-color: #dc2626;
+  --bs-btn-active-bg: #fee2e2;
+  --bs-btn-active-border-color: #dc2626;
+  --bs-btn-active-color: #b91c1c;
+  color: #ef4444;
+  border-color: #ef4444;
+  background: transparent;
+}
+.btn-outline-danger:hover,
+.btn-outline-danger:focus,
+.btn-outline-danger:active {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #dc2626;
+}
+.btn-outline-danger:focus-visible {
+  outline: 2px solid #fca5a5;
+  outline-offset: 2px;
+}
+
 /* ===== Inputs ===== */
 .form-control, .form-select {
   border-color: var(--cq-neutral-200);
@@ -267,9 +349,138 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 }
 .form-control:focus, .form-select:focus {
   border-color: var(--cq-primary-400);
-  box-shadow: 0 0 0 3px rgba(42, 105, 184, 0.15);
+  box-shadow: 0 0 0 3px rgba(111, 95, 165, 0.18);
 }
 .form-label { font-size: 13px; font-weight: 500; color: var(--cq-neutral-700); margin-bottom: 4px; }
+
+/* Select refinado: chevron violeta, padding cómodo, hover del borde y
+   fondo levemente teñido para separarlo del input crudo del sistema. */
+.form-select {
+  background-color: #fff;
+  color: var(--cq-neutral-900);
+  padding: 8px 36px 8px 12px;
+  cursor: pointer;
+  /* Chevron violeta custom en lugar del gris default de Bootstrap. */
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%236f5fa5'%3E%3Cpath d='M8 11.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06L8 9.69l3.47-3.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-.53.22z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px 16px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.form-select:hover:not(:focus) { border-color: var(--cq-primary-400); }
+.form-select-sm { padding: 6px 32px 6px 10px; background-size: 14px 14px; }
+
+/* Radios y checkboxes: por default Bootstrap usa azul y a veces se deforman
+   por vertical-align. Los pintamos con la paleta primary y forzamos alineación
+   central + tamaño consistente. */
+.form-check-input {
+  width: 16px;
+  height: 16px;
+  margin-top: 0;
+  vertical-align: middle;
+  border: 1.5px solid var(--cq-neutral-300);
+  cursor: pointer;
+  transition: background-color 120ms, border-color 120ms, box-shadow 120ms;
+}
+.form-check-input:hover { border-color: var(--cq-primary-400); }
+.form-check-input:focus {
+  border-color: var(--cq-primary);
+  box-shadow: 0 0 0 3px rgba(111, 95, 165, 0.20);
+}
+.form-check-input:checked {
+  background-color: var(--cq-primary);
+  border-color: var(--cq-primary);
+}
+.form-check-input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath d='M6.71 11.29 4.83 9.41a1 1 0 1 0-1.41 1.42l2.59 2.59a1 1 0 0 0 1.41 0l7.59-7.59a1 1 0 1 0-1.41-1.42z'/%3E%3C/svg%3E");
+}
+/* Punto violeta del radio (Bootstrap dibuja un círculo blanco pequeño encima
+   del fondo). Se lo damos explícito para que quede centrado y del color justo. */
+.form-check-input[type="radio"]:checked {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'%3E%3Ccircle cx='8' cy='8' r='4'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-position: center;
+}
+.form-check-label { cursor: pointer; }
+
+/* Custom select con Bootstrap dropdown: el toggle imita a .form-select, pero
+   el menú es HTML normal y ahí SÍ podemos estilar cada opción (los <option>
+   nativos los renderiza el SO). Uso: <div class="dropdown cq-select"> con
+   <button class="cq-select__toggle"> y <ul class="dropdown-menu"> con items
+   .cq-select__opt (ver Encounters/Index.cshtml). */
+.cq-select { position: relative; }
+.cq-select__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  /* Igual a .form-control (Bootstrap): 6px verticales, 12px horizontales;
+     el derecho lo agrandamos para dejar hueco al chevron. Así un cq-select y
+     un input al lado quedan del mismo alto exacto. */
+  padding: 0.375rem 36px 0.375rem 0.75rem;
+  line-height: 1.5;
+  background: #fff;
+  border: 1px solid var(--cq-neutral-200);
+  border-radius: var(--cq-radius-sm);
+  font-size: 14px;
+  color: var(--cq-neutral-900);
+  text-align: left;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%236f5fa5'%3E%3Cpath d='M8 11.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06L8 9.69l3.47-3.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-.53.22z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px 16px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.cq-select__toggle::after { display: none; }
+.cq-select__toggle:hover:not([aria-expanded="true"]) { border-color: var(--cq-primary-400); }
+.cq-select__toggle:focus,
+.cq-select__toggle[aria-expanded="true"] {
+  border-color: var(--cq-primary-400);
+  box-shadow: 0 0 0 3px rgba(111, 95, 165, 0.18);
+  outline: none;
+}
+.cq-select__label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cq-select .dropdown-menu { padding: 6px; }
+.cq-select .cq-select__opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--cq-neutral-800);
+  font-size: 14px;
+}
+.cq-select .cq-select__opt:hover,
+.cq-select .cq-select__opt:focus {
+  background: var(--cq-primary-100);
+  color: var(--cq-primary-600);
+}
+.cq-select .cq-select__opt > i { color: var(--cq-primary); width: 18px; text-align: center; }
+
+/* El <select> nativo original queda dentro del wrapper como storage para el
+   form submit / la API de JS existente. Se lo oculta completamente pero SIN
+   quitarlo del layout, y sin cambiar tamaño del wrapper. */
+.cq-select__native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+
+/* Variante --sm (equivalente a .form-select-sm) */
+.cq-select--sm .cq-select__toggle {
+  padding: 0.25rem 30px 0.25rem 0.5rem;
+  font-size: 13px;
+  background-size: 14px 14px;
+  background-position: right 8px center;
+}
 
 /* ===== Tables ===== */
 .cq-table {
@@ -327,23 +538,106 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   padding: 0;
   margin-left: 6px;
   vertical-align: middle;
-  border: 1px solid var(--cq-neutral-300);
+  border: 1px solid var(--cq-info);
   border-radius: 999px;
-  background: #fff;
-  color: var(--cq-neutral-600);
+  background: var(--cq-info);
+  color: #fff;
   font-size: 13px;
   line-height: 1;
   cursor: help;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 .cq-help:hover,
 .cq-help:focus-visible {
-  background: var(--cq-primary-100);
-  border-color: var(--cq-primary-400);
-  color: var(--cq-primary);
+  background: #075985;
+  border-color: #075985;
+  color: #fff;
   outline: none;
 }
 .cq-help i { font-size: 13px; }
+
+/* Tooltips y popovers de Bootstrap: se mantiene el estilo (radio, tipografía,
+   arrow, layout), sólo se reemplaza el gris oscuro default por el azul info
+   del sitio. Tooltips: box entero azul. Popovers: header azul + arrow azul,
+   body blanco para conservar legibilidad del texto largo. */
+.tooltip .tooltip-inner { background-color: var(--cq-info); }
+.tooltip .tooltip-arrow::before,
+.tooltip.bs-tooltip-top .tooltip-arrow::before,
+.tooltip.bs-tooltip-auto[data-popper-placement^="top"] .tooltip-arrow::before {
+  border-top-color: var(--cq-info);
+}
+.tooltip.bs-tooltip-bottom .tooltip-arrow::before,
+.tooltip.bs-tooltip-auto[data-popper-placement^="bottom"] .tooltip-arrow::before {
+  border-bottom-color: var(--cq-info);
+}
+.tooltip.bs-tooltip-start .tooltip-arrow::before,
+.tooltip.bs-tooltip-auto[data-popper-placement^="left"] .tooltip-arrow::before {
+  border-left-color: var(--cq-info);
+}
+.tooltip.bs-tooltip-end .tooltip-arrow::before,
+.tooltip.bs-tooltip-auto[data-popper-placement^="right"] .tooltip-arrow::before {
+  border-right-color: var(--cq-info);
+}
+
+.popover { border-color: var(--cq-info); }
+.popover .popover-header {
+  background: var(--cq-info);
+  color: #fff;
+  border-bottom-color: var(--cq-info);
+}
+.popover.bs-popover-top .popover-arrow::before,
+.popover.bs-popover-auto[data-popper-placement^="top"] .popover-arrow::before {
+  border-top-color: var(--cq-info);
+}
+.popover.bs-popover-bottom .popover-arrow::before,
+.popover.bs-popover-auto[data-popper-placement^="bottom"] .popover-arrow::before {
+  border-bottom-color: var(--cq-info);
+}
+.popover.bs-popover-bottom .popover-arrow::after,
+.popover.bs-popover-auto[data-popper-placement^="bottom"] .popover-arrow::after {
+  border-bottom-color: var(--cq-info);
+}
+.popover.bs-popover-start .popover-arrow::before,
+.popover.bs-popover-auto[data-popper-placement^="left"] .popover-arrow::before {
+  border-left-color: var(--cq-info);
+}
+.popover.bs-popover-end .popover-arrow::before,
+.popover.bs-popover-auto[data-popper-placement^="right"] .popover-arrow::before {
+  border-right-color: var(--cq-info);
+}
+
+/* ===== Panel de búsqueda (cq-autofilter) =====
+   Card blanco único que contiene o el loader centrado, o el contenido normal
+   (empty state / no-results / tabla de resultados). El toggle se hace por
+   selector hermano: cq-autofilter.js pone .is-loading al <form> mientras hay
+   un submit encolado o en curso. */
+.cq-search-panel {
+  background: #fff;
+  border: 1px solid var(--cq-neutral-200);
+  border-radius: var(--cq-radius-md);
+  overflow: hidden;
+}
+.cq-search-loader {
+  display: none;
+  padding: 32px 0;
+  text-align: center;
+}
+.cq-search-content > .cq-empty { padding: 40px 20px; }
+/* Tabla dentro del panel: sin borde ni sombra externa propios, se apoya en el
+   chrome del panel. */
+.cq-search-content > .cq-table--flush { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+
+/* Cuando el form está buscando: el contenido normal se oculta y el panel
+   se convierte en un contenedor que centra el spinner vertical y horizontal.
+   El min-height evita saltos de layout entre el contenido y el loader. */
+form.is-loading ~ .cq-search-panel {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+form.is-loading ~ .cq-search-panel .cq-search-content { display: none; }
+form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
 
 /* ===== Badges de estado ===== */
 .cq-badge {
@@ -837,7 +1131,12 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   box-shadow: none;
 }
 
-/* Variante outline del secondary — sólo activa cuando explícitamente se pide con .btn-outline-secondary-cq
+/* Botón secundario outline: MISMO family que primary (lila) pero más liviano.
+   Reservamos el gris para estados no-disponibles (disabled/locked): un outline
+   gris se lee como "no clickeable" y a la gente le frena la mano. Usando lila
+   outline dejamos claro que la acción está disponible, con menos peso visual
+   que el primary lleno. Ver .btn-outline-secondary-cq abajo (nombre histórico,
+   ahora repunta a --cq-primary).
    para no pisar los cancel de modales que hoy usan .btn-outline-secondary. */
 .btn-outline-secondary-cq {
   --bs-btn-color: var(--cq-secondary);
@@ -849,7 +1148,10 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   border-color: var(--cq-secondary);
   background: #fff;
 }
-.btn-outline-secondary-cq:hover {
+.btn-outline-secondary-cq:hover,
+.btn-outline-secondary-cq:focus,
+.btn-outline-secondary-cq:active,
+.show > .btn-outline-secondary-cq.dropdown-toggle {
   background: var(--cq-secondary-100);
   color: var(--cq-secondary-600);
   border-color: var(--cq-secondary);
@@ -931,12 +1233,98 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   outline: 2px solid var(--cq-primary-400);
   outline-offset: 2px;
 }
-.cq-icon-btn--danger { color: var(--cq-danger); }
-.cq-icon-btn--danger:hover {
-  background: #fee2e2;
+.cq-icon-btn--danger {
   color: var(--cq-danger);
+  background: #fef2f2;
   border-color: #fecaca;
 }
+.cq-icon-btn--danger:hover,
+.cq-icon-btn--danger:focus-visible {
+  background: var(--cq-danger);
+  color: #fff;
+  border-color: var(--cq-danger);
+  transform: scale(1.04);
+  box-shadow: 0 2px 6px rgba(185, 28, 28, 0.25);
+}
+/* Cambio de ícono en hover: se declaran dos <i> en el HTML (idle/hover),
+   y la CSS los alterna. Trash outline en idle, trash-fill en hover. */
+.cq-icon-btn__hover { display: none; }
+.cq-icon-btn:hover .cq-icon-btn__idle,
+.cq-icon-btn:focus-visible .cq-icon-btn__idle { display: none; }
+.cq-icon-btn:hover .cq-icon-btn__hover,
+.cq-icon-btn:focus-visible .cq-icon-btn__hover { display: inline-flex; }
+
+/* Card de pregunta dentro de una sección: le da el mismo lenguaje visual
+   que los icon buttons con card (fondo suave, borde, hover, y estado
+   seleccionado marcado con violeta). Antes era un <li> plano sin peso. */
+.cq-question-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--cq-radius-sm);
+  border: 1px solid var(--cq-neutral-200);
+  background: #fff;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, box-shadow 120ms, transform 120ms;
+}
+.cq-question-card:hover {
+  background: var(--cq-neutral-50, #f9fafb);
+  border-color: var(--cq-primary-400);
+  box-shadow: 0 1px 4px rgba(111, 95, 165, 0.08);
+}
+.cq-question-card.is-selected {
+  background: var(--cq-primary-100);
+  border-color: var(--cq-primary);
+  box-shadow: 0 2px 8px rgba(111, 95, 165, 0.18);
+}
+.cq-question-card__grip { color: var(--cq-neutral-500); cursor: grab; font-size: 14px; }
+.cq-question-card__text { flex: 1 1 auto; font-size: 14px; color: var(--cq-neutral-900); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cq-question-card__req { color: var(--cq-danger); font-weight: 600; margin-left: 2px; }
+.cq-question-card.is-drop-target { border-top: 2px solid var(--cq-primary); }
+
+/* Dropdown estilizado (Bootstrap por defecto es demasiado plano) */
+.dropdown-menu {
+  border: 1px solid var(--cq-neutral-200);
+  border-radius: var(--cq-radius-sm);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 6px;
+  min-width: 220px;
+}
+.dropdown-menu .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--cq-neutral-800);
+  transition: background 120ms, color 120ms;
+}
+.dropdown-menu .dropdown-item i {
+  color: var(--cq-primary);
+  font-size: 16px;
+  width: 20px;
+  display: inline-flex;
+  justify-content: center;
+}
+.dropdown-menu .dropdown-item:hover,
+.dropdown-menu .dropdown-item:focus {
+  background: var(--cq-primary-100);
+  color: var(--cq-primary-600);
+}
+.dropdown-menu .dropdown-item:hover i,
+.dropdown-menu .dropdown-item:focus i {
+  color: var(--cq-primary-600);
+}
+.dropdown-menu .dropdown-item.active,
+.dropdown-menu .dropdown-item:active {
+  background: var(--cq-primary);
+  color: #fff;
+}
+.dropdown-menu .dropdown-item.active i,
+.dropdown-menu .dropdown-item:active i { color: #fff; }
 
 /* Pill "quitar código" — reemplaza el link crudo "Quitar" al lado del check verde
    con un badge tipo chip que trae un tacho en el hover y muestra el tooltip nativo. */
@@ -984,6 +1372,48 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   position: relative;
   z-index: 1; /* que los controles internos no propaguen el click de fila */
 }
+
+/* Botón neutral gris — para acciones secundarias que no queremos pintar de
+   verde (que en este tema es "acción disponible") ni de violeta (CTA). Cases:
+   acciones de fila que compiten con múltiples verdes/violetas y necesitan
+   quedar tranquilas visualmente.
+   Funciona en dos modos: solo (.btn-neutral) hereda tamaño chico para filas;
+   combinado con .btn (.btn.btn-neutral) toma el sizing/tipografía default de
+   Bootstrap para quedar del mismo alto que un .btn-primary al lado. */
+.btn-neutral {
+  --bs-btn-color: var(--cq-neutral-700);
+  --bs-btn-bg: #fff;
+  --bs-btn-border-color: var(--cq-neutral-200);
+  --bs-btn-hover-color: var(--cq-neutral-900);
+  --bs-btn-hover-bg: var(--cq-neutral-100);
+  --bs-btn-hover-border-color: var(--cq-neutral-300);
+  --bs-btn-active-color: var(--cq-neutral-900);
+  --bs-btn-active-bg: var(--cq-neutral-100);
+  --bs-btn-active-border-color: var(--cq-neutral-300);
+  color: var(--cq-neutral-700);
+  background: #fff;
+  border: 1px solid var(--cq-neutral-200);
+  text-decoration: none;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.btn-neutral:hover, .btn-neutral:focus {
+  background: var(--cq-neutral-100);
+  border-color: var(--cq-neutral-300);
+  color: var(--cq-neutral-900);
+}
+.btn-neutral i { color: var(--cq-neutral-500); }
+.btn-neutral:hover i { color: var(--cq-neutral-700); }
+/* Standalone (sin .btn de Bootstrap): sizing chico pensado para acciones de fila. */
+:not(.btn).btn-neutral {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--cq-radius-sm);
+  font-size: 14px;
+  cursor: pointer;
+}
+:not(.btn).btn-neutral.btn-sm { padding: 4px 10px; font-size: 13px; }
 
 /* Botón Volver / breadcrumb visible cuando el flujo lo requiere. */
 .cq-back-btn {
@@ -1079,7 +1509,13 @@ body.cq-sidebar-collapsed .cq-app {
   flex-direction: column;
   gap: 12px;
   min-height: 260px;
+  height: 100%;
 }
+/* Cuando el layout externo es Bootstrap grid (row/col), cada col contiene
+   la cq-demo-card. Estirar la col a display:flex hace que la card use toda
+   la altura de la fila y los cards del row queden alineados. */
+.cq-home-grid > [class*="col-"] { display: flex; }
+.cq-home-grid > [class*="col-"] > .cq-demo-card { flex: 1; }
 .cq-demo-card__header {
   display: flex;
   align-items: center;
@@ -1131,9 +1567,118 @@ body.cq-sidebar-collapsed .cq-app {
 /* En mobile el comportamiento colapsado no aplica: la sidebar es un drawer
    (ver bloque "Responsive shell" arriba). */
 
-/* ===== Etapa 3.1: stepper del editor de cuestionarios =====
-   Guía visual, no candado: cada botón es clickeable. En mobile scrolla
-   horizontal en vez de apretar los items ilegiblemente. */
+/* ===== Timeline del editor de cuestionarios =====
+   Candado real: los pasos posteriores al primero no completado quedan
+   bloqueados (aria-disabled + candado). Círculos conectados por línea:
+   el segmento entre dos círculos se pinta cuando el paso anterior está listo. */
+.cq-timeline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  list-style: none;
+  padding: 8px 4px 0;
+  margin: 0 0 4px;
+  gap: 0;
+  counter-reset: cqstep;
+}
+.cq-timeline__item {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 0 4px;
+}
+/* Segmento hacia el próximo círculo */
+.cq-timeline__item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: calc(50% + 20px);
+  right: calc(-50% + 20px);
+  height: 2px;
+  background: var(--cq-neutral-300, #d0d5dd);
+  z-index: 0;
+}
+.cq-timeline__item.is-done::after,
+.cq-timeline__item.is-active::after {
+  background: var(--cq-accent, #16a34a);
+}
+.cq-timeline__dot {
+  position: relative;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--cq-neutral-300, #d0d5dd);
+  background: #fff;
+  color: var(--cq-neutral-700);
+  font-weight: 600;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms, color 140ms, box-shadow 140ms, transform 140ms;
+  padding: 0;
+}
+.cq-timeline__dot:hover:not(:disabled) {
+  border-color: var(--cq-primary);
+  transform: scale(1.05);
+}
+.cq-timeline__dot:disabled {
+  cursor: not-allowed;
+  opacity: .85;
+}
+.cq-timeline__item.is-active .cq-timeline__dot {
+  background: var(--cq-primary);
+  border-color: var(--cq-primary);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--cq-primary-100, rgba(37, 99, 235, .18));
+}
+.cq-timeline__item.is-done .cq-timeline__dot {
+  background: var(--cq-accent, #16a34a);
+  border-color: var(--cq-accent, #16a34a);
+  color: #fff;
+}
+.cq-timeline__item.is-available .cq-timeline__dot {
+  border-color: var(--cq-primary-400, #93c5fd);
+  color: var(--cq-neutral-800);
+}
+.cq-timeline__item.is-locked .cq-timeline__dot {
+  background: var(--cq-neutral-100, #f3f4f6);
+  color: var(--cq-neutral-500, #6b7280);
+  border-style: dashed;
+}
+.cq-timeline__label {
+  margin-top: 8px;
+  text-align: center;
+  min-width: 0;
+  width: 100%;
+}
+.cq-timeline__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cq-neutral-800);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cq-timeline__item.is-active .cq-timeline__title { color: var(--cq-primary); }
+.cq-timeline__item.is-locked .cq-timeline__title { color: var(--cq-neutral-500); font-weight: 500; }
+.cq-timeline__sub {
+  font-size: 12px;
+  color: var(--cq-neutral-500);
+  margin-top: 2px;
+}
+@media (max-width: 640px) {
+  .cq-timeline__title { display: none; }
+  .cq-timeline__sub { font-size: 14px; }
+}
+
+/* ===== Legacy: stepper viejo (mantenido por si algún módulo aún lo usa) ===== */
 .cq-stepper {
   display: flex;
   gap: 4px;
