@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
@@ -115,7 +116,7 @@ namespace ChequeAR.Application.Services
                 HospitalId = hospitalId,
                 FullName = demo?.Name ?? hospitalId,
                 AgeLabel = demo?.AgeLabel,
-                BirthDateLabel = demo?.BirthDate?.ToString("dd/MM/yyyy"),
+                BirthDateLabel = demo?.BirthDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 SpecialtyCode = specialtyCode ?? "general",
                 SpecialtyLabel = specialtyLabel ?? "General"
             };
@@ -141,7 +142,7 @@ namespace ChequeAR.Application.Services
                 FullName = fullName,
                 Document = row.TryGetValue("DOCUMENTO", out var doc) ? doc?.ToString() : null,
                 AgeLabel = row.TryGetValue("FECHA_NACIMIENTO", out var fn) ? AgeLabelFrom(fn) : null,
-                BirthDateLabel = row.TryGetValue("FECHA_NACIMIENTO", out var fn2) && fn2 is DateTime dob ? dob.ToString("dd/MM/yyyy") : null,
+                BirthDateLabel = row.TryGetValue("FECHA_NACIMIENTO", out var fn2) && fn2 is DateTime dob ? dob.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) : null,
                 SpecialtyCode = null,
                 SpecialtyLabel = null
             };
