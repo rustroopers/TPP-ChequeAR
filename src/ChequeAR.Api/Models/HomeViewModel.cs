@@ -19,6 +19,7 @@ namespace ChequeAR.Api.Models
         // encuentros: la UI nunca imprime el código crudo.
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
+        public string SpecialtyColor { get; set; }
         public string Status { get; set; }
         public string UpdatedAt { get; set; }
         public string OpenUrl { get; set; }

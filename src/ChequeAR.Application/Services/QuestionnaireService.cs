@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 
@@ -20,37 +21,81 @@ namespace ChequeAR.Application.Services
 
     public class QuestionnaireService
     {
+        // Tope del scan en memoria cuando el usuario está restringido a un subconjunto de
+        // especialidades: los repos no aceptan una lista de códigos permitidos (harían
+        // falta cambiar todas las firmas de búsqueda), así que se trae una tanda acotada y
+        // se filtra/pagina acá. Questionnaire son decenas de filas en este dominio -- el
+        // costo de sobre-traer es bajo. Documentado como simplificación deliberada.
+        private const int MaxScopedScan = 2000;
+
+        private static readonly string[] SpecialtyRequiredError =
+            { "El cuestionario debe tener una especialidad." };
+
         private readonly IQuestionnaireRepository _repo;
         private readonly IQuestionnaireResponseRepository _responses;
         private readonly IFhirValidator _validator;
         private readonly AuditDispatcher _audit;
+        private readonly ISpecialtyGuard _guard;
+        private readonly SpecialtyCatalogService _catalog;
 
         public QuestionnaireService(
             IQuestionnaireRepository repo,
             IQuestionnaireResponseRepository responses,
             IFhirValidator validator,
-            AuditDispatcher audit)
+            AuditDispatcher audit,
+            ISpecialtyGuard guard,
+            SpecialtyCatalogService catalog)
         {
             _repo = repo;
             _responses = responses;
             _validator = validator;
             _audit = audit;
+            _guard = guard;
+            _catalog = catalog;
         }
 
         // ── Lecturas ──────────────────────────────────────────────────────────────────
-        // Delegan al repositorio sin agregar nada. Existen igual porque la capa de
-        // presentación no debe conocer la de datos: un controller que inyecta un repositorio
-        // se salta la capa donde viven las reglas, y cuando aparece una regla nueva termina
-        // copiada en cada pantalla que hacía la consulta a mano.
 
-        public Task<Questionnaire> GetAsync(Guid id) => _repo.GetAsync(id);
+        /// <summary>
+        /// Null si no existe. Lanza SpecialtyForbiddenException si existe pero está fuera del
+        /// scope del usuario -- el controller lo traduce a 404 (no confirmar existencia de
+        /// un recurso ajeno).
+        /// </summary>
+        public async Task<Questionnaire> GetAsync(Guid id)
+        {
+            var q = await _repo.GetAsync(id);
+            if (q == null) return null;
+            _guard.EnsureAllows(q.SpecialtyCode);
+            return q;
+        }
 
-        public Task<IReadOnlyList<Questionnaire>> SearchAsync(
+        public async Task<IReadOnlyList<Questionnaire>> SearchAsync(
             QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)
-            => _repo.SearchAsync(status, titleContains, specialtyCode, skip, take);
+        {
+            var scope = _guard.Scope;
+            // Un filtro explícito por especialidad que el usuario no tiene: se rechaza (403),
+            // no se devuelve vacío -- devolver vacío le mentiría ("no hay nada") en vez de
+            // decirle que no puede pedir eso.
+            if (!string.IsNullOrEmpty(specialtyCode)) _guard.EnsureAllows(specialtyCode);
 
-        public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
-            => _repo.CountAsync(status, titleContains, specialtyCode);
+            if (scope.IsUnrestricted)
+                return await _repo.SearchAsync(status, titleContains, specialtyCode, skip, take);
+            if (scope.IsEmpty) return new List<Questionnaire>();
+
+            var scanned = await _repo.SearchAsync(status, titleContains, specialtyCode, 0, MaxScopedScan);
+            return scanned.Where(q => scope.Allows(q.SpecialtyCode)).Skip(skip).Take(take).ToList();
+        }
+
+        public async Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
+        {
+            var scope = _guard.Scope;
+            if (!string.IsNullOrEmpty(specialtyCode)) _guard.EnsureAllows(specialtyCode);
+            if (scope.IsUnrestricted) return await _repo.CountAsync(status, titleContains, specialtyCode);
+            if (scope.IsEmpty) return 0;
+
+            var scanned = await _repo.SearchAsync(status, titleContains, specialtyCode, 0, MaxScopedScan);
+            return scanned.Count(q => scope.Allows(q.SpecialtyCode));
+        }
 
         /// <summary>
         /// Cuestionarios que sirven como fuente para "importar preguntas" al crear/editar otro:
@@ -60,6 +105,7 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<IReadOnlyList<Questionnaire>> GetImportCandidatesAsync(string specialtyCode, Guid? excludeId)
         {
+            _guard.EnsureAllows(specialtyCode);
             var candidatos = await _repo.SearchAsync(null, null, specialtyCode, 0, 200);
             return candidatos
                 .Where(q => q.Status != QuestionnaireStatus.Retired
@@ -67,7 +113,13 @@ namespace ChequeAR.Application.Services
                 .ToList();
         }
 
-        public Task<IReadOnlyList<string>> GetSpecialtyCodesAsync() => _repo.GetSpecialtyCodesAsync();
+        /// <summary>Códigos de especialidad con actividad, recortados al scope del usuario (las opciones del filtro no pueden nombrar especialidades ajenas).</summary>
+        public async Task<IReadOnlyList<string>> GetSpecialtyCodesAsync()
+        {
+            var scope = _guard.Scope;
+            var codes = await _repo.GetSpecialtyCodesAsync();
+            return scope.IsUnrestricted ? codes : codes.Where(scope.Allows).ToList();
+        }
 
         public Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
             => _repo.GetTitlesAsync(ids);
@@ -75,8 +127,31 @@ namespace ChequeAR.Application.Services
         public Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber)
             => _repo.GetVersionAsync(questionnaireId, versionNumber);
 
+        /// <summary>
+        /// Especialidad obligatoria, tiene que existir y estar activa en el catálogo, y el
+        /// usuario tiene que tener acceso a ella. Único punto de validación: lo usan
+        /// CreateAsync, UpdateAsync (cuando cambia la especialidad) y, indirectamente,
+        /// CloneAsync (que hereda del origen sin volver a preguntarle al catálogo).
+        /// </summary>
+        private async Task EnsureSpecialtyUsableAsync(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+                throw new ValidationFailedException(SpecialtyRequiredError);
+            if (!await _catalog.ExistsActiveAsync(code))
+                throw new ValidationFailedException(new[] { "Especialidad desconocida o inactiva: " + code });
+            _guard.EnsureAllows(code);
+        }
+
         public async Task<Questionnaire> CreateAsync(Questionnaire q, string userId)
         {
+            await EnsureSpecialtyUsableAsync(q.SpecialtyCode);
+            // El editor guarda sólo el código (SpecialtyDisplay llega null): se completa acá
+            // desde el catálogo para que el useContext del recurso FHIR (armado por
+            // FhirQuestionnaireBuilder a partir de estos dos campos) tenga un display legible
+            // sin que el builder tenga que conocer el catálogo.
+            var cat = await _catalog.GetAsync();
+            q.SpecialtyDisplay = cat.Label(q.SpecialtyCode, q.SpecialtyDisplay);
+
             q.Id = Guid.NewGuid();
             q.Status = QuestionnaireStatus.Draft;
             q.HasPendingChanges = false;   // todavía no hay versión publicada que contradecir
@@ -145,6 +220,8 @@ namespace ChequeAR.Application.Services
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
+            // ¿Puedo tocar ESTE cuestionario? (chequeo sobre el código ACTUAL, antes que nada).
+            _guard.EnsureAllows(q.SpecialtyCode);
             if (q.Status == QuestionnaireStatus.Retired)
                 throw new InvalidOperationException("Retired questionnaires cannot be edited");
 
@@ -153,9 +230,21 @@ namespace ChequeAR.Application.Services
             if (expectedVersion.HasValue && q.ConcurrencyVersion != expectedVersion.Value)
                 throw new ConcurrencyConflictException(expectedVersion.Value, q.ConcurrencyVersion);
 
+            // ¿Puedo moverlo ALLÁ? Sólo si de verdad cambia (evita rechazar un PUT que repite
+            // el mismo código). Chequear los DOS sentidos evita tanto "robarse" un cuestionario
+            // ajeno declarándolo de la propia especialidad, como "expulsarlo" moviéndolo a una
+            // especialidad ajena.
+            if (patch.SpecialtyCode != null && !string.Equals(patch.SpecialtyCode, q.SpecialtyCode, StringComparison.Ordinal))
+                await EnsureSpecialtyUsableAsync(patch.SpecialtyCode);
+
             q.Title = patch.Title ?? q.Title;
             q.Description = patch.Description ?? q.Description;
-            q.SpecialtyCode = patch.SpecialtyCode ?? q.SpecialtyCode;
+            var cat = await _catalog.GetAsync();
+            if (patch.SpecialtyCode != null)
+            {
+                q.SpecialtyCode = patch.SpecialtyCode;
+                q.SpecialtyDisplay = cat.Label(patch.SpecialtyCode, patch.SpecialtyDisplay);
+            }
             // A diferencia de los campos de arriba, la codificación se asigna directo (sin el
             // "?? valor viejo"): es metadata clínica OPCIONAL que tiene que poder QUITARSE, y un
             // PUT FHIR es un reemplazo completo del recurso —un cuestionario sin code ni término
@@ -201,6 +290,7 @@ namespace ChequeAR.Application.Services
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
+            _guard.EnsureAllows(q.SpecialtyCode);
             if (!q.CanPublish()) throw new InvalidOperationException("Questionnaire cannot be published in current state");
 
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
@@ -244,6 +334,7 @@ namespace ChequeAR.Application.Services
         {
             var source = await _repo.GetAsync(id);
             if (source == null) throw new InvalidOperationException("Not found");
+            _guard.EnsureAllows(source.SpecialtyCode);
 
             var copy = new Questionnaire
             {
@@ -268,9 +359,21 @@ namespace ChequeAR.Application.Services
                          .Where(x => !x.GroupId.HasValue).OrderBy(x => x.OrderIndex))
                 copy.Questions.Add(CopyQuestion(question));
 
-            var created = await CreateAsync(copy, userId);
-            _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + created.Id + "$clone-from-" + id, userId));
-            return created;
+            // CreateAsync exige especialidad activa: como se hereda de un origen que ya
+            // existe, se valida el acceso pero NO el catálogo (una especialidad dada de baja
+            // no debe impedir clonar algo que ya la tenía).
+            copy.Id = Guid.NewGuid();
+            copy.Status = QuestionnaireStatus.Draft;
+            copy.HasPendingChanges = false;
+            copy.CreatedBy = userId;
+            copy.CreatedAt = DateTime.UtcNow;
+            copy.UpdatedAt = DateTime.UtcNow;
+            AssignChildIds(copy);
+            await _repo.AddAsync(copy);
+            _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + copy.Id, userId));
+
+            _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + copy.Id + "$clone-from-" + id, userId));
+            return copy;
         }
 
         private static Question CopyQuestion(Question source)
@@ -307,6 +410,7 @@ namespace ChequeAR.Application.Services
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
+            _guard.EnsureAllows(q.SpecialtyCode);
 
             if (await _responses.HasResponsesAsync(id))
             {
@@ -330,6 +434,7 @@ namespace ChequeAR.Application.Services
         {
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
+            _guard.EnsureAllows(q.SpecialtyCode);
             if (q.Status == QuestionnaireStatus.Retired)
                 throw new InvalidOperationException("Questionnaire is already archived");
             q.Status = QuestionnaireStatus.Retired;

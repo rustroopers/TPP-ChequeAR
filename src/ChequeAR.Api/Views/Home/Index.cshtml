@@ -88,7 +88,7 @@
                     <div>@lastEncounter.QuestionnaireTitle</div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center">
-                    <span class="cq-chip cq-chip--@lastEncounter.SpecialtyCode">@lastEncounter.SpecialtyLabel</span>
+                    <span class="cq-chip cq-chip--zone-@lastEncounter.SpecialtyColor">@lastEncounter.SpecialtyLabel</span>
                     @if (lastEncounter.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
                     else if (lastEncounter.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
                     else { <span class="cq-badge cq-badge--archived">@lastEncounter.Status</span> }
@@ -178,7 +178,7 @@ else
                 <tr>
                     <td>@enc.PatientName</td>
                     <td>@enc.QuestionnaireTitle</td>
-                    <td><span class="cq-chip cq-chip--@enc.SpecialtyCode">@enc.SpecialtyLabel</span></td>
+                    <td><span class="cq-chip cq-chip--zone-@enc.SpecialtyColor">@enc.SpecialtyLabel</span></td>
                     <td>
                         @if (enc.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
                         else if (enc.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }

@@ -694,10 +694,18 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
   color: var(--cq-neutral-700);
 }
 .cq-chip { color: var(--chip-color, var(--cq-neutral-700)); }
-.cq-chip--cardio { --chip-color: var(--cq-zone-red); }
-.cq-chip--neumo { --chip-color: var(--cq-zone-blue); }
-.cq-chip--onco { --chip-color: var(--cq-zone-violet); }
-.cq-chip--general { --chip-color: var(--cq-zone-green); }
+/* Clases por ZONA de color (SpecialtyCatalog.Color), no por código de especialidad: un
+   código nuevo o dado de baja nunca queda "sin color" -- el catálogo asigna una de estas
+   6 zonas (columna Specialty.Color) o, a falta de ella, SpecialtyCatalog usa un hash
+   estable del código. Antes había una clase por código (cq-chip--cardio, ...) que había
+   que agregar a mano por cada especialidad nueva; a "reuma" nunca se le agregó la suya y
+   sus chips quedaban grises. */
+.cq-chip--zone-red { --chip-color: var(--cq-zone-red); }
+.cq-chip--zone-violet { --chip-color: var(--cq-zone-violet); }
+.cq-chip--zone-green { --chip-color: var(--cq-zone-green); }
+.cq-chip--zone-yellow { --chip-color: var(--cq-zone-yellow); }
+.cq-chip--zone-blue { --chip-color: var(--cq-zone-blue); }
+.cq-chip--zone-orange { --chip-color: var(--cq-zone-orange); }
 
 /* ===== Empty state ===== */
 .cq-empty {

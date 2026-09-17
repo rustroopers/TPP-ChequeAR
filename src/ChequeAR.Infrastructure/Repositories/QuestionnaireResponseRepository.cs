@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 using ChequeAR.Infrastructure.EF;
@@ -20,12 +21,23 @@ namespace ChequeAR.Infrastructure.Repositories
         public Task<QuestionnaireResponse> GetAsync(Guid id) =>
             _ctx.QuestionnaireResponses.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id);
 
-        public async Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take)
+        public async Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take, SpecialtyScope scope = null)
         {
             var q = _ctx.QuestionnaireResponses.AsQueryable();
             if (!string.IsNullOrEmpty(patientHospitalId)) q = q.Where(x => x.PatientHospitalId == patientHospitalId);
             if (questionnaireId.HasValue) q = q.Where(x => x.QuestionnaireId == questionnaireId.Value);
             if (status.HasValue) q = q.Where(x => x.Status == status.Value);
+
+            if (scope != null && !scope.IsUnrestricted)
+            {
+                if (scope.IsEmpty) return new List<QuestionnaireResponse>();
+                var codes = scope.Codes.ToList();
+                // Sin navegación a Questionnaire: subconsulta explícita. EF6 la traduce a
+                // WHERE "QuestionnaireId" IN (SELECT "Id" FROM "Questionnaire" WHERE
+                // "SpecialtyCode" IN (...)).
+                q = q.Where(x => _ctx.Questionnaires.Any(qq => qq.Id == x.QuestionnaireId && codes.Contains(qq.SpecialtyCode)));
+            }
+
             return await q.OrderByDescending(x => x.AuthoredAt).Skip(skip).Take(take).ToListAsync();
         }
 

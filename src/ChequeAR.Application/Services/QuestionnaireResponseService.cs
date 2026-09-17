@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
@@ -23,28 +24,49 @@ namespace ChequeAR.Application.Services
         private readonly IQuestionnaireRepository _qRepo;
         private readonly IFhirValidator _validator;
         private readonly AuditDispatcher _audit;
+        private readonly ISpecialtyGuard _guard;
 
         public QuestionnaireResponseService(
             IQuestionnaireResponseRepository repo,
             IQuestionnaireRepository qRepo,
             IFhirValidator validator,
-            AuditDispatcher audit)
+            AuditDispatcher audit,
+            ISpecialtyGuard guard)
         {
             _repo = repo;
             _qRepo = qRepo;
             _validator = validator;
             _audit = audit;
+            _guard = guard;
         }
 
         // ── Lecturas ──────────────────────────────────────────────────────────────────
 
-        public Task<QuestionnaireResponse> GetAsync(Guid id) => _repo.GetAsync(id);
+        /// <summary>
+        /// Null si no existe. Lanza SpecialtyForbiddenException si existe pero la especialidad
+        /// del cuestionario al que pertenece está fuera del scope (el controller lo traduce a
+        /// 404, mismo criterio que QuestionnaireService.GetAsync).
+        /// </summary>
+        public async Task<QuestionnaireResponse> GetAsync(Guid id)
+        {
+            var r = await _repo.GetAsync(id);
+            if (r == null) return null;
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
+            return r;
+        }
 
         public Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(
             string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take)
-            => _repo.SearchAsync(patientHospitalId, questionnaireId, status, skip, take);
+            => _repo.SearchAsync(patientHospitalId, questionnaireId, status, skip, take, _guard.Scope);
 
         public Task<bool> HasResponsesAsync(Guid questionnaireId) => _repo.HasResponsesAsync(questionnaireId);
+
+        /// <summary>Chequea el scope contra la especialidad del Questionnaire dado, sin traer el agregado completo.</summary>
+        private async Task EnsureAllowsQuestionnaireAsync(Guid questionnaireId)
+        {
+            var code = await _qRepo.GetSpecialtyCodeAsync(questionnaireId);
+            _guard.EnsureAllows(code);
+        }
 
         public async Task<QuestionnaireResponse> CreateAsync(QuestionnaireResponse r, string userId)
         {
@@ -53,6 +75,7 @@ namespace ChequeAR.Application.Services
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
             if (q == null) throw new InvalidOperationException("Questionnaire not found");
+            _guard.EnsureAllows(q.SpecialtyCode);
             if (q.Status == QuestionnaireStatus.Retired)
                 throw new InvalidOperationException("Cannot answer retired questionnaire");
 
@@ -166,6 +189,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status == ResponseStatus.Completed)
                 return r;
 
@@ -232,6 +256,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
             var pinned = ResolveVersion(q, r.QuestionnaireVersionId);
@@ -278,6 +303,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status != ResponseStatus.InProgress)
                 throw new InvalidOperationException("Only in-progress responses can change version");
 
@@ -369,6 +395,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status != ResponseStatus.InProgress)
                 throw new InvalidOperationException("Only in-progress responses can be locked");
 
@@ -395,6 +422,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             EnsureLockOwnedOrRenew(r, userId, lockToken, DateTime.UtcNow);
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
@@ -416,6 +444,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.LockToken != lockToken || r.LockedByUserId != userId) return;
 
             List<ResponseFieldChange> changes = null;
@@ -453,6 +482,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status != ResponseStatus.InProgress)
                 throw new InvalidOperationException("Cannot save progress on a response that is not in progress");
 

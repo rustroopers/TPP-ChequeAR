@@ -9,10 +9,11 @@ using ChequeAR.Application.Exporters;
 using ChequeAR.Application.Services;
 using ChequeAR.Application.Reports;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    // TODO: re-habilitar [Authorize(Roles = Role.Administrador + "," + Role.Jefe)] cuando FormsAuth esté wired.
+    [Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
     public class AuditController : Controller
     {
         private readonly AuditQueryService _audit;

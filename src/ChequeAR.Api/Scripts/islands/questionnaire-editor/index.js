@@ -36,7 +36,10 @@
             // se entra a la pantalla es ruido, no ayuda. Un título existente nunca dispara el
             // error igual, entre por acá o no.
             var qTitleTouched = Vue.ref(false);
-            var specialtyCode = Vue.ref(props.specialtyCode || 'general');
+            var specialtyCode = Vue.ref(props.specialtyCode || '');
+            var specialties = Vue.ref([]);
+            var specialtiesLoading = Vue.ref(false);
+            var specialtiesError = Vue.ref(null);
             // Codificación del cuestionario completo. Objeto reactivo (no tres refs sueltos)
             // para que el mismo buscador SNOMED que usan las preguntas pueda escribir aquí
             // code/codeDisplay tratándolo igual que a una pregunta.
@@ -559,7 +562,7 @@
                 importError.value = null;
                 importCandidates.value = [];
                 importLoading.value = true;
-                var url = '/Questionnaires/ImportCandidates?specialty=' + encodeURIComponent(specialtyCode.value || 'general')
+                var url = '/Questionnaires/ImportCandidates?specialty=' + encodeURIComponent(specialtyCode.value || '')
                         + '&excludeId=' + encodeURIComponent(currentId.value || '');
                 fetch(url, { credentials: 'same-origin' })
                     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -657,6 +660,31 @@
             function getToken() {
                 var meta = document.querySelector('meta[name="cq-token"]');
                 return meta ? meta.getAttribute('content') : null;
+            }
+
+            // Catálogo de especialidades (CHEQUEAR.Specialty), reemplaza las 5 opciones que
+            // antes venían hardcodeadas en este mismo archivo. /api/specialties exige Bearer
+            // (mismo patrón que verifySnomedCode) y, para un usuario no-admin, ya viene
+            // recortado a sus especialidades.
+            function loadSpecialties() {
+                specialtiesLoading.value = true;
+                specialtiesError.value = null;
+                var token = getToken();
+                var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+                fetch('/api/specialties', { credentials: 'same-origin', headers: headers })
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(function (data) {
+                        specialties.value = data.results || [];
+                        // Cuestionario nuevo: recién ahora sabemos cuál es la especialidad por
+                        // defecto. Uno existente conserva SIEMPRE su código, aunque ya no esté
+                        // en el catálogo (una especialidad dada de baja no debe reescribir
+                        // fichas históricas).
+                        if (!specialtyCode.value && data.defaultCode) specialtyCode.value = data.defaultCode;
+                    })
+                    .catch(function (err) {
+                        specialtiesError.value = 'No se pudo cargar el catálogo de especialidades: ' + err.message;
+                    })
+                    .then(function () { specialtiesLoading.value = false; });
             }
 
             // --- Autocompletado SNOMED CT --------------------------------------------
@@ -1472,6 +1500,7 @@
             // Engancha los botones del header (viven fuera de la isla). Ojo: el listener
             // recibe el Event, así que va el wrapper y no save directamente.
             Vue.onMounted(function () {
+                loadSpecialties();
                 var btn = document.getElementById('saveBtn');
                 if (btn) btn.addEventListener('click', saveExplicit);
                 var pub = document.getElementById('publishBtn');
@@ -1515,6 +1544,7 @@
                 groups: groups, types: types, selected: selected,
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
                 qTitle: qTitle, qTitleTouched: qTitleTouched, specialtyCode: specialtyCode, isNew: isNew,
+                specialties: specialties, specialtiesLoading: specialtiesLoading, specialtiesError: specialtiesError,
                 isPublished: isPublished, isArchived: isArchived, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
                 merging: merging, mergeAutoCount: mergeAutoCount, conflictEntries: conflictEntries,
@@ -1680,18 +1710,20 @@
             </div>\
             <div class="col-md-4">\
                 <label class="form-label cq-text-sm">Especialidad</label>\
-                <select v-model="specialtyCode" class="form-select">\
-                    <option value="general">General</option>\
-                    <option value="cardio">Cardiología</option>\
-                    <option value="neumo">Neumonología</option>\
-                    <option value="onco">Oncología</option>\
-                    <option value="reuma">Reumatología</option>\
+                <!-- data-cq-noenhance: cq-select-enhance.js clona las <option> una sola vez\
+                     al cargar la página (DOMContentLoaded) y no se entera de que Vue las\
+                     repuebla después con /api/specialties -- el usuario ve para siempre\
+                     "Cargando…" + "(fuera de catálogo)", que es la foto de ANTES del fetch. -->\
+                <select v-model="specialtyCode" class="form-select" :disabled="specialtiesLoading" data-cq-noenhance>\
+                    <option v-if="specialtiesLoading" value="">Cargando…</option>\
+                    <option v-if="!specialtiesLoading && !specialtyCode" value="" disabled>Elegí una especialidad</option>\
+                    <option v-for="s in specialties" :key="s.code" :value="s.code">{{ s.name }}</option>\
+                    <option v-if="specialtyCode && !specialties.some(function(s){return s.code===specialtyCode;})" :value="specialtyCode">{{ specialtyCode }} (fuera de catálogo)</option>\
                 </select>\
-                <p class="cq-text-xs cq-text-muted mt-1 mb-0">Agrupa el cuestionario en los reportes.</p>\
+                <p v-if="specialtiesError" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">{{ specialtiesError }}</p>\
             </div>\
             <hr class="my-2" />\
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica del cuestionario <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
-            <p class="cq-text-xs cq-text-muted mb-2">Asociar un concepto de SNOMED CT a la ficha</p>\
             <div class="row g-2">\
                 <div class="col-7">\
                     <label class="form-label cq-text-sm">Término clínico</label>\
@@ -1724,7 +1756,6 @@
     </div>\
     <div class="cq-card mt-3" v-if="!isArchived">\
         <h3 class="cq-section-title mt-0">Importar desde otro cuestionario</h3>\
-        <p class="cq-text-xs cq-text-muted mb-2">Trae las secciones y preguntas de otro cuestionario de la misma especialidad para partir de ahí en vez de empezar de cero.</p>\
         <button class="btn btn-sm btn-outline-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
     </div>\
 </div>\
@@ -1934,7 +1965,6 @@
     <div v-else>\
         <div class="cq-card mb-2">\
             <h2 class="mt-0 mb-1">{{ qTitle }}</h2>\
-            <div class="cq-text-xs cq-text-muted">Especialidad: {{ specialtyCode }}</div>\
         </div>\
         <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2">\
             <h3 class="cq-section-title mt-0"><i class="bi bi-folder me-1"></i>{{ g.title }}</h3>\

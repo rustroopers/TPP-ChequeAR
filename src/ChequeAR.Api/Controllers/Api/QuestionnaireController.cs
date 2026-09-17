@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
+
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
@@ -32,17 +33,37 @@ namespace ChequeAR.Api.Controllers.Api
         {
             QuestionnaireStatus? st = null;
             if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
-            var items = await _service.SearchAsync(st, titleContains, specialty, _offset, _count);
+            try
+            {
+                var items = await _service.SearchAsync(st, titleContains, specialty, _offset, _count);
 
-            var total = await _service.CountAsync(st, titleContains, specialty);
-            var recursos = items.Select(q => (Hl7.Fhir.Model.Resource)ToFhir(q));
-            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+                var total = await _service.CountAsync(st, titleContains, specialty);
+                var recursos = items.Select(q => (Hl7.Fhir.Model.Resource)ToFhir(q));
+                return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                // El filtro ?specialty= pidió algo fuera del scope del usuario: se rechaza,
+                // no se devuelve un Bundle vacío (eso le mentiría "no hay nada").
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a esa especialidad."));
+            }
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var q = await _service.GetAsync(id);
+            Domain.Entities.Questionnaire q;
+            try
+            {
+                q = await _service.GetAsync(id);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                // No confirmar existencia de un recurso de otra especialidad: mismo 404
+                // que si no existiera.
+                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            }
             if (q == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
 
             // ETag = versión del registro. El cliente la devuelve en If-Match al escribir.
@@ -85,10 +106,22 @@ namespace ChequeAR.Api.Controllers.Api
             if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            var created = await _service.CreateAsync(q, userId);
-            var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
-            response.Headers.ETag = ETagFor(created);
-            return ResponseMessage(response);
+            try
+            {
+                var created = await _service.CreateAsync(q, userId);
+                var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
+                response.Headers.ETag = ETagFor(created);
+                return ResponseMessage(response);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a esa especialidad."));
+            }
+            catch (ValidationFailedException ex)
+            {
+                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
+            }
         }
 
         [HttpPut, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
@@ -117,6 +150,16 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content(HttpStatusCode.Conflict,
                     OperationOutcomes.Conflict(ex.ExpectedVersion, ex.ActualVersion));
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a esa especialidad."));
+            }
+            catch (ValidationFailedException ex)
+            {
+                // Especialidad inexistente/inactiva al mover el cuestionario: 422, no 500.
+                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
+            }
             catch (InvalidOperationException ex)
             {
                 // Mismo criterio que Publish: "no existe" y "no se puede editar en este
@@ -134,6 +177,11 @@ namespace ChequeAR.Api.Controllers.Api
                 var q = await _service.PublishAsync(id, userId, body?.ChangeNote);
                 return Ok(ToFhir(q));
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a esa especialidad."));
+            }
             catch (ValidationFailedException ex)
             {
                 // UN issue por regla incumplida. Con un mensaje concatenado, quien publica
@@ -150,8 +198,20 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Archive(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            await _service.ArchiveAsync(id, userId);
-            return Ok();
+            try
+            {
+                await _service.ArchiveAsync(id, userId);
+                return Ok();
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a esa especialidad."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
+            }
         }
 
         [HttpPost, Route("{id:guid}/$clone"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
@@ -164,6 +224,11 @@ namespace ChequeAR.Api.Controllers.Api
                 var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(copy));
                 response.Headers.ETag = ETagFor(copy);
                 return ResponseMessage(response);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a esa especialidad."));
             }
             catch (InvalidOperationException)
             {
@@ -185,6 +250,13 @@ namespace ChequeAR.Api.Controllers.Api
                         "El cuestionario tiene respuestas cargadas: se archivó en vez de eliminarse."));
                 }
                 return StatusCode(HttpStatusCode.NoContent);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                // Delete es sólo-Admin (siempre Unrestricted): esto no debería poder
+                // ocurrir, pero se deja como defensa en profundidad.
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a esa especialidad."));
             }
             catch (InvalidOperationException)
             {

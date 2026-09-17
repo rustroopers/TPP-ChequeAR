@@ -99,6 +99,7 @@ namespace ChequeAR.Api.Models
     {
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
+        public string SpecialtyColor { get; set; }
         public string Role { get; set; }
     }
 

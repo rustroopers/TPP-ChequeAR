@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
@@ -16,22 +17,50 @@ namespace ChequeAR.Infrastructure.Auth
     ///   admin*  -> Administrador   jefe* -> Jefe
     ///   obs*    -> Observador      resto -> Medico
     /// Al cablear el hospital real, borrar esta clase y dejar de registrarla.
+    ///
+    /// Las ESPECIALIDADES ya no salen vacias: se leen del espejo local (UserSpecialty),
+    /// sembrado por Migrations/Configuration.Seed() para los usuarios de demo. Un usuario
+    /// que no existe en el espejo (inventado en el momento, el mock acepta cualquiera)
+    /// entra con cero especialidades -- probar el fail-closed no deberia requerir
+    /// preparar nada de antemano.
     public class MockHospitalAuthClient : IHospitalAuthClient
     {
-        public Task<UserInfo> LoginAsync(string username, string password)
+        private readonly IUserRepository _users;
+
+        public MockHospitalAuthClient(IUserRepository users)
+        {
+            _users = users;
+        }
+
+        public async Task<UserInfo> LoginAsync(string username, string password)
         {
             // Usuario vacio sigue siendo un login invalido: el mock afloja la
             // verificacion de identidad, no la forma del contrato.
-            if (string.IsNullOrWhiteSpace(username)) return Task.FromResult<UserInfo>(null);
+            if (string.IsNullOrWhiteSpace(username)) return null;
 
             var user = username.Trim();
-            return Task.FromResult(new UserInfo
+
+            var espejo = await _users.GetAsync(user);
+            if (espejo != null)
+            {
+                var roles = (espejo.Roles ?? new List<Domain.Entities.UserRole>()).Select(r => r.Role).ToList();
+                return new UserInfo
+                {
+                    Id = espejo.Id,
+                    DisplayName = espejo.DisplayName ?? user,
+                    Roles = roles.Count > 0 ? roles : RolesFor(user),
+                    Specialties = (espejo.Specialties ?? new List<Domain.Entities.UserSpecialty>())
+                        .Select(s => s.SpecialtyCode).ToList()
+                };
+            }
+
+            return new UserInfo
             {
                 Id = user,
                 DisplayName = user,
                 Roles = RolesFor(user),
                 Specialties = new List<string>()
-            });
+            };
         }
 
         private static List<string> RolesFor(string username)

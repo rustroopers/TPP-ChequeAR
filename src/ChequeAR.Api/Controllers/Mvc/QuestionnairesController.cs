@@ -7,6 +7,7 @@ using ChequeAR.Api.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
@@ -17,10 +18,12 @@ namespace ChequeAR.Api.Controllers.Mvc
     {
         
         private readonly QuestionnaireService _svc;
+        private readonly SpecialtyCatalogService _specialties;
 
-        public QuestionnairesController(QuestionnaireService svc)
+        public QuestionnairesController(QuestionnaireService svc, SpecialtyCatalogService specialties)
         {
             _svc = svc;
+            _specialties = specialties;
         }
 
         // Q1 — Listado
@@ -42,9 +45,11 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                // Opciones del filtro derivadas de los cuestionarios reales (antes estaban hardcodeadas).
+                var cat = await _specialties.GetAsync();
+                // Opciones del filtro derivadas de los cuestionarios que el usuario puede ver
+                // (antes estaban hardcodeadas, y antes de eso mostraban especialidades ajenas).
                 foreach (var code in await _svc.GetSpecialtyCodesAsync())
-                    model.Specialties.Add(new SpecialtyOption { Code = code, Label = SpecialtyMap.Label(code) });
+                    model.Specialties.Add(new SpecialtyOption { Code = code, Label = cat.Label(code) });
 
                 var st = QuestionnaireStatusMap.FromUi(status);
                 var items = await _svc.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
@@ -54,8 +59,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     model.Items.Add(new QuestionnaireListItem
                     {
                         Id = it.Id, Title = it.Title,
-                        SpecialtyCode = it.SpecialtyCode ?? "general",
-                        SpecialtyLabel = SpecialtyMap.Label(it.SpecialtyCode, it.SpecialtyDisplay),
+                        SpecialtyCode = cat.CodeOrDefault(it.SpecialtyCode),
+                        SpecialtyLabel = cat.Label(it.SpecialtyCode, it.SpecialtyDisplay),
+                        SpecialtyColor = cat.Color(it.SpecialtyCode),
                         Version = it.Versions?.Count ?? 0,
                         Status = QuestionnaireStatusMap.ToUi(it.Status),
                         UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(it.UpdatedAt),
@@ -63,6 +69,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                         HasUnpublishedChanges = it.HasUnpublishedChanges()
                     });
                 }
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                // El filtro explícito ?specialty= pidió algo fuera del scope del usuario.
+                model.Items.Clear();
+                model.Total = 0;
+                Response.StatusCode = 403;
+                ViewBag.DataError = "No tenés acceso a esa especialidad.";
             }
             catch (Exception)
             {
@@ -87,7 +101,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var editorId = id ?? Guid.NewGuid();
             var isNew = !id.HasValue;
             var title = "";
-            var specialty = "general";
+            var specialty = "";
             // Número de la versión PUBLICADA (0 = nunca se publicó), no el de la próxima:
             // el editor tiene que decir cuál es la que están usando los clínicos.
             var publishedVersion = 0;
@@ -99,6 +113,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             // de cada pregunta: se lo desarma en la capa de negocio y acá sólo se pasa al editor.
             string code = null, codeDisplay = null, term = null;
 
+            var cat = await _specialties.GetAsync();
+            // Cuestionario nuevo: NO se preselecciona el default global acá. El default
+            // correcto depende del scope del usuario (un Jefe restringido a "cardio" no
+            // tiene por qué tener "general"), y el scope sólo lo conoce el fetch a
+            // /api/specialties que hace el editor -- se deja vacío para que ese fetch
+            // decida (ver loadSpecialties() en el editor).
+            specialty = "";
             if (id.HasValue)
             {
                 try
@@ -108,7 +129,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     if (q != null)
                     {
                         publishedVersion = CurrentVersionNumber(q);
-                        specialty = q.SpecialtyCode ?? "general";
+                        specialty = cat.CodeOrDefault(q.SpecialtyCode);
                         status = QuestionnaireStatusMap.ToUi(q.Status);
                         pendingChanges = q.HasUnpublishedChanges();
                         concurrencyVersion = q.ConcurrencyVersion;
@@ -124,6 +145,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                             term = coding.Term;
                         }
                     }
+                }
+                catch (SpecialtyForbiddenException)
+                {
+                    return HttpNotFound();
                 }
                 catch (Exception)
                 {
@@ -154,7 +179,15 @@ namespace ChequeAR.Api.Controllers.Mvc
         // cliente. Es de sólo lectura y reutiliza el mismo armado que hidrata el editor.
         public async Task<ActionResult> EditorModel(Guid id)
         {
-            var q = await _svc.GetAsync(id);
+            ChequeAR.Domain.Entities.Questionnaire q;
+            try
+            {
+                q = await _svc.GetAsync(id);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return HttpNotFound();
+            }
             if (q == null) return HttpNotFound();
             var payload = new { concurrencyVersion = q.ConcurrencyVersion, groups = BuildEditorGroups(q) };
             return Content(
@@ -171,19 +204,24 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             try
             {
+                var cat = await _specialties.GetAsync();
                 var candidatos = await _svc.GetImportCandidatesAsync(specialty, excludeId);
                 var payload = candidatos.Select(q => new
                 {
                     id = q.Id,
                     title = q.Title,
                     status = QuestionnaireStatusMap.ToUi(q.Status),
-                    specialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay),
+                    specialtyLabel = cat.Label(q.SpecialtyCode, q.SpecialtyDisplay),
                     version = q.Versions?.Count ?? 0
                 }).ToList();
                 return Content(
                     JsonConvert.SerializeObject(payload,
                         new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
                     "application/json");
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return new HttpStatusCodeResult(403, "No tenes acceso a esa especialidad.");
             }
             catch (Exception)
             {
@@ -295,11 +333,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var q = await _svc.GetAsync(id);
                 if (q == null) return View("~/Views/Error/Index.cshtml");
+                var cat = await _specialties.GetAsync();
                 var model = new QuestionnaireDetailViewModel
                 {
                     Id = q.Id, Title = q.Title,
-                    SpecialtyCode = q.SpecialtyCode ?? "general",
-                    SpecialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay),
+                    SpecialtyCode = cat.CodeOrDefault(q.SpecialtyCode),
+                    SpecialtyLabel = cat.Label(q.SpecialtyCode, q.SpecialtyDisplay),
+                    SpecialtyColor = cat.Color(q.SpecialtyCode),
                     Version = q.Versions?.Count ?? 0,
                     Status = QuestionnaireStatusMap.ToUi(q.Status),
                     Author = q.CreatedBy,
@@ -308,6 +348,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 };
                 model.Groups.AddRange(BuildEditorGroups(q));
                 return View(model);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return HttpNotFound();
             }
             catch (Exception)
             {
@@ -344,6 +388,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     }).ToList();
                 return View(list);
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return HttpNotFound();
+            }
             catch (Exception)
             {
                 ViewBag.QuestionnaireTitle = null;
@@ -362,6 +410,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "Cuestionario publicado.";
                 TempData["ToastLevel"] = "success";
             }
+            catch (SpecialtyForbiddenException)
+            {
+                Response.StatusCode = 403;
+                TempData["Toast"] = "No tenes acceso a la especialidad de ese cuestionario.";
+                TempData["ToastLevel"] = "error";
+            }
             catch (Exception)
             {
                 TempData["Toast"] = "No se pudo publicar el cuestionario.";
@@ -379,6 +433,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                 await _svc.ArchiveAsync(id, userId);
                 TempData["Toast"] = "Cuestionario archivado.";
                 TempData["ToastLevel"] = "success";
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                Response.StatusCode = 403;
+                TempData["Toast"] = "No tenes acceso a la especialidad de ese cuestionario.";
+                TempData["ToastLevel"] = "error";
             }
             catch (Exception)
             {

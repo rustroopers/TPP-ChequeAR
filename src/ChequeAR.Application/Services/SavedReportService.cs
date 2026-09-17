@@ -49,6 +49,25 @@ namespace ChequeAR.Application.Services
 
         public Task<SavedReport> GetAsync(Guid id) => _repo.GetAsync(id);
 
+        /// <summary>
+        /// Lectura por id con el MISMO chequeo de acceso que ListForUserAsync (dueño, o
+        /// scope='specialty' dentro de las especialidades del usuario). Antes GetAsync se
+        /// exponía crudo en el controller: cualquiera con el GUID leía la consulta guardada
+        /// de otra persona (List sí filtraba; Get, no).
+        /// </summary>
+        public async Task<SavedReportResult> GetForUserAsync(Guid id, string userId, IEnumerable<string> specialties)
+        {
+            var r = await _repo.GetAsync(id);
+            if (r == null) return SavedReportResult.NotFound();
+            if (EsPropietario(r, userId)) return SavedReportResult.Ok(r);
+            var specs = new List<string>(specialties ?? Array.Empty<string>());
+            if (string.Equals(r.Scope, "specialty", StringComparison.OrdinalIgnoreCase)
+                && specs.Contains(r.SpecialtyCode)) return SavedReportResult.Ok(r);
+            // No confirmar existencia de una consulta ajena: mismo criterio que el resto de
+            // la app (una lectura por id sin acceso responde 404, no 403).
+            return SavedReportResult.NotFound();
+        }
+
         public async Task<SavedReport> CreateAsync(SavedReport nueva, string userId)
         {
             nueva.Id = Guid.NewGuid();

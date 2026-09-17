@@ -76,7 +76,7 @@ else
             {
                 <tr class="cq-row--clickable" data-href="@Url.Action("Preview", new { id = q.Id })">
                     <td><a href="@Url.Action("Preview", new { id = q.Id })" class="text-decoration-none fw-semibold">@q.Title</a></td>
-                    <td><span class="cq-chip cq-chip--@q.SpecialtyCode">@q.SpecialtyLabel</span></td>
+                    <td><span class="cq-chip cq-chip--zone-@q.SpecialtyColor">@q.SpecialtyLabel</span></td>
                     <td>v@(q.Version)</td>
                     <td>
                         @if (q.Status == "published") { <span class="cq-badge cq-badge--published">@Cq.T("status.published")</span> }
