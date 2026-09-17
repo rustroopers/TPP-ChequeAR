@@ -1710,7 +1710,11 @@
             </div>\
             <div class="col-md-4">\
                 <label class="form-label cq-text-sm">Especialidad</label>\
-                <select v-model="specialtyCode" class="form-select" :disabled="specialtiesLoading">\
+                <!-- data-cq-noenhance: cq-select-enhance.js clona las <option> una sola vez\
+                     al cargar la página (DOMContentLoaded) y no se entera de que Vue las\
+                     repuebla después con /api/specialties -- el usuario ve para siempre\
+                     "Cargando…" + "(fuera de catálogo)", que es la foto de ANTES del fetch. -->\
+                <select v-model="specialtyCode" class="form-select" :disabled="specialtiesLoading" data-cq-noenhance>\
                     <option v-if="specialtiesLoading" value="">Cargando…</option>\
                     <option v-if="!specialtiesLoading && !specialtyCode" value="" disabled>Elegí una especialidad</option>\
                     <option v-for="s in specialties" :key="s.code" :value="s.code">{{ s.name }}</option>\

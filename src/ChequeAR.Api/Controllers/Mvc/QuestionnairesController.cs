@@ -101,7 +101,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var editorId = id ?? Guid.NewGuid();
             var isNew = !id.HasValue;
             var title = "";
-            var specialty = ChequeAR.Domain.Constants.SpecialtyDefaults.Code;
+            var specialty = "";
             // Número de la versión PUBLICADA (0 = nunca se publicó), no el de la próxima:
             // el editor tiene que decir cuál es la que están usando los clínicos.
             var publishedVersion = 0;
@@ -114,7 +114,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             string code = null, codeDisplay = null, term = null;
 
             var cat = await _specialties.GetAsync();
-            specialty = cat.DefaultCode;
+            // Cuestionario nuevo: NO se preselecciona el default global acá. El default
+            // correcto depende del scope del usuario (un Jefe restringido a "cardio" no
+            // tiene por qué tener "general"), y el scope sólo lo conoce el fetch a
+            // /api/specialties que hace el editor -- se deja vacío para que ese fetch
+            // decida (ver loadSpecialties() en el editor).
+            specialty = "";
             if (id.HasValue)
             {
                 try

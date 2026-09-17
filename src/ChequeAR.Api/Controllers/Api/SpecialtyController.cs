@@ -29,21 +29,31 @@ namespace ChequeAR.Api.Controllers.Api
             var cat = await _catalog.GetAsync();
             var scope = _guard.Scope;
 
-            var items = cat.Items
+            var scoped = cat.Items
                 .Where(s => includeInactive || s.IsActive)
                 // Para no-admin, sólo las del scope: si el usuario no tiene ninguna, la
                 // lista viene vacía y el editor deshabilita guardar con un mensaje claro.
                 .Where(s => scope.Allows(s.Code))
-                .Select(s => new
-                {
-                    code = s.Code,
-                    name = s.Name,
-                    color = cat.Color(s.Code),
-                    isDefault = s.Code == cat.DefaultCode,
-                    isActive = s.IsActive
-                });
+                .ToList();
 
-            return Ok(new { defaultCode = cat.DefaultCode, results = items });
+            // El default global ("general") no necesariamente está en el scope del usuario
+            // (un Jefe restringido a "cardio" no tiene "general" asignada): si no está,
+            // se cae a la primera especialidad que SÍ puede elegir. Sin esto, un cuestionario
+            // nuevo arrancaba preseleccionado en una especialidad ajena ("fuera de catálogo").
+            var defaultCode = scoped.Any(s => s.Code == cat.DefaultCode)
+                ? cat.DefaultCode
+                : scoped.Select(s => s.Code).FirstOrDefault();
+
+            var items = scoped.Select(s => new
+            {
+                code = s.Code,
+                name = s.Name,
+                color = cat.Color(s.Code),
+                isDefault = s.Code == cat.DefaultCode,
+                isActive = s.IsActive
+            });
+
+            return Ok(new { defaultCode, results = items });
         }
     }
 }
