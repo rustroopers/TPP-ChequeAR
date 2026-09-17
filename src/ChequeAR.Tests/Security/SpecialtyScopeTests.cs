@@ -1,3 +1,4 @@
+using System;
 using ChequeAR.Application.Security;
 using Xunit;
 
@@ -18,7 +19,7 @@ namespace ChequeAR.Tests.Security
         [Fact]
         public void Limited_Vacio_EsEmpty_YNoPermiteNada()
         {
-            var scope = SpecialtyScope.Limited(new string[0]);
+            var scope = SpecialtyScope.Limited(Array.Empty<string>());
             Assert.True(scope.IsEmpty);
             Assert.False(scope.Allows("cardio"));
         }

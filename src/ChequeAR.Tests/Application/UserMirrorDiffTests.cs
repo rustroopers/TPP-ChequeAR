@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using ChequeAR.Application.Services;
 using Xunit;
@@ -10,8 +11,8 @@ namespace ChequeAR.Tests.Application
         public void Especialidad_Nueva_SeAgrega()
         {
             var diff = UserMirrorDiff.Compute(
-                currentRoles: new string[0], incomingRoles: new string[0],
-                currentSpecialties: new string[0], incomingSpecialties: new[] { "cardio" });
+                currentRoles: Array.Empty<string>(), incomingRoles: Array.Empty<string>(),
+                currentSpecialties: Array.Empty<string>(), incomingSpecialties: new[] { "cardio" });
 
             Assert.Equal(new[] { "cardio" }, diff.SpecialtiesToAdd);
             Assert.Empty(diff.SpecialtiesToRemove);
@@ -23,7 +24,7 @@ namespace ChequeAR.Tests.Application
             // La revocación que UpsertAsync nunca hacía: si el hospital ya no informa una
             // especialidad, tiene que desaparecer del espejo.
             var diff = UserMirrorDiff.Compute(
-                currentRoles: new string[0], incomingRoles: new string[0],
+                currentRoles: Array.Empty<string>(), incomingRoles: Array.Empty<string>(),
                 currentSpecialties: new[] { "cardio", "onco" }, incomingSpecialties: new[] { "cardio" });
 
             Assert.Equal(new[] { "onco" }, diff.SpecialtiesToRemove);
@@ -49,8 +50,8 @@ namespace ChequeAR.Tests.Application
         public void IncomingVacio_BorraTodo_RevocacionExplicita()
         {
             var diff = UserMirrorDiff.Compute(
-                currentRoles: new string[0], incomingRoles: new string[0],
-                currentSpecialties: new[] { "cardio", "onco" }, incomingSpecialties: new string[0]);
+                currentRoles: Array.Empty<string>(), incomingRoles: Array.Empty<string>(),
+                currentSpecialties: new[] { "cardio", "onco" }, incomingSpecialties: Array.Empty<string>());
 
             Assert.Equal(2, diff.SpecialtiesToRemove.Count);
             Assert.True(diff.SpecialtiesToRemove.Contains("cardio"));
@@ -71,7 +72,7 @@ namespace ChequeAR.Tests.Application
         public void CaseInsensitive_NoGeneraBorrarMasInsertarEspurio()
         {
             var diff = UserMirrorDiff.Compute(
-                currentRoles: new string[0], incomingRoles: new string[0],
+                currentRoles: Array.Empty<string>(), incomingRoles: Array.Empty<string>(),
                 currentSpecialties: new[] { "cardio" }, incomingSpecialties: new[] { "Cardio" });
 
             Assert.True(diff.IsNoOp);
@@ -82,7 +83,7 @@ namespace ChequeAR.Tests.Application
         {
             var diff = UserMirrorDiff.Compute(
                 currentRoles: new[] { "Medico" }, incomingRoles: new[] { "Medico", "Jefe" },
-                currentSpecialties: new string[0], incomingSpecialties: new string[0]);
+                currentSpecialties: Array.Empty<string>(), incomingSpecialties: Array.Empty<string>());
 
             Assert.Equal(new[] { "Jefe" }, diff.RolesToAdd);
             Assert.Empty(diff.RolesToRemove);
