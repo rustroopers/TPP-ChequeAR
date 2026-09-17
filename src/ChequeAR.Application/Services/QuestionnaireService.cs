@@ -28,6 +28,9 @@ namespace ChequeAR.Application.Services
         // costo de sobre-traer es bajo. Documentado como simplificación deliberada.
         private const int MaxScopedScan = 2000;
 
+        private static readonly string[] SpecialtyRequiredError =
+            { "El cuestionario debe tener una especialidad." };
+
         private readonly IQuestionnaireRepository _repo;
         private readonly IQuestionnaireResponseRepository _responses;
         private readonly IFhirValidator _validator;
@@ -133,7 +136,7 @@ namespace ChequeAR.Application.Services
         private async Task EnsureSpecialtyUsableAsync(string code)
         {
             if (string.IsNullOrWhiteSpace(code))
-                throw new ValidationFailedException(new[] { "El cuestionario debe tener una especialidad." });
+                throw new ValidationFailedException(SpecialtyRequiredError);
             if (!await _catalog.ExistsActiveAsync(code))
                 throw new ValidationFailedException(new[] { "Especialidad desconocida o inactiva: " + code });
             _guard.EnsureAllows(code);

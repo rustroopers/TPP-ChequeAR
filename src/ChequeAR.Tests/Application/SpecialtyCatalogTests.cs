@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -170,7 +171,7 @@ namespace ChequeAR.Tests.Application
             {
                 callCount++;
                 if (callCount == 1) return Task.FromResult((IReadOnlyList<Specialty>)Los5().ToList());
-                throw new System.Exception("Oracle caído");
+                throw new InvalidOperationException("Oracle caído");
             });
             // TTL corto para forzar una segunda carga rápido en el test.
             var svc = new SpecialtyCatalogService(() => repo.Object, ttlMinutes: 0);
@@ -186,7 +187,7 @@ namespace ChequeAR.Tests.Application
         public async Task NuncaHayaCargado_DevuelveEmpty_SiElRepoFallaDesdeElInicio()
         {
             var repo = new Mock<ISpecialtyRepository>();
-            repo.Setup(r => r.ListAsync(true)).ThrowsAsync(new System.Exception("Oracle caído"));
+            repo.Setup(r => r.ListAsync(true)).ThrowsAsync(new InvalidOperationException("Oracle caído"));
             var svc = new SpecialtyCatalogService(() => repo.Object, ttlMinutes: 10);
 
             var cat = await svc.GetAsync();

@@ -12,7 +12,7 @@ namespace ChequeAR.Application.Services
     /// la fábrica de repositorio crea su propio DbContext en cada recarga y lo descarta —el
     /// service es de vida larga, el DbContext no puede serlo.
     /// </summary>
-    public sealed class SpecialtyCatalogService
+    public sealed class SpecialtyCatalogService : IDisposable
     {
         private readonly Func<ISpecialtyRepository> _repoFactory;
         private readonly TimeSpan _ttl;
@@ -76,5 +76,7 @@ namespace ChequeAR.Application.Services
 
         public async Task<bool> ExistsActiveAsync(string code)
             => (await GetAsync().ConfigureAwait(false)).ExistsActive(code);
+
+        public void Dispose() => _gate.Dispose();
     }
 }

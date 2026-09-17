@@ -27,7 +27,7 @@ namespace ChequeAR.Application.Services
             Items = (items ?? Enumerable.Empty<Specialty>()).ToList();
             _byCode = Items.ToDictionary(s => s.Code, StringComparer.OrdinalIgnoreCase);
 
-            var def = Items.FirstOrDefault(s => s.IsDefault) ?? Items.FirstOrDefault();
+            var def = Items.FirstOrDefault(s => s.IsDefault) ?? (Items.Count > 0 ? Items[0] : null);
             DefaultCode = def?.Code ?? SpecialtyDefaults.Code;
             DefaultLabel = def?.Name ?? SpecialtyDefaults.Name;
         }
