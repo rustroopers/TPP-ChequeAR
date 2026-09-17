@@ -40,7 +40,15 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var r = await _service.GetAsync(id);
+            QuestionnaireResponse r;
+            try
+            {
+                r = await _service.GetAsync(id);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            }
             if (r == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
 
             var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
@@ -111,6 +119,11 @@ namespace ChequeAR.Api.Controllers.Api
             {
                 return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(ex.Message));
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
+                    "No tenés acceso a la especialidad de ese cuestionario."));
+            }
             catch (InvalidOperationException ex)
             {
                 return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
@@ -127,6 +140,7 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 var r = await _service.AcquireLockAsync(id, userId);
+                // (el guard corre adentro del service, ANTES de tomar el lock: ver AcquireLockAsync)
                 // $lock también bumpea ConcurrencyVersion (es una escritura más, protegida
                 // por el mismo token que cualquier otra). El cliente tiene que enterarse acá
                 // y no sólo por el ETag -- si no, el primer guardado después de tomar el
@@ -139,6 +153,10 @@ namespace ChequeAR.Api.Controllers.Api
                 });
                 response.Headers.ETag = ETagFor(r);
                 return ResponseMessage(response);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
             }
             catch (LockConflictException ex)
             {
@@ -165,6 +183,10 @@ namespace ChequeAR.Api.Controllers.Api
                 var r = await _service.RenewLockAsync(id, userId, token.Value);
                 return Ok(new { expiresAt = r.LockExpiresAt, concurrencyVersion = r.ConcurrencyVersion });
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
+            }
             catch (LockConflictException ex)
             {
                 return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
@@ -188,7 +210,14 @@ namespace ChequeAR.Api.Controllers.Api
             if (!token.HasValue) return Ok();
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items);
+            try
+            {
+                await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
+            }
             return Ok();
         }
 
@@ -243,6 +272,10 @@ namespace ChequeAR.Api.Controllers.Api
                     actualVersion = ex.ActualVersion
                 });
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
+            }
             catch (LockConflictException ex)
             {
                 return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
@@ -272,6 +305,10 @@ namespace ChequeAR.Api.Controllers.Api
                 response.Headers.ETag = ETagFor(r);
                 return ResponseMessage(response);
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
+            }
             catch (ValidationFailedException ex)
             {
                 return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
@@ -295,6 +332,10 @@ namespace ChequeAR.Api.Controllers.Api
             {
                 return Ok(await _service.BuildRetargetPreviewAsync(id));
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            }
             catch (InvalidOperationException ex)
             {
                 return Content((HttpStatusCode)422, new { error = ex.Message });
@@ -317,6 +358,10 @@ namespace ChequeAR.Api.Controllers.Api
                 var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
                 response.Headers.ETag = ETagFor(r);
                 return ResponseMessage(response);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
             }
             catch (LockConflictException ex)
             {

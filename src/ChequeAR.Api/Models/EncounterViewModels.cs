@@ -32,6 +32,7 @@ namespace ChequeAR.Api.Models
         public int Version { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
+        public string SpecialtyColor { get; set; }
     }
 
     public class EncounterTimelineItem
@@ -44,6 +45,7 @@ namespace ChequeAR.Api.Models
         public int QuestionnaireVersion { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
+        public string SpecialtyColor { get; set; }
         public string Author { get; set; }
         public Guid EncounterId { get; set; }
         public string Status { get; set; }

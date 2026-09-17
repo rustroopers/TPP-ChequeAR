@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Infrastructure.EF;
 
@@ -21,6 +23,69 @@ namespace ChequeAR.Infrastructure.Repositories
             var existing = await _ctx.Users.FindAsync(u.Id);
             if (existing == null) _ctx.Users.Add(u);
             else _ctx.Entry(existing).CurrentValues.SetValues(u);
+            await _ctx.SaveChangesAsync();
+        }
+
+        public async Task SyncFromHospitalAsync(string userId, string displayName, string email,
+            IReadOnlyList<string> roles, IReadOnlyList<string> specialties)
+        {
+            var now = DateTime.UtcNow;
+            var user = await _ctx.Users.Include(u => u.Roles).Include(u => u.Specialties)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+            {
+                user = new User
+                {
+                    Id = userId,
+                    DisplayName = displayName,
+                    Email = email,
+                    IsActive = true,
+                    LastLoginAt = now,
+                    LastSyncAt = now
+                };
+                _ctx.Users.Add(user);
+            }
+            else
+            {
+                user.DisplayName = displayName ?? user.DisplayName;
+                user.Email = email ?? user.Email;
+                user.LastLoginAt = now;
+                user.LastSyncAt = now;
+            }
+
+            var diff = UserMirrorDiff.Compute(
+                user.Roles.Select(r => r.Role), roles,
+                user.Specialties.Select(s => s.SpecialtyCode), specialties);
+
+            // Se opera contra los DbSet, no contra las colecciones de navegación: mismo
+            // motivo que QuestionnaireRepository.ReplaceStructureAsync -- las FKs son
+            // requeridas, así que sacar un elemento de la colección sin borrarlo de su set
+            // intentaría poner la FK en null y EF lo rechazaría.
+            foreach (var role in diff.RolesToRemove)
+            {
+                var row = user.Roles.FirstOrDefault(r => string.Equals(r.Role, role, StringComparison.OrdinalIgnoreCase));
+                if (row != null) { _ctx.UserRoles.Remove(row); user.Roles.Remove(row); }
+            }
+            foreach (var role in diff.RolesToAdd)
+            {
+                var row = new UserRole { UserId = userId, Role = role };
+                _ctx.UserRoles.Add(row);
+                user.Roles.Add(row);
+            }
+
+            foreach (var code in diff.SpecialtiesToRemove)
+            {
+                var row = user.Specialties.FirstOrDefault(s => string.Equals(s.SpecialtyCode, code, StringComparison.OrdinalIgnoreCase));
+                if (row != null) { _ctx.UserSpecialties.Remove(row); user.Specialties.Remove(row); }
+            }
+            foreach (var code in diff.SpecialtiesToAdd)
+            {
+                var row = new UserSpecialty { UserId = userId, SpecialtyCode = code };
+                _ctx.UserSpecialties.Add(row);
+                user.Specialties.Add(row);
+            }
+
             await _ctx.SaveChangesAsync();
         }
 

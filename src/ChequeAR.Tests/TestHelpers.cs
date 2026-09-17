@@ -1,6 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Application.Services;
+using ChequeAR.Domain.Entities;
 using Moq;
 
 namespace ChequeAR.Tests
@@ -19,5 +24,46 @@ namespace ChequeAR.Tests
 
         public static ValidationResult ValidFail(params string[] errors)
             => new ValidationResult { IsValid = false, Errors = errors, Warnings = Array.Empty<string>() };
+
+        /// <summary>
+        /// Guard sin restricción (equivalente a Administrador, o al flag de enforcement
+        /// apagado): es el default para los tests que no ejercitan la autorización por
+        /// especialidad y sólo quieren que el resto del comportamiento no cambie.
+        /// </summary>
+        public static ISpecialtyGuard UnrestrictedGuard()
+        {
+            var mock = new Mock<ISpecialtyGuard>();
+            mock.SetupGet(g => g.Scope).Returns(SpecialtyScope.Unrestricted());
+            return mock.Object;
+        }
+
+        /// <summary>Guard restringido a los códigos dados (simula Jefe/Medico/Observador).</summary>
+        public static ISpecialtyGuard GuardFor(params string[] allowedCodes)
+        {
+            var scope = SpecialtyScope.Limited(allowedCodes);
+            var mock = new Mock<ISpecialtyGuard>();
+            mock.SetupGet(g => g.Scope).Returns(scope);
+            mock.Setup(g => g.EnsureAllows(It.IsAny<string>()))
+                .Callback<string>(code => { if (!scope.Allows(code)) throw new ChequeAR.Application.Exceptions.SpecialtyForbiddenException(code); });
+            return mock.Object;
+        }
+
+        /// <summary>Catálogo en memoria con los 5 códigos base, para tests que no necesitan tocar la DB.</summary>
+        public static SpecialtyCatalogService CatalogWith(params Specialty[] items)
+        {
+            var seed = items != null && items.Length > 0
+                ? items
+                : new[]
+                {
+                    new Specialty { Code = "general", Name = "General", IsActive = true, IsDefault = true, SortOrder = 0 },
+                    new Specialty { Code = "cardio", Name = "Cardiología", IsActive = true, SortOrder = 10 },
+                    new Specialty { Code = "neumo", Name = "Neumonología", IsActive = true, SortOrder = 20 },
+                    new Specialty { Code = "onco", Name = "Oncología", IsActive = true, SortOrder = 30 },
+                    new Specialty { Code = "reuma", Name = "Reumatología", IsActive = true, SortOrder = 40 }
+                };
+            var repo = new Mock<ISpecialtyRepository>();
+            repo.Setup(r => r.ListAsync(It.IsAny<bool>())).ReturnsAsync((IReadOnlyList<Specialty>)seed.ToList());
+            return new SpecialtyCatalogService(() => repo.Object, ttlMinutes: 60);
+        }
     }
 }

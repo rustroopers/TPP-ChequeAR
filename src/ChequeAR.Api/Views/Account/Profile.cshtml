@@ -1,3 +1,4 @@
+@model ChequeAR.Api.Models.ProfileViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Mi perfil";
@@ -20,24 +21,37 @@
     <h2>Datos</h2>
     <dl class="row mb-0">
         <dt class="col-sm-4 cq-text-sm cq-text-muted">Nombre</dt>
-        <dd class="col-sm-8">@(User != null && User.Identity != null ? User.Identity.Name : "Pérez, Ana")</dd>
+        <dd class="col-sm-8">@(Model.DisplayName ?? Model.UserName)</dd>
 
         <dt class="col-sm-4 cq-text-sm cq-text-muted">Usuario</dt>
-        <dd class="col-sm-8">aperez</dd>
+        <dd class="col-sm-8">@Model.UserName</dd>
 
         <dt class="col-sm-4 cq-text-sm cq-text-muted">Email</dt>
-        <dd class="col-sm-8">aperez@garrahan.gov.ar</dd>
+        <dd class="col-sm-8">@(Model.Email ?? "—")</dd>
 
-        <dt class="col-sm-4 cq-text-sm cq-text-muted">Especialidad principal</dt>
-        <dd class="col-sm-8"><span class="cq-chip cq-chip--cardio">Cardiología</span></dd>
+        <dt class="col-sm-4 cq-text-sm cq-text-muted">Especialidades</dt>
+        <dd class="col-sm-8">
+            @if (Model.Specialties.Count == 0)
+            {
+                <span class="cq-text-muted">Sin especialidad asignada</span>
+            }
+            else
+            {
+                foreach (var s in Model.Specialties)
+                {
+                    <span class="cq-chip cq-chip--zone-@s.Color">@s.Label</span>
+                }
+            }
+        </dd>
 
         <dt class="col-sm-4 cq-text-sm cq-text-muted">Rol</dt>
-        <dd class="col-sm-8">Médico</dd>
+        <dd class="col-sm-8">@(Model.Roles.Count > 0 ? string.Join(", ", Model.Roles) : "—")</dd>
     </dl>
 </div>
 
 <div class="cq-card mt-3" style="max-width:640px;">
     <h2>Preferencias</h2>
+    @* TODO: SaveProfile hoy sólo redirige -- persistir preferencias es otra feature. *@
     @using (Html.BeginForm("SaveProfile", "Account", FormMethod.Post))
     {
         @Html.AntiForgeryToken()

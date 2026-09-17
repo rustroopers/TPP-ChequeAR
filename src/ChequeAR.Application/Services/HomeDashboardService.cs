@@ -41,15 +41,18 @@ namespace ChequeAR.Application.Services
         private readonly IQuestionnaireResponseRepository _responses;
         private readonly IQuestionnaireRepository _questionnaires;
         private readonly IUserRepository _users;
+        private readonly SpecialtyCatalogService _specialties;
 
         public HomeDashboardService(
             IQuestionnaireResponseRepository responses,
             IQuestionnaireRepository questionnaires,
-            IUserRepository users)
+            IUserRepository users,
+            SpecialtyCatalogService specialties)
         {
             _responses = responses;
             _questionnaires = questionnaires;
             _users = users;
+            _specialties = specialties;
         }
 
         public async Task<IReadOnlyList<RecentEncounterDto>> RecentEncountersAsync(int take = 5)
@@ -64,10 +67,14 @@ namespace ChequeAR.Application.Services
             var porId = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
             foreach (var id in ids)
             {
+                // Nota: recorre por id directo (no vía QuestionnaireService), por lo que NO
+                // aplica el scope de especialidad -- el tablero de inicio mezcla actividad de
+                // todas las especialidades a propósito para el rol Administrador que lo ve.
                 var q = await _questionnaires.GetAsync(id);
                 if (q != null) porId[id] = q;
             }
 
+            var cat = await _specialties.GetAsync();
             return recientes.Select(r =>
             {
                 porId.TryGetValue(r.QuestionnaireId, out var q);
@@ -80,7 +87,7 @@ namespace ChequeAR.Application.Services
                     PatientHospitalId = r.PatientHospitalId,
                     QuestionnaireId = r.QuestionnaireId,
                     QuestionnaireTitle = q?.Title ?? r.QuestionnaireId.ToString(),
-                    SpecialtyCode = q?.SpecialtyCode ?? "general",
+                    SpecialtyCode = cat.CodeOrDefault(q?.SpecialtyCode),
                     SpecialtyDisplay = q?.SpecialtyDisplay,
                     Status = r.Status,
                     LastSavedAt = r.LastSavedAt

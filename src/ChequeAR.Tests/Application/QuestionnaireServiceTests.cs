@@ -21,7 +21,8 @@ namespace ChequeAR.Tests.Application
 
         public QuestionnaireServiceTests()
         {
-            _sut = new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object, TestHelpers.NoopAuditDispatcher());
+            _sut = new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
+                TestHelpers.UnrestrictedGuard(), TestHelpers.CatalogWith());
         }
 
         // Al crear: arranca en estado Draft, se le asigna Id y datos de auditoría (creador/fecha)
@@ -29,7 +30,7 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public async Task CreateAsync_SetsDraftAndAuditFields_AndPersists()
         {
-            var q = new Questionnaire { Title = "Reumato" };
+            var q = new Questionnaire { Title = "Reumato", SpecialtyCode = "cardio" };
 
             var created = await _sut.CreateAsync(q, "user-1");
 

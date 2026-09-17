@@ -9,6 +9,7 @@ namespace ChequeAR.Api.Models
         public string Title { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
+        public string SpecialtyColor { get; set; }
         public int Version { get; set; }
         public string Status { get; set; }
         public string UpdatedAt { get; set; }
@@ -43,6 +44,7 @@ namespace ChequeAR.Api.Models
         public string Title { get; set; }
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
+        public string SpecialtyColor { get; set; }
         public int Version { get; set; }
         public string Status { get; set; }
         public string Author { get; set; }

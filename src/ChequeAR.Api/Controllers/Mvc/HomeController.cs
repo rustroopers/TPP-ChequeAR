@@ -7,13 +7,16 @@ using ChequeAR.Application.Services;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
+    [System.Web.Mvc.Authorize]
     public class HomeController : Controller
     {
         private readonly HomeDashboardService _dashboard;
+        private readonly SpecialtyCatalogService _specialties;
 
-        public HomeController(HomeDashboardService dashboard)
+        public HomeController(HomeDashboardService dashboard, SpecialtyCatalogService specialties)
         {
             _dashboard = dashboard;
+            _specialties = specialties;
         }
 
         public async Task<ActionResult> Index()
@@ -41,6 +44,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // nunca se rellena con datos inventados.
             try
             {
+                var cat = await _specialties.GetAsync();
                 // Los datos los arma el servicio; acá sólo queda darles forma de pantalla.
                 foreach (var e in await _dashboard.RecentEncountersAsync(5))
                 {
@@ -74,8 +78,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     {
                         PatientName = e.PatientName,
                         QuestionnaireTitle = e.QuestionnaireTitle,
-                        SpecialtyCode = e.SpecialtyCode,
-                        SpecialtyLabel = SpecialtyMap.Label(e.SpecialtyCode, e.SpecialtyDisplay),
+                        SpecialtyCode = cat.CodeOrDefault(e.SpecialtyCode),
+                        SpecialtyLabel = cat.Label(e.SpecialtyCode, e.SpecialtyDisplay),
+                        SpecialtyColor = cat.Color(e.SpecialtyCode),
                         Status = status,
                         UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(e.LastSavedAt),
                         OpenUrl = openUrl

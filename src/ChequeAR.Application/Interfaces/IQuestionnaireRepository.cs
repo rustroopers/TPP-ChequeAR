@@ -31,5 +31,12 @@ namespace ChequeAR.Application.Interfaces
 
         /// <summary>Códigos de especialidad realmente presentes en los cuestionarios (para poblar el filtro).</summary>
         Task<IReadOnlyList<string>> GetSpecialtyCodesAsync();
+
+        /// <summary>
+        /// Sólo el SpecialtyCode, sin traer el agregado completo (Versions/Groups/Questions/
+        /// Options). Para chequear el scope de especialidad antes de operar sobre una
+        /// QuestionnaireResponse sin pagar el costo de GetAsync. Null si no existe.
+        /// </summary>
+        Task<string> GetSpecialtyCodeAsync(Guid questionnaireId);
     }
 }

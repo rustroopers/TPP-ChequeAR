@@ -27,13 +27,15 @@ namespace ChequeAR.Application.Services
         private readonly IOracleViewClient _oracle;
         private readonly IQuestionnaireResponseRepository _qrRepo;
         private readonly IQuestionnaireRepository _qRepo;
+        private readonly SpecialtyCatalogService _specialties;
 
-        public PatientService(IHospitalFhirClient fhir, IOracleViewClient oracle, IQuestionnaireResponseRepository qrRepo, IQuestionnaireRepository qRepo)
+        public PatientService(IHospitalFhirClient fhir, IOracleViewClient oracle, IQuestionnaireResponseRepository qrRepo, IQuestionnaireRepository qRepo, SpecialtyCatalogService specialties)
         {
             _fhir = fhir;
             _oracle = oracle;
             _qrRepo = qrRepo;
             _qRepo = qRepo;
+            _specialties = specialties;
         }
 
         public async Task<IReadOnlyList<PatientSearchHit>> SearchAsync(string query)
@@ -106,19 +108,21 @@ namespace ChequeAR.Application.Services
                     // Caer al código dejaba "reuma" como label en las pantallas de paciente
                     // y encuentro: el editor guarda SpecialtyDisplay en null, así que ese
                     // fallback era el caso normal, no el borde.
-                    specialtyLabel = SpecialtyMap.Label(q.SpecialtyCode, q.SpecialtyDisplay);
+                    var cat = await _specialties.GetAsync();
+                    specialtyLabel = cat.Label(q.SpecialtyCode, q.SpecialtyDisplay);
                 }
             }
             catch { /* ignore */ }
 
+            var catalog = await _specialties.GetAsync();
             return new PatientSearchHit
             {
                 HospitalId = hospitalId,
                 FullName = demo?.Name ?? hospitalId,
                 AgeLabel = demo?.AgeLabel,
                 BirthDateLabel = demo?.BirthDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
-                SpecialtyCode = specialtyCode ?? "general",
-                SpecialtyLabel = specialtyLabel ?? "General"
+                SpecialtyCode = catalog.CodeOrDefault(specialtyCode),
+                SpecialtyLabel = specialtyLabel ?? catalog.DefaultLabel
             };
         }
 

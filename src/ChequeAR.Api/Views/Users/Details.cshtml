@@ -33,7 +33,7 @@
         {
             var sr = Model.SpecialtyRoles[i];
             <div class="row g-2 align-items-center mb-2">
-                <div class="col-md-5"><span class="cq-chip cq-chip--@sr.SpecialtyCode">@sr.SpecialtyLabel</span></div>
+                <div class="col-md-5"><span class="cq-chip cq-chip--zone-@sr.SpecialtyColor">@sr.SpecialtyLabel</span></div>
                 <div class="col-md-7">
                     <select class="form-select" name="SpecialtyRoles[@i].Role">
                         <option value="Sin acceso" selected="@(sr.Role == "Sin acceso")">Sin acceso</option>

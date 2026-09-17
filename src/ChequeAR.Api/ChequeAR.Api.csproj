@@ -105,8 +105,8 @@
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
-    <Compile Include="Auth\ChequeARSpecialtyAttribute.cs" />
     <Compile Include="Auth\CurrentUser.cs" />
+    <Compile Include="Auth\HttpCurrentUser.cs" />
     <Compile Include="Auth\SessionCookie.cs" />
     <Compile Include="Auth\SessionToken.cs" />
     <Compile Include="Helpers\ArgentinaTime.cs" />
@@ -131,6 +131,7 @@
     <Compile Include="Models\EncounterViewModels.cs" />
     <Compile Include="Models\ReportsViewModels.cs" />
     <Compile Include="Models\AdminViewModels.cs" />
+    <Compile Include="Models\ProfileViewModel.cs" />
     <Compile Include="Controllers\Api\AuthController.cs" />
     <Compile Include="Controllers\Api\MetadataController.cs" />
     <Compile Include="Controllers\Api\TerminologyController.cs" />
@@ -145,6 +146,7 @@
     <Compile Include="Controllers\Api\UserController.cs" />
     <Compile Include="Controllers\Api\IntegrationStatusController.cs" />
     <Compile Include="Controllers\Api\SavedReportController.cs" />
+    <Compile Include="Controllers\Api\SpecialtyController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

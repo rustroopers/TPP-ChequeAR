@@ -88,7 +88,13 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Entity<UserSpecialty>().Property(x => x.SpecialtyCode).HasMaxLength(64);
             modelBuilder.Entity<Specialty>().HasKey(x => x.Code);
             modelBuilder.Entity<Specialty>().Property(x => x.Code).HasMaxLength(64);
+            // Nombre de zona del tema (red|violet|green|yellow|blue|orange), no un color libre.
+            modelBuilder.Entity<Specialty>().Property(x => x.Color).HasMaxLength(32);
             modelBuilder.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
+            // Consistencia con Questionnaire.SpecialtyCode/Specialty.Code (ambos 64): estaba
+            // en 2000 por la convención global de strings, un ancho que nunca podría matchear
+            // la PK del catálogo. Puede ser NULL (Scope="private" no tiene especialidad).
+            modelBuilder.Entity<SavedReport>().Property(x => x.SpecialtyCode).HasMaxLength(64);
 
             // Campos JSON / texto largo → CLOB. IsMaxLength() suelta el límite de 2000 que
             // impone la convención de arriba: sin esto, EF valida client-side contra 2000

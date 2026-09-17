@@ -7,7 +7,7 @@
 <header class="cq-page-header">
     <div>
         <div class="d-flex align-items-center gap-2 mb-1">
-            <span class="cq-chip cq-chip--@Model.SpecialtyCode">@Model.SpecialtyLabel</span>
+            <span class="cq-chip cq-chip--zone-@Model.SpecialtyColor">@Model.SpecialtyLabel</span>
             @if (Model.Status == "published") { <span class="cq-badge cq-badge--published">Publicado</span> }
             else if (Model.Status == "draft") { <span class="cq-badge cq-badge--draft">Borrador</span> }
             else { <span class="cq-badge cq-badge--archived">Archivado</span> }

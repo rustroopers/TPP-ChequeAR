@@ -35,9 +35,10 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpGet, Route("{id:guid}"), Authorize]
         public async Task<IHttpActionResult> Get(Guid id)
         {
-            var r = await _saved.GetAsync(id);
-            if (r == null) return NotFound();
-            return Ok(r);
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            var specialties = CurrentUser.Specialties(User as ClaimsPrincipal);
+            var resultado = await _saved.GetForUserAsync(id, userId, specialties);
+            return Responder(resultado, r => Ok(r));
         }
 
         [HttpPost, Route(""), Authorize]
