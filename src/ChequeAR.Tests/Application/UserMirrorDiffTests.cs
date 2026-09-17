@@ -54,8 +54,8 @@ namespace ChequeAR.Tests.Application
                 currentSpecialties: new[] { "cardio", "onco" }, incomingSpecialties: Array.Empty<string>());
 
             Assert.Equal(2, diff.SpecialtiesToRemove.Count);
-            Assert.True(diff.SpecialtiesToRemove.Contains("cardio"));
-            Assert.True(diff.SpecialtiesToRemove.Contains("onco"));
+            Assert.Contains("cardio", diff.SpecialtiesToRemove);
+            Assert.Contains("onco", diff.SpecialtiesToRemove);
         }
 
         [Fact]
