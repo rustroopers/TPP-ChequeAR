@@ -1721,11 +1721,9 @@
                     <option v-if="specialtyCode && !specialties.some(function(s){return s.code===specialtyCode;})" :value="specialtyCode">{{ specialtyCode }} (fuera de catálogo)</option>\
                 </select>\
                 <p v-if="specialtiesError" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">{{ specialtiesError }}</p>\
-                <p v-else class="cq-text-xs cq-text-muted mt-1 mb-0">Agrupa el cuestionario en los reportes.</p>\
             </div>\
             <hr class="my-2" />\
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica del cuestionario <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
-            <p class="cq-text-xs cq-text-muted mb-2">Asociar un concepto de SNOMED CT a la ficha</p>\
             <div class="row g-2">\
                 <div class="col-7">\
                     <label class="form-label cq-text-sm">Término clínico</label>\
@@ -1758,7 +1756,6 @@
     </div>\
     <div class="cq-card mt-3" v-if="!isArchived">\
         <h3 class="cq-section-title mt-0">Importar desde otro cuestionario</h3>\
-        <p class="cq-text-xs cq-text-muted mb-2">Trae las secciones y preguntas de otro cuestionario de la misma especialidad para partir de ahí en vez de empezar de cero.</p>\
         <button class="btn btn-sm btn-outline-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
     </div>\
 </div>\
@@ -1968,7 +1965,6 @@
     <div v-else>\
         <div class="cq-card mb-2">\
             <h2 class="mt-0 mb-1">{{ qTitle }}</h2>\
-            <div class="cq-text-xs cq-text-muted">Especialidad: {{ specialtyCode }}</div>\
         </div>\
         <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2">\
             <h3 class="cq-section-title mt-0"><i class="bi bi-folder me-1"></i>{{ g.title }}</h3>\
