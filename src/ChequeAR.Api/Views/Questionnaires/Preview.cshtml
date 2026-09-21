@@ -1,7 +1,11 @@
 @model ChequeAR.Api.Models.QuestionnaireDetailViewModel
+@using ChequeAR.Domain.Enums
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Vista previa";
+    // Vista previa la ve cualquiera con questionnaire.read; el botón a Edit, sólo quien
+    // puede entrar al editor (ver RequiresPermission en QuestionnairesController.Edit).
+    var canWrite = Cq.Can(Permissions.QuestionnaireWrite);
 }
 
 <header class="cq-page-header">
@@ -17,7 +21,10 @@
     </div>
     <div class="d-flex gap-2">
         <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
-        <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary"><i class="bi bi-pencil me-1"></i> Editar</a>
+        @if (canWrite)
+        {
+            <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary"><i class="bi bi-pencil me-1"></i> Editar</a>
+        }
         <a href="@Url.Action("History", new { id = Model.Id })" class="btn btn-primary"><i class="bi bi-clock-history me-1"></i> Historial</a>
     </div>
 </header>

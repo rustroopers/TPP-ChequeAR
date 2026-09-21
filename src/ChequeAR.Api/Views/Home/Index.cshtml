@@ -1,7 +1,11 @@
 @model ChequeAR.Api.Models.HomeViewModel
 @using System.Linq
+@using ChequeAR.Domain.Enums
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
+    // Mismo criterio que el listado de cuestionarios: un Medico no crea cuestionarios,
+    // así que tampoco ve el atajo "Nuevo" (la autorización real está en el controller).
+    var canWriteQuestionnaires = Cq.Can(Permissions.QuestionnaireWrite);
     ViewBag.Title = Cq.T("sidebar.home");
     ViewBag.PageId = "home";
     var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctor";
@@ -133,10 +137,13 @@
         </div>
         <div class="cq-demo-card__foot">
             <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-sm btn-tertiary">Ver todos</a>
-            <div class="d-flex align-items-center gap-2">
-                <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
-                <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Podés editarlo cuantas veces quieras y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
-            </div>
+            @if (canWriteQuestionnaires)
+            {
+                <div class="d-flex align-items-center gap-2">
+                    <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
+                    <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Podés editarlo cuantas veces quieras y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+                </div>
+            }
         </div>
     </div>
     </div>

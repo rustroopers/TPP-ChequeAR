@@ -90,6 +90,12 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // Q2 — Editor (host Vue). id null = nuevo cuestionario.
+        //
+        // El editor es una pantalla de escritura y nada más: sin questionnaire.write no se
+        // entra, ni siquiera en modo lectura. Para ver qué hay adentro de un cuestionario
+        // está Preview, que es la vista de lectura de verdad, y es a donde apuntan los links
+        // del listado para un Medico; el 403 del filtro queda para el acceso directo por URL.
+        [RequiresPermission(Permissions.QuestionnaireWrite)]
         public async Task<ActionResult> Edit(Guid? id = null)
         {
             ViewBag.Title = "Editor de cuestionario";
@@ -160,11 +166,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
             }
 
-            // Medico ve el editor (para saber qué hay) pero no lo edita: sólo
-            // Administrador/Jefe tienen questionnaire.write (ver RolePolicy). Se calcula acá,
-            // no en la vista, para que la MISMA fuente de verdad gobierne tanto los botones
-            // Guardar/Publicar (Edit.cshtml) como las acciones internas del editor (prop
-            // canEdit, ver questionnaire-editor/index.js).
+            // Con [RequiresPermission(QuestionnaireWrite)] arriba esto ya es siempre true, pero
+            // se sigue calculando desde RolePolicy -no hardcodeado- para que el día que el
+            // editor vuelva a abrirse en lectura para algún rol, los botones Guardar/Publicar
+            // (Edit.cshtml) y las acciones internas del editor (prop canEdit, ver
+            // questionnaire-editor/index.js) sigan saliendo de la MISMA fuente de verdad.
             var canEdit = RolePolicy.Allows(CurrentUser.Roles(User as System.Security.Claims.ClaimsPrincipal), Permissions.QuestionnaireWrite);
 
             ViewBag.QuestionnaireId = editorId;
@@ -186,7 +192,10 @@ namespace ChequeAR.Api.Controllers.Mvc
         // Modelo interno del editor (secciones → preguntas) para la versión ACTUAL en base,
         // en el MISMO formato que props.groups. Lo consume el merge de conflictos del editor
         // para traer "la versión de la otra persona" y compararla, sin reparsear FHIR en el
-        // cliente. Es de sólo lectura y reutiliza el mismo armado que hidrata el editor.
+        // cliente. Es de sólo lectura y reutiliza el mismo armado que hidrata el editor, pero
+        // pide questionnaire.write igual que Edit: es superficie del editor, y quien no entra
+        // al editor no tiene por qué poder consultarla (para leer un cuestionario está la API).
+        [RequiresPermission(Permissions.QuestionnaireWrite)]
         public async Task<ActionResult> EditorModel(Guid id)
         {
             ChequeAR.Domain.Entities.Questionnaire q;
