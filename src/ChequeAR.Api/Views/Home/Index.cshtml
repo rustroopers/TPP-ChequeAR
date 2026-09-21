@@ -48,7 +48,11 @@
                 <div class="cq-empty__title">No hay reportes aún</div>
                 <div class="cq-empty__desc cq-text-xs cq-text-muted">Guardá una consulta desde Reportes para verla acá.</div>
             </div>
-            <svg id="reportChart" hidden style="width:100%; height:180px;" viewBox="0 0 300 180" role="img" aria-label="Gráfico del reporte seleccionado"></svg>
+            @* margin-bottom negativo = el gap de 12px que .cq-demo-card (flex column) deja entre
+   el cuerpo y el pie. Absorbiéndolo, el borde inferior del svg -donde apoyan las
+   barras- cae exactamente sobre la línea que separa el gráfico de "Abrir reportes",
+   que hace de eje X. Si cambia ese gap en el CSS de la card, hay que cambiarlo acá. *@
+            <svg id="reportChart" hidden style="width:100%; height:240px; margin-bottom:-12px;" viewBox="0 0 300 240" role="img" aria-label="Gráfico del reporte seleccionado"></svg>
         </div>
         <div class="cq-demo-card__foot">
             <span id="reportCaption" class="cq-text-sm cq-text-muted"></span>
@@ -262,21 +266,31 @@ else
 
         // [hidden] tiene prioridad sobre display:flex/none inline, así que no hace
         // falta pelearse con !important de las clases utility de Bootstrap.
+        //
+        // Ojo con el <svg>: la propiedad .hidden la define HTMLElement, y SVGElement NO la
+        // implementa, así que `chart.hidden = false` sólo creaba una propiedad JS suelta y
+        // dejaba el atributo hidden puesto -- el gráfico no se veía nunca y la card quedaba
+        // en blanco (loading y empty ocultos, svg con display:none). Por eso acá se toca el
+        // ATRIBUTO, que sí funciona para cualquier elemento.
+        function toggle(el, hide) {
+            if (hide) el.setAttribute("hidden", "hidden");
+            else el.removeAttribute("hidden");
+        }
         function showEmpty(msg) {
-            loading.hidden = true;
-            chart.hidden = true;
-            empty.hidden = false;
+            toggle(loading, true);
+            toggle(chart, true);
+            toggle(empty, false);
             if (msg) empty.querySelector(".cq-empty__title").textContent = msg;
         }
         function showLoading() {
-            empty.hidden = true;
-            chart.hidden = true;
-            loading.hidden = false;
+            toggle(empty, true);
+            toggle(chart, true);
+            toggle(loading, false);
         }
         function showChart() {
-            empty.hidden = true;
-            loading.hidden = true;
-            chart.hidden = false;
+            toggle(empty, true);
+            toggle(loading, true);
+            toggle(chart, false);
         }
 
         // Dibuja barras verticales con etiquetas cortas. `data` = [{label, value}, ...].
@@ -285,13 +299,29 @@ else
         // no rendean (aparecen en el DOM pero no se ven), que es lo que estaba pasando.
         function renderChart(data) {
             var SVG_NS = "http://www.w3.org/2000/svg";
-            var pad = { l: 32, r: 12, t: 12, b: 40 };
-            var w = 300, h = 180;
+            // b=0: la línea base del gráfico tiene que ser LA MISMA línea que separa el
+            // cuerpo de la card del pie ("Abrir reportes"), así que las barras apoyan en el
+            // borde inferior del svg y no se dibuja eje X propio — lo hace el border-top del
+            // pie. Por eso tampoco quedan etiquetas debajo: van dentro de la barra (ver más
+            // abajo). t=38 deja lugar para las dos líneas de texto de una barra baja, que
+            // van arriba porque no entran adentro.
+            var pad = { l: 32, r: 12, t: 38, b: 0 };
+            // El viewBox se ajusta al ancho REAL del svg en pantalla, en lugar de quedar
+            // fijo en 300: con un viewBox angosto dentro de una card ancha, el navegador
+            // escala a la altura (preserveAspectRatio "meet") y el gráfico quedaba chico y
+            // centrado entre dos franjas vacías. Midiéndolo, 1 unidad = 1 píxel y el dibujo
+            // ocupa todo el ancho disponible. Hay que mostrarlo ANTES de medir: un elemento
+            // con display:none mide 0.
+            showChart();
+            var h = 240;
+            var w = Math.max(300, Math.round(chart.getBoundingClientRect().width) || 300);
+            chart.setAttribute("viewBox", "0 0 " + w + " " + h);
+
             var innerW = w - pad.l - pad.r, innerH = h - pad.t - pad.b;
             var max = 0;
             data.forEach(function (d) { if (d.value > max) max = d.value; });
             if (max === 0) max = 1;
-            var barW = Math.min(40, Math.max(8, innerW / data.length - 8));
+            var barW = Math.min(72, Math.max(8, innerW / data.length - 16));
             var gap = (innerW - barW * data.length) / (data.length + 1);
 
             function el(name, attrs, textContent) {
@@ -303,7 +333,8 @@ else
             // Limpio y armo desde cero.
             while (chart.firstChild) chart.removeChild(chart.firstChild);
 
-            chart.appendChild(el("line", { x1: pad.l, y1: pad.t + innerH, x2: pad.l + innerW, y2: pad.t + innerH, stroke: "#cbd5e1", "stroke-width": 1 }));
+            // Sólo el eje Y: el horizontal lo aporta la línea del pie de la card, con la que
+            // la base coincide exactamente.
             chart.appendChild(el("line", { x1: pad.l, y1: pad.t, x2: pad.l, y2: pad.t + innerH, stroke: "#cbd5e1", "stroke-width": 1 }));
 
             data.forEach(function (d, i) {
@@ -311,14 +342,33 @@ else
                 var barH = Math.max(2, Math.round((d.value / max) * innerH));
                 var y = pad.t + innerH - barH;
                 var color = i % 2 === 0 ? "#6f5fa5" : "#9283be";
+                // La barra llega hasta el borde inferior del svg: sin rx abajo no hace falta
+                // nada especial, las esquinas redondeadas de arriba las da rx y las de abajo
+                // quedan tapadas por el borde.
                 var rect = el("rect", { x: x, y: y, width: barW, height: barH, rx: 3, fill: color });
                 rect.appendChild(el("title", {}, d.label + ": " + d.value));
                 chart.appendChild(rect);
-                var label = d.label.length > 10 ? d.label.slice(0, 9) + "…" : d.label;
-                chart.appendChild(el("text", { x: x + barW / 2, y: pad.t + innerH + 14, "text-anchor": "middle", "font-size": 10, fill: "#334155" }, label));
-                chart.appendChild(el("text", { x: x + barW / 2, y: y - 3, "text-anchor": "middle", "font-size": 10, "font-weight": 600, fill: "#1e293b" }, String(d.value)));
+
+                var cx = x + barW / 2;
+                var adentro = barH >= 26;
+                // ~6px por caracter a font-size 12. El ancho disponible NO es el mismo en los
+                // dos casos: adentro de la barra sólo se cuenta barW (si se contara el gap,
+                // el texto se sale por los costados), y arriba se puede invadir la
+                // separación con las vecinas.
+                var maxChars = Math.max(4, Math.floor((adentro ? barW - 8 : barW + gap) / 6));
+                var label = d.label.length > maxChars ? d.label.slice(0, maxChars - 1) + "…" : d.label;
+
+                // Ya no hay franja debajo de la base para las etiquetas: si la barra tiene
+                // alto suficiente la etiqueta va adentro, en blanco, apoyada sobre la base;
+                // si es muy baja (el texto no entraría) se dibuja arriba, sobre el valor.
+                if (adentro) {
+                    chart.appendChild(el("text", { x: cx, y: pad.t + innerH - 10, "text-anchor": "middle", "font-size": 12, fill: "#ffffff" }, label));
+                    chart.appendChild(el("text", { x: cx, y: y - 7, "text-anchor": "middle", "font-size": 12, "font-weight": 600, fill: "#1e293b" }, String(d.value)));
+                } else {
+                    chart.appendChild(el("text", { x: cx, y: y - 7, "text-anchor": "middle", "font-size": 12, "font-weight": 600, fill: "#1e293b" }, String(d.value)));
+                    chart.appendChild(el("text", { x: cx, y: y - 22, "text-anchor": "middle", "font-size": 12, fill: "#334155" }, label));
+                }
             });
-            showChart();
         }
 
         function loadReportStats(rep) {
@@ -333,21 +383,26 @@ else
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (data) {
                     if (!data || !data.Questions || !data.Questions.length) { showEmpty("No hay datos para este reporte"); return; }
-                    // Buscamos la primera pregunta con datos graficables: prioridad a la
-                    // Distribution (choice/openChoice), y como fallback el Histogram
+                    // Buscamos la primera pregunta con datos graficables: prioridad a las
+                    // Categories (choice/openChoice), y como fallback el Histogram
                     // (integer/decimal/scale) — con estos últimos se pueden armar barras
                     // por rango de valores igual.
+                    //
+                    // El nombre del campo es Categories (ver StatsCalculator.QuestionStats,
+                    // y report-stats/index.js que lo consume igual). Acá decía Distribution,
+                    // que no existe en la respuesta: la rama categórica no entraba nunca y
+                    // cualquier reporte sin preguntas numéricas caía en "No hay datos".
                     var found = null;
                     for (var i = 0; i < data.Questions.length; i++) {
                         var q2 = data.Questions[i];
-                        if (q2.Distribution && q2.Distribution.length) { found = { q: q2, kind: "dist" }; break; }
+                        if (q2.Categories && q2.Categories.length) { found = { q: q2, kind: "cat" }; break; }
                         if (q2.Histogram && q2.Histogram.length && !found) { found = { q: q2, kind: "hist" }; }
                     }
                     if (!found) { showEmpty("No hay datos para este reporte"); return; }
                     var bars;
-                    if (found.kind === "dist") {
-                        bars = found.q.Distribution.slice(0, 6).map(function (d) {
-                            return { label: String(d.Value || "—"), value: Number(d.Count || 0) };
+                    if (found.kind === "cat") {
+                        bars = found.q.Categories.slice(0, 6).map(function (c) {
+                            return { label: String(c.Label || "—"), value: Number(c.Count || 0) };
                         });
                     } else {
                         bars = found.q.Histogram.slice(0, 6).map(function (b) {
