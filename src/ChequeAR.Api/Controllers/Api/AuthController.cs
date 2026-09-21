@@ -14,14 +14,14 @@ namespace ChequeAR.Api.Controllers.Api
     [RoutePrefix("auth")]
     public class AuthController : ApiController
     {
-        private readonly IHospitalAuthClient _hospitalAuth;
+        private readonly ICredentialAuthenticator _auth;
         private readonly JwtIssuer _jwt;
         private readonly RefreshTokenService _refresh;
         private readonly UserService _users;
 
-        public AuthController(IHospitalAuthClient hospitalAuth, JwtIssuer jwt, RefreshTokenService refresh, UserService users)
+        public AuthController(ICredentialAuthenticator auth, JwtIssuer jwt, RefreshTokenService refresh, UserService users)
         {
-            _hospitalAuth = hospitalAuth;
+            _auth = auth;
             _jwt = jwt;
             _refresh = refresh;
             _users = users;
@@ -39,7 +39,7 @@ namespace ChequeAR.Api.Controllers.Api
             if (req == null || string.IsNullOrWhiteSpace(req.Username))
                 return BadRequest("username required");
 
-            var user = await _hospitalAuth.LoginAsync(req.Username, req.Password);
+            var user = await _auth.LoginAsync(req.Username, req.Password);
             if (user == null) return StatusCode(HttpStatusCode.Unauthorized);
 
             // El espejo se actualiza ANTES de emitir el token: si el sync falla, no se

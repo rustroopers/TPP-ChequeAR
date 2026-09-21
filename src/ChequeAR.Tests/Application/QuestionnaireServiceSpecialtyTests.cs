@@ -21,9 +21,10 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IQuestionnaireResponseRepository> _responses = new Mock<IQuestionnaireResponseRepository>();
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
 
-        private QuestionnaireService Sut(ISpecialtyGuard guard, SpecialtyCatalogService catalog = null)
+        private QuestionnaireService Sut(ISpecialtyGuard guard, SpecialtyCatalogService catalog = null, IAccessGuard access = null)
             => new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object,
-                TestHelpers.NoopAuditDispatcher(), guard, catalog ?? TestHelpers.CatalogWith());
+                TestHelpers.NoopAuditDispatcher(), guard, catalog ?? TestHelpers.CatalogWith(),
+                access ?? TestHelpers.UnrestrictedAccess());
 
         [Fact]
         public async Task GetAsync_FueraDeScope_Lanza()
@@ -152,6 +153,65 @@ namespace ChequeAR.Tests.Application
             var sut = Sut(TestHelpers.GuardFor("cardio"));
 
             await Assert.ThrowsAsync<SpecialtyForbiddenException>(() => sut.PublishAsync(id, "u"));
+        }
+
+        // ---- Eje rol: Medico lee, no escribe (independiente del eje especialidad de arriba) ----
+
+        [Fact]
+        public async Task CreateAsync_ComoMedico_Lanza()
+        {
+            var sut = Sut(TestHelpers.UnrestrictedGuard(), access: TestHelpers.AccessGuardFor(Role.Medico));
+            var q = new Questionnaire { Title = "x", SpecialtyCode = "cardio" };
+
+            await Assert.ThrowsAsync<PermissionForbiddenException>(() => sut.CreateAsync(q, "med.cardio"));
+            _repo.Verify(r => r.AddAsync(It.IsAny<Questionnaire>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task PublishAsync_ComoMedico_Lanza()
+        {
+            var id = Guid.NewGuid();
+            var sut = Sut(TestHelpers.UnrestrictedGuard(), access: TestHelpers.AccessGuardFor(Role.Medico));
+
+            await Assert.ThrowsAsync<PermissionForbiddenException>(() => sut.PublishAsync(id, "med.cardio"));
+            // Ni siquiera debería haber ido a buscar el cuestionario.
+            _repo.Verify(r => r.GetAsync(id), Times.Never);
+        }
+
+        [Fact]
+        public async Task DeleteAsync_ComoJefe_Lanza()
+        {
+            // Jefe archiva, no borra (ver RolePolicy): QuestionnaireDelete es sólo Admin.
+            var id = Guid.NewGuid();
+            var sut = Sut(TestHelpers.UnrestrictedGuard(), access: TestHelpers.AccessGuardFor(Role.Jefe));
+
+            await Assert.ThrowsAsync<PermissionForbiddenException>(() => sut.DeleteAsync(id, "jefe.cardio"));
+        }
+
+        [Fact]
+        public async Task ArchiveAsync_ComoJefe_Permite()
+        {
+            var id = Guid.NewGuid();
+            var q = new Questionnaire { Id = id, SpecialtyCode = "cardio", Status = QuestionnaireStatus.Active };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(q);
+            var sut = Sut(TestHelpers.UnrestrictedGuard(), access: TestHelpers.AccessGuardFor(Role.Jefe));
+
+            await sut.ArchiveAsync(id, "jefe.cardio");
+
+            Assert.Equal(QuestionnaireStatus.Retired, q.Status);
+        }
+
+        [Fact]
+        public async Task GetAsync_ComoMedico_Permite()
+        {
+            // Medico SÍ puede leer -- sólo se le niega la escritura.
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "cardio" });
+            var sut = Sut(TestHelpers.UnrestrictedGuard(), access: TestHelpers.AccessGuardFor(Role.Medico));
+
+            var result = await sut.GetAsync(id);
+
+            Assert.NotNull(result);
         }
     }
 }

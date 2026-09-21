@@ -1,4 +1,4 @@
-﻿@{
+@{
     var pageId = ViewBag.PageId as string ?? "";
     var pageTitle = ViewBag.Title as string ?? "ChequeAR";
     var lang = (Request.Cookies["chequear_lang"] != null ? Request.Cookies["chequear_lang"].Value : "es-AR");
@@ -24,6 +24,10 @@
     @if (Request.IsAuthenticated)
     {
         <meta name="cq-token" content="@ChequeAR.Api.Auth.SessionToken.IssueFor(User)" />
+        @* El rol propio, no un secreto: el usuario ya sabe cuál es. Sirve para que las
+           islas Vue (p. ej. questionnaire-editor) decidan qué mostrar sin tener que
+           decodificar el JWT. La autorización real sigue del lado del server. *@
+        <meta name="cq-role" content="@ChequeAR.Api.Auth.CurrentUser.PrincipalRole(User as System.Security.Claims.ClaimsPrincipal)" />
     }
 
     @* TODO prod: vendor a wwwroot/lib/ y servir local (spec 006 NFR-FE assumptions). *@

@@ -2,27 +2,34 @@
 
 ## Entidades
 
-### `User` (cache local; fuente autoritativa es el hospital)
+### `User` (`AppUser` en Oracle — `User` es palabra reservada)
+
+Espejo local; fuente autoritativa es el hospital cuando `HospitalAuth:LoginUrl` está configurado,
+o el propio `PasswordHash` mientras no lo esté (modo local, ver `LocalCredentialAuthenticator`).
 
 | Campo | Tipo | Notas |
 |---|---|---|
-| `Id` | NVARCHAR(64) (PK) | id del hospital |
+| `Id` | NVARCHAR(64) (PK) | id del hospital, o el username elegido en modo local |
 | `DisplayName` | NVARCHAR(255) | |
 | `Email` | NVARCHAR(255) NULL | |
 | `LastLoginAt` | DATETIME2 NULL | |
 | `LastSyncAt` | DATETIME2 | |
 | `IsActive` | BIT | flag para deshabilitar localmente |
+| `PasswordHash` | VARCHAR(256) NULL | `algo$iteraciones$salt$hash` en base64 (ver `PasswordHasher`). `NULL` = este usuario no puede loguearse localmente (fail-closed) |
+| `PasswordUpdatedAt` | DATETIME2 NULL | |
 
-Sin contraseñas. Sin PII sensible.
+Sin PII clínica. El hash nunca se expone por API (`UserController` proyecta a un DTO sin este campo).
 
 ### `UserRole`
 
 | Campo | Tipo |
 |---|---|
 | `UserId` | NVARCHAR(64) (FK) |
-| `Role` | VARCHAR(32) | `Administrador` \| `Jefe` \| `Medico` \| `Observador` |
+| `Role` | VARCHAR(32) | `Administrador` \| `Jefe` \| `Medico` |
 
-PK: (`UserId`, `Role`). Recomendado sincronizar en cada login.
+PK: (`UserId`, `Role`). **Invariante: una única fila por usuario** (rol global, no acumulado — ver
+`RoleHierarchy` para cómo se expande a claims). Se sincroniza en cada login/ABM vía
+`SyncFromHospitalAsync`/`SetRoleAsync`.
 
 ### `UserSpecialty`
 

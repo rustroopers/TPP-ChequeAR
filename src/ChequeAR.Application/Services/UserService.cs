@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -5,6 +6,7 @@ using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Application.Services
 {
@@ -69,15 +71,56 @@ namespace ChequeAR.Application.Services
                 sanitizedSpecialties = valid;
             }
 
-            await _repo.SyncFromHospitalAsync(info.Id, info.DisplayName, null, info.Roles, sanitizedSpecialties);
+            // Cada usuario tiene un único rol (ver Domain.Enums.Role): si lo que llega trae
+            // varios -o uno heredado/desconocido, como un "Observador" de antes de esta
+            // feature- se colapsa al más alto vía RoleHierarchy.Principal. Nunca se persiste
+            // más de una fila en UserRole por usuario.
+            List<string> normalizedRoles = null;
+            if (info.Roles != null)
+                normalizedRoles = new List<string> { RoleHierarchy.Principal(info.Roles) };
+
+            await _repo.SyncFromHospitalAsync(info.Id, info.DisplayName, null, normalizedRoles, sanitizedSpecialties);
 
             return new UserInfo
             {
                 Id = info.Id,
                 DisplayName = info.DisplayName,
-                Roles = info.Roles,
+                Roles = normalizedRoles ?? info.Roles,
                 Specialties = sanitizedSpecialties?.ToList() ?? info.Specialties
             };
+        }
+
+        /// <summary>
+        /// Cambia el rol único y global de un usuario (ABM de /Users). No permite dejar el
+        /// sistema sin ningún Administrador activo, ni que un admin se quite a sí mismo ese
+        /// rol -- ambos son bloqueos de cuenta silenciosos si no se los ataja acá.
+        /// </summary>
+        /// <param name="actingUserId">Id de quien hace el cambio, para la regla de auto-degradación. Null = no se valida (p. ej. sync automático).</param>
+        public async Task SetRoleAsync(string userId, string role, string actingUserId = null)
+        {
+            if (!Role.IsKnown(role))
+                throw new ArgumentException("Rol desconocido: " + role, nameof(role));
+
+            var user = await _repo.GetAsync(userId);
+            if (user == null)
+                throw new InvalidOperationException("Usuario inexistente: " + userId);
+
+            var currentRole = RoleHierarchy.Principal(user.Roles?.Select(r => r.Role));
+            if (string.Equals(currentRole, Role.Administrador, StringComparison.Ordinal)
+                && !string.Equals(role, Role.Administrador, StringComparison.Ordinal))
+            {
+                if (actingUserId != null && string.Equals(actingUserId, userId, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("No podés quitarte a vos mismo el rol Administrador.");
+
+                var otherAdmins = await _repo.CountAsync(null, Role.Administrador, null, true);
+                // El propio `user` todavía cuenta como Administrador acá (no se escribió el
+                // cambio todavía), así que "otro" admin activo requiere que el conteo sea > 1
+                // salvo que este usuario esté inactivo (no cuenta como salvaguarda real).
+                if (otherAdmins <= 1 && user.IsActive)
+                    throw new InvalidOperationException("Debe existir al menos un Administrador activo en el sistema.");
+            }
+
+            await _repo.SyncFromHospitalAsync(userId, user.DisplayName, null, new List<string> { role }, null);
         }
     }
 

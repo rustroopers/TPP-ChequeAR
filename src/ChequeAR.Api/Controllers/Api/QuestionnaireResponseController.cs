@@ -103,7 +103,7 @@ namespace ChequeAR.Api.Controllers.Api
         private string FhirBaseUrl()
             => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
 
-        [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpPost, Route(""), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.QuestionnaireResponse body)
         {
             var r = FhirQuestionnaireResponseParser.ToDomain(body);
@@ -133,7 +133,7 @@ namespace ChequeAR.Api.Controllers.Api
         // Toma la sesión de edición exclusiva. Sin esto, dos médicos podrían completar el
         // mismo cuestionario a la vez (ej. dos llamadas de seguimiento superpuestas) y
         // pisarse las respuestas.
-        [HttpPost, Route("{id:guid}/$lock"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpPost, Route("{id:guid}/$lock"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> Lock(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
@@ -170,7 +170,7 @@ namespace ChequeAR.Api.Controllers.Api
 
         // Heartbeat: extiende el vencimiento sin escribir respuestas. Lo dispara el aviso
         // de "1 minuto para que se cierre" cuando el médico confirma que sigue en la llamada.
-        [HttpPost, Route("{id:guid}/$renew-lock"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpPost, Route("{id:guid}/$renew-lock"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> RenewLock(Guid id)
         {
             var token = ParseLockToken(Request);
@@ -203,7 +203,7 @@ namespace ChequeAR.Api.Controllers.Api
         // El body (opcional) lleva el baseline de la sesión: las respuestas como estaban al
         // abrirla. Sólo lo manda el "Guardar avance" deliberado; con él, ReleaseLock audita un
         // único evento con el diff de lo completado. El cierre pasivo de pestaña no lo manda.
-        [HttpPost, Route("{id:guid}/$unlock"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpPost, Route("{id:guid}/$unlock"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> Unlock(Guid id, [FromBody] SaveProgressBody body)
         {
             var token = ParseLockToken(Request);
@@ -229,7 +229,7 @@ namespace ChequeAR.Api.Controllers.Api
         // El body sigue siendo la forma interna (LinkId/ValueXxx) y no un recurso FHIR: es el
         // formato de guardado incremental, no la representación canónica de la ficha -- esa
         // sigue siendo GET/Search/$finalize, que sí devuelven el recurso FHIR completo.
-        [HttpPut, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> SaveProgress(Guid id, [FromBody] SaveProgressBody body)
         {
             var expectedVersion = ParseIfMatch(Request);
@@ -290,7 +290,7 @@ namespace ChequeAR.Api.Controllers.Api
         // abrirla. Con él, la finalización audita también el diff de lo que cambió en la última
         // tanda (A→B), además de la foto completa. Fichas viejas / clientes que no lo mandan
         // siguen funcionando: sólo no habrá diff de la sesión final.
-        [HttpPost, Route("{id:guid}/$finalize"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpPost, Route("{id:guid}/$finalize"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> Finalize(Guid id, [FromBody] SaveProgressBody body)
         {
             var lockToken = ParseLockToken(Request);
@@ -325,7 +325,7 @@ namespace ChequeAR.Api.Controllers.Api
 
         // Vista previa de "pasar a la versión vigente": qué se conserva / se agrega / se
         // descartaría. Sólo lectura, no toca la ficha ni exige el lock.
-        [HttpGet, Route("{id:guid}/$retarget-preview"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpGet, Route("{id:guid}/$retarget-preview"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> RetargetPreview(Guid id)
         {
             try
@@ -344,7 +344,7 @@ namespace ChequeAR.Api.Controllers.Api
 
         // Re-ancla la ficha a la versión vigente (descarta lo que la versión nueva eliminó).
         // Exige el lock, igual que finalizar: es una escritura sobre una sesión de edición.
-        [HttpPost, Route("{id:guid}/$retarget-version"), Authorize(Roles = Role.Administrador + "," + Role.Jefe + "," + Role.Medico)]
+        [HttpPost, Route("{id:guid}/$retarget-version"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> RetargetVersion(Guid id)
         {
             var lockToken = ParseLockToken(Request);

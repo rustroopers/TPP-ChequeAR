@@ -497,7 +497,6 @@
                 <div class="modal-body">\
                     <label class="form-label cq-text-sm">Nombre del reporte</label>\
                     <input v-model="reportName" class="form-control" placeholder="Ej: AIJ oligoarticular 2026" @keyup.enter="saveReport" autofocus />\
-                    <p class="cq-text-xs cq-text-muted mt-2 mb-0"><strong>Aclaración:</strong> el reporte guarda la definición (cuestionario y condiciones), no los resultados. Lo podés volver a correr desde el listado de reportes.</p>\
                 </div>\
                 <div class="modal-footer">\
                     <button type="button" class="btn btn-outline-danger" @click="showSave = false">Cancelar</button>\

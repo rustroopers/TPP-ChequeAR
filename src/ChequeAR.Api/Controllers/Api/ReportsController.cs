@@ -30,7 +30,7 @@ namespace ChequeAR.Api.Controllers.Api
             _audit = audit;
         }
 
-        [HttpPost, Route("query"), Authorize]
+        [HttpPost, Route("query"), RequiresPermissionApi(Permissions.ReportRead)]
         public async Task<IHttpActionResult> Query([FromBody] ReportQuery query)
         {
             if (query == null) return BadRequest("body required");
@@ -55,7 +55,7 @@ namespace ChequeAR.Api.Controllers.Api
         /// que /query: si recibiera sólo un id de cuestionario, los números no
         /// corresponderían a los filtros que la persona tiene puestos en pantalla.
         /// </summary>
-        [HttpPost, Route("stats"), Authorize]
+        [HttpPost, Route("stats"), RequiresPermissionApi(Permissions.ReportRead)]
         public async Task<IHttpActionResult> Stats([FromBody] ReportQuery query)
         {
             if (query == null) return BadRequest("body required");
@@ -75,7 +75,7 @@ namespace ChequeAR.Api.Controllers.Api
         /// Word sin los gráficos nativos (torta/barra) sería una versión pobre de este mismo
         /// archivo, así que no se ofrece.
         /// </summary>
-        [HttpPost, Route("stats/export"), Authorize]
+        [HttpPost, Route("stats/export"), RequiresPermissionApi(Permissions.ReportRead)]
         public async Task<HttpResponseMessage> StatsExport([FromBody] StatsExportRequest request)
         {
             if (request == null || request.Query == null) return Request.CreateResponse(HttpStatusCode.BadRequest);
@@ -105,7 +105,7 @@ namespace ChequeAR.Api.Controllers.Api
             return resp;
         }
 
-        [HttpPost, Route("export"), Authorize]
+        [HttpPost, Route("export"), RequiresPermissionApi(Permissions.ReportRead)]
         public async Task<HttpResponseMessage> Export([FromBody] ReportQuery query)
         {
             if (query == null) return Request.CreateResponse(HttpStatusCode.BadRequest);

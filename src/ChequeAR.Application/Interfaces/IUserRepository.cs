@@ -13,7 +13,9 @@ namespace ChequeAR.Application.Interfaces
         /// aunque vengan cargadas en `u`: EF6 (CurrentValues.SetValues) no toca colecciones
         /// de navegación, y este método existe justamente para la edición administrativa
         /// (UsersController.Save) que no toca membresías. Para altas/bajas de rol o
-        /// especialidad, usar SyncFromHospitalAsync.
+        /// especialidad, usar SyncFromHospitalAsync o SetRoleAsync.
+        /// PasswordHash/PasswordUpdatedAt TAMPOCO se tocan nunca acá, sin importar lo que
+        /// traiga `u`: cambiar una contraseña no es una edición administrativa genérica.
         /// </summary>
         Task UpsertAsync(User u);
 

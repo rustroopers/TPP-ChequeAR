@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
+using ChequeAR.Api.Auth;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Services;
@@ -10,7 +11,7 @@ using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    [Authorize(Roles = Role.Administrador)]
+    [RequiresPermission(Permissions.UserManage)]
     public class UsersController : Controller
     {
         private readonly UserService _users;
@@ -38,15 +39,21 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var items = (await _users.ListAsync(null, null, null, null, 0, 100)).Items;
                 foreach (var u in items)
                 {
-                    var role = "—"; var spec = "—";
-                    if (u.Roles != null && u.Roles.Count > 0) role = u.Roles.GetEnumerator().Current?.Role ?? "Médico";
+                    // RoleHierarchy.Principal, no "el primer rol de la colección": UserRole es
+                    // una colección por herencia del espejo del hospital, pero el modelo de
+                    // ChequeAR asume un único rol por usuario (ver Domain.Enums.Role). Antes
+                    // esto llamaba GetEnumerator().Current sin MoveNext() y devolvía siempre
+                    // null -> la columna "Rol" se mostraba rota como "Médico" a secas.
+                    var roleNames = u.Roles?.Select(r => r.Role) ?? Enumerable.Empty<string>();
+                    var role = RoleHierarchy.Principal(roleNames);
+
+                    var spec = "—";
                     if (u.Specialties != null && u.Specialties.Count > 0)
                     {
-                        var e = u.Specialties.GetEnumerator();
                         // Nombre legible, no el código: la tabla mostraba "reuma" donde
                         // debía decir "Reumatología". Se mapea acá y no en la vista para
                         // no dejar el "—" (sin especialidad) a merced del default de Label.
-                        if (e.MoveNext()) spec = cat.Label(e.Current.SpecialtyCode);
+                        spec = string.Join(", ", u.Specialties.Select(s => cat.Label(s.SpecialtyCode)));
                     }
                     model.Users.Add(new UserListItem
                     {
@@ -81,18 +88,18 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var model = new UserDetailViewModel
                 {
                     Username = u.Id, FullName = u.DisplayName, Email = u.Email,
-                    Active = u.IsActive
+                    Active = u.IsActive,
+                    Role = RoleHierarchy.Principal(u.Roles?.Select(r => r.Role))
                 };
                 if (u.Specialties != null)
                 {
                     foreach (var s in u.Specialties)
                     {
-                        model.SpecialtyRoles.Add(new UserSpecialtyRole
+                        model.Specialties.Add(new UserSpecialtyItem
                         {
                             SpecialtyCode = s.SpecialtyCode,
                             SpecialtyLabel = cat.Label(s.SpecialtyCode),
-                            SpecialtyColor = cat.Color(s.SpecialtyCode),
-                            Role = "Médico"
+                            SpecialtyColor = cat.Color(s.SpecialtyCode)
                         });
                     }
                 }
@@ -121,28 +128,39 @@ namespace ChequeAR.Api.Controllers.Mvc
                 existing.IsActive = model.Active;
                 await _users.UpsertAsync(existing);
 
-                // Especialidades: antes SpecialtyRoles[i].SpecialtyCode se posteaba y se
+                // Rol: único y global (ver Domain.Enums.Role). SetRoleAsync valida que el
+                // valor sea conocido y que el sistema no se quede sin ningún Administrador.
+                await _users.SetRoleAsync(existing.Id, model.Role, actingUserId: User.Identity.Name);
+
+                // Especialidades: antes Specialties[i].SpecialtyCode se posteaba y se
                 // descartaba en silencio (UpsertAsync ignora colecciones). Ahora se
                 // reconcilia de verdad vía el mismo camino que el sync on-login, con una
                 // lista EXPLÍCITA (nunca null: eso significaría "no la toques", que es lo
                 // que se necesita para el sync del hospital pero no para un ABM manual,
-                // donde el admin siempre manda el estado completo deseado).
-                var codes = (model.SpecialtyRoles ?? new List<UserSpecialtyRole>())
+                // donde el admin siempre manda el estado completo deseado). Roles = null:
+                // ya se manejó arriba, y null significa "no tocar roles" para este método.
+                var codes = (model.Specialties ?? new List<UserSpecialtyItem>())
                     .Select(s => s.SpecialtyCode)
                     .Where(c => !string.IsNullOrWhiteSpace(c))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
-                var roles = (existing.Roles ?? new List<ChequeAR.Domain.Entities.UserRole>())
-                    .Select(r => r.Role).ToList();
                 await _users.SyncFromHospitalAsync(new UserInfo
                 {
                     Id = existing.Id,
                     DisplayName = existing.DisplayName,
-                    Roles = roles,
+                    Roles = null,
                     Specialties = codes
                 });
 
                 TempData["Toast"] = "Cambios guardados.";
+            }
+            catch (InvalidOperationException ex)
+            {
+                TempData["Toast"] = ex.Message;
+            }
+            catch (ArgumentException ex)
+            {
+                TempData["Toast"] = ex.Message;
             }
             catch (System.Exception)
             {

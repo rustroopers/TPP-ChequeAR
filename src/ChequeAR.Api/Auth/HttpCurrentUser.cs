@@ -27,5 +27,6 @@ namespace ChequeAR.Api.Auth
         public string Id => CurrentUser.Id(Principal);
         public bool IsInRole(string role) => Principal?.IsInRole(role) == true;
         public IReadOnlyList<string> Specialties => CurrentUser.Specialties(Principal);
+        public string Role => CurrentUser.PrincipalRole(Principal);
     }
 }

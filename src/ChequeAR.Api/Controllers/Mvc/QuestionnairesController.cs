@@ -7,7 +7,9 @@ using ChequeAR.Api.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
+using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Security;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
@@ -158,6 +160,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
             }
 
+            // Medico ve el editor (para saber qué hay) pero no lo edita: sólo
+            // Administrador/Jefe tienen questionnaire.write (ver RolePolicy). Se calcula acá,
+            // no en la vista, para que la MISMA fuente de verdad gobierne tanto los botones
+            // Guardar/Publicar (Edit.cshtml) como las acciones internas del editor (prop
+            // canEdit, ver questionnaire-editor/index.js).
+            var canEdit = RolePolicy.Allows(CurrentUser.Roles(User as System.Security.Claims.ClaimsPrincipal), Permissions.QuestionnaireWrite);
+
             ViewBag.QuestionnaireId = editorId;
             ViewBag.IsNew = isNew;
             ViewBag.QuestionnaireTitle = title;
@@ -165,10 +174,11 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.NextVersion = publishedVersion + 1;
             ViewBag.Status = status;
             ViewBag.HasUnpublishedChanges = pendingChanges;
+            ViewBag.CanEdit = canEdit;
             // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
             // status manda: el editor no autoguarda un cuestionario publicado.
             ViewBag.EditorProps = JsonConvert.SerializeObject(
-                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges, code, codeDisplay, term },
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges, code, codeDisplay, term, canEdit },
                 new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
         }
@@ -200,6 +210,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // especialidad (no archivados, distinto del actual). Devuelve JSON liviano —sin las
         // preguntas, para no disparar N+1—; la estructura completa se trae recién al elegir uno,
         // reutilizando EditorModel. La lógica de filtrado vive en el service (testeable).
+        [RequiresPermission(Permissions.QuestionnaireWrite)]
         public async Task<ActionResult> ImportCandidates(string specialty, Guid? excludeId = null)
         {
             try
@@ -400,7 +411,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
         }
 
-        [HttpPost, ValidateAntiForgeryToken]
+        [HttpPost, ValidateAntiForgeryToken, RequiresPermission(Permissions.QuestionnaireWrite)]
         public async Task<ActionResult> Publish(Guid id, string changeNote)
         {
             var userId = User?.Identity?.Name ?? "unknown";
@@ -424,7 +435,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             return RedirectToAction("Index");
         }
 
-        [HttpPost, ValidateAntiForgeryToken]
+        [HttpPost, ValidateAntiForgeryToken, RequiresPermission(Permissions.QuestionnaireWrite)]
         public async Task<ActionResult> Archive(Guid id)
         {
             var userId = User?.Identity?.Name ?? "unknown";
