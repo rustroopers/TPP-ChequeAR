@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 
 namespace ChequeAR.Application.Reports
 {
@@ -18,12 +19,15 @@ namespace ChequeAR.Application.Reports
         private readonly IReportQueryRunner _runner;
         private readonly QueryBuilder _builder;
         private readonly IQuestionnaireRepository _questionnaires;
+        private readonly ISpecialtyGuard _guard;
 
-        public ReportExecutor(IReportQueryRunner runner, QueryBuilder builder, IQuestionnaireRepository questionnaires)
+        public ReportExecutor(IReportQueryRunner runner, QueryBuilder builder,
+            IQuestionnaireRepository questionnaires, ISpecialtyGuard guard)
         {
             _runner = runner;
             _builder = builder;
             _questionnaires = questionnaires;
+            _guard = guard;
         }
 
         /// <summary>
@@ -76,6 +80,11 @@ namespace ChequeAR.Application.Reports
             var questionnaire = await _questionnaires.GetAsync(q.QuestionnaireId);
             if (questionnaire == null)
                 throw new InvalidOperationException("El cuestionario del reporte no existe.");
+            // Va directo a IQuestionnaireRepository (no a QuestionnaireService.GetAsync), así
+            // que el guard de especialidad NO viene aplicado: sin esto, cualquiera que
+            // conociera el GUID de un cuestionario podía ejecutar un reporte sobre datos de
+            // una especialidad fuera de su scope. Es el mismo chequeo, hecho acá.
+            _guard.EnsureAllows(questionnaire.SpecialtyCode);
             var schema = ReportSchema.From(questionnaire);
 
             var built = _builder.Build(q, schema, paginate);

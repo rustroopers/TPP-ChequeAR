@@ -25,19 +25,22 @@ namespace ChequeAR.Application.Services
         private readonly IFhirValidator _validator;
         private readonly AuditDispatcher _audit;
         private readonly ISpecialtyGuard _guard;
+        private readonly IAccessGuard _access;
 
         public QuestionnaireResponseService(
             IQuestionnaireResponseRepository repo,
             IQuestionnaireRepository qRepo,
             IFhirValidator validator,
             AuditDispatcher audit,
-            ISpecialtyGuard guard)
+            ISpecialtyGuard guard,
+            IAccessGuard access)
         {
             _repo = repo;
             _qRepo = qRepo;
             _validator = validator;
             _audit = audit;
             _guard = guard;
+            _access = access;
         }
 
         // ── Lecturas ──────────────────────────────────────────────────────────────────
@@ -70,6 +73,7 @@ namespace ChequeAR.Application.Services
 
         public async Task<QuestionnaireResponse> CreateAsync(QuestionnaireResponse r, string userId)
         {
+            _access.EnsureCan(Permissions.EncounterWrite);
             if (string.IsNullOrEmpty(r.PatientHospitalId))
                 throw new ArgumentException("PatientHospitalId is required");
 
@@ -187,6 +191,7 @@ namespace ChequeAR.Application.Services
         /// </param>
         public async Task<QuestionnaireResponse> FinalizeAsync(Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
         {
+            _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
@@ -301,6 +306,7 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<QuestionnaireResponse> RetargetToCurrentVersionAsync(Guid id, string userId, Guid lockToken)
         {
+            _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
@@ -393,6 +399,7 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<QuestionnaireResponse> AcquireLockAsync(Guid id, string userId)
         {
+            _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
@@ -420,6 +427,7 @@ namespace ChequeAR.Application.Services
         /// <summary>Extiende el vencimiento del lock vigente (heartbeat / aviso de "1 minuto").</summary>
         public async Task<QuestionnaireResponse> RenewLockAsync(Guid id, string userId, Guid lockToken)
         {
+            _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
@@ -442,6 +450,7 @@ namespace ChequeAR.Application.Services
         public async Task ReleaseLockAsync(
             Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
         {
+            _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
@@ -480,6 +489,7 @@ namespace ChequeAR.Application.Services
         public async Task<QuestionnaireResponse> SaveProgressAsync(
             Guid id, string userId, Guid lockToken, int? expectedVersion, ICollection<QuestionnaireResponseItem> items)
         {
+            _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
             if (r == null) throw new InvalidOperationException("Not found");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);

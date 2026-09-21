@@ -8,7 +8,7 @@ using ChequeAR.Application.Interfaces;
 
 namespace ChequeAR.Infrastructure.Auth
 {
-    public class HospitalAuthClient : IHospitalAuthClient
+    public class HospitalAuthClient : ICredentialAuthenticator
     {
         private readonly HttpClient _http;
         private readonly string _loginUrl;

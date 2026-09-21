@@ -48,13 +48,6 @@ namespace ChequeAR.Tests.Security
         }
 
         [Fact]
-        public void Observador_QuedaRestringido()
-        {
-            var guard = new SpecialtyGuard(UserWith(true, Role.Observador, "general"), enforce: true);
-            Assert.False(guard.Scope.IsUnrestricted);
-        }
-
-        [Fact]
         public void NoAutenticado_Nothing()
         {
             var guard = new SpecialtyGuard(UserWith(false, Role.Medico, "cardio"), enforce: true);

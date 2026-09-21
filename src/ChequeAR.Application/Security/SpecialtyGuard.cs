@@ -33,7 +33,7 @@ namespace ChequeAR.Application.Security
                 if (!_enforce) return SpecialtyScope.Unrestricted();   // ocurrencia 1 de 2
                 if (_user == null || !_user.IsAuthenticated) return SpecialtyScope.Nothing;
                 if (_user.IsInRole(Role.Administrador)) return SpecialtyScope.Unrestricted();   // ocurrencia 2 de 2
-                return SpecialtyScope.Limited(_user.Specialties);   // Jefe/Medico/Observador: restringidos
+                return SpecialtyScope.Limited(_user.Specialties);   // Jefe/Medico: restringidos
             }
         }
 

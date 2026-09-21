@@ -1,27 +1,23 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.Threading.Tasks;
-using System.Web;
 using System.Web.Mvc;
 using System.Web.Security;
 using ChequeAR.Api.Auth;
-using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
-using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
     public class AccountController : Controller
     {
-        private readonly IHospitalAuthClient _hospitalAuth;
+        private readonly ICredentialAuthenticator _auth;
         private readonly UserService _users;
         private readonly SpecialtyCatalogService _specialties;
 
-        public AccountController(IHospitalAuthClient hospitalAuth, UserService users, SpecialtyCatalogService specialties)
+        public AccountController(ICredentialAuthenticator auth, UserService users, SpecialtyCatalogService specialties)
         {
-            _hospitalAuth = hospitalAuth;
+            _auth = auth;
             _users = users;
             _specialties = specialties;
         }
@@ -36,6 +32,12 @@ namespace ChequeAR.Api.Controllers.Mvc
         [HttpPost, AllowAnonymous, ValidateAntiForgeryToken]
         public async Task<ActionResult> DoLogin(string username, string password, bool remember = false, string returnUrl = null)
         {
+            // Se preserva en TODO re-render de la vista, incluidos los de error: antes se
+            // perdía apenas el login fallaba, y un login con returnUrl que fallaba al
+            // primer intento mandaba a Home en el segundo en vez de a donde el usuario
+            // efectivamente quería ir.
+            ViewBag.ReturnUrl = returnUrl;
+
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
                 ModelState.AddModelError("", "Ingresá usuario y contraseña.");
@@ -44,9 +46,12 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                var info = await _hospitalAuth.LoginAsync(username, password);
+                var info = await _auth.LoginAsync(username, password);
                 if (info == null)
                 {
+                    // Mismo mensaje para usuario inexistente, inactivo, sin contraseña
+                    // configurada o contraseña incorrecta: no hay que darle a quien intenta
+                    // loguearse una pista de cuál de esas cuatro cosas pasó.
                     ModelState.AddModelError("", "Usuario o contraseña inválidos.");
                     return View("Login");
                 }
@@ -54,8 +59,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // El espejo (AppUser/UserRole/UserSpecialty) se actualiza ANTES de emitir la
                 // cookie: si el sync falla, no se emite una sesión con permisos que la base
                 // no respalda. Devuelve el UserInfo SANEADO (códigos de especialidad
-                // filtrados contra el catálogo) para que la cookie no lleve algo que la base
-                // rechazó.
+                // filtrados contra el catálogo, rol colapsado a uno solo) para que la
+                // cookie no lleve algo que la base rechazó.
                 info = await _users.SyncFromHospitalAsync(info);
 
                 // SetAuthCookie guardaria solo el nombre y perderia info.Roles, que es
@@ -70,30 +75,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
             catch (Exception)
             {
-                // Fallback de demo cuando el hospital no está disponible: requiere debug=true
-                // (Web.config) Y un opt-in explícito por entorno (Auth:AllowDebugLoginFallback en
-                // Web.Secrets.config, no versionado), para que no baste con un debug="true" suelto
-                // en un ambiente que no sea la máquina de un dev.
-                var allowDebugFallback = string.Equals(
-                    ConfigurationManager.AppSettings["Auth:AllowDebugLoginFallback"], "true",
-                    StringComparison.OrdinalIgnoreCase);
-                if (System.Web.HttpContext.Current.IsDebuggingEnabled && allowDebugFallback)
-                {
-                    // Especialidades vacías a propósito: con el filtro por especialidad
-                    // encendido, este usuario de emergencia no ve nada salvo que se le
-                    // asignen especialidades a mano en /Users. Es el comportamiento
-                    // correcto (fail-closed), no un bug -- documentado para que no se
-                    // reporte como tal.
-                    var fallback = await _users.SyncFromHospitalAsync(new UserInfo
-                    {
-                        Id = username,
-                        DisplayName = username,
-                        Roles = new List<string> { Role.Medico },
-                        Specialties = new List<string>()
-                    });
-                    SessionCookie.Issue(HttpContext, fallback, remember);
-                    return RedirectToAction("Index", "Home");
-                }
                 ModelState.AddModelError("", "No se pudo iniciar sesión. Intentá nuevamente.");
                 return View("Login");
             }
@@ -108,6 +89,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // 'new' explícito: Controller expone una propiedad Profile (perfil de ASP.NET, que el
         // proyecto no usa). Esta acción la oculta a propósito — sin la palabra clave el
         // compilador avisa que podría ser un descuido.
+        [Authorize]
         public new async Task<ActionResult> Profile()
         {
             ViewBag.Title = "Mi perfil";
@@ -145,12 +127,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
-        [HttpPost, ValidateAntiForgeryToken]
+        [Authorize, HttpPost, ValidateAntiForgeryToken]
         public ActionResult SaveProfile()
         {
             return RedirectToAction("Profile");
         }
 
+        [Authorize]
         public ActionResult Logout()
         {
             FormsAuthentication.SignOut();

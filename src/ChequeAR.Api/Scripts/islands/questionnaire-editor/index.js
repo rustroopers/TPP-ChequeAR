@@ -62,6 +62,15 @@
             // cannot be edited). Sin esto el editor lo trataba como un borrador cualquiera
             // -autosave incluido- y cada guardado terminaba en un 500 silencioso.
             var isArchived = Vue.ref(props.status === 'archived');
+            // El rol Medico ve cuestionarios (para saber qué hay disponible) pero no los
+            // edita (ver RolePolicy: sólo Administrador/Jefe tienen questionnaire.write). El
+            // server ya no renderiza los botones Guardar/Publicar en ese caso (ver
+            // Views/Questionnaires/Edit.cshtml); esto es la segunda barrera, para las
+            // acciones que no dependen de esos botones (autosave, importar preguntas).
+            // props.canEdit ausente (props viejos, o alguien embebiendo el island a mano)
+            // se toma como "sí puede", igual que el resto de los flags booleanos de acá.
+            var canEdit = props.canEdit !== false;
+            var readOnly = Vue.computed(function () { return isArchived.value || !canEdit; });
             // Versión del registro que este editor cargó. Viaja en If-Match y se refresca
             // con cada guardado propio. Si otra persona guarda, la suya avanza y la nuestra
             // queda vieja -> el server responde 409 en vez de dejarnos pisar su trabajo.
@@ -557,7 +566,7 @@
             }
 
             function openImport() {
-                if (isArchived.value) return;
+                if (readOnly.value) return;
                 importOpen.value = true;
                 importError.value = null;
                 importCandidates.value = [];
@@ -1139,10 +1148,15 @@
                     if (explicit) toast('Ya esta todo guardado', 'success');
                     return Promise.resolve(true);
                 }
-                // El backend rechaza cualquier escritura sobre un archivado: cortar acá
-                // evita el viaje al server (que hoy devolvía 500) y explica por qué.
+                // El backend rechaza cualquier escritura sobre un archivado (500 si no se
+                // corta acá) o sin el permiso questionnaire.write (403, QuestionnaireService):
+                // cortar antes evita el viaje al server y explica por qué.
                 if (isArchived.value) {
                     if (explicit) toast('Este cuestionario está archivado: no se puede editar. Publíquelo de nuevo desde el listado para reactivarlo.', 'error');
+                    return Promise.resolve(false);
+                }
+                if (!canEdit) {
+                    if (explicit) toast('Tu rol no permite editar cuestionarios.', 'error');
                     return Promise.resolve(false);
                 }
                 // Con un conflicto sin resolver no se vuelve a intentar: reintentar sólo
@@ -1473,7 +1487,7 @@
             var debounce;
             function markDirty() {
                 dirty.value = true;
-                if (isNew.value || isPublished.value || isArchived.value || conflict.value) return;
+                if (isNew.value || isPublished.value || readOnly.value || conflict.value) return;
                 clearTimeout(debounce);
                 debounce = setTimeout(save, 2000);
             }
@@ -1491,7 +1505,7 @@
             // guarda nunca, así que preguntar sería confuso ("¿perder cambios?" cuando ya
             // sabemos que no se iban a guardar).
             function beforeUnload(e) {
-                if (!dirty.value || isArchived.value) return;
+                if (!dirty.value || readOnly.value) return;
                 e.preventDefault();
                 e.returnValue = '';
                 return '';
@@ -1545,7 +1559,7 @@
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
                 qTitle: qTitle, qTitleTouched: qTitleTouched, specialtyCode: specialtyCode, isNew: isNew,
                 specialties: specialties, specialtiesLoading: specialtiesLoading, specialtiesError: specialtiesError,
-                isPublished: isPublished, isArchived: isArchived, publish: publish,
+                isPublished: isPublished, isArchived: isArchived, canEdit: canEdit, readOnly: readOnly, publish: publish,
                 conflict: conflict, reloadFromServer: reloadFromServer,
                 merging: merging, mergeAutoCount: mergeAutoCount, conflictEntries: conflictEntries,
                 confirmMerge: confirmMerge, cancelMerge: cancelMerge,
@@ -1665,6 +1679,10 @@
     <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
     <span class="cq-text-sm">Este cuestionario está <strong>archivado</strong> y es de sólo lectura: no se puede editar ni guardar. Para reactivarlo, publíquelo de nuevo desde el listado de Cuestionarios.</span>\
 </div>\
+<div v-if="!canEdit && !isArchived" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
+    <i class="bi bi-eye" style="color:var(--cq-info);"></i>\
+    <span class="cq-text-sm">Estás viendo este cuestionario en <strong>modo lectura</strong>: tu rol no permite editarlo.</span>\
+</div>\
 <ol class="cq-timeline mb-3" aria-label="Pasos para crear un cuestionario">\
     <li v-for="(s, i) in STEPS" :key="s.key"\
         class="cq-timeline__item"\
@@ -1754,7 +1772,7 @@
             </div>\
         </div>\
     </div>\
-    <div class="cq-card mt-3" v-if="!isArchived">\
+    <div class="cq-card mt-3" v-if="!readOnly">\
         <h3 class="cq-section-title mt-0">Importar desde otro cuestionario</h3>\
         <button class="btn btn-sm btn-outline-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
     </div>\

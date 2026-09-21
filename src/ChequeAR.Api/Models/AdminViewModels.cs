@@ -90,17 +90,23 @@ namespace ChequeAR.Api.Models
         public string Email { get; set; }
         public string DNI { get; set; }
         public bool Active { get; set; }
-        public List<UserSpecialtyRole> SpecialtyRoles { get; set; } = new List<UserSpecialtyRole>();
-        public bool CanAccessAudit { get; set; }
-        public bool CanCreateReports { get; set; }
+
+        /// <summary>Rol único y global del usuario (Administrador/Jefe/Medico). Ver Domain.Enums.Role.</summary>
+        public string Role { get; set; }
+        public List<UserSpecialtyItem> Specialties { get; set; } = new List<UserSpecialtyItem>();
     }
 
-    public class UserSpecialtyRole
+    /// <summary>
+    /// Una especialidad asignada a un usuario. Ya NO lleva un rol propio: el rol es único y
+    /// global por usuario (ver UserDetailViewModel.Role) -- antes esta clase se llamaba
+    /// UserSpecialtyRole y prometía un vocabulario de roles por especialidad que el modelo de
+    /// datos nunca soportó (Save descartaba en silencio lo que se posteara acá).
+    /// </summary>
+    public class UserSpecialtyItem
     {
         public string SpecialtyCode { get; set; }
         public string SpecialtyLabel { get; set; }
         public string SpecialtyColor { get; set; }
-        public string Role { get; set; }
     }
 
     public class CapabilityStatementViewModel

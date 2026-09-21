@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
+using ChequeAR.Api.Auth;
 using ChequeAR.Api.Helpers;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Exporters;
@@ -13,7 +14,8 @@ using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    [Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+    // Saca a Jefe (tenía acceso antes): auditoría queda exclusiva de Administrador.
+    [RequiresPermission(Permissions.AuditRead)]
     public class AuditController : Controller
     {
         private readonly AuditQueryService _audit;

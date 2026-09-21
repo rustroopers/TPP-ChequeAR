@@ -22,7 +22,7 @@ namespace ChequeAR.Tests.Application
         public QuestionnaireServiceTests()
         {
             _sut = new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
-                TestHelpers.UnrestrictedGuard(), TestHelpers.CatalogWith());
+                TestHelpers.UnrestrictedGuard(), TestHelpers.CatalogWith(), TestHelpers.UnrestrictedAccess());
         }
 
         // Al crear: arranca en estado Draft, se le asigna Id y datos de auditoría (creador/fecha)

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Auth;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
@@ -19,7 +20,7 @@ namespace ChequeAR.Api.Controllers.Api
         private readonly AuditQueryService _audit;
         public AuditEventController(AuditQueryService audit) { _audit = audit; }
 
-        [HttpGet, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        [HttpGet, Route(""), RequiresPermissionApi(Permissions.AuditRead)]
         public async Task<IHttpActionResult> Search([FromUri(Name = "agent.who")] string agentWho = null, [FromUri(Name = "entity.what")] string entityWhat = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
             var pagina = await _audit.SearchAsync(agentWho, entityRef: entityWhat, skip: _offset, take: _count);
@@ -29,7 +30,7 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         // A7 — detalle de evento. Búsqueda por id directo (no FHIR-search).
-        [HttpGet, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        [HttpGet, Route("{id:guid}"), RequiresPermissionApi(Permissions.AuditRead)]
         public async Task<IHttpActionResult> Get(Guid id)
         {
             var evento = await _audit.GetAsync(id);

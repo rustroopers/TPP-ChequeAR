@@ -7,6 +7,7 @@ using ChequeAR.Api.Auth;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Api
 {
@@ -23,25 +24,23 @@ namespace ChequeAR.Api.Controllers.Api
             _questionnaires = questionnaires;
         }
 
-        [HttpGet, Route(""), Authorize]
+        [HttpGet, Route(""), RequiresPermissionApi(Permissions.ReportRead)]
         public async Task<IHttpActionResult> List()
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            var specialties = CurrentUser.Specialties(User as ClaimsPrincipal);
-            var items = await _saved.ListForUserAsync(userId, specialties);
+            var items = await _saved.ListForUserAsync(userId);
             return Ok(new { total = items.Count, results = items });
         }
 
-        [HttpGet, Route("{id:guid}"), Authorize]
+        [HttpGet, Route("{id:guid}"), RequiresPermissionApi(Permissions.ReportRead)]
         public async Task<IHttpActionResult> Get(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            var specialties = CurrentUser.Specialties(User as ClaimsPrincipal);
-            var resultado = await _saved.GetForUserAsync(id, userId, specialties);
+            var resultado = await _saved.GetForUserAsync(id, userId);
             return Responder(resultado, r => Ok(r));
         }
 
-        [HttpPost, Route(""), Authorize]
+        [HttpPost, Route(""), RequiresPermissionApi(Permissions.ReportWrite)]
         public async Task<IHttpActionResult> Create([FromBody] SavedReport body)
         {
             if (body == null) return BadRequest("body required");
@@ -49,7 +48,7 @@ namespace ChequeAR.Api.Controllers.Api
             return Content(HttpStatusCode.Created, creada);
         }
 
-        [HttpPut, Route("{id:guid}"), Authorize]
+        [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.ReportWrite)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] SavedReport body)
         {
             if (body == null) return BadRequest("body required");
@@ -58,7 +57,7 @@ namespace ChequeAR.Api.Controllers.Api
             return Responder(resultado, r => Ok(r));
         }
 
-        [HttpDelete, Route("{id:guid}"), Authorize]
+        [HttpDelete, Route("{id:guid}"), RequiresPermissionApi(Permissions.ReportWrite)]
         public async Task<IHttpActionResult> Delete(Guid id)
         {
             var resultado = await _saved.DeleteAsync(id, CurrentUser.Id(User as ClaimsPrincipal));
@@ -87,7 +86,7 @@ namespace ChequeAR.Api.Controllers.Api
 
         // GET /api/reports/preview-columns?questionnaireId={guid}
         // Devuelve linkIds + types disponibles para el query builder (E2).
-        [HttpGet, Route("~/api/reports/preview-columns"), Authorize]
+        [HttpGet, Route("~/api/reports/preview-columns"), RequiresPermissionApi(Permissions.ReportRead)]
         public async Task<IHttpActionResult> PreviewColumns([FromUri] Guid questionnaireId)
         {
             var q = await _questionnaires.GetAsync(questionnaireId);

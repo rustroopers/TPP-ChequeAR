@@ -1,7 +1,14 @@
 @model string
+@using ChequeAR.Domain.Enums
 @{
     var active = Model ?? "";
     Func<string, string> cls = id => active == id ? "cq-sidebar__item is-active" : "cq-sidebar__item";
+    // Cosmético: la autorización real es RequiresPermission(Api)Attribute + IAccessGuard.
+    // Esto sólo evita mostrarle a un Medico un link que va a terminar en un 403 -antes el
+    // menú era estático y TODOS veían Auditoría/Usuarios sin importar su rol.
+    var canSeeReports = Cq.Can(Permissions.ReportRead);
+    var canSeeAudit = Cq.Can(Permissions.AuditRead);
+    var canSeeUsers = Cq.Can(Permissions.UserManage);
 }
 @* Cambios de la Etapa 2:
    - Íconos y texto más grandes.
@@ -20,16 +27,28 @@
         <a class="@cls("questionnaires")" href="@Url.Action("Index", "Questionnaires")">
             <i class="bi bi-clipboard2-pulse"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.questionnaires")</span>
         </a>
-        <a class="@cls("reports")" href="@Url.Action("Index", "Reports")">
-            <i class="bi bi-bar-chart"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.reports")</span>
-        </a>
+        @if (canSeeReports)
+        {
+            <a class="@cls("reports")" href="@Url.Action("Index", "Reports")">
+                <i class="bi bi-bar-chart"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.reports")</span>
+            </a>
+        }
 
-        <div class="cq-sidebar__group-label">@Cq.T("sidebar.group.admin")</div>
-        <a class="@cls("audit")" href="@Url.Action("Index", "Audit")">
-            <i class="bi bi-shield-check"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.audit")</span>
-        </a>
-        <a class="@cls("users")" href="@Url.Action("Index", "Users")">
-            <i class="bi bi-people"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.users")</span>
-        </a>
+        @if (canSeeAudit || canSeeUsers)
+        {
+            <div class="cq-sidebar__group-label">@Cq.T("sidebar.group.admin")</div>
+            if (canSeeAudit)
+            {
+                <a class="@cls("audit")" href="@Url.Action("Index", "Audit")">
+                    <i class="bi bi-shield-check"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.audit")</span>
+                </a>
+            }
+            if (canSeeUsers)
+            {
+                <a class="@cls("users")" href="@Url.Action("Index", "Users")">
+                    <i class="bi bi-people"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.users")</span>
+                </a>
+            }
+        }
     </div>
 </nav>

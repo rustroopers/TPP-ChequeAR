@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Web;
 using System.Web.Security;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
 
 namespace ChequeAR.Api.Auth
@@ -29,16 +30,26 @@ namespace ChequeAR.Api.Auth
         {
             if (context == null || user == null) return;
 
+            // Un único rol (ver Domain.Enums.Role/RoleHierarchy): aunque `user.Roles` traiga
+            // más de uno (dato heredado, o un sync a mitad de migrar), acá se colapsa al más
+            // alto ANTES de guardarlo. ToPrincipal es quien lo vuelve a expandir para los
+            // claims -- el mismo patrón que JwtIssuer.
             var payload = JsonConvert.SerializeObject(new Payload
             {
                 DisplayName = user.DisplayName,
-                Roles = user.Roles ?? new List<string>(),
+                Roles = new List<string> { RoleHierarchy.Principal(user.Roles) },
                 Specialties = user.Specialties ?? new List<string>()
             });
 
             var timeout = FormsAuthentication.Timeout;
             var ticket = new FormsAuthenticationTicket(
-                version: 2,
+                // 3, no 2: marca que este ticket ya asume el modelo de rol único (Observador
+                // eliminado). No hay chequeo automático de versión -un ticket viejo con
+                // version=2 se sigue aceptando-, pero da igual: ToPrincipal degrada
+                // cualquier rol desconocido o heredado a Medico (RoleHierarchy.Principal),
+                // así que un ticket de antes de esta feature nunca queda con más privilegio
+                // del que debería, sin necesidad de forzar un re-login.
+                version: 3,
                 name: user.Id,
                 issueDate: DateTime.Now,
                 expiration: DateTime.Now.Add(timeout),
@@ -68,6 +79,10 @@ namespace ChequeAR.Api.Auth
             if (ticket == null) return null;
 
             var payload = Deserialize(ticket.UserData);
+            // Igual criterio que JwtIssuer: el dato es un único rol, pero el claim de rol es
+            // ACUMULATIVO (Jefe -> Jefe+Medico), y un ticket heredado con un rol desconocido
+            // (p. ej. "Observador") degrada a Medico en vez de perder el principal.
+            var principal = RoleHierarchy.Principal(payload.Roles);
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.Name, ticket.Name),
@@ -77,9 +92,10 @@ namespace ChequeAR.Api.Auth
                 // token, tumbando toda vista con formulario. Ver AntiForgeryConfig.
                 new Claim(ClaimTypes.NameIdentifier, ticket.Name),
                 new Claim("sub", ticket.Name),
-                new Claim("name", payload.DisplayName ?? ticket.Name)
+                new Claim("name", payload.DisplayName ?? ticket.Name),
+                new Claim("role_principal", principal)
             };
-            claims.AddRange((payload.Roles ?? new List<string>()).Select(r => new Claim(ClaimTypes.Role, r)));
+            claims.AddRange(RoleHierarchy.Expand(principal).Select(r => new Claim(ClaimTypes.Role, r)));
             claims.AddRange((payload.Specialties ?? new List<string>()).Select(s => new Claim("specialty", s)));
 
             return new ClaimsPrincipal(new ClaimsIdentity(claims, "Forms", ClaimTypes.Name, ClaimTypes.Role));

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
@@ -144,18 +144,19 @@ namespace ChequeAR.Api.App_Start
             {
                 Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
             }
-            // Sin URL configurada no hay login del hospital que llamar: en vez de fallar
-            // toda request contra un endpoint vacio, se sirve el mock. Misma convencion que
-            // Terminology:BaseUrl. Cuando exista el servicio real, basta configurar la URL.
+            // Sin URL configurada no hay login del hospital que llamar: se autentica local,
+            // contra AppUser.PasswordHash (ver LocalCredentialAuthenticator/PasswordHasher).
+            // Cuando exista el servicio real del hospital, basta configurar la URL para que
+            // ese modo tome precedencia -- el hash local queda sin uso, no hace falta borrarlo.
             if (string.IsNullOrWhiteSpace(hospitalAuthUrl))
             {
-                Log.Warning("HospitalAuth:LoginUrl vacio: se usa MockHospitalAuthClient, "
-                            + "que acepta cualquier contrasena. No dejar asi en produccion real.");
-                Register<IHospitalAuthClient>(() => new MockHospitalAuthClient(Resolve<IUserRepository>()));
+                Log.Warning("HospitalAuth:LoginUrl vacio: se usa autenticacion local contra "
+                            + "AppUser.PasswordHash (LocalCredentialAuthenticator).");
+                Register<ICredentialAuthenticator>(() => new LocalCredentialAuthenticator(Resolve<IUserRepository>()));
             }
             else
             {
-                Register<IHospitalAuthClient>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
+                Register<ICredentialAuthenticator>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
             }
             Register<ITerminologyClient>(() => new TerminologyClient(_termHttp, terminologyUrl, terminologyEcl, terminologyLang));
 
@@ -194,25 +195,31 @@ namespace ChequeAR.Api.App_Start
             // por request en este DI.
             Register<ICurrentUser>(() => new ChequeAR.Api.Auth.HttpCurrentUser());
             Register<ISpecialtyGuard>(() => new SpecialtyGuard(Resolve<ICurrentUser>(), enforceSpecialtyScope));
+            // Eje rol (paralelo al de especialidad): RolePolicy es la matriz explícita, no
+            // depende del flag de despliegue de arriba -sacarle auditoría/usuarios a Jefe no
+            // es algo que se pueda "apagar" para volver al comportamiento anterior.
+            Register<IAccessGuard>(() => new AccessGuard(Resolve<ICurrentUser>()));
 
             Register<QuestionnaireService>(() => new QuestionnaireService(
                 Resolve<IQuestionnaireRepository>(), Resolve<IQuestionnaireResponseRepository>(),
-                Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>(), Resolve<SpecialtyCatalogService>()));
+                Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>(), Resolve<SpecialtyCatalogService>(),
+                Resolve<IAccessGuard>()));
             Register<QuestionnaireResponseService>(() => new QuestionnaireResponseService(
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
-                Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>()));
+                Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>(), Resolve<IAccessGuard>()));
             Register<AuditQueryService>(() => new AuditQueryService(Resolve<IAuditRepository>()));
-            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>(), Resolve<AuditDispatcher>()));
+            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>(), Resolve<AuditDispatcher>(), Resolve<ISpecialtyGuard>()));
             Register<UserService>(() => new UserService(Resolve<IUserRepository>(), Resolve<SpecialtyCatalogService>()));
             Register<TerminologyService>(() => new TerminologyService(Resolve<ITerminologyClient>()));
             Register<HomeDashboardService>(() => new HomeDashboardService(
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
-                Resolve<IUserRepository>(), Resolve<SpecialtyCatalogService>()));
+                Resolve<IUserRepository>(), Resolve<SpecialtyCatalogService>(),
+                Resolve<ISpecialtyGuard>()));
             Register<PrefillService>(() => new PrefillService(Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>()));
             Register<QueryBuilder>(() => new QueryBuilder());
             Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
             Register<ReportExecutor>(() => new ReportExecutor(
-                Resolve<IReportQueryRunner>(), Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>()));
+                Resolve<IReportQueryRunner>(), Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>(), Resolve<ISpecialtyGuard>()));
 
             // Evolución longitudinal de parámetros (spec 010): consulta dedicada contra
             // vw_FlatResponses (misma conexión Oracle que los reportes) + service que arma las
@@ -235,7 +242,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Api.QuestionnaireResponseController>(() => new Controllers.Api.QuestionnaireResponseController(
                 Resolve<QuestionnaireResponseService>()));
             Register<Controllers.Api.AuthController>(() => new Controllers.Api.AuthController(
-                Resolve<IHospitalAuthClient>(), Resolve<JwtIssuer>(), Resolve<RefreshTokenService>(), Resolve<UserService>()));
+                Resolve<ICredentialAuthenticator>(), Resolve<JwtIssuer>(), Resolve<RefreshTokenService>(), Resolve<UserService>()));
             Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<AuditQueryService>()));
             Register<Controllers.Api.AttachmentController>(() => new Controllers.Api.AttachmentController(Resolve<IAttachmentStore>()));
             Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>()));
@@ -252,7 +259,7 @@ namespace ChequeAR.Api.App_Start
             // Controllers MVC
             Register<Controllers.Mvc.HomeController>(() => new Controllers.Mvc.HomeController(Resolve<HomeDashboardService>(), Resolve<SpecialtyCatalogService>()));
             Register<Controllers.Mvc.AccountController>(() => new Controllers.Mvc.AccountController(
-                Resolve<IHospitalAuthClient>(), Resolve<UserService>(), Resolve<SpecialtyCatalogService>()));
+                Resolve<ICredentialAuthenticator>(), Resolve<UserService>(), Resolve<SpecialtyCatalogService>()));
             Register<Controllers.Mvc.QuestionnairesController>(() => new Controllers.Mvc.QuestionnairesController(
                 Resolve<QuestionnaireService>(), Resolve<SpecialtyCatalogService>()));
             Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(

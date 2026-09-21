@@ -31,7 +31,7 @@ namespace ChequeAR.Tests.Application
             // Intervalo de flush largo: los eventos quedan en la cola y se drenan a mano con
             // FlushAsync en la prueba que lo necesita, sin que el timer dispare durante el test.
             _audit = new AuditDispatcher(_auditRepo.Object, flushIntervalMs: 600000);
-            _sut = new SavedReportService(_repo.Object, _audit);
+            _sut = new SavedReportService(_repo.Object, _audit, TestHelpers.UnrestrictedGuard());
         }
 
         // xUnit llama Dispose() despues de cada test: sin esto, el Timer interno de

@@ -17,8 +17,9 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IQuestionnaireRepository> _qRepo = new Mock<IQuestionnaireRepository>();
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
 
-        private QuestionnaireResponseService Sut(ChequeAR.Application.Security.ISpecialtyGuard guard)
-            => new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), guard);
+        private QuestionnaireResponseService Sut(ChequeAR.Application.Security.ISpecialtyGuard guard, ChequeAR.Application.Security.IAccessGuard access = null)
+            => new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), guard,
+                access ?? TestHelpers.UnrestrictedAccess());
 
         [Fact]
         public async Task GetAsync_CuestionarioFueraDeScope_Forbidden()

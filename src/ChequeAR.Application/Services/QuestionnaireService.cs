@@ -37,6 +37,7 @@ namespace ChequeAR.Application.Services
         private readonly AuditDispatcher _audit;
         private readonly ISpecialtyGuard _guard;
         private readonly SpecialtyCatalogService _catalog;
+        private readonly IAccessGuard _access;
 
         public QuestionnaireService(
             IQuestionnaireRepository repo,
@@ -44,7 +45,8 @@ namespace ChequeAR.Application.Services
             IFhirValidator validator,
             AuditDispatcher audit,
             ISpecialtyGuard guard,
-            SpecialtyCatalogService catalog)
+            SpecialtyCatalogService catalog,
+            IAccessGuard access)
         {
             _repo = repo;
             _responses = responses;
@@ -52,6 +54,7 @@ namespace ChequeAR.Application.Services
             _audit = audit;
             _guard = guard;
             _catalog = catalog;
+            _access = access;
         }
 
         // ── Lecturas ──────────────────────────────────────────────────────────────────
@@ -144,6 +147,7 @@ namespace ChequeAR.Application.Services
 
         public async Task<Questionnaire> CreateAsync(Questionnaire q, string userId)
         {
+            _access.EnsureCan(Permissions.QuestionnaireWrite);
             await EnsureSpecialtyUsableAsync(q.SpecialtyCode);
             // El editor guarda sólo el código (SpecialtyDisplay llega null): se completa acá
             // desde el catálogo para que el useContext del recurso FHIR (armado por
@@ -218,6 +222,7 @@ namespace ChequeAR.Application.Services
         /// </param>
         public async Task<Questionnaire> UpdateAsync(Guid id, Questionnaire patch, string userId, int? expectedVersion = null)
         {
+            _access.EnsureCan(Permissions.QuestionnaireWrite);
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
             // ¿Puedo tocar ESTE cuestionario? (chequeo sobre el código ACTUAL, antes que nada).
@@ -288,6 +293,7 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<Questionnaire> PublishAsync(Guid id, string userId, string changeNote = null)
         {
+            _access.EnsureCan(Permissions.QuestionnaireWrite);
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
             _guard.EnsureAllows(q.SpecialtyCode);
@@ -332,6 +338,7 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<Questionnaire> CloneAsync(Guid id, string newTitle, string userId)
         {
+            _access.EnsureCan(Permissions.QuestionnaireWrite);
             var source = await _repo.GetAsync(id);
             if (source == null) throw new InvalidOperationException("Not found");
             _guard.EnsureAllows(source.SpecialtyCode);
@@ -408,6 +415,7 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<DeleteOutcome> DeleteAsync(Guid id, string userId)
         {
+            _access.EnsureCan(Permissions.QuestionnaireDelete);
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
             _guard.EnsureAllows(q.SpecialtyCode);
@@ -432,6 +440,7 @@ namespace ChequeAR.Application.Services
 
         public async Task ArchiveAsync(Guid id, string userId)
         {
+            _access.EnsureCan(Permissions.QuestionnaireWrite);
             var q = await _repo.GetAsync(id);
             if (q == null) throw new InvalidOperationException("Not found");
             _guard.EnsureAllows(q.SpecialtyCode);

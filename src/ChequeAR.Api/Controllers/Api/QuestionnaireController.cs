@@ -28,7 +28,7 @@ namespace ChequeAR.Api.Controllers.Api
             _service = service;
         }
 
-        [HttpGet, Route(""), Authorize]
+        [HttpGet, Route(""), RequiresPermissionApi(Permissions.QuestionnaireRead)]
         public async Task<IHttpActionResult> Search([FromUri] string status = null, [FromUri(Name = "title:contains")] string titleContains = null, [FromUri] string specialty = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
             QuestionnaireStatus? st = null;
@@ -50,7 +50,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        [HttpGet, Route("{id:guid}"), Authorize]
+        [HttpGet, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireRead)]
         public async Task<IHttpActionResult> Get(Guid id)
         {
             Domain.Entities.Questionnaire q;
@@ -99,7 +99,7 @@ namespace ChequeAR.Api.Controllers.Api
             return int.TryParse(raw, out var version) ? version : (int?)null;
         }
 
-        [HttpPost, Route(""), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        [HttpPost, Route(""), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
             var q = FhirQuestionnaireParser.ToDomain(body);
@@ -124,7 +124,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        [HttpPut, Route("{id:guid}"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
             var patch = FhirQuestionnaireParser.ToDomain(body);
@@ -168,7 +168,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        [HttpPost, Route("{id:guid}/$publish"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        [HttpPost, Route("{id:guid}/$publish"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Publish(Guid id, [FromBody] PublishBody body)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
@@ -194,7 +194,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        [HttpPost, Route("{id:guid}/$archive"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        [HttpPost, Route("{id:guid}/$archive"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Archive(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
@@ -214,7 +214,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        [HttpPost, Route("{id:guid}/$clone"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        [HttpPost, Route("{id:guid}/$clone"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Clone(Guid id, [FromBody] CloneBody body)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
@@ -236,7 +236,7 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
-        [HttpDelete, Route("{id:guid}"), Authorize(Roles = Role.Administrador)]
+        [HttpDelete, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireDelete)]
         public async Task<IHttpActionResult> Delete(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);

@@ -21,8 +21,24 @@ namespace ChequeAR.Infrastructure.Repositories
         public async Task UpsertAsync(User u)
         {
             var existing = await _ctx.Users.FindAsync(u.Id);
-            if (existing == null) _ctx.Users.Add(u);
-            else _ctx.Entry(existing).CurrentValues.SetValues(u);
+            if (existing == null)
+            {
+                _ctx.Users.Add(u);
+            }
+            else
+            {
+                // PasswordHash/PasswordUpdatedAt se preservan SIEMPRE, pase lo que pase en
+                // `u`: este método es el ABM administrativo genérico (UsersController.Save,
+                // el PUT de UserController), nunca el camino de cambiar una contraseña. Sin
+                // esto, CurrentValues.SetValues pisaría el hash con lo que sea que traiga
+                // `u.PasswordHash` (típicamente null, porque nadie arma ese campo a mano) y
+                // el usuario quedaría sin poder loguearse por haber editado, p. ej., su email.
+                var passwordHash = existing.PasswordHash;
+                var passwordUpdatedAt = existing.PasswordUpdatedAt;
+                _ctx.Entry(existing).CurrentValues.SetValues(u);
+                existing.PasswordHash = passwordHash;
+                existing.PasswordUpdatedAt = passwordUpdatedAt;
+            }
             await _ctx.SaveChangesAsync();
         }
 
