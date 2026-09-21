@@ -1703,14 +1703,7 @@
         </div>\
     </li>\
 </ol>\
-<div class="cq-card cq-wizard-help mb-3" style="border-left:3px solid var(--cq-info);">\
-    <div class="cq-wizard-help__body">\
-        <span class="cq-help" style="cursor:default;" aria-hidden="true"><i class="bi bi-question-lg"></i></span>\
-        <div class="flex-fill">\
-            <div class="cq-text-sm"><strong>{{ STEPS[stepIndex].label }}</strong></div>\
-            <div class="cq-text-sm cq-text-muted">{{ currentStepHelp }}</div>\
-        </div>\
-    </div>\
+<div class="cq-wizard-nav mb-3">\
     <div class="cq-wizard-help__nav">\
         <button class="btn btn-sm btn-outline-secondary-cq" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
         <button class="btn btn-sm btn-secondary" :disabled="!canGoNext" @click="stepNext" :title="nextBlockedReason">Siguiente <i class="bi bi-chevron-right"></i></button>\
@@ -1981,11 +1974,12 @@
 <div v-if="step === \'preview\'">\
     <div v-if="!groups.length || !allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para previsualizar. Volvé al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a>.</div>\
     <div v-else>\
-        <div class="cq-card mb-2">\
-            <h2 class="mt-0 mb-1">{{ qTitle }}</h2>\
-        </div>\
-        <div v-for="(g, gi) in groups" :key="gi" class="cq-card mb-2">\
-            <h3 class="cq-section-title mt-0"><i class="bi bi-folder me-1"></i>{{ g.title }}</h3>\
+        <div class="cq-card">\
+            <div style="border-bottom:1px solid var(--cq-neutral-200); padding-bottom:16px;">\
+                <h2 class="mt-0 mb-0">{{ qTitle }}</h2>\
+            </div>\
+            <div v-for="(g, gi) in groups" :key="gi">\
+                <h3 class="cq-section-title"><i class="bi bi-folder me-1"></i>{{ g.title }}</h3>\
             <div v-if="!g.questions.length" class="cq-text-xs cq-text-muted">Sección sin preguntas.</div>\
             <div v-for="q in g.questions" :key="q.linkId" class="mb-3">\
                 <label class="form-label cq-text-sm fw-semibold">{{ q.text }} <span v-if="q.required" class="text-danger">*</span></label>\
@@ -2006,6 +2000,7 @@
                 <div v-if="q.type === \'attachment\'" class="cq-text-xs cq-text-muted"><i class="bi bi-paperclip"></i> Adjunto ({{ q.accept || \'imagen o PDF\' }})</div>\
                 <div v-if="q.code" class="cq-text-xs cq-text-muted mt-1"><i class="bi bi-tag"></i> {{ q.code }} — {{ q.codeDisplay || q.term }}</div>\
                 <div v-if="q.enableWhen" class="cq-text-xs cq-text-muted mt-1"><i class="bi bi-diagram-2"></i> Se muestra sólo si otra respuesta lo habilita.</div>\
+            </div>\
             </div>\
         </div>\
     </div>\

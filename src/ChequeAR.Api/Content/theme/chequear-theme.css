@@ -1766,18 +1766,15 @@ body.cq-sidebar-collapsed .cq-app {
 /* Card de ayuda contextual del wizard: en desktop va el texto a la izquierda
    y Anterior/Siguiente a la derecha; en mobile stackea para no exprimir el
    texto ni cortar los botones. */
-.cq-wizard-help {
+/* Fila de navegacion del wizard (Anterior / Siguiente). Antes los botones vivian dentro
+   de una card de ayuda cuyo alto dependia del largo del texto del paso, asi que se movian
+   de lugar al cambiar de paso. Ahora la fila va sola, a la derecha y con alto propio: la
+   posicion es la misma en los cuatro pasos. */
+.cq-wizard-nav {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.cq-wizard-help__body {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  flex: 1 1 320px;
-  min-width: 0;
+  min-height: 38px;
 }
 .cq-wizard-help__nav {
   display: flex;
