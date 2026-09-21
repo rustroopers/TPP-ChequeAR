@@ -13,14 +13,18 @@
 
 name: build & test
 
+# Solo por PR. El push quedo limitado a main porque al mergear un PR a dev o a
+# testing el push disparaba una segunda corrida identica a la del PR que se acaba
+# de aprobar. En main se mantiene: es la rama que deploy.yml publica, y conviene
+# tener el build registrado sobre el commit exacto que sale a produccion.
 on:
-  push:
-    branches: [dev, testing, main]
   pull_request:
     branches: [dev, testing, main]
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
-# Un push nuevo sobre la misma rama cancela la corrida anterior.
+# Un push nuevo sobre la misma rama (o sobre el PR) cancela la corrida anterior.
 concurrency:
   group: build-test-${{ github.ref }}
   cancel-in-progress: true
