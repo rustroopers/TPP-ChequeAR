@@ -114,6 +114,7 @@
     <Compile Include="Filters\PermissionExceptionFilter.cs" />
     <Compile Include="Filters\MvcPermissionExceptionFilter.cs" />
     <Compile Include="Helpers\ArgentinaTime.cs" />
+    <Compile Include="Helpers\Asset.cs" />
     <Compile Include="Helpers\AuditPresentation.cs" />
     <Compile Include="Helpers\CqLocalizer.cs" />
     <Compile Include="Middleware\AuditMiddleware.cs" />
