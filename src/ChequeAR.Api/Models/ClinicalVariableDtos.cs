@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace ChequeAR.Api.Models
 {
@@ -13,7 +15,13 @@ namespace ChequeAR.Api.Models
     /// el servidor, y aceptarlos del cliente permitiría, por ejemplo, congelar la revisión para
     /// que ningún editor se entere de que la definición cambió. También mantiene el contrato
     /// estable si mañana la entidad gana una columna interna.
+    ///
+    /// El camelCase va declarado en la clase y no en un resolver global: el JsonFormatter de
+    /// esta Api no tiene ninguno -el resto de los endpoints devuelven objetos anónimos ya
+    /// escritos en minúscula- y ponerlo global cambiaría de golpe el contrato de api/users y
+    /// api/specialties. Sin esto el JSON sale en PascalCase y las islas leen undefined.
     /// </summary>
+    [JsonObject(NamingStrategyType = typeof(CamelCaseNamingStrategy))]
     public class ClinicalVariableDto
     {
         public Guid Id { get; set; }
@@ -46,6 +54,7 @@ namespace ChequeAR.Api.Models
         public List<VariableOptionDto> Options { get; set; } = new List<VariableOptionDto>();
     }
 
+    [JsonObject(NamingStrategyType = typeof(CamelCaseNamingStrategy))]
     public class VariableOptionDto
     {
         public string Value { get; set; }
