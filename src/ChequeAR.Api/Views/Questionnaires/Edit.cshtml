@@ -7,12 +7,12 @@
     string status = ViewBag.Status as string;
     bool pending = (ViewBag.HasUnpublishedChanges is bool) && (bool)ViewBag.HasUnpublishedChanges;
     int publishedVersion = ViewBag.Version == null ? 0 : (int)ViewBag.Version;
-    int nextVersion = ViewBag.NextVersion == null ? 1 : (int)ViewBag.NextVersion;
     bool canEdit = !(ViewBag.CanEdit is bool) || (bool)ViewBag.CanEdit;
 
-    // El subtítulo tiene que responder dos cosas: qué versión están usando los clínicos
-    // ahora, y qué pasa si publico. Antes mostraba Versions.Count + 1, una versión que
-    // todavía no existía, etiquetada con el estado actual.
+    // El subtítulo responde una sola cosa: qué versión están usando los clínicos ahora.
+    // El "al publicar será vN" se fue de acá: es información del momento de publicar, y
+    // en la cabecera sumaba una tercera cláusula a un renglón que ya se leeía largo. Lo
+    // mismo con "Borrador · nunca publicado", que decía dos veces lo mismo.
     string subtitle;
     if (status == "archived")
     {
@@ -20,21 +20,19 @@
         // archivar sin haber sido publicado nunca (baja directa de un borrador), y en ese
         // caso caía en la rama de abajo y se mostraba como "Borrador" en vez de archivado.
         subtitle = publishedVersion == 0
-            ? "Archivado · nunca publicado"
-            : "Archivado · última versión publicada v" + publishedVersion;
+            ? "Archivado"
+            : "Archivado · última versión v" + publishedVersion;
     }
     else if (publishedVersion == 0)
     {
-        subtitle = "Borrador · nunca publicado · al publicar será v" + nextVersion;
+        subtitle = "Borrador";
     }
     else if (pending)
     {
-        subtitle = "Publicado v" + publishedVersion + " · cambios sin publicar · al publicar será v" + nextVersion;
+        subtitle = "Publicado v" + publishedVersion + " · con cambios sin publicar";
     }
     else
     {
-        // Sin cambios pendientes: la propia mención sonaba como aviso de un
-        // problema. Con solo "Publicado v2" el estado queda claro.
         subtitle = "Publicado v" + publishedVersion;
     }
 }

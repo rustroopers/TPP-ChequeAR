@@ -180,7 +180,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.IsNew = isNew;
             ViewBag.QuestionnaireTitle = title;
             ViewBag.Version = publishedVersion;
-            ViewBag.NextVersion = publishedVersion + 1;
             ViewBag.Status = status;
             ViewBag.HasUnpublishedChanges = pendingChanges;
             ViewBag.CanEdit = canEdit;
