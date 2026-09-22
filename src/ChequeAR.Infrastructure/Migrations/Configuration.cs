@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Configuration;
 using System.Data.Entity.Migrations;
 using System.Diagnostics;
 using System.Linq;
 using ChequeAR.Application.Security;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 using ChequeAR.Infrastructure.EF;
@@ -26,6 +27,8 @@ namespace ChequeAR.Infrastructure.Migrations
             ContextKey = "ChequeAR.Infrastructure.EF.ChequeARDbContext";
         }
 
+        private const string SnomedSystem = TerminologyService.SnomedSystem;
+
         /// <summary>
         /// Corre en CADA arranque (después de aplicar las migraciones pendientes), así que
         /// tiene que ser idempotente. Dos responsabilidades:
@@ -40,7 +43,100 @@ namespace ChequeAR.Infrastructure.Migrations
         protected override void Seed(ChequeARDbContext context)
         {
             SeedSpecialties(context);
+            SeedClinicalVariables(context);
             if (DemoUsersEnabled()) SeedDemoUsers(context);
+        }
+
+        /// <summary>
+        /// Catálogo mínimo de variables clínicas para que la app arranque usable: sin al menos
+        /// una variable, nadie puede crear un cuestionario.
+        ///
+        /// A diferencia de SeedSpecialties, acá NO se usa AddOrUpdate: existe un ABM de
+        /// variables, así que pisar Name/Unit/rango en cada arranque revertiría en silencio lo
+        /// que el Administrador editó. Se inserta sólo lo que falta, por Code.
+        ///
+        /// Los conceptos SNOMED son los canónicos de signos vitales; el resto del catálogo lo
+        /// carga el Administrador desde la pantalla, que es el punto de la feature.
+        /// </summary>
+        private static void SeedClinicalVariables(ChequeARDbContext context)
+        {
+            var seed = new[]
+            {
+                Variable("peso", "Peso", "Peso corporal", QuestionType.Decimal, "kg", 0m, 300m, "27113001", "Body weight", 10),
+                Variable("talla", "Talla", "Talla / altura", QuestionType.Decimal, "cm", 0m, 250m, "1153637007", "Body height", 20),
+                Variable("imc", "IMC", "Índice de masa corporal", QuestionType.Decimal, "kg/m2", 0m, 100m, "60621009", "Body mass index", 30),
+                Variable("ta-sistolica", "TA sistólica", "Tensión arterial sistólica", QuestionType.Integer, "mm[Hg]", 0m, 300m, "271649006", "Systolic blood pressure", 40),
+                Variable("ta-diastolica", "TA diastólica", "Tensión arterial diastólica", QuestionType.Integer, "mm[Hg]", 0m, 200m, "271650006", "Diastolic blood pressure", 50),
+                Variable("frecuencia-cardiaca", "Frecuencia cardíaca", "Frecuencia cardíaca", QuestionType.Integer, "/min", 0m, 300m, "364075005", "Heart rate", 60),
+                Variable("temperatura", "Temperatura", "Temperatura corporal", QuestionType.Decimal, "Cel", 25m, 45m, "386725007", "Body temperature", 70),
+                Variable("saturacion", "Saturación de O2", "Saturación arterial de oxígeno", QuestionType.Integer, "%", 0m, 100m, "442476006", "Arterial oxygen saturation", 80),
+                Variable("dolor-escala", "Dolor (0-10)", "Intensidad del dolor en escala 0 a 10", QuestionType.Scale, null, 0m, 10m, "225908003", "Pain score", 90)
+            };
+
+            var missing = seed.Where(v => !context.ClinicalVariables.Any(x => x.Code == v.Code)).ToList();
+            foreach (var v in missing) context.ClinicalVariables.Add(v);
+
+            // Una variable de opción única, para que el catálogo de arranque muestre también
+            // el caso en que el significado clínico está en la respuesta y no en el enunciado.
+            if (!context.ClinicalVariables.Any(x => x.Code == "severidad"))
+            {
+                var severidad = Variable("severidad", "Severidad", "Severidad del cuadro",
+                    QuestionType.Choice, null, null, null, "272141005", "Severities", 100);
+                AddOption(severidad, "leve", "Leve", "255604002", "Mild");
+                AddOption(severidad, "moderada", "Moderada", "6736007", "Moderate");
+                AddOption(severidad, "severa", "Severa", "24484000", "Severe");
+                context.ClinicalVariables.Add(severidad);
+            }
+
+            context.SaveChanges();
+        }
+
+        private static ClinicalVariable Variable(string code, string name, string defaultText,
+            QuestionType type, string unit, decimal? min, decimal? max,
+            string snomedCode, string snomedDisplay, int sortOrder)
+        {
+            var now = DateTime.UtcNow;
+            return new ClinicalVariable
+            {
+                Id = Guid.NewGuid(),
+                Code = code,
+                Name = name,
+                DefaultText = defaultText,
+                Type = type,
+                Unit = unit,
+                MinValue = min,
+                MaxValue = max,
+                SnomedSystem = SnomedSystem,
+                SnomedCode = snomedCode,
+                SnomedDisplay = snomedDisplay,
+                Term = defaultText,
+                IsActive = true,
+                SortOrder = sortOrder,
+                Revision = 1,
+                CreatedBy = "seed",
+                CreatedAt = now,
+                UpdatedBy = "seed",
+                UpdatedAt = now
+            };
+        }
+
+        private static void AddOption(ClinicalVariable v, string value, string display, string snomedCode, string snomedDisplay)
+        {
+            v.Options.Add(new VariableOption
+            {
+                Id = Guid.NewGuid(),
+                VariableId = v.Id,
+                Value = value,
+                Display = display,
+                // Code == SnomedCode cuando la opción está codificada: R5 admite un solo Coding
+                // por answerOption.value, y unificarlos evita que el código que guardan las
+                // respuestas (ValueCode, sobre el que pivotean los reportes) difiera del FHIR.
+                Code = snomedCode,
+                SnomedSystem = SnomedSystem,
+                SnomedCode = snomedCode,
+                SnomedDisplay = snomedDisplay,
+                OrderIndex = v.Options.Count
+            });
         }
 
         private static void SeedSpecialties(ChequeARDbContext context)

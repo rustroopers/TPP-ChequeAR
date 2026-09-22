@@ -1,4 +1,4 @@
-namespace ChequeAR.Domain.Enums
+﻿namespace ChequeAR.Domain.Enums
 {
     /// <summary>
     /// Catálogo de operaciones protegidas. La matriz rol -&gt; permisos vive en un único lugar:
@@ -16,6 +16,7 @@ namespace ChequeAR.Domain.Enums
         public const string ReportWrite = "report.write";
         public const string AuditRead = "audit.read";
         public const string UserManage = "user.manage";
+        public const string VariableManage = "variable.manage";
         public const string IntegrationRead = "integration.read";
         public const string TerminologyExpand = "terminology.expand";
     }

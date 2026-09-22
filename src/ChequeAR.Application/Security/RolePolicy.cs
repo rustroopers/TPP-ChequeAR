@@ -27,6 +27,7 @@ namespace ChequeAR.Application.Security
                 Permissions.EncounterWrite,
                 Permissions.ReportRead, Permissions.ReportWrite,
                 Permissions.AuditRead, Permissions.UserManage,
+                Permissions.VariableManage,
                 Permissions.IntegrationRead, Permissions.TerminologyExpand
             },
             [Role.Jefe] = new[]
@@ -37,6 +38,10 @@ namespace ChequeAR.Application.Security
                 Permissions.EncounterWrite,
                 Permissions.ReportRead, Permissions.ReportWrite,
                 // AuditRead, UserManage: NO -- es exactamente lo que el requisito le saca a Jefe.
+                // VariableManage: NO. El Jefe arma cuestionarios eligiendo variables
+                // (QuestionnaireWrite) pero no define el vocabulario clínico: centralizar eso en
+                // el Administrador es justamente lo que hace comparables los datos entre
+                // especialidades. Leer el catálogo le alcanza con QuestionnaireRead.
                 Permissions.IntegrationRead, Permissions.TerminologyExpand
             },
             [Role.Medico] = new[]
