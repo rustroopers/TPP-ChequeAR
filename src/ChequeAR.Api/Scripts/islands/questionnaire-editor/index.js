@@ -1840,20 +1840,15 @@
 <div v-if="step === \'publish\'">\
     <div class="cq-card mb-2">\
         <h3 class="cq-section-title mt-0"><i class="bi bi-send me-1"></i>Publicación</h3>\
-        <p class="cq-text-sm cq-text-muted">Publicar congela una versión: los clínicos ven exactamente esta estructura hasta que publiques una nueva.</p>\
-        <div v-if="publishBlockers.length" class="cq-card mb-3" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
+        <div v-if="publishBlockers.length" class="cq-card mb-0" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
             <div class="cq-text-sm"><strong>Antes de publicar, resolvé:</strong></div>\
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(b, bi) in publishBlockers" :key="bi">{{ b }}</li>\
             </ul>\
         </div>\
-        <div v-else class="cq-card mb-3" style="border-left:3px solid var(--cq-success); background:var(--cq-neutral-50);">\
+        <div v-else class="cq-card mb-0" style="border-left:3px solid var(--cq-success); background:var(--cq-neutral-50);">\
             <div class="cq-text-sm"><i class="bi bi-check-circle-fill" style="color:var(--cq-success);"></i> Todo listo para publicar.</div>\
             <div v-if="isPublished" class="cq-text-xs cq-text-muted mt-1">Ya hay una versión publicada. Publicar de nuevo crea una versión posterior.</div>\
-        </div>\
-        <div class="d-flex gap-2">\
-            <button class="btn btn-primary" @click="publish" :disabled="publishBlockers.length || publishing"><i class="bi bi-send me-1"></i> Publicar ahora</button>\
-            <button class="btn btn-outline-secondary-cq" @click="gotoStep(\'structure\')"><i class="bi bi-arrow-left me-1"></i> Volver a la estructura</button>\
         </div>\
     </div>\
 </div>\
