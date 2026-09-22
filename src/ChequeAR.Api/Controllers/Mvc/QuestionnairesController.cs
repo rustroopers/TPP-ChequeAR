@@ -21,11 +21,14 @@ namespace ChequeAR.Api.Controllers.Mvc
         
         private readonly QuestionnaireService _svc;
         private readonly SpecialtyCatalogService _specialties;
+        private readonly ClinicalVariableService _variables;
 
-        public QuestionnairesController(QuestionnaireService svc, SpecialtyCatalogService specialties)
+        public QuestionnairesController(QuestionnaireService svc, SpecialtyCatalogService specialties,
+            ClinicalVariableService variables)
         {
             _svc = svc;
             _specialties = specialties;
+            _variables = variables;
         }
 
         // Q1 — Listado
@@ -143,7 +146,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         concurrencyVersion = q.ConcurrencyVersion;
                         // El editor se hidrata con la estructura real desde el server; antes
                         // arrancaba con datos de ejemplo hardcodeados y pisaba lo guardado.
-                        groups = BuildEditorGroups(q);
+                        groups = BuildEditorGroups(q, await VariablesDe(q));
 
                         var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
                         if (coding != null)
@@ -208,7 +211,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 return HttpNotFound();
             }
             if (q == null) return HttpNotFound();
-            var payload = new { concurrencyVersion = q.ConcurrencyVersion, groups = BuildEditorGroups(q) };
+            var payload = new { concurrencyVersion = q.ConcurrencyVersion, groups = BuildEditorGroups(q, await VariablesDe(q)) };
             return Content(
                 JsonConvert.SerializeObject(payload,
                     new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
@@ -264,16 +267,44 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         // Arma el árbol secciones -> preguntas que consume la isla Vue. Las preguntas sin
         // sección se juntan en una sección implícita para que sean editables igual.
-        private static List<QuestionGroupView> BuildEditorGroups(ChequeAR.Domain.Entities.Questionnaire q)
+        /// <summary>
+        /// Trae de una sola vez las variables que usa el cuestionario, para que el editor pueda
+        /// mostrar el nombre de cada una y detectar las desactualizadas. Una consulta por
+        /// cuestionario y no una por pregunta: es el mismo criterio que el catálogo de
+        /// especialidades en este mismo controller.
+        /// </summary>
+        private async Task<IDictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>> VariablesDe(
+            ChequeAR.Domain.Entities.Questionnaire q)
+        {
+            var ids = (q.Questions ?? new List<ChequeAR.Domain.Entities.Question>())
+                .Where(x => x.VariableId.HasValue)
+                .Select(x => x.VariableId.Value)
+                .Distinct()
+                .ToList();
+            if (ids.Count == 0) return new Dictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>();
+
+            var encontradas = new Dictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>();
+            foreach (var id in ids)
+            {
+                var v = await _variables.GetAsync(id);
+                if (v != null) encontradas[id] = v;
+            }
+            return encontradas;
+        }
+
+        private static List<QuestionGroupView> BuildEditorGroups(
+            ChequeAR.Domain.Entities.Questionnaire q,
+            IDictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable> variables = null)
         {
             var result = new List<QuestionGroupView>();
             var questions = q.Questions ?? new List<ChequeAR.Domain.Entities.Question>();
+            var cat = variables ?? new Dictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>();
 
             foreach (var g in (q.Groups ?? new List<ChequeAR.Domain.Entities.QuestionGroup>()).OrderBy(g => g.OrderIndex))
             {
                 var view = new QuestionGroupView { Title = g.Title };
                 foreach (var qq in questions.Where(x => x.GroupId == g.Id).OrderBy(x => x.OrderIndex))
-                    view.Questions.Add(ToQuestionView(qq));
+                    view.Questions.Add(ToQuestionView(qq, cat));
                 result.Add(view);
             }
 
@@ -281,13 +312,15 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (loose.Count > 0)
             {
                 var view = new QuestionGroupView { Title = "Preguntas" };
-                foreach (var qq in loose) view.Questions.Add(ToQuestionView(qq));
+                foreach (var qq in loose) view.Questions.Add(ToQuestionView(qq, cat));
                 result.Add(view);
             }
             return result;
         }
 
-        private static QuestionView ToQuestionView(ChequeAR.Domain.Entities.Question qq)
+        private static QuestionView ToQuestionView(
+            ChequeAR.Domain.Entities.Question qq,
+            IDictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable> variables = null)
         {
             var view = new QuestionView
             {
@@ -333,6 +366,18 @@ namespace ChequeAR.Api.Controllers.Mvc
                 view.CodeDisplay = coding.Display;
                 view.Term = coding.Term;
             }
+
+            if (qq.VariableId.HasValue)
+            {
+                view.VariableId = qq.VariableId.Value.ToString();
+                view.VariableRevision = qq.VariableRevision;
+                ChequeAR.Domain.Entities.ClinicalVariable v = null;
+                if (variables != null) variables.TryGetValue(qq.VariableId.Value, out v);
+                // Si la variable ya no está en el catálogo, la pregunta sigue mostrándose con
+                // su snapshot: lo que se perdió es poder nombrar el origen, no el contenido.
+                view.VariableName = v != null ? v.Name : null;
+                view.VariableCurrentRevision = v != null ? v.Revision : qq.VariableRevision;
+            }
             return view;
         }
 
@@ -366,7 +411,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(q.UpdatedAt),
                     HasUnpublishedChanges = q.HasUnpublishedChanges()
                 };
-                model.Groups.AddRange(BuildEditorGroups(q));
+                model.Groups.AddRange(BuildEditorGroups(q, await VariablesDe(q)));
                 return View(model);
             }
             catch (SpecialtyForbiddenException)

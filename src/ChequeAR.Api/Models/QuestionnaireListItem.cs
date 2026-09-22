@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace ChequeAR.Api.Models
@@ -82,6 +82,28 @@ namespace ChequeAR.Api.Models
         // poco y malo. Ver Term en la codificación de CodingJson.
         public string Term { get; set; }
         public List<string> Options { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Variable del catálogo de la que proviene la pregunta. El editor la necesita para
+        /// reenviarla al guardar y para mostrar con candado lo que la variable define.
+        /// </summary>
+        public string VariableId { get; set; }
+
+        /// <summary>
+        /// Nombre de la variable, sólo para mostrar. Se resuelve una vez por request contra el
+        /// catálogo; sin esto el panel de propiedades necesitaría un fetch por pregunta para
+        /// poder decir de dónde sale cada una.
+        /// </summary>
+        public string VariableName { get; set; }
+
+        /// <summary>Revisión con la que se armó la pregunta (el snapshot congelado).</summary>
+        public int VariableRevision { get; set; }
+
+        /// <summary>
+        /// Revisión vigente de esa variable hoy. Si es mayor que VariableRevision, el
+        /// Administrador la editó después: el editor lo avisa, pero no re-sincroniza nada.
+        /// </summary>
+        public int VariableCurrentRevision { get; set; }
     }
 
     /// <summary>Condición de visibilidad: "mostrar sólo si &lt;question&gt; &lt;op&gt; &lt;value&gt;".</summary>
