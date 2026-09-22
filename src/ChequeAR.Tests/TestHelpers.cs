@@ -6,6 +6,7 @@ using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 using Moq;
 
 namespace ChequeAR.Tests
@@ -70,6 +71,57 @@ namespace ChequeAR.Tests
                 });
             return mock.Object;
         }
+
+        /// <summary>
+        /// Variable del catálogo lista para usar. Los defaults son los de una medición
+        /// numérica, que es el caso más común y el que no necesita opciones.
+        /// </summary>
+        public static ClinicalVariable Variable(string code, QuestionType type = QuestionType.Decimal,
+            string name = null, Guid? id = null, bool isActive = true, int revision = 1)
+        {
+            return new ClinicalVariable
+            {
+                Id = id ?? Guid.NewGuid(),
+                Code = code,
+                Name = name ?? code,
+                DefaultText = name ?? code,
+                Type = type,
+                IsActive = isActive,
+                Revision = revision
+            };
+        }
+
+        /// <summary>
+        /// Repositorio de variables en memoria. GetManyAsync es el que usa
+        /// QuestionnaireService al guardar, así que es el que más importa que responda bien.
+        /// </summary>
+        public static IClinicalVariableRepository VariableRepoWith(params ClinicalVariable[] variables)
+        {
+            var seed = (variables ?? Array.Empty<ClinicalVariable>()).ToList();
+            var mock = new Mock<IClinicalVariableRepository>();
+            mock.Setup(r => r.GetAsync(It.IsAny<Guid>()))
+                .ReturnsAsync((Guid id) => seed.FirstOrDefault(v => v.Id == id));
+            mock.Setup(r => r.GetByCodeAsync(It.IsAny<string>()))
+                .ReturnsAsync((string code) => seed.FirstOrDefault(v => v.Code == code));
+            mock.Setup(r => r.GetBySnomedCodeAsync(It.IsAny<string>()))
+                .ReturnsAsync((string code) => seed.FirstOrDefault(v => v.SnomedCode == code));
+            mock.Setup(r => r.GetManyAsync(It.IsAny<IEnumerable<Guid>>()))
+                .ReturnsAsync((IEnumerable<Guid> ids) =>
+                    (IReadOnlyList<ClinicalVariable>)seed.Where(v => ids.Contains(v.Id)).ToList());
+            mock.Setup(r => r.ListAsync(It.IsAny<string>(), It.IsAny<QuestionType?>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>()))
+                .ReturnsAsync((IReadOnlyList<ClinicalVariable>)seed);
+            mock.Setup(r => r.CountAsync(It.IsAny<string>(), It.IsAny<QuestionType?>(), It.IsAny<bool>()))
+                .ReturnsAsync(seed.Count);
+            return mock.Object;
+        }
+
+        /// <summary>
+        /// Pregunta que proviene de <paramref name="v"/>. Desde el catálogo de variables toda
+        /// pregunta necesita VariableId o QuestionnaireService la rechaza, así que armarla a
+        /// mano en cada test sería repetir lo mismo veinte veces.
+        /// </summary>
+        public static Question QuestionFrom(ClinicalVariable v, string linkId = null, string text = null)
+            => new Question { LinkId = linkId ?? v.Code, Text = text ?? v.DefaultText, VariableId = v.Id };
 
         /// <summary>Catálogo en memoria con los 5 códigos base, para tests que no necesitan tocar la DB.</summary>
         public static SpecialtyCatalogService CatalogWith(params Specialty[] items)

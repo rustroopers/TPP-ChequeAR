@@ -23,5 +23,23 @@ namespace ChequeAR.Application.Services
                 default: return type.ToString().ToLowerInvariant();
             }
         }
+
+        /// <summary>
+        /// Inverso de <see cref="ToUi"/>, para el ABM de variables: el formulario manda el
+        /// mismo vocabulario que consume el editor, y el catálogo lo tiene que guardar como
+        /// enum. Case-insensitive porque "openChoice" y "openchoice" son el mismo tipo y no
+        /// vale la pena rechazar un request por una mayúscula.
+        ///
+        /// Un valor desconocido cae a String en vez de tirar: así un cliente desactualizado
+        /// provoca un 422 con el detalle de la validación y no un 500 opaco.
+        /// </summary>
+        public static QuestionType FromUi(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return QuestionType.String;
+            foreach (QuestionType t in System.Enum.GetValues(typeof(QuestionType)))
+                if (string.Equals(ToUi(t), code, System.StringComparison.OrdinalIgnoreCase))
+                    return t;
+            return QuestionType.String;
+        }
     }
 }

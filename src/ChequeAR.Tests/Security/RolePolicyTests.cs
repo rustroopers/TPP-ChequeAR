@@ -1,4 +1,4 @@
-using ChequeAR.Application.Security;
+﻿using ChequeAR.Application.Security;
 using ChequeAR.Domain.Enums;
 using Xunit;
 
@@ -22,6 +22,7 @@ namespace ChequeAR.Tests.Security
         [InlineData(Permissions.ReportWrite)]
         [InlineData(Permissions.AuditRead)]
         [InlineData(Permissions.UserManage)]
+        [InlineData(Permissions.VariableManage)]
         [InlineData(Permissions.IntegrationRead)]
         [InlineData(Permissions.TerminologyExpand)]
         public void Administrador_TieneTodosLosPermisos(string permission)
@@ -48,6 +49,7 @@ namespace ChequeAR.Tests.Security
         [InlineData(Permissions.QuestionnaireDelete)]
         [InlineData(Permissions.AuditRead)]
         [InlineData(Permissions.UserManage)]
+        [InlineData(Permissions.VariableManage)]
         public void Jefe_NoTienePermiso(string permission)
         {
             Assert.False(RolePolicy.Allows(new[] { Role.Jefe }, permission));
@@ -71,6 +73,7 @@ namespace ChequeAR.Tests.Security
         [InlineData(Permissions.ReportWrite)]
         [InlineData(Permissions.AuditRead)]
         [InlineData(Permissions.UserManage)]
+        [InlineData(Permissions.VariableManage)]
         [InlineData(Permissions.IntegrationRead)]
         public void Medico_NoTienePermiso(string permission)
         {

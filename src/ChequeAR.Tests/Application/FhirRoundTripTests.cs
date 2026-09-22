@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Application.Fhir;
@@ -358,6 +358,63 @@ namespace ChequeAR.Tests.Application
         }
 
         // ---- helpers ----
+
+        /// <summary>
+        /// La referencia a la variable del catálogo tampoco tiene lugar nativo en FHIR. Todo lo
+        /// que la variable define viaja denormalizado en campos del estándar (y así el recurso
+        /// es autocontenido para un consumidor externo), pero sin esta extensión el editor
+        /// perdería en cada guardado de qué variable viene cada pregunta — y con eso, la
+        /// posibilidad de avisar que la definición cambió.
+        /// </summary>
+        [Fact]
+        public void VariableId_SobreviveElCiclo()
+        {
+            var variableId = Guid.NewGuid();
+            var original = ConUnaPregunta(new Question
+            {
+                LinkId = "peso-1",
+                Text = "Peso al ingreso",
+                Type = QuestionType.Decimal,
+                VariableId = variableId
+            });
+
+            Assert.Equal(variableId, Ciclo(original).Questions.Single().VariableId);
+        }
+
+        /// <summary>
+        /// Las opciones codificadas viajan con system SNOMED. Hasta que las definió el catálogo
+        /// iban siempre sin system: un código suelto que nadie fuera de ChequeAR podía resolver.
+        /// </summary>
+        [Fact]
+        public void OpcionCodificada_ConservaElSystemSnomed()
+        {
+            var pregunta = new Question { LinkId = "sev", Text = "Severidad", Type = QuestionType.Choice };
+            pregunta.Options.Add(new AnswerOption
+            {
+                Value = "Leve", Display = "Leve", Code = "255604002",
+                SnomedCode = "255604002", SnomedDisplay = "Mild", OrderIndex = 0
+            });
+
+            var opcion = Ciclo(ConUnaPregunta(pregunta)).Questions.Single().Options.Single();
+
+            Assert.Equal("255604002", opcion.SnomedCode);
+            Assert.Equal("Mild", opcion.SnomedDisplay);
+        }
+
+        /// <summary>
+        /// Una opción sin codificar sigue viajando sin system, y al volver NO se inventa uno:
+        /// marcarla como SNOMED sería afirmar algo que nadie declaró.
+        /// </summary>
+        [Fact]
+        public void OpcionSinCodificar_NoAdquiereSystemSnomed()
+        {
+            var pregunta = new Question { LinkId = "otra", Text = "Otra", Type = QuestionType.Choice };
+            pregunta.Options.Add(new AnswerOption { Value = "Sí", Display = "Sí", Code = "si", OrderIndex = 0 });
+
+            var opcion = Ciclo(ConUnaPregunta(pregunta)).Questions.Single().Options.Single();
+
+            Assert.Null(opcion.SnomedCode);
+        }
 
         private static ChequeAR.Domain.Entities.Questionnaire ConUnaPregunta(Question question)
         {

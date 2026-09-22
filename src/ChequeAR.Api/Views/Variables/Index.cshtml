@@ -1,0 +1,108 @@
+@model ChequeAR.Api.Models.VariableListViewModel
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewBag.Title = Cq.T("variables.title");
+}
+
+<header class="cq-page-header">
+    <div>
+        <h1 class="cq-page-header__title">@Cq.T("variables.title")</h1>
+        <p class="cq-page-header__subtitle">@Cq.T("variables.subtitle")</p>
+    </div>
+    <a href="@Url.Action("Details")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("variables.new")</a>
+</header>
+
+@if (ViewBag.DataError != null)
+{
+    <div class="alert alert-warning">@ViewBag.DataError</div>
+}
+
+@using (Html.BeginForm("Index", "Variables", FormMethod.Get, new { @class = "mb-3" }))
+{
+    <div class="row g-2 align-items-end">
+        <div class="col-md-6">
+            <label class="form-label cq-text-sm">Buscar</label>
+            @* Un solo campo: el servidor matchea contra nombre, código y concepto SNOMED.
+               Separarlo en dos inputs obligaría al admin a declarar cuál de los dos escribió. *@
+            <input type="search" name="q" value="@Model.SearchTerm" class="form-control"
+                   placeholder="Nombre, código o concepto SNOMED…" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label cq-text-sm">Tipo</label>
+            <select name="type" class="form-select">
+                <option value="">Todos</option>
+                @foreach (var t in new[] {
+                    Tuple.Create("decimal", "Número decimal"), Tuple.Create("integer", "Número entero"),
+                    Tuple.Create("string", "Texto corto"), Tuple.Create("text", "Texto largo"),
+                    Tuple.Create("boolean", "Sí / No"), Tuple.Create("choice", "Opción única"),
+                    Tuple.Create("openChoice", "Opción múltiple"), Tuple.Create("date", "Fecha"),
+                    Tuple.Create("dateTime", "Fecha y hora"), Tuple.Create("attachment", "Adjunto"),
+                    Tuple.Create("scale", "Escala") })
+                {
+                    <option value="@t.Item1" selected="@(Model.TypeFilter == t.Item1)">@t.Item2</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3 d-flex gap-2 align-items-center">
+            <div class="form-check flex-grow-1">
+                <input class="form-check-input" type="checkbox" name="includeInactive" value="true"
+                       id="chkInactive" checked="@Model.IncludeInactive" />
+                <label class="form-check-label cq-text-sm" for="chkInactive">Incluir de baja</label>
+            </div>
+            <button type="submit" class="btn btn-secondary">@Cq.T("common.search")</button>
+        </div>
+    </div>
+}
+
+@if (Model.Variables.Count == 0)
+{
+    <div class="cq-card cq-card--stretch">
+        <div class="cq-empty">
+            <div class="cq-empty__icon"><i class="bi bi-rulers"></i></div>
+            <div class="cq-empty__title">@Cq.T("variables.empty.title")</div>
+            <div class="cq-empty__desc">@Cq.T("variables.empty.desc")</div>
+            <a href="@Url.Action("Details")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("variables.new")</a>
+        </div>
+    </div>
+}
+else
+{
+    <table class="cq-table">
+        <thead>
+            <tr>
+                <th>Nombre</th><th>Código</th><th>Tipo</th><th>Unidad</th>
+                <th>Rango</th><th>SNOMED CT</th><th>Estado</th><th class="text-end"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var v in Model.Variables)
+            {
+                <tr>
+                    <td>@v.Name</td>
+                    <td><code>@v.Code</code></td>
+                    <td class="cq-text-sm">@v.TypeLabel</td>
+                    <td class="cq-text-sm">@(v.Unit ?? "—")</td>
+                    <td class="cq-text-sm">@(v.Range ?? "—")</td>
+                    <td class="cq-text-sm">
+                        @if (string.IsNullOrEmpty(v.SnomedCode))
+                        {
+                            <span class="cq-text-muted">Sin codificar</span>
+                        }
+                        else
+                        {
+                            <code>@v.SnomedCode</code><br />
+                            <span class="cq-text-xs cq-text-muted">@v.SnomedDisplay</span>
+                        }
+                    </td>
+                    <td>
+                        @if (v.IsActive) { <span class="cq-badge cq-badge--published">Activa</span> }
+                        else { <span class="cq-badge cq-badge--archived">De baja</span> }
+                    </td>
+                    <td class="text-end">
+                        <a href="@Url.Action("Details", new { id = v.Id })" class="btn btn-sm btn-tertiary">Editar →</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
