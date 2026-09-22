@@ -140,9 +140,11 @@
             var types = [
                 { code: 'string',     label: 'Texto corto',     icon: 'bi-fonts' },
                 { code: 'text',       label: 'Texto largo',     icon: 'bi-textarea-t' },
-                // "Escala" no se ofrece más para preguntas nuevas: es lo mismo que un Número
-                // con Min/Max. Se deja fuera de esta lista pero no del resto del editor/lectura,
-                // para no romper las preguntas ya publicadas con este tipo.
+                // "Escala" vuelve a la lista: cuando ésta era el menú de tipos creables se la
+                // excluía a propósito (es lo mismo que un Número con Min/Max), pero ahora sólo
+                // sirve para MOSTRAR el tipo -y una variable de escala del catálogo apareciía
+                // como "scale" crudo en el selector y en el panel de propiedades-.
+                { code: 'scale',      label: 'Escala',          icon: 'bi-sliders' },
                 { code: 'integer',    label: 'Número',          icon: 'bi-123' },
                 { code: 'decimal',    label: 'Decimal',         icon: 'bi-percent' },
                 { code: 'boolean',    label: 'Booleano',        icon: 'bi-toggle-on' },
@@ -556,9 +558,9 @@
                     .then(function () { varPickerLoading.value = false; });
             }
 
-            // Cuantas veces ya esta esta variable en el cuestionario. Usar la misma dos veces es
-            // un caso real ("Peso al ingreso" / "Peso al alta"); lo que las distingue es el
-            // linkId, asi que se sufija para que no colisionen como columna de reporte.
+            // Cuantas veces ya esta esta variable en el cuestionario. Solo se usa para sufijar
+            // el linkId: usar la misma dos veces es un caso real ("Peso al ingreso" / "Peso al
+            // alta") y lo que las distingue es ese linkId, que es la columna del reporte.
             function usosDe(variableId) {
                 return allQuestions().filter(function (q) { return q.variableId === variableId; }).length;
             }
@@ -1443,7 +1445,7 @@
                 staleVariables: staleVariables,
                 varPickerOpen: varPickerOpen, varPickerQuery: varPickerQuery,
                 varPickerLoading: varPickerLoading, varPickerError: varPickerError,
-                varPickerResults: varPickerResults, usosDe: usosDe,
+                varPickerResults: varPickerResults,
                 openVariablePicker: openVariablePicker, closeVariablePicker: closeVariablePicker,
                 onVariableQuery: onVariableQuery, addQuestionFromVariable: addQuestionFromVariable,
                 typeLabel: typeLabel,
@@ -1515,11 +1517,8 @@
 </div>\
 <div v-if="varPickerOpen" style="position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1050; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px;" @click.self="closeVariablePicker">\
     <div class="cq-card" style="max-width:640px; width:100%; max-height:85vh; overflow:auto;">\
-        <div class="d-flex justify-content-between align-items-start mb-2">\
-            <div>\
-                <h3 class="m-0">Agregar una variable</h3>\
-                <p class="cq-text-xs cq-text-muted mb-0">El catálogo lo mantiene el Administrador. Si falta una variable, hay que pedirla.</p>\
-            </div>\
+        <div class="d-flex justify-content-between align-items-center mb-2">\
+            <h3 class="m-0">Agregar una variable</h3>\
             <button type="button" class="cq-icon-btn" @click="closeVariablePicker" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button>\
         </div>\
         <input v-model="varPickerQuery" @input="onVariableQuery" class="form-control form-control-sm mb-2" placeholder="Nombre, código o concepto SNOMED…" autofocus />\
@@ -1529,9 +1528,7 @@
         <ul v-else class="list-unstyled mb-0">\
             <li v-for="v in varPickerResults" :key="v.id" class="border-bottom py-2 d-flex justify-content-between align-items-center gap-2" style="cursor:pointer;" @click="addQuestionFromVariable(v)">\
                 <div>\
-                    <div>{{ v.name }}\
-                        <span v-if="usosDe(v.id)" class="cq-badge cq-badge--draft ms-1">ya usada {{ usosDe(v.id) }}×</span>\
-                    </div>\
+                    <div>{{ v.name }}</div>\
                     <div class="cq-text-xs cq-text-muted">\
                         {{ typeLabel(v.type) }}<template v-if="v.unit"> · {{ v.unit }}</template>\
                         <template v-if="v.snomedCode"> · <code>{{ v.snomedCode }}</code> {{ v.snomedDisplay }}</template>\
@@ -1744,10 +1741,6 @@
                 <label class="form-check-label cq-text-sm" for="reqCk">Obligatoria</label>\
             </div>\
             <hr />\
-            <h4 class="cq-text-sm fw-semibold mb-2 d-flex align-items-center gap-1">\
-                <i class="bi bi-lock-fill"></i> Heredado de la variable\
-            </h4>\
-            <p class="cq-text-xs cq-text-muted">Lo define el Administrador en el catálogo. Cambiarlo ahí afecta al vocabulario de todo el hospital, no sólo a este cuestionario.</p>\
             <dl class="row cq-text-sm mb-0">\
                 <dt class="col-5">Variable</dt><dd class="col-7">{{ selected.question.variableName || \'—\' }}</dd>\
                 <dt class="col-5">Tipo</dt><dd class="col-7">{{ typeLabel(selected.question.type) }}</dd>\
