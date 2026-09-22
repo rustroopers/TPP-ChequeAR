@@ -1797,8 +1797,6 @@
             </div>\
             </template>\
 \
-            <hr />\
-            <button class="btn btn-sm btn-outline-danger" @click="removeQuestion(selected.group, selected.question)"><i class="bi bi-trash me-1"></i> Eliminar pregunta</button>\
         </div>\
         <div v-else class="cq-card cq-text-sm cq-text-muted">Seleccione una pregunta para editar sus propiedades.</div>\
     </div>\
