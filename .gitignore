@@ -103,3 +103,6 @@ Desktop.ini
 
 # Resultados de tests (.trx) — los genera el workflow build-test y correrlo en local
 TestResults/
+
+# Carpeta basura que genera un `git ... "C:\Program Files\Git"` mal citado
+_program files_git/

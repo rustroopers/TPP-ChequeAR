@@ -42,10 +42,14 @@
 
   /* Jerarquía de acción — evita reusar el primary violeta en botones secundarios
      (como Buscar, Ver evolución, Continuar) que quedaban indistinguibles del
-     Guardar/Publicar principal. */
-  --cq-secondary: var(--cq-accent-600);        /* verde menta profundo */
-  --cq-secondary-600: #3d8f74;
-  --cq-secondary-100: #d9efe4;
+     Guardar/Publicar principal.
+     Feedback: ningún botón debe salir verde ni negro pleno. La familia secondary
+     quedó igual que .btn-tertiary (el "Abrir" de Fichas recientes): fondo blanco,
+     borde gris y texto neutro. El verde menta (--cq-accent) queda sólo para lo
+     que no es botón (spinner de acento, línea de gradiente del hero). */
+  --cq-secondary: var(--cq-tertiary);          /* texto neutro fuerte */
+  --cq-secondary-600: var(--cq-neutral-900);   /* hover: texto más oscuro */
+  --cq-secondary-100: var(--cq-tertiary-100);  /* tinte de hover, casi blanco */
   --cq-tertiary: var(--cq-neutral-700);        /* neutro fuerte para acciones utilitarias */
   --cq-tertiary-100: var(--cq-neutral-100);
 
@@ -261,30 +265,31 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 
 /* Bootstrap compila --bs-btn-color hardcoded a #0d6efd para .btn-outline-primary,
    así que el override de --bs-primary no alcanza y sale azul. En este tema los
-   outlines son VERDES (secondary) porque los filled son lila (primary): así
+   outlines son GRISES (secondary) porque los filled son lila (primary): así
    toda familia "outline" comparte color y toda familia "filled" también, y la
    jerarquía se lee por variante (lleno vs. borde), no por hue. */
 /* Todas las variantes outline que la app usa como "acción secundaria"
    (bootstrap .btn-outline-secondary, .btn-outline-primary sin tema, y la
-   variante .btn-outline-secondary-cq) apuntan al MISMO --cq-secondary.
-   Hover con tinte suave: no llenar full para que el secondary mantenga
-   menos peso visual que el primary en TODOS los estados. */
+   variante .btn-outline-secondary-cq) apuntan al MISMO --cq-secondary, que
+   ahora es el gris de .btn-tertiary: borde --cq-neutral-300, texto neutro y
+   fondo blanco. Hover con tinte suave: no llenar full para que el secondary
+   mantenga menos peso visual que el primary en TODOS los estados. */
 .btn-outline-primary,
 .btn-outline-secondary {
   --bs-btn-color: var(--cq-secondary);
-  --bs-btn-border-color: var(--cq-secondary);
-  --bs-btn-bg: transparent;
+  --bs-btn-border-color: var(--cq-neutral-300);
+  --bs-btn-bg: #fff;
   --bs-btn-hover-bg: var(--cq-secondary-100);
-  --bs-btn-hover-border-color: var(--cq-secondary);
+  --bs-btn-hover-border-color: var(--cq-neutral-300);
   --bs-btn-hover-color: var(--cq-secondary-600);
-  --bs-btn-active-bg: var(--cq-secondary-100);
-  --bs-btn-active-border-color: var(--cq-secondary-600);
+  --bs-btn-active-bg: var(--cq-neutral-200);
+  --bs-btn-active-border-color: var(--cq-neutral-300);
   --bs-btn-active-color: var(--cq-secondary-600);
   --bs-btn-disabled-color: var(--cq-secondary);
-  --bs-btn-disabled-border-color: var(--cq-secondary);
+  --bs-btn-disabled-border-color: var(--cq-neutral-300);
   color: var(--cq-secondary);
-  border-color: var(--cq-secondary);
-  background: transparent;
+  border-color: var(--cq-neutral-300);
+  background: #fff;
 }
 .btn-outline-primary:hover,
 .btn-outline-primary:focus,
@@ -295,20 +300,22 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 .show > .btn-outline-primary.dropdown-toggle,
 .show > .btn-outline-secondary.dropdown-toggle {
   background: var(--cq-secondary-100);
-  border-color: var(--cq-secondary);
+  border-color: var(--cq-neutral-300);
   color: var(--cq-secondary-600);
 }
-/* Radios segmentados (btn-check + label.btn-outline-secondary): al SELECCIONAR
-   sí queremos fill verde para marcar el estado activo, no tinte suave. */
+/* Radios segmentados (btn-check + label.btn-outline-secondary): el seleccionado
+   necesita distinguirse del resto, pero sin salirse de la escala de grises del
+   Abrir: fondo --cq-neutral-200, borde más marcado y texto en negro. */
 .btn-check:checked + .btn-outline-secondary,
 .btn-check:active + .btn-outline-secondary {
-  background: var(--cq-secondary);
-  border-color: var(--cq-secondary);
-  color: #fff;
+  background: var(--cq-neutral-200);
+  border-color: var(--cq-neutral-500);
+  color: var(--cq-neutral-900);
+  font-weight: 600;
 }
 .btn-outline-primary:focus-visible,
 .btn-outline-secondary:focus-visible {
-  outline: 2px solid var(--cq-accent);
+  outline: 2px solid var(--cq-neutral-500);
   outline-offset: 2px;
 }
 
@@ -548,9 +555,9 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   padding: 0;
   margin-left: 6px;
   vertical-align: middle;
-  border: 1px solid var(--cq-info);
+  border: 1px solid var(--cq-primary);
   border-radius: 999px;
-  background: var(--cq-info);
+  background: var(--cq-primary);
   color: #fff;
   font-size: 13px;
   line-height: 1;
@@ -559,61 +566,62 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
 }
 .cq-help:hover,
 .cq-help:focus-visible {
-  background: #075985;
-  border-color: #075985;
+  background: var(--cq-primary-600);
+  border-color: var(--cq-primary-600);
   color: #fff;
   outline: none;
 }
 .cq-help i { font-size: 13px; }
 
 /* Tooltips y popovers de Bootstrap: se mantiene el estilo (radio, tipografía,
-   arrow, layout), sólo se reemplaza el gris oscuro default por el azul info
-   del sitio. Tooltips: box entero azul. Popovers: header azul + arrow azul,
-   body blanco para conservar legibilidad del texto largo. */
-.tooltip .tooltip-inner { background-color: var(--cq-info); }
+   arrow, layout), sólo se reemplaza el gris oscuro default por el violeta
+   primary del sitio (antes iban en --cq-info, que los dejaba celestes y fuera
+   de la paleta). Tooltips: box entero violeta. Popovers: header violeta +
+   arrow violeta, body blanco para conservar legibilidad del texto largo. */
+.tooltip .tooltip-inner { background-color: var(--cq-primary); }
 .tooltip .tooltip-arrow::before,
 .tooltip.bs-tooltip-top .tooltip-arrow::before,
 .tooltip.bs-tooltip-auto[data-popper-placement^="top"] .tooltip-arrow::before {
-  border-top-color: var(--cq-info);
+  border-top-color: var(--cq-primary);
 }
 .tooltip.bs-tooltip-bottom .tooltip-arrow::before,
 .tooltip.bs-tooltip-auto[data-popper-placement^="bottom"] .tooltip-arrow::before {
-  border-bottom-color: var(--cq-info);
+  border-bottom-color: var(--cq-primary);
 }
 .tooltip.bs-tooltip-start .tooltip-arrow::before,
 .tooltip.bs-tooltip-auto[data-popper-placement^="left"] .tooltip-arrow::before {
-  border-left-color: var(--cq-info);
+  border-left-color: var(--cq-primary);
 }
 .tooltip.bs-tooltip-end .tooltip-arrow::before,
 .tooltip.bs-tooltip-auto[data-popper-placement^="right"] .tooltip-arrow::before {
-  border-right-color: var(--cq-info);
+  border-right-color: var(--cq-primary);
 }
 
-.popover { border-color: var(--cq-info); }
+.popover { border-color: var(--cq-primary); }
 .popover .popover-header {
-  background: var(--cq-info);
+  background: var(--cq-primary);
   color: #fff;
-  border-bottom-color: var(--cq-info);
+  border-bottom-color: var(--cq-primary);
 }
 .popover.bs-popover-top .popover-arrow::before,
 .popover.bs-popover-auto[data-popper-placement^="top"] .popover-arrow::before {
-  border-top-color: var(--cq-info);
+  border-top-color: var(--cq-primary);
 }
 .popover.bs-popover-bottom .popover-arrow::before,
 .popover.bs-popover-auto[data-popper-placement^="bottom"] .popover-arrow::before {
-  border-bottom-color: var(--cq-info);
+  border-bottom-color: var(--cq-primary);
 }
 .popover.bs-popover-bottom .popover-arrow::after,
 .popover.bs-popover-auto[data-popper-placement^="bottom"] .popover-arrow::after {
-  border-bottom-color: var(--cq-info);
+  border-bottom-color: var(--cq-primary);
 }
 .popover.bs-popover-start .popover-arrow::before,
 .popover.bs-popover-auto[data-popper-placement^="left"] .popover-arrow::before {
-  border-left-color: var(--cq-info);
+  border-left-color: var(--cq-primary);
 }
 .popover.bs-popover-end .popover-arrow::before,
 .popover.bs-popover-auto[data-popper-placement^="right"] .popover-arrow::before {
-  border-right-color: var(--cq-info);
+  border-right-color: var(--cq-primary);
 }
 
 /* ===== Panel de búsqueda (cq-autofilter) =====
@@ -1124,28 +1132,29 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
    confundían con disabled. Los tokens --cq-secondary y --cq-tertiary abren dos jerarquías
    nuevas sin tocar los estilos ya existentes de .btn-primary. */
 
-/* Acción secundaria (Ver historial, Ver evolución, Buscar) — verde menta */
+/* Acción secundaria (Ver historial, Ver evolución, Buscar) — mismo look que el
+   "Abrir" de Fichas recientes (.btn-tertiary): dejó de ser un filled. */
 .btn-secondary {
-  --bs-btn-bg: var(--cq-secondary);
-  --bs-btn-border-color: var(--cq-secondary);
-  --bs-btn-color: #fff;
-  --bs-btn-hover-bg: var(--cq-secondary-600);
-  --bs-btn-hover-border-color: var(--cq-secondary-600);
-  --bs-btn-hover-color: #fff;
-  --bs-btn-active-bg: var(--cq-secondary-600);
-  --bs-btn-active-border-color: var(--cq-secondary-600);
-  --bs-btn-active-color: #fff;
-  --bs-btn-disabled-bg: var(--cq-secondary);
-  --bs-btn-disabled-border-color: var(--cq-secondary);
-  --bs-btn-disabled-color: #fff;
-  background: var(--cq-secondary);
-  border-color: var(--cq-secondary);
-  color: #fff;
+  --bs-btn-bg: #fff;
+  --bs-btn-border-color: var(--cq-neutral-300);
+  --bs-btn-color: var(--cq-secondary);
+  --bs-btn-hover-bg: var(--cq-secondary-100);
+  --bs-btn-hover-border-color: var(--cq-neutral-300);
+  --bs-btn-hover-color: var(--cq-secondary-600);
+  --bs-btn-active-bg: var(--cq-neutral-200);
+  --bs-btn-active-border-color: var(--cq-neutral-300);
+  --bs-btn-active-color: var(--cq-secondary-600);
+  --bs-btn-disabled-bg: #fff;
+  --bs-btn-disabled-border-color: var(--cq-neutral-300);
+  --bs-btn-disabled-color: var(--cq-secondary);
+  background: #fff;
+  border-color: var(--cq-neutral-300);
+  color: var(--cq-secondary);
 }
 .btn-secondary:hover, .btn-secondary:focus, .btn-secondary:active {
-  background: var(--cq-secondary-600);
-  border-color: var(--cq-secondary-600);
-  color: #fff;
+  background: var(--cq-secondary-100);
+  border-color: var(--cq-neutral-300);
+  color: var(--cq-secondary-600);
   box-shadow: none;
 }
 
@@ -1158,12 +1167,12 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
    para no pisar los cancel de modales que hoy usan .btn-outline-secondary. */
 .btn-outline-secondary-cq {
   --bs-btn-color: var(--cq-secondary);
-  --bs-btn-border-color: var(--cq-secondary);
+  --bs-btn-border-color: var(--cq-neutral-300);
   --bs-btn-hover-bg: var(--cq-secondary-100);
-  --bs-btn-hover-border-color: var(--cq-secondary);
+  --bs-btn-hover-border-color: var(--cq-neutral-300);
   --bs-btn-hover-color: var(--cq-secondary-600);
   color: var(--cq-secondary);
-  border-color: var(--cq-secondary);
+  border-color: var(--cq-neutral-300);
   background: #fff;
 }
 .btn-outline-secondary-cq:hover,
@@ -1172,7 +1181,7 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
 .show > .btn-outline-secondary-cq.dropdown-toggle {
   background: var(--cq-secondary-100);
   color: var(--cq-secondary-600);
-  border-color: var(--cq-secondary);
+  border-color: var(--cq-neutral-300);
 }
 
 /* Acción terciaria (Editar, Abrir, cancelar en modal) — neutro fuerte, no gris flojo */
@@ -1639,7 +1648,7 @@ body.cq-sidebar-collapsed .cq-app {
 }
 .cq-timeline__item.is-done::after,
 .cq-timeline__item.is-active::after {
-  background: var(--cq-accent, #16a34a);
+  background: var(--cq-neutral-500);
 }
 .cq-timeline__dot {
   position: relative;
@@ -1673,10 +1682,13 @@ body.cq-sidebar-collapsed .cq-app {
   color: #fff;
   box-shadow: 0 0 0 4px var(--cq-primary-100, rgba(37, 99, 235, .18));
 }
+/* "Hecho": mismo lenguaje que el "Abrir" de Fichas recientes (fondo blanco +
+   borde gris), con el borde un paso más marcado para no confundirse con
+   is-available (borde lila) ni con is-locked (gris punteado). */
 .cq-timeline__item.is-done .cq-timeline__dot {
-  background: var(--cq-accent, #16a34a);
-  border-color: var(--cq-accent, #16a34a);
-  color: #fff;
+  background: #fff;
+  border-color: var(--cq-neutral-500);
+  color: var(--cq-neutral-900);
 }
 .cq-timeline__item.is-available .cq-timeline__dot {
   border-color: var(--cq-primary-400, #93c5fd);
@@ -1744,10 +1756,10 @@ body.cq-sidebar-collapsed .cq-app {
 }
 .cq-stepper__item.is-done {
   color: var(--cq-neutral-700);
-  border-color: var(--cq-accent);
+  border-color: var(--cq-neutral-500);
 }
 .cq-stepper__item.is-done .cq-stepper__num i {
-  color: var(--cq-accent-600);
+  color: var(--cq-neutral-700);
 }
 .cq-stepper__num {
   display: inline-flex;
