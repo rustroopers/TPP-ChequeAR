@@ -41,11 +41,11 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public async Task ListAsync_ComoJefe_NoLanza()
         {
-            _repo.Setup(r => r.ListAsync(It.IsAny<string>(), It.IsAny<QuestionType?>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>()))
+            _repo.Setup(r => r.ListAsync(It.IsAny<string>(), It.IsAny<QuestionType?>(), It.IsAny<bool?>(), It.IsAny<int>(), It.IsAny<int>()))
                  .ReturnsAsync((IReadOnlyList<ClinicalVariable>)new List<ClinicalVariable>());
-            _repo.Setup(r => r.CountAsync(It.IsAny<string>(), It.IsAny<QuestionType?>(), It.IsAny<bool>())).ReturnsAsync(0);
+            _repo.Setup(r => r.CountAsync(It.IsAny<string>(), It.IsAny<QuestionType?>(), It.IsAny<bool?>())).ReturnsAsync(0);
 
-            var pagina = await SutPara(Role.Jefe).ListAsync(null, null, false, 0, 50);
+            var pagina = await SutPara(Role.Jefe).ListAsync(null, null, true, 0, 50);
 
             Assert.Equal(0, pagina.Total);
         }

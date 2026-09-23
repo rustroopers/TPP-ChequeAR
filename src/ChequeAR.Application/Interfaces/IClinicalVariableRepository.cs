@@ -25,10 +25,11 @@ namespace ChequeAR.Application.Interfaces
         /// <summary>
         /// Búsqueda del catálogo y del selector del editor. <paramref name="search"/> matchea
         /// contra nombre, código y concepto SNOMED: el buscador es un solo campo.
+        /// <paramref name="active"/>: null = todas, true = sólo activas, false = sólo de baja.
         /// </summary>
-        Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool includeInactive, int skip, int take);
+        Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool? active, int skip, int take);
 
-        Task<int> CountAsync(string search, QuestionType? type, bool includeInactive);
+        Task<int> CountAsync(string search, QuestionType? type, bool? active);
 
         Task AddAsync(ClinicalVariable v);
 

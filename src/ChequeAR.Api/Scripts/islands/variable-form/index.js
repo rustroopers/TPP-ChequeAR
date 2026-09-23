@@ -146,24 +146,6 @@
             }
             function removeOption(i) { model.options.splice(i, 1); }
 
-            // --- Validación de cortesía ---
-            // El servidor valida igual y es la fuente de verdad; esto sólo evita el viaje de
-            // ida y vuelta para los errores obvios.
-            var problemas = Vue.computed(function () {
-                var out = [];
-                if (!model.name.trim()) out.push('Falta el nombre.');
-                if (!model.code.trim()) out.push('Falta el código.');
-                else if (!/^[a-z0-9-]{2,64}$/.test(model.code)) out.push('El código sólo admite minúsculas, números y guiones.');
-                if (tieneOpciones.value) {
-                    if (model.options.length < 2) out.push('Una variable de opción necesita al menos dos opciones.');
-                    if (model.options.some(function (o) { return !o.display.trim(); })) out.push('Hay opciones sin texto.');
-                }
-                if (model.min !== '' && model.max !== '' && Number(model.min) > Number(model.max)) {
-                    out.push('El mínimo no puede ser mayor que el máximo.');
-                }
-                return out;
-            });
-
             function num(v) { return v === '' || v === null || v === undefined ? null : Number(v); }
 
             /* Serializa al contrato de ClinicalVariableDto. Los campos que no aplican al tipo
@@ -214,9 +196,8 @@
                 codeVerifying: codeVerifying, codeVerification: codeVerification,
                 esNumerico: esNumerico, tieneOpciones: tieneOpciones,
                 tieneMaxLength: tieneMaxLength, esAdjunto: esAdjunto,
-                problemas: problemas, codeTocado: codeTocado,
-                addOption: addOption, removeOption: removeOption,
-                revision: props.revision || 0
+                codeTocado: codeTocado,
+                addOption: addOption, removeOption: removeOption
             };
         },
         template: [
@@ -232,16 +213,14 @@
             '        <div class="col-md-5">',
             '          <label class="form-label cq-text-sm">Código</label>',
             '          <input v-model="model.code" @input="codeTocado = true" class="form-control" placeholder="peso" />',
-            '          <div class="cq-text-xs cq-text-muted mt-1">Identifica la variable en los reportes. No conviene cambiarlo una vez en uso.</div>',
             '        </div>',
             '        <div class="col-12">',
             '          <label class="form-label cq-text-sm">Enunciado por defecto</label>',
             '          <input v-model="model.defaultText" class="form-control" placeholder="Peso corporal" />',
-            '          <div class="cq-text-xs cq-text-muted mt-1">Es lo que se propone al insertarla; cada cuestionario puede reescribirlo (&laquo;Peso al nacer&raquo;, &laquo;Peso al d&iacute;a de hoy&raquo;).</div>',
             '        </div>',
             '        <div class="col-12">',
             '          <label class="form-label cq-text-sm">Descripci&oacute;n</label>',
-            '          <textarea v-model="model.description" rows="2" class="form-control" placeholder="Ayuda para quien elige la variable. No viaja al cuestionario."></textarea>',
+            '          <textarea v-model="model.description" rows="2" class="form-control" placeholder="Descripci&oacute;n..."></textarea>',
             '        </div>',
             '      </div>',
             '    </div>',
@@ -326,7 +305,6 @@
             '      <h2 class="h3">Codificaci&oacute;n cl&iacute;nica</h2>',
             '      <label class="form-label cq-text-sm">T&eacute;rmino</label>',
             '      <input v-model="coding.term" class="form-control" placeholder="peso corporal" />',
-            '      <div class="cq-text-xs cq-text-muted mt-1">Escrib&iacute; qu&eacute; mide y elegimos el concepto SNOMED CT.</div>',
 
             '      <div v-if="snomed.searching" class="cq-text-sm cq-text-muted mt-2">',
             '        <span class="cq-spinner"></span> Buscando en SNOMED CT&hellip;</div>',
@@ -353,21 +331,8 @@
             '        <template v-else>{{ codeVerification.msg }}</template>',
             '      </div>',
             '      <div v-else-if="coding.codeDisplay" class="cq-text-sm cq-text-muted mt-1">{{ coding.codeDisplay }}</div>',
-            '      <div v-if="!coding.code" class="cq-text-xs cq-text-muted mt-2">',
-            '        Sin c&oacute;digo la variable funciona igual, pero sus respuestas no van a ser comparables fuera de ChequeAR.</div>',
             '    </div>',
 
-            '    <div class="cq-card mt-3">',
-            '      <h2 class="h3">Presentaci&oacute;n</h2>',
-            '      <label class="form-label cq-text-sm">Orden en el cat&aacute;logo</label>',
-            '      <input v-model="model.sortOrder" type="number" class="form-control" />',
-            '      <div v-if="!esNueva" class="cq-text-xs cq-text-muted mt-2">Revisi&oacute;n actual: {{ revision }}</div>',
-            '    </div>',
-
-            '    <div v-if="problemas.length" class="alert alert-warning mt-3">',
-            '      <div class="mb-1"><strong>Falta completar:</strong></div>',
-            '      <ul class="mb-0 ps-3"><li v-for="p in problemas" :key="p">{{ p }}</li></ul>',
-            '    </div>',
             '  </div>',
             '</div>'
         ].join('\n')

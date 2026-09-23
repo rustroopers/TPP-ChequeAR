@@ -381,8 +381,9 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
 
-        // Q5 — Vista previa
-        public async Task<ActionResult> Preview(Guid id)
+        // Q5 — Vista previa. Con version, muestra esa versión publicada tal como se congeló
+        // (lo usa "Ver" en el Historial); sin version, el cuestionario actual.
+        public async Task<ActionResult> Preview(Guid id, int? version = null)
         {
             ViewBag.Title = "Vista previa";
             ViewBag.PageId = "questionnaires";
@@ -410,6 +411,23 @@ namespace ChequeAR.Api.Controllers.Mvc
                     UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(q.UpdatedAt),
                     HasUnpublishedChanges = q.HasUnpublishedChanges()
                 };
+
+                if (version.HasValue)
+                {
+                    var ver = await _svc.GetVersionAsync(id, version.Value);
+                    var snap = ver == null ? null : ChequeAR.Application.Fhir.FhirQuestionnaireReader.ReadDomain(ver.FhirJson);
+                    if (snap == null) return HttpNotFound();
+
+                    // Título, autor y fecha también de la versión: el título puede haber
+                    // cambiado después, y lo que se audita es lo que vio el clínico.
+                    model.SnapshotVersion = ver.VersionNumber;
+                    model.Title = snap.Title ?? q.Title;
+                    model.Author = ver.PublishedBy;
+                    model.UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(ver.PublishedAt);
+                    model.Groups.AddRange(BuildEditorGroups(snap, await VariablesDe(snap)));
+                    return View(model);
+                }
+
                 model.Groups.AddRange(BuildEditorGroups(q, await VariablesDe(q)));
                 return View(model);
             }
@@ -461,6 +479,70 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.QuestionnaireTitle = null;
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new List<QuestionnaireVersionView>());
+            }
+        }
+
+        // Q9b — Comparar dos versiones publicadas. Sin parámetros compara la última contra
+        // la anterior; desde el Historial llega con to = la fila y from = la previa.
+        public async Task<ActionResult> Compare(Guid id, int? from = null, int? to = null)
+        {
+            ViewBag.Title = "Comparar versiones";
+            ViewBag.PageId = "questionnaires";
+            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
+            {
+                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
+                System.Tuple.Create("Cuestionarios", Url.Action("Index")),
+                System.Tuple.Create("Historial", Url.Action("History", new { id })),
+                System.Tuple.Create("Comparar", (string)null)
+            };
+
+            try
+            {
+                var q = await _svc.GetAsync(id);
+                if (q == null) return HttpNotFound();
+
+                var versiones = (q.Versions ?? new List<ChequeAR.Domain.Entities.QuestionnaireVersion>())
+                    .OrderBy(v => v.VersionNumber).ToList();
+                if (versiones.Count < 2)
+                {
+                    TempData["Toast"] = "Hace falta al menos dos versiones publicadas para comparar.";
+                    TempData["ToastLevel"] = "error";
+                    return RedirectToAction("History", new { id });
+                }
+
+                var hasta = to ?? versiones.Last().VersionNumber;
+                var desde = from ?? versiones.Where(v => v.VersionNumber < hasta)
+                                             .Select(v => (int?)v.VersionNumber).LastOrDefault()
+                                   ?? versiones.First().VersionNumber;
+
+                var vDesde = versiones.FirstOrDefault(v => v.VersionNumber == desde);
+                var vHasta = versiones.FirstOrDefault(v => v.VersionNumber == hasta);
+                if (vDesde == null || vHasta == null) return HttpNotFound();
+
+                // Las dos salen del FHIR congelado, nunca de la entidad viva: una versión
+                // publicada es inmutable y la comparación tiene que dar siempre lo mismo.
+                var antes = ChequeAR.Application.Fhir.FhirQuestionnaireReader.ReadDomain(vDesde.FhirJson);
+                var despues = ChequeAR.Application.Fhir.FhirQuestionnaireReader.ReadDomain(vHasta.FhirJson);
+
+                var model = new QuestionnaireCompareViewModel
+                {
+                    Id = id,
+                    Title = q.Title,
+                    From = desde,
+                    To = hasta,
+                    FromDate = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(vDesde.PublishedAt),
+                    ToDate = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(vHasta.PublishedAt),
+                    FromAuthor = vDesde.PublishedBy,
+                    ToAuthor = vHasta.PublishedBy,
+                    ToChangeNote = vHasta.ChangeNote,
+                    Versions = versiones.Select(v => v.VersionNumber).ToList(),
+                    Diff = QuestionnaireVersionDiff.Compare(antes, despues)
+                };
+                return View(model);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return HttpNotFound();
             }
         }
 

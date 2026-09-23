@@ -32,8 +32,19 @@
             else { <span class="cq-badge cq-badge--archived">Archivado</span> }
         </div>
         <h1 class="cq-page-header__title">@Model.Title</h1>
-        <p class="cq-page-header__subtitle">Versión @Model.Version · @Model.Author · @Model.UpdatedAt</p>
+        <p class="cq-page-header__subtitle">Versión @(Model.SnapshotVersion ?? Model.Version) · @Model.Author · @Model.UpdatedAt</p>
     </div>
+    @if (Model.SnapshotVersion.HasValue)
+    {
+        <div class="alert alert-info cq-text-sm mt-3 mb-0">
+            Estás viendo la versión @Model.SnapshotVersion tal como se publicó.
+            @if (Model.SnapshotVersion.Value != Model.Version)
+            {
+                <text>La vigente es la v@(Model.Version).</text>
+            }
+            <a href="@Url.Action("History", new { id = Model.Id })">Volver al historial</a>
+        </div>
+    }
 
     @foreach (var g in Model.Groups)
     {

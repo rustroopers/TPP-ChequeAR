@@ -34,7 +34,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             ContractResolver = new CamelCasePropertyNamesContractResolver()
         };
 
-        public async Task<ActionResult> Index(string q = null, string type = null, bool includeInactive = false)
+        private const int PageSize = 20;
+
+        public async Task<ActionResult> Index(string q = null, string type = null, string status = null, int page = 1)
         {
             ViewBag.Title = "Variables";
             ViewBag.PageId = "variables";
@@ -48,13 +50,19 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 SearchTerm = q,
                 TypeFilter = type,
-                IncludeInactive = includeInactive
+                StatusFilter = status,
+                Page = page < 1 ? 1 : page,
+                PageSize = PageSize
             };
+
+            // Mismo filtro de estado que el listado de cuestionarios: vacío = todas.
+            bool? active = status == "active" ? true : status == "inactive" ? false : (bool?)null;
 
             try
             {
                 QuestionType? tipo = string.IsNullOrWhiteSpace(type) ? (QuestionType?)null : QuestionTypeMap.FromUi(type);
-                var pagina = await _variables.ListAsync(q, tipo, includeInactive, 0, 200);
+                var pagina = await _variables.ListAsync(q, tipo, active, (model.Page - 1) * PageSize, PageSize);
+                model.Total = pagina.Total;
                 foreach (var v in pagina.Items)
                 {
                     model.Variables.Add(new VariableListItem
@@ -67,7 +75,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Range = Range(v.MinValue, v.MaxValue),
                         SnomedCode = v.SnomedCode,
                         SnomedDisplay = v.SnomedDisplay,
-                        IsActive = v.IsActive
+                        IsActive = v.IsActive,
+                        CreatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.CreatedAt)
                     });
                 }
             }
@@ -98,8 +107,6 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var v = await _variables.GetAsync(id.Value);
                 if (v == null) return HttpNotFound();
                 dto = ClinicalVariableDtoMap.ToDto(v);
-                var uso = await _variables.GetUsageAsync(id.Value);
-                ViewBag.UsageCount = uso.QuestionCount;
             }
             else
             {
@@ -122,6 +129,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 if (dto == null)
                 {
                     TempData["Toast"] = "No se recibió ninguna variable para guardar.";
+                    TempData["ToastLevel"] = "error";
                     return RedirectToAction("Index");
                 }
 
@@ -131,27 +139,32 @@ namespace ChequeAR.Api.Controllers.Mvc
                     var actualizada = await _variables.UpdateAsync(model.Id.Value, entidad, User.Identity.Name);
                     if (actualizada == null) return HttpNotFound();
                     TempData["Toast"] = "Variable actualizada.";
+                    TempData["ToastLevel"] = "success";
                 }
                 else
                 {
                     await _variables.CreateAsync(entidad, User.Identity.Name);
                     TempData["Toast"] = "Variable creada.";
+                    TempData["ToastLevel"] = "success";
                 }
             }
             catch (ValidationFailedException ex)
             {
                 // Una regla por línea: el admin ve todo lo que tiene que corregir de una.
                 TempData["Toast"] = string.Join(" ", ex.Errors);
+                TempData["ToastLevel"] = "error";
                 return RedirectToAction("Details", new { id = model.Id });
             }
             catch (JsonException)
             {
                 TempData["Toast"] = "No se pudieron leer los datos del formulario.";
+                TempData["ToastLevel"] = "error";
                 return RedirectToAction("Details", new { id = model.Id });
             }
             catch (Exception)
             {
                 TempData["Toast"] = "No se pudieron guardar los cambios.";
+                TempData["ToastLevel"] = "error";
                 return RedirectToAction("Details", new { id = model.Id });
             }
 
@@ -171,10 +184,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = outcome == VariableDeleteOutcome.DeactivatedBecauseInUse
                     ? "La variable está en uso en algún cuestionario: se desactivó en vez de eliminarse."
                     : "Variable eliminada.";
+                TempData["ToastLevel"] = "success";
             }
             catch (Exception)
             {
                 TempData["Toast"] = "No se pudo dar de baja la variable.";
+                TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");
         }
@@ -186,10 +201,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 await _variables.SetActiveAsync(id, true, User.Identity.Name);
                 TempData["Toast"] = "Variable reactivada.";
+                TempData["ToastLevel"] = "success";
             }
             catch (Exception)
             {
                 TempData["Toast"] = "No se pudo reactivar la variable.";
+                TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");
         }

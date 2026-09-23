@@ -36,24 +36,24 @@ namespace ChequeAR.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool includeInactive, int skip, int take)
+        public async Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool? active, int skip, int take)
         {
             // Include primero: en EF6 un Include encadenado después de Skip/Take se ignora en
             // silencio y las opciones vuelven vacías.
-            IQueryable<ClinicalVariable> q = Filter(search, type, includeInactive)
+            IQueryable<ClinicalVariable> q = Filter(search, type, active)
                 .Include(v => v.Options)
-                .OrderBy(v => v.SortOrder).ThenBy(v => v.Name);
+                .OrderByDescending(v => v.CreatedAt).ThenBy(v => v.Name);
             if (skip > 0) q = q.Skip(skip);
             return await q.Take(take <= 0 ? 50 : take).ToListAsync();
         }
 
-        public Task<int> CountAsync(string search, QuestionType? type, bool includeInactive) =>
-            Filter(search, type, includeInactive).CountAsync();
+        public Task<int> CountAsync(string search, QuestionType? type, bool? active) =>
+            Filter(search, type, active).CountAsync();
 
-        private IQueryable<ClinicalVariable> Filter(string search, QuestionType? type, bool includeInactive)
+        private IQueryable<ClinicalVariable> Filter(string search, QuestionType? type, bool? active)
         {
             var q = _ctx.ClinicalVariables.AsQueryable();
-            if (!includeInactive) q = q.Where(v => v.IsActive);
+            if (active.HasValue) q = q.Where(v => v.IsActive == active.Value);
             if (type.HasValue) q = q.Where(v => v.Type == type.Value);
             if (!string.IsNullOrWhiteSpace(search))
             {

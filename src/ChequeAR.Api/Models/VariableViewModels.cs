@@ -8,7 +8,10 @@ namespace ChequeAR.Api.Models
     {
         public string SearchTerm { get; set; }
         public string TypeFilter { get; set; }
-        public bool IncludeInactive { get; set; }
+        public string StatusFilter { get; set; }
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; }
+        public int Total { get; set; }
         public List<VariableListItem> Variables { get; } = new List<VariableListItem>();
     }
 
@@ -26,6 +29,7 @@ namespace ChequeAR.Api.Models
         public string SnomedCode { get; set; }
         public string SnomedDisplay { get; set; }
         public bool IsActive { get; set; }
+        public string CreatedAt { get; set; }
     }
 
     /// <summary>

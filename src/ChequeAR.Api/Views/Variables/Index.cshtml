@@ -2,6 +2,8 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("variables.title");
+    var pageSize = Model.PageSize > 0 ? Model.PageSize : 20;
+    var totalPages = (int)Math.Ceiling((double)Model.Total / pageSize);
 }
 
 <header class="cq-page-header">
@@ -17,13 +19,14 @@
     <div class="alert alert-warning">@ViewBag.DataError</div>
 }
 
-@using (Html.BeginForm("Index", "Variables", FormMethod.Get, new { @class = "mb-3" }))
+@* Mismo formulario que el listado de cuestionarios: sin botón, cq-autofilter lo re-envía
+   a medida que se escribe o se cambia un filtro. *@
+@using (Html.BeginForm("Index", "Variables", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "variables" }))
 {
     <div class="row g-2 align-items-end">
         <div class="col-md-6">
             <label class="form-label cq-text-sm">Buscar</label>
-            @* Un solo campo: el servidor matchea contra nombre, código y concepto SNOMED.
-               Separarlo en dos inputs obligaría al admin a declarar cuál de los dos escribió. *@
+            @* Un solo campo: el servidor matchea contra nombre, código y concepto SNOMED. *@
             <input type="search" name="q" value="@Model.SearchTerm" class="form-control"
                    placeholder="Nombre, código o concepto SNOMED…" />
         </div>
@@ -43,13 +46,13 @@
                 }
             </select>
         </div>
-        <div class="col-md-3 d-flex gap-2 align-items-center">
-            <div class="form-check flex-grow-1">
-                <input class="form-check-input" type="checkbox" name="includeInactive" value="true"
-                       id="chkInactive" checked="@Model.IncludeInactive" />
-                <label class="form-check-label cq-text-sm" for="chkInactive">Incluir de baja</label>
-            </div>
-            <button type="submit" class="btn btn-secondary">@Cq.T("common.search")</button>
+        <div class="col-md-3">
+            <label class="form-label cq-text-sm">Estado</label>
+            <select name="status" class="form-select">
+                <option value="">Todos</option>
+                <option value="active" selected="@(Model.StatusFilter == "active")">Activa</option>
+                <option value="inactive" selected="@(Model.StatusFilter == "inactive")">De baja</option>
+            </select>
         </div>
     </div>
 }
@@ -71,14 +74,16 @@ else
         <thead>
             <tr>
                 <th>Nombre</th><th>Código</th><th>Tipo</th><th>Unidad</th>
-                <th>Rango</th><th>SNOMED CT</th><th>Estado</th><th class="text-end"></th>
+                <th>Rango</th><th>SNOMED CT</th><th>Estado</th>
+                <th>Creada <i class="bi bi-arrow-down" aria-hidden="true"></i></th>
+                <th class="text-end">@Cq.T("table.col.actions")</th>
             </tr>
         </thead>
         <tbody>
             @foreach (var v in Model.Variables)
             {
-                <tr>
-                    <td>@v.Name</td>
+                <tr class="cq-row--clickable" data-href="@Url.Action("Details", new { id = v.Id })">
+                    <td><a href="@Url.Action("Details", new { id = v.Id })" class="text-decoration-none fw-semibold">@v.Name</a></td>
                     <td><code>@v.Code</code></td>
                     <td class="cq-text-sm">@v.TypeLabel</td>
                     <td class="cq-text-sm">@(v.Unit ?? "—")</td>
@@ -98,11 +103,95 @@ else
                         @if (v.IsActive) { <span class="cq-badge cq-badge--published">Activa</span> }
                         else { <span class="cq-badge cq-badge--archived">De baja</span> }
                     </td>
+                    <td class="cq-text-sm cq-text-muted">@v.CreatedAt</td>
                     <td class="text-end">
-                        <a href="@Url.Action("Details", new { id = v.Id })" class="btn btn-sm btn-tertiary">Editar →</a>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-tertiary" data-bs-toggle="dropdown" aria-label="Acciones de @v.Name" title="Acciones">
+                                <i class="bi bi-three-dots"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="@Url.Action("Details", new { id = v.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
+                                <li><hr class="dropdown-divider" /></li>
+                                @if (v.IsActive)
+                                {
+                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-id="@v.Id" data-title="@v.Name"><i class="bi bi-trash me-1"></i> Dar de baja</button></li>
+                                }
+                                else
+                                {
+                                    <li>
+                                        @using (Html.BeginForm("Activate", "Variables", FormMethod.Post))
+                                        {
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="id" value="@v.Id" />
+                                            <button type="submit" class="dropdown-item"><i class="bi bi-arrow-counterclockwise me-1"></i> Reactivar</button>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </div>
                     </td>
                 </tr>
             }
         </tbody>
     </table>
+    <div class="d-flex justify-content-between align-items-center mt-3 cq-text-sm cq-text-muted">
+        <span>Mostrando @Model.Variables.Count de @Model.Total</span>
+        @if (totalPages > 1)
+        {
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, type = Model.TypeFilter, status = Model.StatusFilter, page = Model.Page - 1 })">‹</a></li>
+                    <li class="page-item active"><span class="page-link">@Model.Page</span></li>
+                    <li class="page-item @(Model.Page >= totalPages ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { q = Model.SearchTerm, type = Model.TypeFilter, status = Model.StatusFilter, page = Model.Page + 1 })">›</a></li>
+                </ul>
+            </nav>
+        }
+    </div>
+}
+
+@* Modal Dar de baja. El servicio decide si borra o desactiva según esté en uso, y el toast
+   dice cuál de las dos pasó. *@
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        @using (Html.BeginForm("Delete", "Variables", FormMethod.Post, new { @class = "modal-content" }))
+        {
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="deleteId" />
+            <div class="modal-header">
+                <h2 class="modal-title h3" id="deleteModalLabel">Dar de baja variable</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Querés dar de baja <strong id="deleteTitle"></strong>?</p>
+                <p class="cq-text-sm cq-text-muted mb-0">
+                    Si algún cuestionario la usa, no se elimina: se desactiva y deja de ofrecerse para
+                    cuestionarios nuevos. Lo ya armado sigue funcionando.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-danger">Dar de baja</button>
+            </div>
+        }
+    </div>
+</div>
+
+@section scripts {
+<script>
+    document.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-bs-target='#deleteModal']");
+        if (!btn) return;
+        document.getElementById("deleteId").value = btn.getAttribute("data-id");
+        document.getElementById("deleteTitle").textContent = btn.getAttribute("data-title");
+    });
+
+    // Fila entera clickeable, como en cuestionarios. Se ignora si el click salió del menú.
+    document.addEventListener("click", function (e) {
+        var row = e.target.closest("tr.cq-row--clickable");
+        if (!row) return;
+        if (e.target.closest("a, button, .dropdown, .dropdown-menu, input, label, form")) return;
+        var href = row.getAttribute("data-href");
+        if (href) window.location.href = href;
+    });
+</script>
 }

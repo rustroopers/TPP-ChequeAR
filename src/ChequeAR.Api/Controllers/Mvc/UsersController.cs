@@ -153,18 +153,22 @@ namespace ChequeAR.Api.Controllers.Mvc
                 });
 
                 TempData["Toast"] = "Cambios guardados.";
+                TempData["ToastLevel"] = "success";
             }
             catch (InvalidOperationException ex)
             {
                 TempData["Toast"] = ex.Message;
+                TempData["ToastLevel"] = "error";
             }
             catch (ArgumentException ex)
             {
                 TempData["Toast"] = ex.Message;
+                TempData["ToastLevel"] = "error";
             }
             catch (System.Exception)
             {
                 TempData["Toast"] = "No se pudieron guardar los cambios.";
+                TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");
         }

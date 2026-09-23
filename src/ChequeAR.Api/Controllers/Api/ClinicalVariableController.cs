@@ -41,7 +41,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             // type vacío = sin filtro. FromUi caería a String y filtraría de más.
             QuestionType? tipo = string.IsNullOrWhiteSpace(type) ? (QuestionType?)null : QuestionTypeMap.FromUi(type);
-            var pagina = await _service.ListAsync(q, tipo, includeInactive, _offset, _count);
+            var pagina = await _service.ListAsync(q, tipo, includeInactive ? (bool?)null : true, _offset, _count);
             return Ok(new
             {
                 total = pagina.Total,

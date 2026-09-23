@@ -72,11 +72,11 @@ namespace ChequeAR.Application.Services
             return _repo.GetAsync(id);
         }
 
-        public async Task<ClinicalVariablePage> ListAsync(string search, QuestionType? type, bool includeInactive, int skip, int take)
+        public async Task<ClinicalVariablePage> ListAsync(string search, QuestionType? type, bool? active, int skip, int take)
         {
             _access.EnsureCan(Permissions.QuestionnaireRead);
-            var items = await _repo.ListAsync(search, type, includeInactive, skip, take);
-            var total = await _repo.CountAsync(search, type, includeInactive);
+            var items = await _repo.ListAsync(search, type, active, skip, take);
+            var total = await _repo.CountAsync(search, type, active);
             return new ClinicalVariablePage { Items = items, Total = total };
         }
 

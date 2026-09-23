@@ -4,29 +4,11 @@
     bool esNueva = !Model.Id.HasValue;
     ViewBag.Title = esNueva ? "Nueva variable" : "Editar variable";
     string props = ViewBag.VariableProps as string;
-    int usage = ViewBag.UsageCount == null ? 0 : (int)ViewBag.UsageCount;
 }
 
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">@ViewBag.Title</h1>
-        <p class="cq-page-header__subtitle">
-            @if (esNueva)
-            {
-                <text>Definila una vez y los jefes la usan en cualquier cuestionario.</text>
-            }
-            else if (usage == 0)
-            {
-                <text>Todavía no la usa ningún cuestionario.</text>
-            }
-            else
-            {
-                <text>
-                    La usan @usage pregunta@(usage == 1 ? "" : "s") ya creada@(usage == 1 ? "" : "s").
-                    Los cambios no las modifican: cada una guardó la definición con la que se armó.
-                </text>
-            }
-        </p>
     </div>
     <div class="d-flex gap-2">
         <a href="@Url.Action("Index")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
@@ -51,25 +33,6 @@
                 <div class="cq-loading__label">@Cq.T("common.loading")</div>
             </div>
         </div>
-    </div>
-}
-
-@if (!esNueva)
-{
-    <div class="cq-card mt-3">
-        <h2 class="h3">Dar de baja</h2>
-        <p class="cq-text-sm cq-text-muted mb-2">
-            Si algún cuestionario la usa, la variable no se elimina: se desactiva, y deja de
-            ofrecerse para cuestionarios nuevos. Lo ya armado sigue funcionando.
-        </p>
-        @using (Html.BeginForm("Delete", "Variables", FormMethod.Post))
-        {
-            @Html.AntiForgeryToken()
-            <input type="hidden" name="id" value="@Model.Id" />
-            <button type="submit" class="btn btn-sm btn-danger">
-                <i class="bi bi-trash me-1"></i> Dar de baja
-            </button>
-        }
     </div>
 }
 

@@ -44,6 +44,39 @@ namespace ChequeAR.Application.Fhir
             PermissiveParsing = true
         });
 
+        /// <summary>
+        /// Igual que <see cref="Read"/>, pero devuelve la entidad de dominio: lo usan la vista
+        /// previa de una versión puntual y la comparación entre versiones, que necesitan la
+        /// misma forma que la entidad viva (grupos con Id, preguntas con GroupId) para reusar
+        /// el armado de pantalla del cuestionario actual.
+        ///
+        /// Parser permisivo por el mismo motivo que Read: las versiones viejas son inmutables.
+        /// </summary>
+        public static ChequeAR.Domain.Entities.Questionnaire ReadDomain(string fhirJson)
+        {
+            if (string.IsNullOrWhiteSpace(fhirJson)) return null;
+
+            FhirQuestionnaire resource;
+            try { resource = Parser.Parse<FhirQuestionnaire>(fhirJson); }
+            catch (Exception) { return null; }
+            var q = FhirQuestionnaireParser.ToDomain(resource);
+            if (q == null) return null;
+
+            // El parser cuelga las preguntas de cada grupo; la entidad persistida las tiene
+            // planas en Questions con GroupId. Se aplana para que el resto no distinga.
+            foreach (var g in q.Groups)
+            {
+                g.Id = Guid.NewGuid();
+                foreach (var p in g.Questions)
+                {
+                    p.GroupId = g.Id;
+                    q.Questions.Add(p);
+                }
+                g.Questions.Clear();
+            }
+            return q;
+        }
+
         public static RenderableQuestionnaire Read(string fhirJson)
         {
             if (string.IsNullOrWhiteSpace(fhirJson)) return null;
