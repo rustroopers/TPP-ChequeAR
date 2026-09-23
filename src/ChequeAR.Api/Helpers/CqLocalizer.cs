@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Claims;
-using System.Threading;
 using System.Web;
 using System.Web.Hosting;
 using ChequeAR.Application.Security;
@@ -31,21 +30,10 @@ namespace ChequeAR.Api.Helpers
         public static string T(string key, object args = null)
         {
             if (string.IsNullOrEmpty(key)) return key;
-            var culture = CurrentCulture();
 
-            var dict = LoadCulture(culture) ?? LoadCulture(DefaultCulture);
-            string text = null;
-            if (dict == null || !dict.TryGetValue(key, out text))
-            {
-                // Fallback explícito a es-AR si la cultura activa no es esa.
-                if (!string.Equals(culture, DefaultCulture, StringComparison.OrdinalIgnoreCase))
-                {
-                    var fallback = LoadCulture(DefaultCulture);
-                    if (fallback != null && fallback.TryGetValue(key, out text)) { /* hit */ }
-                    else text = null;
-                }
-            }
-            if (string.IsNullOrEmpty(text)) return "[[" + key + "]]";
+            var dict = LoadCulture(DefaultCulture);
+            if (dict == null || !dict.TryGetValue(key, out var text) || string.IsNullOrEmpty(text))
+                return "[[" + key + "]]";
             if (args == null) return text;
             return ApplyArgs(text, args);
         }
@@ -88,27 +76,6 @@ namespace ChequeAR.Api.Helpers
             return "home.greeting.evening";
         }
 
-        public static string CurrentCulture()
-        {
-            var ctx = HttpContext.Current;
-            if (ctx != null)
-            {
-                var cookie = ctx.Request?.Cookies?["chequear_lang"];
-                if (cookie != null && !string.IsNullOrEmpty(cookie.Value)) return cookie.Value;
-            }
-            return DefaultCulture;
-        }
-
-        public static IReadOnlyList<string> AvailableCultures()
-        {
-            var dir = HostingEnvironment.MapPath("~/Content/i18n/");
-            if (dir == null || !Directory.Exists(dir)) return Array.Empty<string>();
-            return Directory.GetFiles(dir, "*.json")
-                            .Select(Path.GetFileNameWithoutExtension)
-                            .OrderBy(x => x)
-                            .ToList();
-        }
-
         private static Dictionary<string, string> LoadCulture(string culture)
         {
             if (string.IsNullOrEmpty(culture)) return null;
@@ -140,27 +107,6 @@ namespace ChequeAR.Api.Helpers
                 result = result.Replace("{" + p.Name + "}", value);
             }
             return result;
-        }
-    }
-
-    /// OWIN-side culture middleware: setea Thread.CurrentCulture / CurrentUICulture
-    /// para que ASP.NET formatee fechas/números con la cultura correcta.
-    public class CultureMiddleware : Microsoft.Owin.OwinMiddleware
-    {
-        public CultureMiddleware(Microsoft.Owin.OwinMiddleware next) : base(next) { }
-
-        public override async System.Threading.Tasks.Task Invoke(Microsoft.Owin.IOwinContext context)
-        {
-            var lang = context.Request.Cookies["chequear_lang"];
-            if (string.IsNullOrEmpty(lang)) lang = "es-AR";
-            try
-            {
-                var culture = new System.Globalization.CultureInfo(lang);
-                Thread.CurrentThread.CurrentCulture = culture;
-                Thread.CurrentThread.CurrentUICulture = culture;
-            }
-            catch { /* ignore invalid culture code */ }
-            await Next.Invoke(context);
         }
     }
 }

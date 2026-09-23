@@ -180,7 +180,6 @@
     <Content Include="Content\img\logo-violeta-garrahan.png" />
     <Content Include="Content\img\favicon-512.png" />
     <Content Include="Content\i18n\es-AR.json" />
-    <Content Include="Content\i18n\en.json" />
     <Content Include="Views\Account\Login.cshtml" />
     <Content Include="Views\Account\SessionExpired.cshtml" />
     <Content Include="Views\Account\Profile.cshtml" />

@@ -34,7 +34,6 @@ namespace ChequeAR.Api
                 }
             });
 
-            app.Use<Helpers.CultureMiddleware>();
             app.Use<AuditMiddleware>();
         }
     }

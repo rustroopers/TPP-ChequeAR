@@ -5,9 +5,6 @@
   "navbar.profile": "Mi perfil",
   "navbar.logout": "Cerrar sesión",
   "navbar.brand": "ChequeAR",
-  "navbar.lang.label": "Cambiar idioma",
-  "navbar.lang.es": "Español",
-  "navbar.lang.en": "English",
 
   "sidebar.group.work": "Clínico",
   "sidebar.group.admin": "Administración",
@@ -99,7 +96,6 @@
   "home.kpi.specialties": "Especialidades",
 
   "q1.title": "Cuestionarios",
-  "q1.subtitle": "Definición y publicación de fichas paramétricas",
   "q1.new": "Nuevo cuestionario",
   "q1.filter.specialty": "Especialidad",
   "q1.filter.status": "Estado",
@@ -140,7 +136,7 @@
   "variables.subtitle": "Vocabulario con el que se arman los cuestionarios",
   "variables.new": "Nueva variable",
   "variables.empty.title": "Todavía no hay variables cargadas",
-  "variables.empty.desc": "Las variables son el vocabulario con el que los jefes arman sus cuestionarios: hasta que cargues al menos una, nadie puede crear uno.",
+  "variables.empty.desc": "Si variables en el sistema.",
   "variables.usage": "Uso",
   "variables.inherited": "Heredado de la variable",
 
