@@ -50,68 +50,8 @@
     <script src="@asset("~/Scripts/cq-autofilter.js")"></script>
     <script src="@asset("~/Scripts/cq-select-enhance.js")"></script>
     <script>
-        // Sidebar: en desktop (>1024px) colapsa a modo íconos y persiste en
-        // localStorage. En mobile (<=1024px) la sidebar es un drawer off-canvas:
-        // el mismo toggle abre/cierra `cq-sidebar-open` (sin persistir: no tiene
-        // sentido reabrirlo automáticamente en la próxima navegación), y un click
-        // fuera o en un item la cierra. Antes en mobile el sidebar estaba oculto y
-        // no había manera de navegar.
-        (function () {
-            // Ya no hay hamburguesa: en desktop la sidebar siempre queda
-            // colapsada y se expande al hover. En mobile queda como estaba
-            // (drawer off-canvas — sin toggle por ahora).
-            var root = document.body;
-            var mq = window.matchMedia("(max-width: 1024px)");
-            if (!mq.matches) root.classList.add("cq-sidebar-collapsed");
-
-            // Fresh page load en desktop: si el usuario venia clickeando un
-            // item de la sidebar (o entra con el mouse ya sobre ella), el
-            // :hover CSS dispararia la expansion apenas se mueva un pixel.
-            // Aplicamos force-collapse hasta la primera "salida real" del
-            // sidebar — mouseleave si estaba dentro, o mousemove fuera del
-            // sidebar si nunca estuvo — y ahi limpiamos para que el siguiente
-            // hover expanda normal.
-            if (!mq.matches) {
-                var initSb = document.querySelector(".cq-sidebar");
-                if (initSb) {
-                    initSb.classList.add("cq-sidebar--force-collapse");
-                    var clearFn = function () {
-                        initSb.classList.remove("cq-sidebar--force-collapse");
-                        initSb.removeEventListener("mouseleave", clearFn);
-                        document.removeEventListener("mousemove", maybeClear);
-                    };
-                    var maybeClear = function (ev) {
-                        if (!initSb.contains(ev.target)) clearFn();
-                    };
-                    initSb.addEventListener("mouseleave", clearFn);
-                    document.addEventListener("mousemove", maybeClear);
-                }
-            }
-
-            document.addEventListener("click", function (e) {
-                // Al clickear un item, forzamos colapso visual inmediato antes
-                // de que arranque la navegación. La clase se limpia sola al
-                // sacar el cursor para no bloquear el próximo hover.
-                if (!mq.matches && root.classList.contains("cq-sidebar-collapsed")) {
-                    var item = e.target.closest(".cq-sidebar__item");
-                    if (item) {
-                        var sb = document.querySelector(".cq-sidebar");
-                        if (sb) {
-                            sb.classList.add("cq-sidebar--force-collapse");
-                            sb.addEventListener("mouseleave", function onLeave() {
-                                sb.classList.remove("cq-sidebar--force-collapse");
-                                sb.removeEventListener("mouseleave", onLeave);
-                            });
-                        }
-                    }
-                }
-            });
-
-            mq.addEventListener("change", function () {
-                if (mq.matches) root.classList.remove("cq-sidebar-collapsed");
-                else root.classList.add("cq-sidebar-collapsed");
-            });
-        })();
+        // Sidebar: en desktop queda siempre desplegada (240px, sin colapsar a
+        // íconos ni expandir al hover).
 
         // Bootstrap tooltips — activa todo [data-bs-toggle="tooltip"] al cargar.
         // Los tooltips ahora se reservan para etiquetar íconos sin texto (Acciones,
