@@ -5,7 +5,7 @@ using Hl7.Fhir.Model;
 namespace ChequeAR.Application.Fhir
 {
     /// <summary>
-    /// Las dos extensiones propias de ChequeAR. Existen porque hay información del dominio
+    /// Las extensiones propias de ChequeAR. Existen porque hay información del dominio
     /// que no tiene lugar nativo en FHIR, y usar el mecanismo de extensión del estándar es
     /// justamente la forma correcta de transportarla sin inventar un formato paralelo.
     ///
@@ -49,6 +49,18 @@ namespace ChequeAR.Application.Fhir
         /// </summary>
         public const string QuestionnaireVersionIdUrl = Base + "questionnaire-version-id";
 
+        /// <summary>
+        /// Variable del catálogo de la que proviene la pregunta.
+        ///
+        /// Todo lo que la variable define (tipo, unidad, rango, opciones, código) viaja
+        /// denormalizado en el item, como manda el estándar: un consumidor externo lee el
+        /// recurso completo sin saber que existe un catálogo. Lo que no tiene lugar nativo es
+        /// la referencia en sí, y sin ella el par builder/parser la perdería en CADA guardado —
+        /// el editor no podría decir de qué variable viene una pregunta, ni avisar cuando esa
+        /// variable cambió.
+        /// </summary>
+        public const string QuestionVariableIdUrl = Base + "question-variable-id";
+
         // ---- Acceso genérico ----
 
         public static void SetString(IExtendable target, string url, string value)
@@ -89,6 +101,20 @@ namespace ChequeAR.Application.Fhir
 
         public static string GetQuestionnaireTerm(IExtendable resource)
             => GetString(resource, QuestionnaireTermUrl);
+
+        public static void SetVariableId(IExtendable item, Guid? variableId)
+        {
+            if (!variableId.HasValue || variableId.Value == Guid.Empty) { SetString(item, QuestionVariableIdUrl, null); return; }
+            SetString(item, QuestionVariableIdUrl, variableId.Value.ToString());
+        }
+
+        /// <summary>Null si la extensión falta o no contiene un Guid legible.</summary>
+        public static Guid? GetVariableId(IExtendable item)
+        {
+            var raw = GetString(item, QuestionVariableIdUrl);
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            return Guid.TryParse(raw, out var parsed) ? parsed : (Guid?)null;
+        }
 
         public static void SetQuestionnaireVersionId(IExtendable response, Guid versionId)
         {

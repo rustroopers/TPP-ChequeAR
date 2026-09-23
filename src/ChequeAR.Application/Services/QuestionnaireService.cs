@@ -38,6 +38,7 @@ namespace ChequeAR.Application.Services
         private readonly ISpecialtyGuard _guard;
         private readonly SpecialtyCatalogService _catalog;
         private readonly IAccessGuard _access;
+        private readonly IClinicalVariableRepository _variables;
 
         public QuestionnaireService(
             IQuestionnaireRepository repo,
@@ -46,7 +47,8 @@ namespace ChequeAR.Application.Services
             AuditDispatcher audit,
             ISpecialtyGuard guard,
             SpecialtyCatalogService catalog,
-            IAccessGuard access)
+            IAccessGuard access,
+            IClinicalVariableRepository variables)
         {
             _repo = repo;
             _responses = responses;
@@ -55,6 +57,7 @@ namespace ChequeAR.Application.Services
             _guard = guard;
             _catalog = catalog;
             _access = access;
+            _variables = variables;
         }
 
         // ── Lecturas ──────────────────────────────────────────────────────────────────
@@ -163,6 +166,10 @@ namespace ChequeAR.Application.Services
             q.CreatedAt = DateTime.UtcNow;
             q.UpdatedAt = DateTime.UtcNow;
 
+            // Antes de AssignChildIds: el snapshot genera las AnswerOption desde la variable,
+            // y tienen que existir para que ahí abajo reciban Id y OrderIndex.
+            await BindVariablesAsync(q, new HashSet<Guid>());
+
             // Asignar PKs/FKs a las entidades hijas: vienen del cliente sin Id (Guid.Empty),
             // y EF no genera Guids automáticamente -> sin esto, 2+ hijas colisionan en la PK.
             AssignChildIds(q);
@@ -170,6 +177,56 @@ namespace ChequeAR.Application.Services
             await _repo.AddAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + q.Id, userId));
             return q;
+        }
+
+        /// <summary>
+        /// Todas las preguntas del cuestionario, estén sueltas o dentro de una sección.
+        /// </summary>
+        private static IEnumerable<Question> AllQuestions(Questionnaire q)
+        {
+            foreach (var question in q.Questions ?? new List<Question>()) yield return question;
+            foreach (var g in q.Groups ?? new List<QuestionGroup>())
+                foreach (var question in g.Questions ?? new List<Question>()) yield return question;
+        }
+
+        /// <summary>
+        /// Regla central de la feature: toda pregunta proviene de una variable del catálogo.
+        /// Acá se verifica y se copia la definición de la variable a la pregunta.
+        ///
+        /// Vive en el servicio y no en el esquema ni en el perfil FHIR a propósito. En la base,
+        /// un VariableId NOT NULL convertiría un recurso externo mal formado en un ORA-01400
+        /// (500) en vez del 422 que corresponde; en el perfil, sería una restricción sobre una
+        /// tabla interna de ChequeAR, que no es lo que un StructureDefinition describe.
+        ///
+        /// <paramref name="yaEnUso"/> son las variables que el cuestionario persistido ya tenía:
+        /// esas pasan aunque estén inactivas, porque desactivar una variable no debe romper el
+        /// guardado de un borrador que la venía usando.
+        /// </summary>
+        private async Task BindVariablesAsync(Questionnaire target, HashSet<Guid> yaEnUso)
+        {
+            var questions = AllQuestions(target).ToList();
+            if (questions.Count == 0) return;
+
+            var errors = new List<string>();
+            var sinVariable = questions.Where(x => !x.VariableId.HasValue || x.VariableId.Value == Guid.Empty).ToList();
+            foreach (var x in sinVariable)
+                errors.Add("La pregunta '" + (x.LinkId ?? x.Text) + "' no proviene del catálogo de variables.");
+
+            var ids = questions.Where(x => x.VariableId.HasValue && x.VariableId.Value != Guid.Empty)
+                               .Select(x => x.VariableId.Value).Distinct().ToList();
+            // Una sola consulta para todo el cuestionario, no una por pregunta.
+            var found = (await _variables.GetManyAsync(ids)).ToDictionary(v => v.Id);
+
+            foreach (var id in ids.Where(i => !found.ContainsKey(i)))
+                errors.Add("La variable " + id + " no existe en el catálogo.");
+
+            foreach (var v in found.Values.Where(v => !v.IsActive && !yaEnUso.Contains(v.Id)))
+                errors.Add("La variable '" + v.Name + "' está inactiva y no puede agregarse a un cuestionario.");
+
+            if (errors.Count > 0) throw new ValidationFailedException(errors);
+
+            foreach (var question in questions)
+                ClinicalVariableSnapshot.Apply(question, found[question.VariableId.Value]);
         }
 
         private static void AssignChildIds(Questionnaire q)
@@ -270,6 +327,11 @@ namespace ChequeAR.Application.Services
             if (hasStructure)
             {
                 var replacement = new Questionnaire { Id = q.Id, Groups = patch.Groups, Questions = patch.Questions };
+                // Las variables que el cuestionario YA usaba se aceptan aunque estén dadas de
+                // baja: que el Administrador desactive una variable no debe romper el guardado
+                // de un borrador ajeno que la tenía desde antes. Lo que se bloquea es el uso nuevo.
+                var yaEnUso = new HashSet<Guid>(AllQuestions(q).Where(x => x.VariableId.HasValue).Select(x => x.VariableId.Value));
+                await BindVariablesAsync(replacement, yaEnUso);
                 AssignChildIds(replacement);
                 await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
             }
@@ -298,6 +360,14 @@ namespace ChequeAR.Application.Services
             if (q == null) throw new InvalidOperationException("Not found");
             _guard.EnsureAllows(q.SpecialtyCode);
             if (!q.CanPublish()) throw new InvalidOperationException("Questionnaire cannot be published in current state");
+
+            // Chequeo defensivo antes de congelar: una versión publicada tiene que ser
+            // reproducible, y una pregunta sin variable no se puede explicar contra el catálogo.
+            // Es barato y evita dejar un FhirJson congelado que nadie puede auditar después.
+            var huerfanas = AllQuestions(q).Where(x => !x.VariableId.HasValue).Select(x => x.LinkId).ToList();
+            if (huerfanas.Count > 0)
+                throw new ValidationFailedException(huerfanas
+                    .Select(l => "La pregunta '" + l + "' no proviene del catálogo de variables y no se puede publicar."));
 
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
 
@@ -395,7 +465,11 @@ namespace ChequeAR.Application.Services
                 OrderIndex = source.OrderIndex,
                 ValidationJson = source.ValidationJson,
                 EnableWhenJson = source.EnableWhenJson,
-                CodingJson = source.CodingJson
+                CodingJson = source.CodingJson,
+                // Se copia la revisión del origen y NO la vigente: el clon nace igual a lo que
+                // se clonó. Si la variable cambió en el medio, el editor lo avisa en los dos.
+                VariableId = source.VariableId,
+                VariableRevision = source.VariableRevision
             };
             foreach (var opt in (source.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex))
                 copy.Options.Add(new AnswerOption
@@ -403,6 +477,8 @@ namespace ChequeAR.Application.Services
                     Value = opt.Value,
                     Display = opt.Display,
                     Code = opt.Code,
+                    SnomedCode = opt.SnomedCode,
+                    SnomedDisplay = opt.SnomedDisplay,
                     OrderIndex = opt.OrderIndex
                 });
             return copy;

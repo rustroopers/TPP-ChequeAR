@@ -1,4 +1,4 @@
-{
+﻿{
   "_lang": "en",
   "_label": "English",
 
@@ -17,6 +17,7 @@
   "sidebar.reports": "Reports",
   "sidebar.audit": "Audit",
   "sidebar.users": "Users",
+  "sidebar.variables": "Variables",
   "sidebar.integrations": "Integrations",
 
   "common.search": "Search",
@@ -134,6 +135,14 @@
 
   "audit.title": "Audit",
   "audit.subtitle": "System events",
+
+  "variables.title": "Clinical variables",
+  "variables.subtitle": "The vocabulary questionnaires are built from",
+  "variables.new": "New variable",
+  "variables.empty.title": "No variables yet",
+  "variables.empty.desc": "Variables are the vocabulary heads use to build questionnaires: until you add one, nobody can create a questionnaire.",
+  "variables.usage": "Usage",
+  "variables.inherited": "Inherited from the variable",
 
   "users.title": "Users",
   "users.subtitle": "Account, role and specialty management",

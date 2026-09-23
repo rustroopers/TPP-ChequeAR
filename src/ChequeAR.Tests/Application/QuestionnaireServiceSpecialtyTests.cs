@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
@@ -20,11 +20,12 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IQuestionnaireRepository> _repo = new Mock<IQuestionnaireRepository>();
         private readonly Mock<IQuestionnaireResponseRepository> _responses = new Mock<IQuestionnaireResponseRepository>();
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
+        private readonly ClinicalVariable _peso = TestHelpers.Variable("peso");
 
         private QuestionnaireService Sut(ISpecialtyGuard guard, SpecialtyCatalogService catalog = null, IAccessGuard access = null)
             => new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object,
                 TestHelpers.NoopAuditDispatcher(), guard, catalog ?? TestHelpers.CatalogWith(),
-                access ?? TestHelpers.UnrestrictedAccess());
+                access ?? TestHelpers.UnrestrictedAccess(), TestHelpers.VariableRepoWith(_peso));
 
         [Fact]
         public async Task GetAsync_FueraDeScope_Lanza()

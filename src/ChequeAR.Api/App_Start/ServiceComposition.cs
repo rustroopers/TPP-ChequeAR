@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
@@ -131,6 +131,7 @@ namespace ChequeAR.Api.App_Start
             Register<IRefreshTokenRepository>(() => new RefreshTokenRepository(Resolve<ChequeARDbContext>()));
             Register<ISavedReportRepository>(() => new SavedReportRepository(Resolve<ChequeARDbContext>()));
             Register<ISpecialtyRepository>(() => new SpecialtyRepository(Resolve<ChequeARDbContext>()));
+            Register<IClinicalVariableRepository>(() => new ClinicalVariableRepository(Resolve<ChequeARDbContext>()));
 
             // Sin servidor FHIR del hospital, se proyecta el mismo dataset que las vistas
             // VW_* (ver MockHospitalFhirClient): una sola fuente, dos protocolos.
@@ -203,13 +204,17 @@ namespace ChequeAR.Api.App_Start
             Register<QuestionnaireService>(() => new QuestionnaireService(
                 Resolve<IQuestionnaireRepository>(), Resolve<IQuestionnaireResponseRepository>(),
                 Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>(), Resolve<SpecialtyCatalogService>(),
-                Resolve<IAccessGuard>()));
+                Resolve<IAccessGuard>(), Resolve<IClinicalVariableRepository>()));
             Register<QuestionnaireResponseService>(() => new QuestionnaireResponseService(
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
                 Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>(), Resolve<IAccessGuard>()));
             Register<AuditQueryService>(() => new AuditQueryService(Resolve<IAuditRepository>()));
             Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>(), Resolve<AuditDispatcher>(), Resolve<ISpecialtyGuard>()));
             Register<UserService>(() => new UserService(Resolve<IUserRepository>(), Resolve<SpecialtyCatalogService>()));
+            // Sin caché, a diferencia de SpecialtyCatalogService: el Administrador edita el
+            // catálogo en vivo y un alta recién hecha tiene que aparecer en el editor ya.
+            Register<ClinicalVariableService>(() => new ClinicalVariableService(
+                Resolve<IClinicalVariableRepository>(), _audit, Resolve<IAccessGuard>()));
             Register<TerminologyService>(() => new TerminologyService(Resolve<ITerminologyClient>()));
             Register<HomeDashboardService>(() => new HomeDashboardService(
                 Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
@@ -252,6 +257,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Api.PatientTrendController>(() => new Controllers.Api.PatientTrendController(Resolve<PatientTrendService>()));
             Register<Controllers.Api.EncounterController>(() => new Controllers.Api.EncounterController(Resolve<PatientService>()));
             Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<UserService>()));
+            Register<Controllers.Api.ClinicalVariableController>(() => new Controllers.Api.ClinicalVariableController(Resolve<ClinicalVariableService>()));
             Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));
             Register<Controllers.Api.SavedReportController>(() => new Controllers.Api.SavedReportController(Resolve<SavedReportService>(), Resolve<QuestionnaireService>()));
             Register<Controllers.Api.SpecialtyController>(() => new Controllers.Api.SpecialtyController(Resolve<SpecialtyCatalogService>(), Resolve<ISpecialtyGuard>()));
@@ -261,7 +267,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Mvc.AccountController>(() => new Controllers.Mvc.AccountController(
                 Resolve<ICredentialAuthenticator>(), Resolve<UserService>(), Resolve<SpecialtyCatalogService>()));
             Register<Controllers.Mvc.QuestionnairesController>(() => new Controllers.Mvc.QuestionnairesController(
-                Resolve<QuestionnaireService>(), Resolve<SpecialtyCatalogService>()));
+                Resolve<QuestionnaireService>(), Resolve<SpecialtyCatalogService>(), Resolve<ClinicalVariableService>()));
             Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(
                 Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>(), Resolve<AuditQueryService>(),
                 Resolve<SpecialtyCatalogService>()));
@@ -270,6 +276,7 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(
                 Resolve<AuditQueryService>(), Resolve<QuestionnaireService>()));
             Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<UserService>(), Resolve<SpecialtyCatalogService>()));
+            Register<Controllers.Mvc.VariablesController>(() => new Controllers.Mvc.VariablesController(Resolve<ClinicalVariableService>()));
             Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController());
             Register<Controllers.Mvc.ErrorController>(() => new Controllers.Mvc.ErrorController());
         }

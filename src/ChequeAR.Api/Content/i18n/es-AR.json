@@ -1,4 +1,4 @@
-{
+﻿{
   "_lang": "es-AR",
   "_label": "Español",
 
@@ -17,6 +17,7 @@
   "sidebar.reports": "Reportes",
   "sidebar.audit": "Auditoría",
   "sidebar.users": "Usuarios",
+  "sidebar.variables": "Variables",
   "sidebar.integrations": "Integraciones",
 
   "common.search": "Buscar",
@@ -134,6 +135,14 @@
 
   "audit.title": "Auditoría",
   "audit.subtitle": "Eventos del sistema",
+
+  "variables.title": "Variables clínicas",
+  "variables.subtitle": "Vocabulario con el que se arman los cuestionarios",
+  "variables.new": "Nueva variable",
+  "variables.empty.title": "Todavía no hay variables cargadas",
+  "variables.empty.desc": "Las variables son el vocabulario con el que los jefes arman sus cuestionarios: hasta que cargues al menos una, nadie puede crear uno.",
+  "variables.usage": "Uso",
+  "variables.inherited": "Heredado de la variable",
 
   "users.title": "Usuarios",
   "users.subtitle": "Gestión de cuentas, roles y especialidades",

@@ -106,7 +106,14 @@
                             code: q.code,
                             codeDisplay: q.codeDisplay,
                             term: q.term,
-                            options: q.options && q.options.length ? q.options.slice() : undefined
+                            options: q.options && q.options.length ? q.options.slice() : undefined,
+                            // Origen de la pregunta. variableRevision es la revision con la que
+                            // se armo; compararla contra variableCurrentRevision es lo que
+                            // permite avisar que el Administrador edito la variable despues.
+                            variableId: q.variableId,
+                            variableName: q.variableName,
+                            variableRevision: q.variableRevision,
+                            variableCurrentRevision: q.variableCurrentRevision
                         };
                     })
                 };
@@ -127,16 +134,17 @@
                 return mergePlanAll.value.filter(function (e) { return e.needsChoice; });
             });
 
-            // Los códigos coinciden con QuestionType del backend (bindeo por nombre,
-            // case-insensitive) y con los que dibuja questionnaire-renderer. Antes de
-            // sumar uno acá hay que poder renderizarlo allá, o queda una pregunta que se
-            // puede crear pero no responder.
+            // Solo para MOSTRAR de que tipo es una pregunta. Desde el catalogo de variables
+            // el tipo ya no se elige aca: lo define el Administrador al cargar la variable, y
+            // el panel de propiedades lo muestra con candado.
             var types = [
                 { code: 'string',     label: 'Texto corto',     icon: 'bi-fonts' },
                 { code: 'text',       label: 'Texto largo',     icon: 'bi-textarea-t' },
-                // "Escala" no se ofrece más para preguntas nuevas: es lo mismo que un Número
-                // con Min/Max. Se deja fuera de esta lista pero no del resto del editor/lectura,
-                // para no romper las preguntas ya publicadas con este tipo.
+                // "Escala" vuelve a la lista: cuando ésta era el menú de tipos creables se la
+                // excluía a propósito (es lo mismo que un Número con Min/Max), pero ahora sólo
+                // sirve para MOSTRAR el tipo -y una variable de escala del catálogo apareciía
+                // como "scale" crudo en el selector y en el panel de propiedades-.
+                { code: 'scale',      label: 'Escala',          icon: 'bi-sliders' },
                 { code: 'integer',    label: 'Número',          icon: 'bi-123' },
                 { code: 'decimal',    label: 'Decimal',         icon: 'bi-percent' },
                 { code: 'boolean',    label: 'Booleano',        icon: 'bi-toggle-on' },
@@ -153,6 +161,12 @@
 
             function selectQuestion(g, q) { selected.value = { group: g, question: q }; }
 
+            // El panel de propiedades MUESTRA el tipo; ya no lo deja elegir.
+            function typeLabel(code) {
+                for (var i = 0; i < types.length; i++) if (types[i].code === code) return types[i].label;
+                return code || '-';
+            }
+
             // --- Wizard (5 pasos) ----------------------------------------------------
             // Meta / Estructura / Códigos / Vista previa / Publicación.
             // Ahora el stepper SÍ es candado: no se puede saltar a un paso si el
@@ -165,7 +179,7 @@
                 { key: 'meta',      label: 'Metadatos',    icon: 'bi-info-circle',
                   help: 'Ponele un título que un colega reconozca desde el listado. La especialidad determina bajo qué grupo aparece en los reportes.' },
                 { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3',
-                  help: 'Agregá secciones y preguntas. Los códigos SNOMED se cargan y verifican solos desde el panel Propiedades. Podés condicionar preguntas a otras anteriores.' },
+                  help: 'Agregá secciones y elegí variables del catálogo. De cada una podés cambiar el enunciado y si es obligatoria; el tipo, la unidad, el rango y el código los define el Administrador. Podés condicionar preguntas a otras anteriores.' },
                 { key: 'preview',   label: 'Vista previa', icon: 'bi-eye',
                   help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revisá sus condiciones.' },
                 { key: 'publish',   label: 'Publicación',  icon: 'bi-send',
@@ -245,12 +259,6 @@
                 });
                 return out;
             });
-            var codingProgress = Vue.computed(function () {
-                var all = allQuestionsFlat.value;
-                var codificadas = all.filter(function (x) { return !!x.question.code; }).length;
-                return { done: codificadas, total: all.length };
-            });
-
             // Blockers para publicar, calculados una vez y reusados en el paso 5.
             var publishBlockers = Vue.computed(function () {
                 var out = [];
@@ -360,37 +368,10 @@
             /// Familia de valor que produce cada tipo al responderse. Cambiar de tipo
             /// dentro de la misma familia no invalida una condición existente; cambiar de
             /// familia sí, porque el valor esperado guardado deja de ser comparable.
-            function answerKind(type) {
-                if (type === 'boolean') return 'boolean';
-                if (['integer', 'decimal', 'scale'].indexOf(type) >= 0) return 'number';
-                if (['choice', 'openChoice'].indexOf(type) >= 0) return 'choice';
-                if (type === 'attachment') return 'attachment';   // no comparable: familia propia
-                return 'text';
-            }
-
-            function onTypeChange(newType) {
-                var q = selected.value.question;
-                var previo = q.type;
-                if (!newType || newType === previo) return;
-                q.type = newType;
-
-                // Las opciones pertenecen a los tipos de opción. Si quedan colgadas al
-                // salir de esa familia, buildPayload las sigue mandando y el cuestionario
-                // se publica con answerOption en una pregunta de texto.
-                if (answerKind(newType) === 'choice') {
-                    if (!(q.options && q.options.length)) {
-                        q.options = ['Opción 1', 'Opción 2'];
-                    }
-                } else if (answerKind(previo) === 'choice') {
-                    q.options = undefined;
-                }
-
-                if (answerKind(newType) !== answerKind(previo)) {
-                    dropConditions(dependentsOf([q.linkId]),
-                        'dependían de "' + q.text + '", que cambió de tipo');
-                }
-                dirty.value = true;
-            }
+            // answerKind/onTypeChange se eliminaron con el catalogo de variables: el tipo de
+            // una pregunta ya no se puede cambiar desde el editor -lo define la variable-, asi
+            // que no queda ningun momento en que haya que reconciliar opciones ni condiciones
+            // por un cambio de tipo hecho aca.
 
             // Condiciones ya rotas en lo que vino de la base: el árbol pudo haberse
             // guardado así antes de que existiera esta capa. Se listan en un cartel en vez
@@ -400,13 +381,35 @@
             var issues = Vue.computed(function () {
                 var known = {};
                 allQuestions().forEach(function (q) { if (q.linkId) known[q.linkId] = true; });
-                return allQuestions()
+                var out = allQuestions()
                     .filter(function (q) {
                         return q.enableWhen && q.enableWhen.question && !known[q.enableWhen.question];
                     })
                     .map(function (q) {
                         return { question: q, detail: '"' + q.text + '" depende de una pregunta que ya no existe: nunca se va a mostrar.' };
                     });
+
+                // Sin variable el server rechaza el guardado ENTERO. Puede pasar al importar
+                // preguntas de un cuestionario anterior al catalogo: se lista cual es, en vez
+                // de que el guardado falle sin decir donde.
+                allQuestions().forEach(function (q) {
+                    if (!q.variableId) {
+                        out.push({ question: q, detail: '"' + (q.text || q.linkId) + '" no proviene de ninguna variable del catalogo: hay que reemplazarla o eliminarla.' });
+                    }
+                });
+                return out;
+            });
+
+            // Deriva: preguntas armadas con una revision anterior a la vigente de su variable.
+            // NO se re-sincroniza solo -eso cambiaria un cuestionario que nadie pidio cambiar,
+            // y lo publicado debe ser reproducible-: se avisa y el jefe decide.
+            var staleVariables = Vue.computed(function () {
+                return allQuestions().filter(function (q) {
+                    return q.variableId
+                        && typeof q.variableCurrentRevision === 'number'
+                        && typeof q.variableRevision === 'number'
+                        && q.variableCurrentRevision > q.variableRevision;
+                });
             });
 
             function fixIssues() {
@@ -509,26 +512,94 @@
                 groups.value.push({ title: '', questions: [] });
                 dirty.value = true;
             }
-            function addQuestion(g, type) {
+            // --- Selector de variables ---------------------------------------------
+            // Reemplaza al viejo "Agregar pregunta" con su lista de tipos: una pregunta ya no
+            // se escribe, se elige del catalogo que carga el Administrador.
+            var varPickerOpen = Vue.ref(false);
+            var varPickerGroup = null;
+            var varPickerQuery = Vue.ref('');
+            var varPickerLoading = Vue.ref(false);
+            var varPickerError = Vue.ref(null);
+            var varPickerResults = Vue.ref([]);
+            var varPickerDebounce;
+
+            function openVariablePicker(g) {
+                varPickerGroup = g;
+                varPickerOpen.value = true;
+                varPickerQuery.value = '';
+                varPickerError.value = null;
+                searchVariables();
+            }
+            function closeVariablePicker() {
+                varPickerOpen.value = false;
+                varPickerGroup = null;
+                clearTimeout(varPickerDebounce);
+            }
+            function onVariableQuery() {
+                clearTimeout(varPickerDebounce);
+                varPickerDebounce = setTimeout(searchVariables, 300);
+            }
+
+            // Un solo campo de busqueda: el server matchea nombre, codigo y concepto SNOMED.
+            // Mismo patron de fetch que loadSpecialties (Bearer desde el meta cq-token).
+            function searchVariables() {
+                varPickerLoading.value = true;
+                varPickerError.value = null;
+                var token = getToken();
+                var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+                fetch('/api/variables?_count=50&q=' + encodeURIComponent(varPickerQuery.value || ''),
+                      { credentials: 'same-origin', headers: headers })
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(function (data) { varPickerResults.value = data.results || []; })
+                    .catch(function (err) {
+                        varPickerError.value = 'No se pudo cargar el catalogo de variables: ' + err.message;
+                        varPickerResults.value = [];
+                    })
+                    .then(function () { varPickerLoading.value = false; });
+            }
+
+            // Cuantas veces ya esta esta variable en el cuestionario. Solo se usa para sufijar
+            // el linkId: usar la misma dos veces es un caso real ("Peso al ingreso" / "Peso al
+            // alta") y lo que las distingue es ese linkId, que es la columna del reporte.
+            function usosDe(variableId) {
+                return allQuestions().filter(function (q) { return q.variableId === variableId; }).length;
+            }
+
+            function addQuestionFromVariable(v) {
+                var g = varPickerGroup;
+                if (!g) return;
+                var n = usosDe(v.id) + 1;
                 var q = {
-                    linkId: 'q_' + Math.random().toString(36).slice(2, 7),
-                    text: '',
-                    type: type,
-                    required: false
+                    linkId: v.code + '-' + n,
+                    // El enunciado arranca en el de la variable y es lo unico, junto con
+                    // required y enableWhen, que el jefe puede cambiar por cuestionario.
+                    text: v.defaultText || v.name,
+                    required: false,
+                    // Lo que sigue lo define la variable: viaja en el payload para que el
+                    // recurso FHIR sea autocontenido, pero el panel lo muestra bloqueado y el
+                    // servidor lo vuelve a pisar desde el catalogo al guardar.
+                    type: v.type,
+                    unit: v.unit || undefined,
+                    min: typeof v.min === 'number' ? v.min : undefined,
+                    max: typeof v.max === 'number' ? v.max : undefined,
+                    maxLength: typeof v.maxLength === 'number' ? v.maxLength : undefined,
+                    pattern: v.pattern || undefined,
+                    accept: v.accept || undefined,
+                    options: (v.options && v.options.length)
+                        ? v.options.map(function (o) { return o.display || o.value; })
+                        : undefined,
+                    code: v.snomedCode || undefined,
+                    codeDisplay: v.snomedDisplay || undefined,
+                    term: v.term || undefined,
+                    variableId: v.id,
+                    variableName: v.name,
+                    variableRevision: v.revision,
+                    variableCurrentRevision: v.revision
                 };
-                if (type === 'choice' || type === 'openChoice') q.options = ['', ''];
                 g.questions.push(q);
                 selected.value = { group: g, question: q };
                 dirty.value = true;
-            }
-            function addOption(q) {
-                if (!q.options) q.options = [];
-                q.options.push('');
-                dirty.value = true;
-            }
-            function removeOption(q, idx) {
-                q.options.splice(idx, 1);
-                dirty.value = true;
+                closeVariablePicker();
             }
             function removeQuestion(g, q) {
                 dropConditions(dependentsOf([q.linkId], [q]),
@@ -673,7 +744,7 @@
 
             // Catálogo de especialidades (CHEQUEAR.Specialty), reemplaza las 5 opciones que
             // antes venían hardcodeadas en este mismo archivo. /api/specialties exige Bearer
-            // (mismo patrón que verifySnomedCode) y, para un usuario no-admin, ya viene
+            // (mismo patrón que el buscador SNOMED) y, para un usuario no-admin, ya viene
             // recortado a sus especialidades.
             function loadSpecialties() {
                 specialtiesLoading.value = true;
@@ -708,227 +779,21 @@
             // Mismo criterio que diagnostico(): el detalle legible de un OperationOutcome
             // vive en issue[].diagnostics. Se declara aparte porque el buscador corre antes
             // de que diagnostico() este definido en el scope.
-            function diagnosticoTerminologia(body, porOmision) {
-                var issues = body && body.issue;
-                if (!issues || !issues.length) return porOmision;
-                return issues[0].diagnostics || porOmision;
-            }
+            // El buscador SNOMED vive ahora en Scripts/islands/shared/snomed.js: el ABM de
+            // variables necesita exactamente la misma mecanica (debounce, backoff por 429,
+            // cancelacion de la consulta en curso) y dos implementaciones del mismo contrato
+            // contra $expand iban a divergir.
+            //
+            // Queda UNA sola instancia, la del cuestionario completo. La codificacion POR
+            // PREGUNTA desaparecio del editor: cada pregunta la hereda de su variable, y quien
+            // la define es el Administrador desde el catalogo.
+            var questionnaireSnomed = window.ChequeARSnomed.createSearch(
+                function () { return questionnaireCoding; },
+                function () { dirty.value = true; });
 
-            // Fábrica de buscadores SNOMED. Un cuestionario tiene DOS puntos de codificación
-            // —cada pregunta y el cuestionario entero— con idéntica mecánica: autocompletar
-            // por término, elegir un concepto, quitarlo. En vez de duplicar toda la lógica
-            // (debounce, backoff por 429, cancelación de la consulta en curso), se crea una
-            // instancia por punto. `getActive()` devuelve el objeto sobre el que se escribe
-            // code/codeDisplay (una pregunta, o el objeto de codificación del cuestionario);
-            // ambos exponen las mismas tres propiedades term/code/codeDisplay.
-            function createSnomedSearch(getActive) {
-                var results = Vue.ref([]);
-                var searching = Vue.ref(false);
-                var error = Vue.ref(null);
-                var open = Vue.ref(false);
-                var abort = null;
-                var debounce;
-                // Backoff ante 429: hasta este instante (ms epoch) no autocompletamos solos,
-                // para no seguir golpeando un server que ya nos está limitando.
-                var cooldownUntil = 0;
-
-                function reset() {
-                    results.value = []; open.value = false; error.value = null;
-                    clearTimeout(debounce);
-                }
-
-                // Autosugerencia asíncrona: mientras se edita el término clínico buscamos
-                // solos (debounce) para no golpear el terminológico en cada tecla. El
-                // enunciado de la pregunta NO dispara búsquedas: sólo el término.
-                function schedule(term) {
-                    clearTimeout(debounce);
-                    if (!term || term.trim().length < 3) { reset(); return; }
-                    if (Date.now() < cooldownUntil) return;   // en backoff por 429
-                    debounce = setTimeout(search, 600);
-                }
-
-                function search() {
-                    var target = getActive();
-                    var term = target ? (target.term || '').trim() : '';
-                    error.value = null;
-                    if (term.length < 3) {
-                        error.value = 'Escriba al menos 3 caracteres en el término clínico (ej: "dolor torácico").';
-                        results.value = []; open.value = true;
-                        return;
-                    }
-                    var token = getToken();
-                    if (!token) { toast('No hay sesión: no se puede consultar SNOMED (token ausente).', 'error'); return; }
-
-                    // Si el usuario busca de nuevo con una consulta en curso, cancelamos la vieja.
-                    if (abort) abort.abort();
-                    abort = ('AbortController' in window) ? new AbortController() : null;
-                    searching.value = true;
-
-                    fetch('/fhir/r5/ValueSet/$expand?count=15&filter=' + encodeURIComponent(term), {
-                        headers: { 'Authorization': 'Bearer ' + token },
-                        signal: abort ? abort.signal : undefined
-                    }).then(function (res) {
-                        return res.json().catch(function () { return null; }).then(function (body) {
-                            if (res.status === 429) {
-                                // El server nos limita: entramos en cooldown y frenamos el autosugerir.
-                                // El tiempo de espera viene dentro del diagnostics del
-                                // OperationOutcome: el estandar no tiene un campo para eso.
-                                var texto = diagnosticoTerminologia(body,
-                                    'Demasiadas consultas a SNOMED. Reintente en unos segundos.');
-                                var m = /(\d+)\s*segundos/.exec(texto);
-                                cooldownUntil = Date.now() + ((m ? parseInt(m[1], 10) : 8) * 1000);
-                                throw new Error(texto);
-                            }
-                            if (!res.ok) throw new Error(diagnosticoTerminologia(body, 'HTTP ' + res.status));
-                            return body;
-                        });
-                    }).then(function (data) {
-                        results.value = (data && data.results) || [];
-                        open.value = true;
-                    }).catch(function (err) {
-                        if (err.name === 'AbortError') return;
-                        error.value = err.message;
-                        results.value = []; open.value = true;
-                    }).then(function () {
-                        searching.value = false;
-                    });
-                }
-
-                function pick(r) {
-                    var target = getActive();
-                    if (!target) return;
-                    target.code = r.code;
-                    target.codeDisplay = r.display;
-                    open.value = false;
-                    results.value = [];
-                    dirty.value = true;
-                }
-
-                // Saca el código pero conserva el término: qué mide no deja de ser cierto
-                // porque se descarte el concepto elegido, y así se puede volver a buscar sin
-                // reescribirlo.
-                function clear() {
-                    var target = getActive();
-                    if (!target) return;
-                    target.code = undefined;
-                    target.codeDisplay = undefined;
-                    dirty.value = true;
-                }
-
-                function cancel() { clearTimeout(debounce); if (abort) abort.abort(); }
-
-                // Envuelto en reactive (no un objeto plano): al exponerse anidado bajo
-                // `questionSnomed`/`questionnaireSnomed` en el return de setup, Vue NO desenvuelve
-                // los refs sueltos —`.searching` llegaría al template como el objeto Ref, siempre
-                // truthy, y el spinner quedaría fijo—. reactive los desenvuelve al accederlos.
-                return Vue.reactive({
-                    results: results, searching: searching, error: error, open: open,
-                    schedule: schedule, search: search, pick: pick, clear: clear, reset: reset, cancel: cancel
-                });
-            }
-
-            // Buscador por PREGUNTA: escribe sobre la pregunta seleccionada.
-            var questionSnomed = createSnomedSearch(function () {
-                return selected.value && selected.value.question ? selected.value.question : null;
+            Vue.watch(function () { return questionnaireCoding.term; }, function (t) {
+                questionnaireSnomed.schedule(t);
             });
-            // Al cambiar de pregunta, el término "cambia" sin que nadie tipee: no queremos
-            // disparar una búsqueda por eso. Esta bandera suprime ese primer disparo.
-            var questionSnomedSuppress = false;
-            // Cambiar de pregunta no debe arrastrar los resultados de la anterior.
-            Vue.watch(selected, function () {
-                questionSnomed.reset();
-                questionSnomedSuppress = true;
-                Vue.nextTick(function () { questionSnomedSuppress = false; });
-            });
-            Vue.watch(function () {
-                return selected.value && selected.value.question ? selected.value.question.term : null;
-            }, function (term) {
-                if (questionSnomedSuppress) return;   // el cambio vino de seleccionar otra pregunta
-                questionSnomed.schedule(term);
-            });
-
-            // Buscador del CUESTIONARIO completo: escribe sobre el objeto de codificación
-            // reactiva. No hay "cambio de selección" que suprimir; el término lo edita una
-            // sola caja fija en el encabezado.
-            var questionnaireSnomed = createSnomedSearch(function () { return questionnaireCoding; });
-            Vue.watch(function () { return questionnaireCoding.term; }, function (term) {
-                questionnaireSnomed.schedule(term);
-            });
-
-            // --- Verificación de código SNOMED tipeado a mano -------------------------
-            // El médico puede saltarse el autocomplete y tipear un código directo. Sin
-            // chequeo, un dígito de más pasa como si fuera válido y termina en la base:
-            // los reportes cruzan mal y el error aparece meses después. Verificar consulta
-            // $expand con el propio código como filter y busca match exacto; si aparece,
-            // ponemos codeDisplay con el término oficial y avisamos si el término escrito
-            // difiere. Reusa el mismo endpoint (ya autorizado, ya con caché) para no meter
-            // cirugía en el backend.
-            var codeVerification = Vue.ref(null);   // { ok:true, display, warnTerm } | { ok:false, msg }
-            var codeVerifying = Vue.ref(false);
-
-            // Cambiar de pregunta borra el estado de verificación anterior: pertenece a la
-            // pregunta que se estaba mirando, no a esta.
-            Vue.watch(selected, function () { codeVerification.value = null; });
-            // Auto-verificación: al tipear/pegar un código, esperamos 500ms de calma
-            // y disparamos verifySnomedCode() sin que el usuario apriete nada. Antes
-            // era un botón "Verificar" — feedback: molestaba tener que confirmar algo
-            // que la máquina puede hacer sola.
-            var codeVerifyDebounce = null;
-            Vue.watch(function () {
-                return selected.value && selected.value.question ? selected.value.question.code : null;
-            }, function (newVal) {
-                codeVerification.value = null;
-                if (codeVerifyDebounce) clearTimeout(codeVerifyDebounce);
-                var code = (newVal || '').trim();
-                if (!code) return;
-                codeVerifyDebounce = setTimeout(function () { verifySnomedCode(); }, 500);
-            });
-
-            function verifySnomedCode() {
-                var q = selected.value && selected.value.question;
-                var code = q ? (q.code || '').trim() : '';
-                codeVerification.value = null;
-                if (!code) {
-                    codeVerification.value = { ok: false, msg: 'Escribí un código para verificar.' };
-                    return;
-                }
-                if (!/^[0-9]{6,18}$/.test(code)) {
-                    codeVerification.value = { ok: false, msg: 'Un código SNOMED CT son solo dígitos (6-18). Revisá lo tipeado.' };
-                    return;
-                }
-                var token = getToken();
-                if (!token) { toast('No hay sesión: no se puede verificar (token ausente).', 'error'); return; }
-
-                codeVerifying.value = true;
-                fetch('/fhir/r5/ValueSet/$expand?count=5&filter=' + encodeURIComponent(code), {
-                    headers: { 'Authorization': 'Bearer ' + token }
-                }).then(function (res) {
-                    return res.json().catch(function () { return null; }).then(function (body) {
-                        if (!res.ok) throw new Error(diagnosticoTerminologia(body, 'HTTP ' + res.status));
-                        return body;
-                    });
-                }).then(function (data) {
-                    var results = (data && data.results) || [];
-                    var match = null;
-                    for (var i = 0; i < results.length; i++) {
-                        if (results[i].code === code) { match = results[i]; break; }
-                    }
-                    if (!match) {
-                        codeVerification.value = { ok: false, msg: 'El código ' + code + ' no existe en SNOMED CT (o no está en el subset activo).' };
-                        return;
-                    }
-                    q.codeDisplay = match.display;
-                    var termEscrito = (q.term || '').trim().toLowerCase();
-                    var termOficial = (match.display || '').toLowerCase();
-                    var warnTerm = termEscrito && termOficial.indexOf(termEscrito) < 0 && termEscrito.indexOf(termOficial) < 0;
-                    codeVerification.value = { ok: true, display: match.display, warnTerm: warnTerm };
-                    dirty.value = true;
-                }).catch(function (err) {
-                    codeVerification.value = { ok: false, msg: err.message };
-                }).then(function () {
-                    codeVerifying.value = false;
-                });
-            }
 
             // ---- Serialización a FHIR R5 ----
             //
@@ -1001,6 +866,12 @@
                 // asentado qué mide la pregunta. Sin esta extensión se pierde en CADA guardado.
                 var term = (q.term || '').trim();
                 if (term) out.push(ext(CQ_EXT + 'question-term', 'valueString', term));
+
+                // Todo lo que define la variable ya viajo denormalizado en campos nativos, asi
+                // que el recurso queda autocontenido para un consumidor externo. Lo unico sin
+                // lugar nativo es la referencia, y sin ella el parser la pierde en cada
+                // guardado: el editor dejaria de saber de que variable viene cada pregunta.
+                if (q.variableId) out.push(ext(CQ_EXT + 'question-variable-id', 'valueString', q.variableId));
 
                 return out;
             }
@@ -1288,7 +1159,10 @@
                     enableWhen: (q.enableWhen && q.enableWhen.question)
                         ? { question: q.enableWhen.question, op: q.enableWhen.op || '=', value: q.enableWhen.value === undefined ? null : q.enableWhen.value }
                         : null,
-                    code: q.code || null, codeDisplay: q.codeDisplay || null, term: q.term || null
+                    code: q.code || null, codeDisplay: q.codeDisplay || null, term: q.term || null,
+                    // Cambiar una pregunta de variable es un cambio real y tiene que poder
+                    // entrar en conflicto como cualquier otro campo.
+                    variableId: q.variableId || null
                 });
             }
 
@@ -1545,8 +1419,8 @@
             });
             Vue.onUnmounted(function () {
                 clearTimeout(debounce);
-                questionSnomed.cancel();
                 questionnaireSnomed.cancel();
+                clearTimeout(varPickerDebounce);
                 var btn = document.getElementById('saveBtn');
                 if (btn) btn.removeEventListener('click', saveExplicit);
                 var pub = document.getElementById('publishBtn');
@@ -1555,7 +1429,7 @@
             });
 
             return {
-                groups: groups, types: types, selected: selected,
+                groups: groups, selected: selected,
                 dirty: dirty, lastSaved: lastSaved, saving: saving, publishing: publishing,
                 qTitle: qTitle, qTitleTouched: qTitleTouched, specialtyCode: specialtyCode, isNew: isNew,
                 specialties: specialties, specialtiesLoading: specialtiesLoading, specialtiesError: specialtiesError,
@@ -1566,12 +1440,15 @@
                 issues: issues, fixIssues: fixIssues,
                 conditionSources: conditionSources, conditionSource: conditionSource,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
-                questionSnomed: questionSnomed,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
-                verifySnomedCode: verifySnomedCode, codeVerification: codeVerification, codeVerifying: codeVerifying,
-                onTypeChange: onTypeChange,
-                selectQuestion: selectQuestion, addGroup: addGroup, addQuestion: addQuestion,
-                addOption: addOption, removeOption: removeOption,
+                selectQuestion: selectQuestion, addGroup: addGroup,
+                staleVariables: staleVariables,
+                varPickerOpen: varPickerOpen, varPickerQuery: varPickerQuery,
+                varPickerLoading: varPickerLoading, varPickerError: varPickerError,
+                varPickerResults: varPickerResults,
+                openVariablePicker: openVariablePicker, closeVariablePicker: closeVariablePicker,
+                onVariableQuery: onVariableQuery, addQuestionFromVariable: addQuestionFromVariable,
+                typeLabel: typeLabel,
                 removeQuestion: removeQuestion, removeGroup: removeGroup, save: saveExplicit,
                 importOpen: importOpen, importLoading: importLoading, importBusy: importBusy,
                 importError: importError, importCandidates: importCandidates,
@@ -1585,7 +1462,7 @@
                 stepNext: stepNext, stepPrev: stepPrev, currentStepHelp: currentStepHelp,
                 stepStatus: stepStatus, isStepDone: isStepDone, stepReachable: stepReachable,
                 canGoNext: canGoNext, nextBlockedReason: nextBlockedReason,
-                allQuestionsFlat: allQuestionsFlat, codingProgress: codingProgress,
+                allQuestionsFlat: allQuestionsFlat,
                 publishBlockers: publishBlockers
             };
         },
@@ -1638,6 +1515,31 @@
         </div>\
     </div>\
 </div>\
+<div v-if="varPickerOpen" style="position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:1050; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px;" @click.self="closeVariablePicker">\
+    <div class="cq-card" style="max-width:640px; width:100%; max-height:85vh; overflow:auto;">\
+        <div class="d-flex justify-content-between align-items-center mb-2">\
+            <h3 class="m-0">Agregar una variable</h3>\
+            <button type="button" class="cq-icon-btn" @click="closeVariablePicker" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button>\
+        </div>\
+        <input v-model="varPickerQuery" @input="onVariableQuery" class="form-control form-control-sm mb-2" placeholder="Nombre, código o concepto SNOMED…" autofocus />\
+        <div v-if="varPickerLoading" class="cq-text-sm cq-text-muted"><span class="spinner-border spinner-border-sm me-1"></span> Buscando…</div>\
+        <div v-else-if="varPickerError" class="cq-text-sm text-danger">{{ varPickerError }}</div>\
+        <div v-else-if="!varPickerResults.length" class="cq-text-sm cq-text-muted">No hay variables que coincidan.</div>\
+        <ul v-else class="list-unstyled mb-0">\
+            <li v-for="v in varPickerResults" :key="v.id" class="border-bottom py-2 d-flex justify-content-between align-items-center gap-2" style="cursor:pointer;" @click="addQuestionFromVariable(v)">\
+                <div>\
+                    <div>{{ v.name }}</div>\
+                    <div class="cq-text-xs cq-text-muted">\
+                        {{ typeLabel(v.type) }}<template v-if="v.unit"> · {{ v.unit }}</template>\
+                        <template v-if="v.snomedCode"> · <code>{{ v.snomedCode }}</code> {{ v.snomedDisplay }}</template>\
+                        <template v-else> · sin codificar</template>\
+                    </div>\
+                </div>\
+                <i class="bi bi-plus-lg"></i>\
+            </li>\
+        </ul>\
+    </div>\
+</div>\
 <div v-if="importOpen" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeImport">\
     <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
         <h2 class="cq-section-title" style="margin-top:0;">Importar preguntas de otro cuestionario</h2>\
@@ -1658,6 +1560,14 @@
             <button class="btn btn-outline-secondary" @click="closeImport">Cerrar</button>\
         </div>\
     </div>\
+</div>\
+<div v-if="staleVariables.length" class="alert alert-info cq-text-sm" role="status">\
+    <i class="bi bi-info-circle me-1"></i>\
+    <strong>{{ staleVariables.length }}</strong> pregunta(s) usan una versión anterior de su variable: el Administrador la editó después de que se armaron.\
+    Lo publicado no cambia. Para tomar la definición nueva hay que quitar la pregunta y volver a agregarla desde el catálogo.\
+    <ul class="mb-0 mt-1 ps-3">\
+        <li v-for="q in staleVariables" :key="q.linkId">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.variableName }})</span></li>\
+    </ul>\
 </div>\
 <div v-if="issues.length" class="cq-card mb-2" style="border-left:3px solid var(--cq-warning);">\
     <div class="d-flex align-items-start gap-2">\
@@ -1811,12 +1721,7 @@
                     </button>\
                 </li>\
             </ul>\
-            <div class="dropdown">\
-                <button class="btn btn-sm btn-primary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus-lg me-1"></i>Agregar pregunta</button>\
-                <ul class="dropdown-menu">\
-                    <li v-for="t in types" :key="t.code"><a class="dropdown-item" href="javascript:" @click="addQuestion(g, t.code)"><i :class="\'bi \' + t.icon"></i><span>{{ t.label }}</span></a></li>\
-                </ul>\
-            </div>\
+            <button class="btn btn-sm btn-primary" @click="openVariablePicker(g)"><i class="bi bi-plus-lg me-1"></i>Agregar variable</button>\
         </div>\
         <button class="btn btn-primary w-100" @click="addGroup"><i class="bi bi-plus-lg me-1"></i> Agregar sección</button>\
     </div>\
@@ -1831,51 +1736,32 @@
                 <label class="form-label cq-text-sm">Texto</label>\
                 <input v-model="selected.question.text" class="form-control form-control-sm" placeholder="Nueva pregunta" />\
             </div>\
-            <div class="mb-2">\
-                <label class="form-label cq-text-sm">Tipo</label>\
-                <select :value="selected.question.type" @change="onTypeChange($event.target.value)" class="form-select form-select-sm">\
-                    <option v-for="t in types" :key="t.code" :value="t.code">{{ t.label }}</option>\
-                </select>\
-            </div>\
             <div class="form-check mb-2">\
                 <input v-model="selected.question.required" type="checkbox" class="form-check-input" id="reqCk" />\
                 <label class="form-check-label cq-text-sm" for="reqCk">Obligatoria</label>\
             </div>\
-            <div v-if="[\'integer\',\'decimal\',\'scale\'].indexOf(selected.question.type) >= 0">\
-                <div class="row g-2 mb-2">\
-                    <div class="col-6"><label class="form-label cq-text-sm">Min</label><input v-model.number="selected.question.min" type="number" class="form-control form-control-sm" /></div>\
-                    <div class="col-6"><label class="form-label cq-text-sm">Max</label><input v-model.number="selected.question.max" type="number" class="form-control form-control-sm" /></div>\
-                </div>\
-                <div class="mb-2"><label class="form-label cq-text-sm">Unidad</label><input v-model="selected.question.unit" class="form-control form-control-sm" /></div>\
-            </div>\
-            <div v-if="[\'string\',\'text\'].indexOf(selected.question.type) >= 0">\
-                <div class="mb-2">\
-                    <label class="form-label cq-text-sm">Largo máximo, en caracteres <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></label>\
-                    <input v-model.number="selected.question.maxLength" type="number" min="1" class="form-control form-control-sm" placeholder="sin límite" />\
-                </div>\
-                <div class="mb-2">\
-                    <label class="form-label cq-text-sm">Patrón <span class="cq-text-xs cq-text-muted fw-normal">(regex, opcional)</span></label>\
-                    <input v-model="selected.question.pattern" class="form-control form-control-sm" placeholder="ej: ^[0-9]{7,8}$" />\
-                    <p class="cq-text-xs cq-text-muted mt-1">La respuesta tiene que coincidir con esta expresión regular.</p>\
-                </div>\
-            </div>\
-            <div v-if="[\'choice\',\'openChoice\'].indexOf(selected.question.type) >= 0">\
-                <label class="form-label cq-text-sm">Opciones</label>\
-                <div v-for="(opt, oi) in (selected.question.options || [])" :key="oi" class="input-group input-group-sm mb-1">\
-                    <input v-model="selected.question.options[oi]" class="form-control form-control-sm" :placeholder="\'Opción \' + (oi + 1)" />\
-                    <button class="btn btn-outline-danger" type="button" @click="removeOption(selected.question, oi)" :disabled="(selected.question.options || []).length <= 2" aria-label="Quitar opción"><i class="bi bi-x-lg"></i></button>\
-                </div>\
-                <button class="btn btn-sm btn-outline-secondary" type="button" @click="addOption(selected.question)"><i class="bi bi-plus-lg me-1"></i> Agregar opción</button>\
-            </div>\
-            <div v-if="selected.question.type === \'attachment\'">\
-                <label class="form-label cq-text-sm">Formatos permitidos</label>\
-                <select v-model="selected.question.accept" class="form-select form-select-sm">\
-                    <option :value="undefined">Imágenes y PDF</option>\
-                    <option value="image/jpeg,image/png">Sólo imágenes</option>\
-                    <option value="application/pdf">Sólo PDF</option>\
-                </select>\
-                <p class="cq-text-xs cq-text-muted mt-1">El servidor acepta JPG, PNG y PDF hasta 10 MB.</p>\
-            </div>\
+            <hr />\
+            <dl class="row cq-text-sm mb-0">\
+                <dt class="col-5">Variable</dt><dd class="col-7">{{ selected.question.variableName || \'—\' }}</dd>\
+                <dt class="col-5">Tipo</dt><dd class="col-7">{{ typeLabel(selected.question.type) }}</dd>\
+                <template v-if="selected.question.unit"><dt class="col-5">Unidad</dt><dd class="col-7">{{ selected.question.unit }}</dd></template>\
+                <template v-if="selected.question.min !== undefined || selected.question.max !== undefined">\
+                    <dt class="col-5">Rango</dt>\
+                    <dd class="col-7">{{ selected.question.min === undefined ? \'−∞\' : selected.question.min }} – {{ selected.question.max === undefined ? \'∞\' : selected.question.max }}</dd>\
+                </template>\
+                <template v-if="selected.question.maxLength"><dt class="col-5">Largo máximo</dt><dd class="col-7">{{ selected.question.maxLength }}</dd></template>\
+                <template v-if="selected.question.pattern"><dt class="col-5">Patrón</dt><dd class="col-7"><code class="cq-text-xs">{{ selected.question.pattern }}</code></dd></template>\
+                <template v-if="selected.question.accept"><dt class="col-5">Formatos</dt><dd class="col-7">{{ selected.question.accept }}</dd></template>\
+                <template v-if="selected.question.options && selected.question.options.length">\
+                    <dt class="col-5">Opciones</dt>\
+                    <dd class="col-7"><span v-for="(opt, oi) in selected.question.options" :key="oi" class="cq-chip me-1">{{ opt }}</span></dd>\
+                </template>\
+                <dt class="col-5">SNOMED CT</dt>\
+                <dd class="col-7">\
+                    <template v-if="selected.question.code"><code>{{ selected.question.code }}</code> <span class="cq-text-xs cq-text-muted">{{ selected.question.codeDisplay }}</span></template>\
+                    <span v-else class="cq-text-muted">Sin codificar</span>\
+                </dd>\
+            </dl>\
 \
             <template v-if="conditionSources.length">\
             <hr />\
@@ -1911,61 +1797,6 @@
             </div>\
             </template>\
 \
-            <hr />\
-            <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
-            <div class="mb-2">\
-                <label class="form-label cq-text-sm">Término clínico</label>\
-                <div class="input-group input-group-sm">\
-                    <input v-model="selected.question.term" class="form-control form-control-sm" placeholder="ej: dolor torácico" />\
-                    <button class="btn btn-outline-primary" type="button" @click="questionSnomed.search" :disabled="questionSnomed.searching" title="Buscar el término en SNOMED CT">\
-                        <span v-if="questionSnomed.searching" class="spinner-border spinner-border-sm"></span>\
-                        <template v-else><i class="bi bi-search"></i> Buscar</template>\
-                    </button>\
-                </div>\
-                <div v-if="questionSnomed.error" class="cq-text-xs text-danger mt-1">{{ questionSnomed.error }}</div>\
-                <ul v-if="questionSnomed.open && questionSnomed.results.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
-                    <li v-for="r in questionSnomed.results" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="questionSnomed.pick(r)"\
-                        onmouseover="this.style.background=\'var(--cq-primary-100)\'" onmouseout="this.style.background=\'transparent\'">\
-                        {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
-                    </li>\
-                </ul>\
-                <div v-else-if="questionSnomed.open && !questionSnomed.searching && !questionSnomed.error" class="cq-text-xs cq-text-muted mt-1">\
-                    Sin resultados para ese término. Probá con sinónimos, o buscalo en el\
-                    <a :href="\'https://browser.ihtsdotools.org/?edition=MAIN&perspective=full&conceptId1=&edition=MAIN&release=&languages=es,en&searchMode=partialMatching&searchAfter=&searchTerm=\' + encodeURIComponent(selected && selected.question ? (selected.question.term || \'\') : \'\')" target="_blank" rel="noopener noreferrer">browser oficial de SNOMED CT <i class="bi bi-box-arrow-up-right"></i></a>\
-                    y pegá el código abajo (después le das "Verificar").\
-                </div>\
-            </div>\
-            <div class="mb-2">\
-                <label class="form-label cq-text-sm d-flex align-items-center gap-2">\
-                    Código SNOMED CT\
-                    <span v-if="codeVerifying" class="cq-text-xs cq-text-muted d-inline-flex align-items-center gap-1"><span class="spinner-border spinner-border-sm" style="width:12px; height:12px;"></span> Verificando…</span>\
-                </label>\
-                <div class="input-group input-group-sm">\
-                    <input v-model="selected.question.code" class="form-control form-control-sm" placeholder="ej: 50373000" />\
-                </div>\
-                <div v-if="codeVerification && codeVerification.ok" class="cq-text-xs mt-1" style="color:var(--cq-success);">\
-                    <i class="bi bi-check-circle-fill"></i> Coincide: <strong>{{ codeVerification.display }}</strong>\
-                    <div v-if="codeVerification.warnTerm" class="cq-text-xs mt-1" style="color:var(--cq-warning);">\
-                        <i class="bi bi-exclamation-triangle-fill"></i> El término escrito no coincide con el oficial. Revisalo o dejá el oficial.\
-                    </div>\
-                </div>\
-                <div v-else-if="codeVerification && !codeVerification.ok" class="cq-text-xs text-danger mt-1">\
-                    <i class="bi bi-x-circle-fill"></i> {{ codeVerification.msg }}\
-                </div>\
-                <div v-if="selected.question.codeDisplay" class="mt-1">\
-                    <span class="cq-removable">\
-                        <i class="bi bi-check-circle-fill"></i>\
-                        {{ selected.question.codeDisplay }}\
-                        <button type="button" class="cq-removable__remove" title="Quitar código" aria-label="Quitar código" @click="questionSnomed.clear">\
-                            <i class="bi bi-x"></i>\
-                        </button>\
-                    </span>\
-                </div>\
-                <p v-else class="cq-text-xs cq-text-muted mt-1">Elegí una sugerencia de arriba, o escribí el código a mano y verificalo.</p>\
-            </div>\
-\
-            <hr />\
-            <button class="btn btn-sm btn-outline-danger" @click="removeQuestion(selected.group, selected.question)"><i class="bi bi-trash me-1"></i> Eliminar pregunta</button>\
         </div>\
         <div v-else class="cq-card cq-text-sm cq-text-muted">Seleccione una pregunta para editar sus propiedades.</div>\
     </div>\
@@ -2009,20 +1840,15 @@
 <div v-if="step === \'publish\'">\
     <div class="cq-card mb-2">\
         <h3 class="cq-section-title mt-0"><i class="bi bi-send me-1"></i>Publicación</h3>\
-        <p class="cq-text-sm cq-text-muted">Publicar congela una versión: los clínicos ven exactamente esta estructura hasta que publiques una nueva.</p>\
-        <div v-if="publishBlockers.length" class="cq-card mb-3" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
+        <div v-if="publishBlockers.length" class="cq-card mb-0" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
             <div class="cq-text-sm"><strong>Antes de publicar, resolvé:</strong></div>\
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(b, bi) in publishBlockers" :key="bi">{{ b }}</li>\
             </ul>\
         </div>\
-        <div v-else class="cq-card mb-3" style="border-left:3px solid var(--cq-success); background:var(--cq-neutral-50);">\
+        <div v-else class="cq-card mb-0" style="border-left:3px solid var(--cq-success); background:var(--cq-neutral-50);">\
             <div class="cq-text-sm"><i class="bi bi-check-circle-fill" style="color:var(--cq-success);"></i> Todo listo para publicar.</div>\
             <div v-if="isPublished" class="cq-text-xs cq-text-muted mt-1">Ya hay una versión publicada. Publicar de nuevo crea una versión posterior.</div>\
-        </div>\
-        <div class="d-flex gap-2">\
-            <button class="btn btn-primary" @click="publish" :disabled="publishBlockers.length || publishing"><i class="bi bi-send me-1"></i> Publicar ahora</button>\
-            <button class="btn btn-outline-secondary-cq" @click="gotoStep(\'structure\')"><i class="bi bi-arrow-left me-1"></i> Volver a la estructura</button>\
         </div>\
     </div>\
 </div>\

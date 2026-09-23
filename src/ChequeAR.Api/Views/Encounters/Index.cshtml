@@ -276,7 +276,7 @@ else
         loadLastEntries(pid);
         document.getElementById("selectQStartBtn").onclick = function () {
             var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
-            if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "warning"); return; }
+            if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "error"); return; }
             location.href = "@Url.Action("Load", "Encounters")" + "?patientId=" + pid + "&questionnaireId=" + qid;
         };
     });

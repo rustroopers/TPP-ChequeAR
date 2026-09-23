@@ -47,6 +47,8 @@ namespace ChequeAR.Infrastructure.EF
         public DbSet<ReportExecution> ReportExecutions { get; set; }
         public DbSet<ExportArtifact> ExportArtifacts { get; set; }
         public DbSet<ExportJob> ExportJobs { get; set; }
+        public DbSet<ClinicalVariable> ClinicalVariables { get; set; }
+        public DbSet<VariableOption> VariableOptions { get; set; }
 
         protected override void OnModelCreating(DbModelBuilder modelBuilder)
         {
@@ -72,11 +74,19 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Configurations.Add(new QuestionnaireVersionConfig());
             modelBuilder.Configurations.Add(new QuestionnaireResponseConfig());
             modelBuilder.Configurations.Add(new AuditEventConfig());
+            modelBuilder.Configurations.Add(new ClinicalVariableConfig());
 
             // Sin esto, EF no asocia QuestionGroup.Questions con Question.GroupId (no hay
             // navegación inversa en Question) y crea una FK sombra "QuestionGroup_Id" que
             // no existe en el esquema Oracle -> ORA-00904 al guardar.
             modelBuilder.Entity<QuestionGroup>().HasMany(g => g.Questions).WithOptional().HasForeignKey(q => q.GroupId).WillCascadeOnDelete(false);
+
+            // Mismo motivo que el mapeo de arriba: VariableOption no tiene navegación inversa,
+            // así que sin esto EF inventa la FK sombra "ClinicalVariable_Id" -> ORA-00904.
+            // WithRequired porque una opción no existe sin su variable, y sin cascade para
+            // seguir el criterio del resto del esquema (los borrados son explícitos, en
+            // transacción, desde el repositorio).
+            modelBuilder.Entity<ClinicalVariable>().HasMany(v => v.Options).WithRequired().HasForeignKey(o => o.VariableId).WillCascadeOnDelete(false);
 
             // Claves string: acotadas para que sean PK/FK indexables en Oracle.
             modelBuilder.Entity<User>().Property(x => x.Id).HasMaxLength(128);

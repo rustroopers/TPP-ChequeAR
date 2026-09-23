@@ -1,4 +1,4 @@
-@model string
+﻿@model string
 @using ChequeAR.Domain.Enums
 @{
     var active = Model ?? "";
@@ -9,6 +9,7 @@
     var canSeeReports = Cq.Can(Permissions.ReportRead);
     var canSeeAudit = Cq.Can(Permissions.AuditRead);
     var canSeeUsers = Cq.Can(Permissions.UserManage);
+    var canSeeVariables = Cq.Can(Permissions.VariableManage);
 }
 @* Cambios de la Etapa 2:
    - Íconos y texto más grandes.
@@ -34,7 +35,7 @@
             </a>
         }
 
-        @if (canSeeAudit || canSeeUsers)
+        @if (canSeeAudit || canSeeUsers || canSeeVariables)
         {
             <div class="cq-sidebar__group-label">@Cq.T("sidebar.group.admin")</div>
             if (canSeeAudit)
@@ -47,6 +48,12 @@
             {
                 <a class="@cls("users")" href="@Url.Action("Index", "Users")">
                     <i class="bi bi-people"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.users")</span>
+                </a>
+            }
+            if (canSeeVariables)
+            {
+                <a class="@cls("variables")" href="@Url.Action("Index", "Variables")">
+                    <i class="bi bi-rulers"></i> <span class="cq-sidebar__label">@Cq.T("sidebar.variables")</span>
                 </a>
             }
         }
