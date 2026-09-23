@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web.Mvc;
+using ChequeAR.Api.Auth;
 using ChequeAR.Api.Models;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    // TODO: re-habilitar [Authorize(Roles = Role.Administrador + "," + Role.Jefe)] cuando FormsAuth esté wired.
+    [RequiresPermission(Permissions.IntegrationRead)]
     public class AdminController : Controller
     {
         // F2 (estática)

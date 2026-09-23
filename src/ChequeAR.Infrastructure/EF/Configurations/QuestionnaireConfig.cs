@@ -10,7 +10,10 @@ namespace ChequeAR.Infrastructure.EF.Configurations
             ToTable("Questionnaire");
             HasKey(x => x.Id);
             Property(x => x.Title).IsRequired().HasMaxLength(255);
-            Property(x => x.SpecialtyCode).HasMaxLength(64);
+            // NOT NULL + FK a CHEQUEAR.Specialty(Code) desde Q_QuestionnaireSpecialtyRequired.
+            // La FK se crea con SQL crudo (no hay precedente de AddForeignKey incremental en
+            // este repo); EF no la "ve" pero Oracle la hace cumplir igual.
+            Property(x => x.SpecialtyCode).IsRequired().HasMaxLength(64);
             Property(x => x.CreatedBy).HasMaxLength(128);
             // Concurrencia optimista: EF suma ConcurrencyVersion al WHERE de cada UPDATE,
             // así que si otra sesión guardó en el medio la actualización afecta 0 filas y

@@ -23,7 +23,7 @@ namespace ChequeAR.Tests.Application
         public QuestionnaireResponseServiceTests()
         {
             _sut = new QuestionnaireResponseService(
-                _repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher());
+                _repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
         }
 
         // Los items llegan del cliente sin Id y EF no genera Guids. Sin asignarlos, dos
@@ -538,7 +538,7 @@ namespace ChequeAR.Tests.Application
             _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
 
             var captured = CapturingAudit(out var events);
-            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured, TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
 
             await sut.SaveProgressAsync(id, "u", token, null,
                 new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "peso", ValueDecimal = 70 } });
@@ -577,7 +577,7 @@ namespace ChequeAR.Tests.Application
             _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId, fhir));
 
             var captured = CapturingAudit(out var events);
-            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured, TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
 
             // Baseline: al abrir la sesión el peso era 70 y no había presión.
             var baseline = new List<QuestionnaireResponseItem>
@@ -615,7 +615,7 @@ namespace ChequeAR.Tests.Application
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
 
             var captured = CapturingAudit(out var events);
-            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured, TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
 
             await sut.ReleaseLockAsync(id, "u", token);   // sin baseline
             await captured.FlushAsync();
@@ -652,7 +652,7 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
             var captured = CapturingAudit(out var events);
-            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured, TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
 
             await sut.FinalizeAsync(id, "u", token);
             await captured.FlushAsync();
@@ -690,7 +690,7 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
             var captured = CapturingAudit(out var events);
-            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured, TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
 
             // Baseline: al abrir la sesión el peso era 70; se finaliza con 80 -> diff 70→80.
             var baseline = new List<QuestionnaireResponseItem>
@@ -734,7 +734,7 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
             var captured = CapturingAudit(out var events);
-            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured, TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
 
             await sut.FinalizeAsync(id, "u", token);   // sin baseline
             await captured.FlushAsync();
@@ -824,7 +824,7 @@ namespace ChequeAR.Tests.Application
                  .Returns(Task.CompletedTask);
 
             var captured = CapturingAudit(out var events);
-            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, captured, TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
 
             var result = await sut.RetargetToCurrentVersionAsync(id, "u", token);
             await captured.FlushAsync();

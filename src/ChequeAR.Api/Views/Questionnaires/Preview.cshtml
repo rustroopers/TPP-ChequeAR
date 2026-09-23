@@ -1,31 +1,54 @@
 @model ChequeAR.Api.Models.QuestionnaireDetailViewModel
+@using ChequeAR.Domain.Enums
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Vista previa";
+    // Vista previa la ve cualquiera con questionnaire.read; el botón a Edit, sólo quien
+    // puede entrar al editor (ver RequiresPermission en QuestionnairesController.Edit).
+    var canWrite = Cq.Can(Permissions.QuestionnaireWrite);
 }
 
+@* El título del cuestionario va DENTRO de la card, encabezando sus secciones: es el
+   contenido que se está previsualizando, no el nombre de la pantalla. En el encabezado
+   de página quedan sólo las acciones. *@
 <header class="cq-page-header">
-    <div>
-        <div class="d-flex align-items-center gap-2 mb-1">
-            <span class="cq-chip cq-chip--@Model.SpecialtyCode">@Model.SpecialtyLabel</span>
-            @if (Model.Status == "published") { <span class="cq-badge cq-badge--published">Publicado</span> }
-            else if (Model.Status == "draft") { <span class="cq-badge cq-badge--draft">Borrador</span> }
-            else { <span class="cq-badge cq-badge--archived">Archivado</span> }
-        </div>
-        <h1 class="cq-page-header__title">@Model.Title</h1>
-        <p class="cq-page-header__subtitle">Versión @Model.Version · @Model.Author · @Model.UpdatedAt</p>
-    </div>
+    <div></div>
     <div class="d-flex gap-2">
         <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
-        <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary"><i class="bi bi-pencil me-1"></i> Editar</a>
+        @if (canWrite)
+        {
+            <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary"><i class="bi bi-pencil me-1"></i> Editar</a>
+        }
         <a href="@Url.Action("History", new { id = Model.Id })" class="btn btn-primary"><i class="bi bi-clock-history me-1"></i> Historial</a>
     </div>
 </header>
 
 <div class="cq-card" style="max-width:820px;">
+    <div style="border-bottom:1px solid var(--cq-neutral-200); padding-bottom:16px; margin-bottom:4px;">
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="cq-chip cq-chip--zone-@Model.SpecialtyColor">@Model.SpecialtyLabel</span>
+            @if (Model.Status == "published") { <span class="cq-badge cq-badge--published">Publicado</span> }
+            else if (Model.Status == "draft") { <span class="cq-badge cq-badge--draft">Borrador</span> }
+            else { <span class="cq-badge cq-badge--archived">Archivado</span> }
+        </div>
+        <h1 class="cq-page-header__title">@Model.Title</h1>
+        <p class="cq-page-header__subtitle">Versión @(Model.SnapshotVersion ?? Model.Version) · @Model.Author · @Model.UpdatedAt</p>
+    </div>
+    @if (Model.SnapshotVersion.HasValue)
+    {
+        <div class="alert alert-info cq-text-sm mt-3 mb-0">
+            Estás viendo la versión @Model.SnapshotVersion tal como se publicó.
+            @if (Model.SnapshotVersion.Value != Model.Version)
+            {
+                <text>La vigente es la v@(Model.Version).</text>
+            }
+            <a href="@Url.Action("History", new { id = Model.Id })">Volver al historial</a>
+        </div>
+    }
+
     @foreach (var g in Model.Groups)
     {
-        <h2 class="cq-section-title" style="margin-top:0;">@g.Title</h2>
+        <h2 class="cq-section-title">@g.Title</h2>
         <dl class="row">
             @foreach (var q in g.Questions)
             {
@@ -38,6 +61,9 @@
                        revisa el cuestionario no tiene por qué conocer los tipos de FHIR. *@
                     <span class="cq-badge cq-badge--info">@Cq.T("qtype." + (q.Type ?? "").ToLowerInvariant())</span>
                     @if (!string.IsNullOrEmpty(q.Unit)) { <span class="cq-text-sm ms-2">unidad: @q.Unit</span> }
+                    @* De qué variable del catálogo sale la pregunta: es lo que da trazabilidad
+                       entre lo que se responde acá y la columna que aparece en el reporte. *@
+                    @if (!string.IsNullOrEmpty(q.VariableName)) { <span class="cq-chip ms-2">@q.VariableName</span> }
                     @if (q.Options != null && q.Options.Count > 0)
                     {
                         <div class="cq-text-sm mt-1">Opciones: @string.Join(" · ", q.Options)</div>

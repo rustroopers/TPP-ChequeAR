@@ -3,16 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
+using ChequeAR.Api.Auth;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Services;
 using ChequeAR.Application.Reports;
+using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    [Authorize]
+    // Cierra el acceso de Medico: reportes son Admin/Jefe (ver RolePolicy).
+    [RequiresPermission(Permissions.ReportRead)]
     public class ReportsController : Controller
     {
         private readonly SavedReportService _saved;
@@ -45,7 +48,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // listado salía siempre vacío aunque hubiera consultas guardadas.
                 var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
                     ? User.Identity.Name : "dev";
-                var saved = await _saved.ListForUserAsync(userId, new string[0]);
+                // El scope de especialidad sale de ISpecialtyGuard adentro del servicio, no
+                // de acá: antes este controller mandaba `new string[0]`, así que un Jefe
+                // nunca veía los reportes que sus colegas de la misma especialidad
+                // compartieron con Scope="specialty" -- sólo los propios.
+                var saved = await _saved.ListForUserAsync(userId);
                 // El titulo del cuestionario base, no su GUID. Se cachea porque varios
                 // reportes guardados suelen apuntar al mismo cuestionario.
                 var titles = new Dictionary<Guid, string>();
@@ -102,8 +109,11 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportPreviewViewModel();
             try
             {
-                var saved = await _saved.GetAsync(id);
-                if (saved == null) return HttpNotFound();
+                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
+                    ? User.Identity.Name : "dev";
+                var resultado = await _saved.GetForUserAsync(id, userId);
+                if (resultado.Outcome != SavedReportOutcome.Ok) return HttpNotFound();
+                var saved = resultado.Report;
 
                 model.ReportName = saved.Name;
 
@@ -159,8 +169,11 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportStatsViewModel { ReportId = id };
             try
             {
-                var saved = await _saved.GetAsync(id);
-                if (saved == null) return HttpNotFound();
+                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
+                    ? User.Identity.Name : "dev";
+                var resultado = await _saved.GetForUserAsync(id, userId);
+                if (resultado.Outcome != SavedReportOutcome.Ok) return HttpNotFound();
+                var saved = resultado.Report;
                 model.ReportName = saved.Name;
 
                 // La query viaja a la isla tal cual, y la isla se la manda a /api/reports/stats:

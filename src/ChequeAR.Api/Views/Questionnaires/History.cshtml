@@ -2,6 +2,7 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Historial";
+    var primera = Model.Count == 0 ? 0 : Model.Min(x => x.Version);
 }
 
 <header class="cq-page-header">
@@ -38,14 +39,13 @@
                 </td>
                 <td class="cq-text-sm cq-text-muted">@v.ChangeNote</td>
                 <td class="text-end">
-                    @* "Ver" navega al Preview del cuestionario. TODO real: pasar
-                       el número de versión y renderear el snapshot de esa versión
-                       en particular; hoy Preview muestra la última publicada. *@
-                    <a href="@Url.Action("Preview", "Questionnaires", new { id = ViewBag.QuestionnaireId })" class="btn-neutral btn-sm"><i class="bi bi-eye"></i> Ver</a>
-                    @* "Comparar" es un stub: el diff entre dos versiones del árbol
-                       de un Questionnaire pide una feature aparte. Se deja visible
-                       pero disabled + tooltip, en vez de un href="#" que engaña. *@
-                    <button type="button" class="btn-neutral btn-sm" disabled title="Próximamente"><i class="bi bi-arrow-left-right"></i> Comparar</button>
+                    @* "Ver" abre esa versión tal como se congeló al publicarla, no la actual. *@
+                    <a href="@Url.Action("Preview", "Questionnaires", new { id = ViewBag.QuestionnaireId, version = v.Version })" class="btn-neutral btn-sm"><i class="bi bi-eye"></i> Ver</a>
+                    @* "Comparar" contra la versión anterior. La primera no tiene con qué. *@
+                    @if (v.Version > primera)
+                    {
+                        <a href="@Url.Action("Compare", "Questionnaires", new { id = ViewBag.QuestionnaireId, to = v.Version })" class="btn-neutral btn-sm"><i class="bi bi-arrow-left-right"></i> Comparar</a>
+                    }
                 </td>
             </tr>
         }

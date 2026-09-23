@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
 using ChequeAR.Api.Models;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
+using ChequeAR.Domain.Constants;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -20,13 +22,15 @@ namespace ChequeAR.Api.Controllers.Mvc
         private readonly QuestionnaireResponseService _responses;
         private readonly QuestionnaireService _questionnaires;
         private readonly AuditQueryService _audit;
+        private readonly SpecialtyCatalogService _specialties;
 
-        public EncountersController(PatientService patients, QuestionnaireResponseService responses, QuestionnaireService questionnaires, AuditQueryService audit)
+        public EncountersController(PatientService patients, QuestionnaireResponseService responses, QuestionnaireService questionnaires, AuditQueryService audit, SpecialtyCatalogService specialties)
         {
             _patients = patients;
             _responses = responses;
             _questionnaires = questionnaires;
             _audit = audit;
+            _specialties = specialties;
         }
 
         // R1 — pantalla de pacientes (buscador). El action se llama Index para que
@@ -48,6 +52,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // habilitado para uso clínico y uno archivado ya no se usa.
             try
             {
+                var cat = await _specialties.GetAsync();
                 var published = await _questionnaires.SearchAsync(QuestionnaireStatus.Active, null, null, 0, 200);
                 foreach (var pq in published.OrderBy(x => x.Title))
                 {
@@ -56,8 +61,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Id = pq.Id,
                         Title = pq.Title,
                         Version = pq.Versions?.Count ?? 0,
-                        SpecialtyCode = pq.SpecialtyCode ?? "general",
-                        SpecialtyLabel = SpecialtyMap.Label(pq.SpecialtyCode, pq.SpecialtyDisplay)
+                        SpecialtyCode = cat.CodeOrDefault(pq.SpecialtyCode),
+                        SpecialtyLabel = cat.Label(pq.SpecialtyCode, pq.SpecialtyDisplay),
+                        SpecialtyColor = cat.Color(pq.SpecialtyCode)
                     });
                 }
             }
@@ -70,6 +76,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
+                var cat = await _specialties.GetAsync();
                 var hits = await _patients.SearchAsync(q);
                 foreach (var h in hits)
                 {
@@ -79,8 +86,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Document = h.Document,
                         AgeLabel = h.AgeLabel,
                         BirthDateLabel = h.BirthDateLabel,
-                        SpecialtyCode = h.SpecialtyCode ?? "general",
-                        SpecialtyLabel = SpecialtyMap.Label(h.SpecialtyCode, h.SpecialtyLabel)
+                        SpecialtyCode = cat.CodeOrDefault(h.SpecialtyCode),
+                        SpecialtyLabel = cat.Label(h.SpecialtyCode, h.SpecialtyLabel)
                     });
                 }
             }
@@ -119,7 +126,15 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var p = await _patients.GetAsync(patientId);
                 ViewBag.PatientName = p != null ? (p.FullName + " (HC " + p.HospitalId + ")") : ("HC " + patientId);
 
-                var q = await _questionnaires.GetAsync(questionnaireId);
+                ChequeAR.Domain.Entities.Questionnaire q;
+                try
+                {
+                    q = await _questionnaires.GetAsync(questionnaireId);
+                }
+                catch (SpecialtyForbiddenException)
+                {
+                    return HttpNotFound();
+                }
                 ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
 
                 var current = CurrentVersion(q);
@@ -254,7 +269,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var model = new EncounterReadonlyViewModel
                 {
                     EncounterId = qr.Id,
-                    Patient = new PatientSearchItem { HC = qr.PatientHospitalId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" },
+                    Patient = new PatientSearchItem { HC = qr.PatientHospitalId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? SpecialtyDefaults.Code, SpecialtyLabel = p?.SpecialtyLabel ?? SpecialtyDefaults.Name },
                     QuestionnaireTitle = q?.Title,
                     // La versión con la que se completó ESTA ficha, no la que esté vigente
                     // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
@@ -316,6 +331,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     if (answered.Questions.Count > 0) model.Groups.Add(answered);
                 }
                 return base.View(model);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return HttpNotFound();
             }
             catch (Exception)
             {
@@ -388,7 +407,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var model = new EncounterHistoryViewModel
                 {
                     EncounterId = qr.Id,
-                    Patient = new PatientSearchItem { HC = qr.PatientHospitalId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" },
+                    Patient = new PatientSearchItem { HC = qr.PatientHospitalId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? SpecialtyDefaults.Code, SpecialtyLabel = p?.SpecialtyLabel ?? SpecialtyDefaults.Name },
                     QuestionnaireId = qr.QuestionnaireId,
                     QuestionnaireTitle = q?.Title,
                     QuestionnaireVersion = PinnedVersionNumber(q, qr.QuestionnaireVersionId),
@@ -434,6 +453,10 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(model);
             }
+            catch (SpecialtyForbiddenException)
+            {
+                return HttpNotFound();
+            }
             catch (Exception)
             {
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
@@ -460,19 +483,30 @@ namespace ChequeAR.Api.Controllers.Mvc
             };
             try
             {
+                var cat = await _specialties.GetAsync();
                 var p = await _patients.GetAsync(patientId);
-                model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" };
+                model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = cat.CodeOrDefault(p?.SpecialtyCode), SpecialtyLabel = p?.SpecialtyLabel ?? cat.DefaultLabel };
 
                 // El historial de UN paciente está intrínsecamente acotado (no crece sin
                 // límite como el log global de auditoría), así que se trae completo y se
                 // filtra en memoria en vez de empujar el filtro al repositorio.
+                // Nota de alcance: Timeline queda fuera del enforcement por especialidad
+                // (decisión de la feature 011) — muestra el historial completo del paciente
+                // sin importar la especialidad de cada cuestionario. Se resuelve vía
+                // GetAsync directo al repo (no _questionnaires.GetAsync, que sí filtra) para
+                // no romper el historial clínico por un cuestionario de otra especialidad.
                 var encs = await _patients.GetEncountersAsync(patientId, 500);
                 var titleCache = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
                 var all = new List<EncounterTimelineItem>();
                 foreach (var e in encs)
                 {
                     if (!titleCache.ContainsKey(e.QuestionnaireId))
-                        titleCache[e.QuestionnaireId] = await _questionnaires.GetAsync(e.QuestionnaireId);
+                    {
+                        ChequeAR.Domain.Entities.Questionnaire qq = null;
+                        try { qq = await _questionnaires.GetAsync(e.QuestionnaireId); }
+                        catch (SpecialtyForbiddenException) { /* fuera de scope: se muestra igual, ver nota arriba */ }
+                        titleCache[e.QuestionnaireId] = qq;
+                    }
                     var q = titleCache[e.QuestionnaireId];
                     all.Add(new EncounterTimelineItem
                     {
@@ -481,8 +515,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                         QuestionnaireId = e.QuestionnaireId,
                         QuestionnaireTitle = q?.Title ?? e.QuestionnaireId.ToString(),
                         QuestionnaireVersion = PinnedVersionNumber(q, e.QuestionnaireVersionId),
-                        SpecialtyCode = q?.SpecialtyCode ?? "general",
-                        SpecialtyLabel = SpecialtyMap.Label(q?.SpecialtyCode, q?.SpecialtyDisplay),
+                        SpecialtyCode = cat.CodeOrDefault(q?.SpecialtyCode),
+                        SpecialtyLabel = cat.Label(q?.SpecialtyCode, q?.SpecialtyDisplay),
+                        SpecialtyColor = cat.Color(q?.SpecialtyCode),
                         Author = e.AuthorUserId,
                         EncounterId = e.Id,
                         Status = e.Status.ToString().ToLowerInvariant()
@@ -541,7 +576,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             try
             {
                 var p = await _patients.GetAsync(patientId);
-                model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? "general", SpecialtyLabel = p?.SpecialtyLabel ?? "General" };
+                model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? SpecialtyDefaults.Code, SpecialtyLabel = p?.SpecialtyLabel ?? SpecialtyDefaults.Name };
 
                 // El selector ofrece SOLO los cuestionarios que el paciente completó al menos una
                 // vez: son los únicos que pueden producir una serie. Un cuestionario con fichas

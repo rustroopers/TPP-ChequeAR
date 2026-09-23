@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 using Hl7.Fhir.Model;
 using Hl7.Fhir.Serialization;
@@ -165,12 +166,24 @@ namespace ChequeAR.Application.Fhir
             AddValidation(item, question);
             AddCoding(item, question);
             AddEnableWhen(item, question, byLinkId);
+            // Todo lo demas de la variable viaja denormalizado en campos nativos; la referencia
+            // en si no tiene lugar nativo y sin ella el parser la perderia en cada guardado.
+            ChequeARExtensions.SetVariableId(item, question.VariableId);
 
             foreach (var o in (question.Options ?? new List<AnswerOption>()).OrderBy(x => x.OrderIndex))
             {
+                // Con system cuando la opcion esta codificada. Hasta que las opciones las
+                // definio el catalogo iban siempre sin system -- un codigo suelto que nadie
+                // fuera de ChequeAR podia resolver-. Ahora que el Administrador elige el
+                // concepto, corresponde declararlo: Code y SnomedCode son el mismo valor
+                // (R5 admite un solo Coding por answerOption.value).
+                var codificada = !string.IsNullOrWhiteSpace(o.SnomedCode);
                 item.AnswerOption.Add(new FhirQuestionnaire.AnswerOptionComponent
                 {
-                    Value = new Coding(null, o.Code ?? o.Value ?? o.Display, o.Display ?? o.Value)
+                    Value = new Coding(
+                        codificada ? TerminologyService.SnomedSystem : null,
+                        o.Code ?? o.Value ?? o.Display,
+                        o.SnomedDisplay ?? o.Display ?? o.Value)
                 });
             }
 

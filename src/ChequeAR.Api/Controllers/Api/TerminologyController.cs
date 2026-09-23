@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
@@ -26,8 +27,10 @@ namespace ChequeAR.Api.Controllers.Api
             _terminology = terminology;
         }
 
-        // Sólo quienes editan cuestionarios necesitan codificar preguntas.
-        [HttpGet, Route("$expand"), Authorize(Roles = Role.Administrador + "," + Role.Jefe)]
+        // Los 3 roles: además de quien edita cuestionarios (para codificar preguntas), el
+        // renderer de fichas (questionnaire-renderer) también lo usa para que Medico pueda
+        // responder preguntas codificadas -- negárselo le rompería la carga de fichas.
+        [HttpGet, Route("$expand"), RequiresPermissionApi(Permissions.TerminologyExpand)]
         public async Task<IHttpActionResult> Expand([FromUri] string filter = null, [FromUri] int count = 15)
         {
             // Menos de 3 caracteres da ruido y castiga al server terminológico: no buscamos.

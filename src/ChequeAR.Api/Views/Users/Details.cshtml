@@ -28,32 +28,38 @@
     </div>
 
     <div class="cq-card mb-3" style="max-width:720px;">
-        <h2>Roles por especialidad</h2>
-        @for (int i = 0; i < Model.SpecialtyRoles.Count; i++)
-        {
-            var sr = Model.SpecialtyRoles[i];
-            <div class="row g-2 align-items-center mb-2">
-                <div class="col-md-5"><span class="cq-chip cq-chip--@sr.SpecialtyCode">@sr.SpecialtyLabel</span></div>
-                <div class="col-md-7">
-                    <select class="form-select" name="SpecialtyRoles[@i].Role">
-                        <option value="Sin acceso" selected="@(sr.Role == "Sin acceso")">Sin acceso</option>
-                        <option value="Observador" selected="@(sr.Role == "Observador")">Observador</option>
-                        <option value="Médico" selected="@(sr.Role == "Médico")">Médico</option>
-                        <option value="Referente" selected="@(sr.Role == "Referente")">Referente</option>
-                        <option value="Administrador" selected="@(sr.Role == "Administrador")">Administrador</option>
-                    </select>
-                    <input type="hidden" name="SpecialtyRoles[@i].SpecialtyCode" value="@sr.SpecialtyCode" />
-                    <input type="hidden" name="SpecialtyRoles[@i].SpecialtyLabel" value="@sr.SpecialtyLabel" />
-                </div>
-            </div>
-        }
-        <button type="button" class="btn btn-sm btn-outline-secondary mt-2"><i class="bi bi-plus-lg me-1"></i> Agregar especialidad</button>
+        <h2>Rol</h2>
+        <p class="cq-text-sm cq-text-muted">
+            El rol determina qué puede hacer en todo el sistema. El alcance por especialidad se
+            configura aparte, abajo.
+        </p>
+        <select class="form-select" name="Role" style="max-width:280px;">
+            @foreach (var r in ChequeAR.Domain.Enums.Role.All)
+            {
+                <option value="@r" selected="@(Model.Role == r)">@r</option>
+            }
+        </select>
     </div>
 
     <div class="cq-card mb-3" style="max-width:720px;">
-        <h2>Permisos especiales</h2>
-        <div class="form-check"><input class="form-check-input" type="checkbox" id="canAudit" name="CanAccessAudit" @(Model.CanAccessAudit ? "checked" : "") /><label class="form-check-label" for="canAudit">Acceso a auditoría</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" id="canRep" name="CanCreateReports" @(Model.CanCreateReports ? "checked" : "") /><label class="form-check-label" for="canRep">Creación de reportes</label></div>
+        <h2>Especialidades</h2>
+        <p class="cq-text-sm cq-text-muted">
+            Acota lo que ve y puede tocar (fichas, cuestionarios, reportes) a estas especialidades.
+            Un Administrador ve todas sin necesidad de que se le asignen.
+        </p>
+        @for (int i = 0; i < Model.Specialties.Count; i++)
+        {
+            var sp = Model.Specialties[i];
+            <div class="row g-2 align-items-center mb-2">
+                <div class="col-md-5"><span class="cq-chip cq-chip--zone-@sp.SpecialtyColor">@sp.SpecialtyLabel</span></div>
+                <input type="hidden" name="Specialties[@i].SpecialtyCode" value="@sp.SpecialtyCode" />
+                <input type="hidden" name="Specialties[@i].SpecialtyLabel" value="@sp.SpecialtyLabel" />
+            </div>
+        }
+        @if (Model.Specialties.Count == 0)
+        {
+            <p class="cq-text-sm cq-text-muted fst-italic">Sin especialidades asignadas.</p>
+        }
     </div>
 
     <div class="d-flex gap-2">

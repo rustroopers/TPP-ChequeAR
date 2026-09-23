@@ -1,0 +1,38 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "question-variable-id",
+  "url": "https://chequear.garrahan/StructureDefinition/question-variable-id",
+  "version": "1.0.0",
+  "name": "QuestionVariableId",
+  "title": "Variable clínica de la que proviene la pregunta",
+  "status": "active",
+  "publisher": "Hospital Garrahan",
+  "description": "Identificador de la variable del catálogo de ChequeAR que define esta pregunta. Todo lo que la variable determina (tipo, unidad, rango, opciones de respuesta y concepto codificado) viaja denormalizado en campos nativos del item, así que un consumidor externo lee el recurso completo sin necesitar el catálogo. Esta extensión sólo transporta la referencia, que no tiene lugar nativo en el estándar y sin la cual se perdería en cada ida y vuelta entre el recurso y la base.",
+  "fhirVersion": "5.0.0",
+  "kind": "complex-type",
+  "abstract": false,
+  "context": [{ "type": "element", "expression": "Questionnaire.item" }],
+  "type": "Extension",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Extension",
+        "path": "Extension",
+        "max": "1"
+      },
+      {
+        "id": "Extension.url",
+        "path": "Extension.url",
+        "fixedUri": "https://chequear.garrahan/StructureDefinition/question-variable-id"
+      },
+      {
+        "id": "Extension.value[x]",
+        "path": "Extension.value[x]",
+        "min": 1,
+        "type": [{ "code": "string" }]
+      }
+    ]
+  }
+}

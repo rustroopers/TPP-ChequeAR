@@ -89,6 +89,16 @@ namespace ChequeAR.Application.Fhir
 
                 if (string.IsNullOrWhiteSpace(item.Text) && tipo != "group")
                     avisos.Add("La pregunta '" + item.LinkId + "' no tiene enunciado.");
+
+                // Aviso y no error, deliberadamente. Que toda pregunta provenga del catálogo de
+                // variables es una regla de NEGOCIO de ChequeAR, y la aplica QuestionnaireService
+                // al guardar: un perfil FHIR describe la forma del recurso, no una restricción
+                // sobre una tabla interna. Además un Questionnaire legítimo de otro sistema no
+                // tiene por qué declarar un concepto, y rechazarlo acá rompería la lectura de
+                // recursos externos que el resto de la capa sí sabe interpretar.
+                if (tipo != "group" && (item.Code == null || item.Code.Count == 0))
+                    avisos.Add("La pregunta '" + item.LinkId + "' no declara un concepto codificado, "
+                             + "así que sus respuestas no van a ser comparables fuera de ChequeAR.");
             }
 
             // Una condición que apunta a una pregunta inexistente es una pregunta que nadie va

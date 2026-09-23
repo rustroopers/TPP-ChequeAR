@@ -19,9 +19,16 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
         private readonly QuestionnaireService _sut;
 
+        // Variable del catálogo con la que se arman las preguntas de estos tests. Desde que el
+        // cuestionario se construye eligiendo variables, una pregunta sin VariableId es
+        // rechazada por diseño (ver QuestionnaireServiceVariableTests).
+        private readonly ClinicalVariable _peso = TestHelpers.Variable("peso");
+
         public QuestionnaireServiceTests()
         {
-            _sut = new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object, TestHelpers.NoopAuditDispatcher());
+            _sut = new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
+                TestHelpers.UnrestrictedGuard(), TestHelpers.CatalogWith(), TestHelpers.UnrestrictedAccess(),
+                TestHelpers.VariableRepoWith(_peso));
         }
 
         // Al crear: arranca en estado Draft, se le asigna Id y datos de auditoría (creador/fecha)
@@ -29,7 +36,7 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public async Task CreateAsync_SetsDraftAndAuditFields_AndPersists()
         {
-            var q = new Questionnaire { Title = "Reumato" };
+            var q = new Questionnaire { Title = "Reumato", SpecialtyCode = "cardio" };
 
             var created = await _sut.CreateAsync(q, "user-1");
 
@@ -241,14 +248,14 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             var existing = new Questionnaire { Id = id, Title = "old", Status = QuestionnaireStatus.Draft };
-            existing.Questions.Add(new Question { Id = Guid.NewGuid(), LinkId = "vieja" });
+            existing.Questions.Add(TestHelpers.QuestionFrom(_peso, "vieja"));
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
 
             var patch = new Questionnaire { Title = "nuevo" };
             patch.Groups.Add(new QuestionGroup
             {
                 Title = "Sección",
-                Questions = { new Question { LinkId = "nueva", Text = "¿Dolor?" } }
+                Questions = { TestHelpers.QuestionFrom(_peso, "nueva", "¿Dolor?") }
             });
 
             await _sut.UpdateAsync(id, patch, "u");
@@ -265,7 +272,7 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             var existing = new Questionnaire { Id = id, Title = "old", Status = QuestionnaireStatus.Draft };
-            existing.Questions.Add(new Question { Id = Guid.NewGuid(), LinkId = "vieja" });
+            existing.Questions.Add(TestHelpers.QuestionFrom(_peso, "vieja"));
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
 
             await _sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u");
@@ -500,10 +507,12 @@ namespace ChequeAR.Tests.Application
             _repo.Verify(r => r.UpdateAsync(q), Times.Once);
         }
 
-        private static Questionnaire Draftable(Guid id)
+        // No estatico: la pregunta tiene que provenir de una variable del catalogo, y el
+        // repositorio en memoria del fixture solo conoce _peso.
+        private Questionnaire Draftable(Guid id)
         {
             var q = new Questionnaire { Id = id, Status = QuestionnaireStatus.Draft };
-            q.Questions.Add(new Question());
+            q.Questions.Add(TestHelpers.QuestionFrom(_peso));
             return q;
         }
     }

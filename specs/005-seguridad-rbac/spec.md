@@ -8,15 +8,22 @@
 
 Módulo transversal que provee:
 
-- **Autenticación**: delegada a la **API de logueo del Hospital Garrahan** (no se gestionan contraseñas en ChequeAR).
-- **Autorización**: RBAC con cuatro roles (`Administrador`, `Jefe`, `Médico`, `Observador`) más segmentación por especialidad.
+- **Autenticación**: local por defecto (contraseña hasheada con PBKDF2 contra `AppUser.PasswordHash`,
+  ver `LocalCredentialAuthenticator`); se delega a la **API de logueo del Hospital Garrahan** el día
+  que exista, configurando `HospitalAuth:LoginUrl` (`HospitalAuthClient`). Ambas implementan la misma
+  interfaz (`ICredentialAuthenticator`) y son intercambiables sin tocar el resto del sistema.
+- **Autorización**: RBAC con **tres roles** (`Administrador`, `Jefe`, `Médico`) más segmentación por
+  especialidad. La matriz vive en un único lugar del código (`RolePolicy`), no repartida en atributos.
 - **Auditoría**: registro detallado de toda operación sensible (creación, edición, publicación, lectura de fichas, exports), accesible vía `AuditEvent` FHIR.
 
 ## User Scenarios & Testing
 
-### User Story 1 - Login delegado al hospital (Priority: P1)
+### User Story 1 - Login local, con delegación futura al hospital (Priority: P1)
 
-Un Médico autentica usando sus credenciales hospitalarias; ChequeAR obtiene su identidad y roles desde la API del hospital y emite un token de sesión para el frontend.
+Un usuario autentica con su usuario y contraseña. Mientras la API de autenticación del Hospital
+Garrahan no exista, ChequeAR valida contra su propio `AppUser.PasswordHash` (PBKDF2); cuando esa API
+exista, basta configurar `HospitalAuth:LoginUrl` para que la validación pase a delegarse, sin cambiar
+el resto del flujo (emisión de JWT, sync del espejo local, etc.).
 
 **Why this priority**: Sin auth no opera ningún otro módulo. Es bloqueante.
 
@@ -24,9 +31,9 @@ Un Médico autentica usando sus credenciales hospitalarias; ChequeAR obtiene su 
 
 **Acceptance Scenarios**:
 
-1. **Given** credenciales válidas del hospital, **When** se invoca `/auth/login`, **Then** ChequeAR devuelve un JWT con `sub` = usuario, `roles` y `specialties` claims.
+1. **Given** credenciales válidas (local u hospital, según el modo activo), **When** se invoca `/auth/login`, **Then** ChequeAR devuelve un JWT con `sub` = usuario, `roles` y `specialties` claims.
 2. **Given** un token expirado, **When** se llama a un endpoint protegido, **Then** se responde 401 con `WWW-Authenticate` y el cliente debe re-loguear.
-3. **Given** un usuario no registrado en el hospital, **When** intenta loguearse, **Then** la API del hospital rechaza y ChequeAR responde 401.
+3. **Given** un usuario inexistente, inactivo, sin contraseña configurada o con contraseña incorrecta, **When** intenta loguearse, **Then** ChequeAR responde 401 con el mismo mensaje genérico en los cuatro casos (no revela cuál aplica).
 
 ---
 
@@ -36,9 +43,10 @@ Cada endpoint enforza el rol mínimo requerido.
 
 **Acceptance Scenarios**:
 
-1. **Given** un `Observador`, **When** intenta `POST /Questionnaire`, **Then** 403.
+1. **Given** un `Médico`, **When** intenta `POST /Questionnaire`, **Then** 403 (sólo puede leer cuestionarios, no crearlos ni editarlos).
 2. **Given** un `Jefe`, **When** intenta `$publish`, **Then** 200.
 3. **Given** un `Administrador`, **When** intenta cualquier operación, **Then** se permite.
+4. **Given** un `Jefe`, **When** intenta `GET /AuditEvent` o `GET /api/users`, **Then** 403 (auditoría y usuarios son exclusivos de `Administrador`).
 
 ---
 
@@ -74,34 +82,49 @@ Toda operación de creación, modificación, publicación, lectura de fichas de 
 
 ### Functional Requirements
 
-- **FR-001**: El sistema DEBE delegar autenticación a la API de logueo del Hospital Garrahan.
-- **FR-002**: El sistema DEBE soportar los roles: `Administrador`, `Jefe`, `Médico`, `Observador`.
+- **FR-001**: El sistema DEBE autenticar localmente contra `AppUser.PasswordHash` mientras
+  `HospitalAuth:LoginUrl` no esté configurado, y delegar a la API de logueo del Hospital Garrahan
+  cuando sí lo esté — ambos modos vía la misma interfaz (`ICredentialAuthenticator`).
+- **FR-002**: El sistema DEBE soportar los roles: `Administrador`, `Jefe`, `Médico`. Cada usuario
+  tiene **exactamente uno** (no una acumulación); la jerarquía Administrador > Jefe > Médico se
+  expresa sólo al emitir claims (`RoleHierarchy`), nunca en el dato guardado.
 - **FR-003**: El sistema DEBE emitir un JWT propio con TTL ≤ 60 min y refresh token con TTL ≤ 8 h.
-- **FR-004**: Cada endpoint DEBE declarar el rol mínimo requerido vía atributo `[Authorize(Roles="...")]`.
-- **FR-005**: El sistema DEBE filtrar resultados por especialidad para roles `Médico` y `Observador`.
+- **FR-004**: Cada endpoint DEBE declarar el permiso mínimo requerido vía
+  `[RequiresPermission]`/`[RequiresPermissionApi]`, que consultan `RolePolicy` — la única fuente de
+  verdad de la matriz rol→permiso. Ningún controller repite una lista de roles a mano.
+- **FR-005**: El sistema DEBE filtrar resultados por especialidad para los roles `Jefe` y `Médico`
+  (`Administrador` es siempre `Unrestricted`, ver `SpecialtyGuard`).
 - **FR-006**: El sistema DEBE generar `AuditEvent` (FHIR R5) por cada operación sensible (lista en `audit-policy.md`).
 - **FR-007**: Los `AuditEvent` DEBEN ser inmutables (no `UPDATE`/`DELETE`).
 - **FR-008**: El sistema DEBE almacenar logs por ≥ 6 años (cumplimiento normativa de historia clínica en Argentina).
-- **FR-009**: El sistema NO DEBE almacenar contraseñas ni hashes de usuario.
+- **FR-009**: El sistema DEBE almacenar un hash PBKDF2 con salt por usuario (`PasswordHasher`) para el
+  modo de autenticación local — nunca la contraseña en claro. Cuando `HospitalAuth:LoginUrl` está
+  configurado, la autenticación se delega y el hash local queda sin uso (puede quedar `null`).
 - **FR-010**: El sistema DEBE registrar intentos fallidos de autorización y permitir consulta por administrador.
 - **FR-011**: El sistema DEBE proteger endpoints de administración (Hangfire dashboard, ports admin) sólo a `Administrador`.
 
 ### Matriz de permisos (resumen)
 
-| Operación | Administrador | Jefe | Médico | Observador |
-|---|:-:|:-:|:-:|:-:|
-| CRUD Questionnaire | ✅ | ✅ | ❌ | ❌ |
-| Publish/Archive | ✅ | ✅ | ❌ | ❌ |
-| Crear/Editar QR | ✅ | ✅ | ✅ | ❌ |
-| Leer QR | ✅ | ✅ (esp) | ✅ (esp) | ✅ (esp) |
-| Reportes / Export | ✅ | ✅ | ✅ (esp) | ✅ (esp) |
-| Auditoría | ✅ | sólo lectura propia | ❌ | ❌ |
-| Gestión usuarios | ✅ | ❌ | ❌ | ❌ |
+Fuente autoritativa: `ChequeAR.Application.Security.RolePolicy` (`RolePolicyTests` verifica cada celda).
+
+| Operación | Administrador | Jefe | Médico |
+|---|:-:|:-:|:-:|
+| Leer cuestionarios | ✅ | ✅ | ✅ |
+| Crear/editar/publicar/archivar/clonar cuestionarios | ✅ | ✅ | ❌ |
+| Borrar cuestionario | ✅ | ❌ (archiva, no borra) | ❌ |
+| Leer/cargar fichas (QuestionnaireResponse) | ✅ | ✅ (esp) | ✅ (esp) |
+| Reportes / Export | ✅ | ✅ (esp) | ❌ |
+| Auditoría | ✅ | ❌ | ❌ |
+| Gestión de usuarios | ✅ | ❌ | ❌ |
+| Estado de integraciones | ✅ | ✅ | ❌ |
+| Terminología (`$expand`, autocomplete SNOMED) | ✅ | ✅ | ✅ |
 
 ### Key Entities
 
-- **User (referencia)**: identificado por id del hospital. ChequeAR no almacena perfil completo, sólo cache local.
-- **Role**: enum fijo en código.
+- **User**: espejo local del padrón. Con `PasswordHash`/`PasswordUpdatedAt` para el modo de
+  autenticación local (ver FR-009); `null` mientras no se haya sembrado/asignado una contraseña.
+- **Role**: 3 valores fijos en código (`Domain.Enums.Role`), uno por usuario.
+- **Permission**: catálogo de operaciones protegidas (`Domain.Enums.Permissions`), mapeado a roles por `RolePolicy`.
 - **Specialty**: catálogo de especialidades pediátricas.
 - **AuditEvent**: recurso FHIR R5.
 - **UserSpecialty**: tabla local que mapea usuario ↔ especialidades (sync periódica con el hospital o on-login).
@@ -115,8 +138,11 @@ Toda operación de creación, modificación, publicación, lectura de fichas de 
 
 ## Assumptions
 
-- La API de logueo del hospital expone OAuth2 / OpenID Connect o un endpoint propio que devuelva user info + roles + especialidades.
-- Los roles del hospital son: Administrador, Jefe, Médico, Observador (confirmado por GP 201).
+- La API de logueo del hospital, cuando exista, expone OAuth2 / OpenID Connect o un endpoint propio
+  que devuelva user info + roles + especialidades; hasta entonces, ChequeAR es la fuente de verdad
+  de las contraseñas (modo local, ver FR-001/FR-009).
+- Los roles son: Administrador, Jefe, Médico (el rol `Observador`, presente en una iteración anterior
+  de este spec, se eliminó del sistema).
 - El reloj del servidor está sincronizado con NTP del hospital para validar tokens.
 - La normativa relevante (Ley 25.326 datos personales, Ley 26.529 derechos del paciente, Resolución MS 1480/2011) se cumple por retención + auditoría.
 

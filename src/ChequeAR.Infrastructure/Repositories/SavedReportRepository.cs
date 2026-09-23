@@ -19,12 +19,24 @@ namespace ChequeAR.Infrastructure.Repositories
 
         public async Task<IReadOnlyList<SavedReport>> ListForUserAsync(string userId, IEnumerable<string> specialties)
         {
-            var specs = (specialties ?? Array.Empty<string>()).ToList();
-            return await _ctx.SavedReports
-                .Where(r => r.CreatedBy == userId
-                            || (r.Scope == "specialty" && specs.Contains(r.SpecialtyCode)))
-                .OrderByDescending(r => r.UpdatedAt)
-                .ToListAsync();
+            IQueryable<SavedReport> query;
+            if (specialties == null)
+            {
+                // Sin restricción: además de lo propio, CUALQUIER reporte compartido a nivel
+                // especialidad (ver ISavedReportRepository.ListForUserAsync).
+                query = _ctx.SavedReports.Where(r => r.CreatedBy == userId || r.Scope == "specialty");
+            }
+            else
+            {
+                // Materializada a List<T> antes de entrar al árbol de expresión: el
+                // proveedor de EF6 no siempre traduce Contains sobre un IEnumerable
+                // arbitrario (p. ej. un HashSet, que es lo que da SpecialtyScope.Codes).
+                var specs = specialties.ToList();
+                query = _ctx.SavedReports.Where(r => r.CreatedBy == userId
+                    || (r.Scope == "specialty" && specs.Contains(r.SpecialtyCode)));
+            }
+
+            return await query.OrderByDescending(r => r.UpdatedAt).ToListAsync();
         }
 
         public async Task AddAsync(SavedReport r) { _ctx.SavedReports.Add(r); await _ctx.SaveChangesAsync(); }

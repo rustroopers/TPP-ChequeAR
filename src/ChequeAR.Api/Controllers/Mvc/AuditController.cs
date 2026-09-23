@@ -3,16 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
+using ChequeAR.Api.Auth;
 using ChequeAR.Api.Helpers;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Exporters;
 using ChequeAR.Application.Services;
 using ChequeAR.Application.Reports;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
-    // TODO: re-habilitar [Authorize(Roles = Role.Administrador + "," + Role.Jefe)] cuando FormsAuth esté wired.
+    // Saca a Jefe (tenía acceso antes): auditoría queda exclusiva de Administrador.
+    [RequiresPermission(Permissions.AuditRead)]
     public class AuditController : Controller
     {
         private readonly AuditQueryService _audit;

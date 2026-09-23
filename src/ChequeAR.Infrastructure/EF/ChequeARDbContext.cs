@@ -47,6 +47,8 @@ namespace ChequeAR.Infrastructure.EF
         public DbSet<ReportExecution> ReportExecutions { get; set; }
         public DbSet<ExportArtifact> ExportArtifacts { get; set; }
         public DbSet<ExportJob> ExportJobs { get; set; }
+        public DbSet<ClinicalVariable> ClinicalVariables { get; set; }
+        public DbSet<VariableOption> VariableOptions { get; set; }
 
         protected override void OnModelCreating(DbModelBuilder modelBuilder)
         {
@@ -72,14 +74,25 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Configurations.Add(new QuestionnaireVersionConfig());
             modelBuilder.Configurations.Add(new QuestionnaireResponseConfig());
             modelBuilder.Configurations.Add(new AuditEventConfig());
+            modelBuilder.Configurations.Add(new ClinicalVariableConfig());
 
             // Sin esto, EF no asocia QuestionGroup.Questions con Question.GroupId (no hay
             // navegación inversa en Question) y crea una FK sombra "QuestionGroup_Id" que
             // no existe en el esquema Oracle -> ORA-00904 al guardar.
             modelBuilder.Entity<QuestionGroup>().HasMany(g => g.Questions).WithOptional().HasForeignKey(q => q.GroupId).WillCascadeOnDelete(false);
 
+            // Mismo motivo que el mapeo de arriba: VariableOption no tiene navegación inversa,
+            // así que sin esto EF inventa la FK sombra "ClinicalVariable_Id" -> ORA-00904.
+            // WithRequired porque una opción no existe sin su variable, y sin cascade para
+            // seguir el criterio del resto del esquema (los borrados son explícitos, en
+            // transacción, desde el repositorio).
+            modelBuilder.Entity<ClinicalVariable>().HasMany(v => v.Options).WithRequired().HasForeignKey(o => o.VariableId).WillCascadeOnDelete(false);
+
             // Claves string: acotadas para que sean PK/FK indexables en Oracle.
             modelBuilder.Entity<User>().Property(x => x.Id).HasMaxLength(128);
+            // Formato "algo$iteraciones$salt$hash" en base64 (~95 chars hoy); holgura para
+            // subir iteraciones o cambiar de algoritmo sin migrar el esquema de nuevo.
+            modelBuilder.Entity<User>().Property(x => x.PasswordHash).HasMaxLength(256);
             modelBuilder.Entity<UserRole>().HasKey(x => new { x.UserId, x.Role });
             modelBuilder.Entity<UserRole>().Property(x => x.UserId).HasMaxLength(128);
             modelBuilder.Entity<UserRole>().Property(x => x.Role).HasMaxLength(32);
@@ -88,7 +101,13 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Entity<UserSpecialty>().Property(x => x.SpecialtyCode).HasMaxLength(64);
             modelBuilder.Entity<Specialty>().HasKey(x => x.Code);
             modelBuilder.Entity<Specialty>().Property(x => x.Code).HasMaxLength(64);
+            // Nombre de zona del tema (red|violet|green|yellow|blue|orange), no un color libre.
+            modelBuilder.Entity<Specialty>().Property(x => x.Color).HasMaxLength(32);
             modelBuilder.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
+            // Consistencia con Questionnaire.SpecialtyCode/Specialty.Code (ambos 64): estaba
+            // en 2000 por la convención global de strings, un ancho que nunca podría matchear
+            // la PK del catálogo. Puede ser NULL (Scope="private" no tiene especialidad).
+            modelBuilder.Entity<SavedReport>().Property(x => x.SpecialtyCode).HasMaxLength(64);
 
             // Campos JSON / texto largo → CLOB. IsMaxLength() suelta el límite de 2000 que
             // impone la convención de arriba: sin esto, EF valida client-side contra 2000

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 using Hl7.Fhir.Model;
 using Newtonsoft.Json;
@@ -95,7 +96,8 @@ namespace ChequeAR.Application.Fhir
                 OrderIndex = orderIndex,
                 ValidationJson = ToValidationJson(item),
                 EnableWhenJson = ToEnableWhenJson(item),
-                CodingJson = ToCodingJson(item)
+                CodingJson = ToCodingJson(item),
+                VariableId = ChequeARExtensions.GetVariableId(item)
             };
 
             var ordenOpcion = 0;
@@ -103,11 +105,16 @@ namespace ChequeAR.Application.Fhir
             {
                 var coding = opcion.Value as Coding;
                 if (coding == null) continue;
+                // El system distingue una opcion codificada de un codigo suelto: sin esto la
+                // codificacion se emitiria en cada guardado y se perderia en cada lectura.
+                var esSnomed = coding.System == TerminologyService.SnomedSystem;
                 question.Options.Add(new AnswerOption
                 {
                     Code = coding.Code,
                     Display = coding.Display ?? coding.Code,
                     Value = coding.Display ?? coding.Code,
+                    SnomedCode = esSnomed ? coding.Code : null,
+                    SnomedDisplay = esSnomed ? coding.Display : null,
                     OrderIndex = ordenOpcion++
                 });
             }

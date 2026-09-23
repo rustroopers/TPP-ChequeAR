@@ -3,9 +3,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading;
 using System.Web;
 using System.Web.Hosting;
+using ChequeAR.Application.Security;
 using Newtonsoft.Json;
 
 namespace ChequeAR.Api.Helpers
@@ -46,6 +48,19 @@ namespace ChequeAR.Api.Helpers
             if (string.IsNullOrEmpty(text)) return "[[" + key + "]]";
             if (args == null) return text;
             return ApplyArgs(text, args);
+        }
+
+        /// <summary>
+        /// ¿El usuario de la request actual tiene este permiso? Para condicionar la UI
+        /// (sidebar, botones) sin repetir la matriz de roles en cada vista -RolePolicy sigue
+        /// siendo la única fuente de verdad-. Cosmético: la autorización real vive en
+        /// RequiresPermission(Api)Attribute y en IAccessGuard del lado del servicio.
+        /// </summary>
+        public static bool Can(string permission)
+        {
+            var principal = HttpContext.Current?.User as ClaimsPrincipal;
+            if (principal == null || !principal.Identity.IsAuthenticated) return false;
+            return RolePolicy.Allows(ChequeAR.Api.Auth.CurrentUser.Roles(principal), permission);
         }
 
         /// Hora actual en zona horaria de Argentina (UTC-3), independiente de la

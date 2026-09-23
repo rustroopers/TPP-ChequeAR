@@ -1,9 +1,15 @@
 @model ChequeAR.Api.Models.QuestionnaireListViewModel
+@using ChequeAR.Domain.Enums
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = Cq.T("q1.title");
     var pageSize = Model.PageSize > 0 ? Model.PageSize : 20;
     var totalPages = (int)Math.Ceiling((double)Model.Total / pageSize);
+    // Cosmético: la autorización real vive en RequiresPermission(Api)Attribute + IAccessGuard.
+    // Un Medico no tiene questionnaire.write, así que no ve Nuevo/Editar/Publicar/Archivar
+    // -antes los veía y terminaban en un 403-. Su camino de lectura es Vista previa, que
+    // sigue estando para todos.
+    var canWrite = Cq.Can(Permissions.QuestionnaireWrite);
 }
 
 <header class="cq-page-header">
@@ -11,12 +17,15 @@
         <h1 class="cq-page-header__title">@Cq.T("q1.title")</h1>
         <p class="cq-page-header__subtitle">@Cq.T("q1.subtitle")</p>
     </div>
-    <div class="d-inline-flex align-items-center">
-        <a href="@Url.Action("Edit")" class="btn btn-primary">
-            <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
-        </a>
-        <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="left" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Publicalo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
-    </div>
+    @if (canWrite)
+    {
+        <div class="d-inline-flex align-items-center">
+            <a href="@Url.Action("Edit")" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
+            </a>
+            <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="left" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Publicalo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+        </div>
+    }
 </header>
 
 @using (Html.BeginForm("Index", "Questionnaires", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "questionnaires" }))
@@ -59,7 +68,6 @@
 }
 else
 {
-    <p class="cq-text-xs cq-text-muted mt-3 mb-1">Ordenado por última modificación (los más recientes arriba).</p>
     <table class="cq-table">
         <thead>
             <tr>
@@ -76,7 +84,7 @@ else
             {
                 <tr class="cq-row--clickable" data-href="@Url.Action("Preview", new { id = q.Id })">
                     <td><a href="@Url.Action("Preview", new { id = q.Id })" class="text-decoration-none fw-semibold">@q.Title</a></td>
-                    <td><span class="cq-chip cq-chip--@q.SpecialtyCode">@q.SpecialtyLabel</span></td>
+                    <td><span class="cq-chip cq-chip--zone-@q.SpecialtyColor">@q.SpecialtyLabel</span></td>
                     <td>v@(q.Version)</td>
                     <td>
                         @if (q.Status == "published") { <span class="cq-badge cq-badge--published">@Cq.T("status.published")</span> }
@@ -94,17 +102,23 @@ else
                                 <i class="bi bi-three-dots"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
+                                @if (canWrite)
+                                {
+                                    <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
+                                }
                                 <li><a class="dropdown-item" href="@Url.Action("Preview", new { id = q.Id })"><i class="bi bi-eye me-1"></i> Vista previa</a></li>
                                 <li><a class="dropdown-item" href="@Url.Action("History", new { id = q.Id })"><i class="bi bi-clock-history me-1"></i> Historial</a></li>
-                                <li><hr class="dropdown-divider" /></li>
-                                @if (!(q.Status == "published" && !q.HasUnpublishedChanges))
+                                @if (canWrite)
                                 {
-                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
-                                }
-                                @if (q.Status != "archived")
-                                {
-                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title" title="Cambia el estado del cuestionario a Archivado"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                    <li><hr class="dropdown-divider" /></li>
+                                    if (!(q.Status == "published" && !q.HasUnpublishedChanges))
+                                    {
+                                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                    }
+                                    if (q.Status != "archived")
+                                    {
+                                        <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title" title="Cambia el estado del cuestionario a Archivado"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                    }
                                 }
                             </ul>
                         </div>
@@ -128,59 +142,64 @@ else
     </div>
 }
 
-@* Q6 — Modal Publicar *@
-<div class="modal fade" id="publishModal" tabindex="-1" aria-labelledby="publishModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        @using (Html.BeginForm("Publish", "Questionnaires", FormMethod.Post, new { @class = "modal-content" }))
-        {
-            @Html.AntiForgeryToken()
-            <input type="hidden" name="id" id="publishId" />
-            <div class="modal-header">
-                <h2 class="modal-title h3" id="publishModalLabel">Publicar cuestionario</h2>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <div class="modal-body">
-                <p class="cq-text-sm cq-text-muted mb-3">Una vez publicada, la versión queda inmutable. Las cargas existentes mantienen su versión.</p>
-                <div class="mb-3">
-                    <label class="form-label">Notas del cambio</label>
-                    <textarea name="changeNote" rows="3" class="form-control" placeholder="Describa qué cambia respecto a la versión anterior"></textarea>
+@* Los modales de Publicar/Archivar sólo se renderizan para quien puede usarlos:
+   sin questionnaire.write no hay botón que los abra. *@
+@if (canWrite)
+{
+    @* Q6 — Modal Publicar *@
+    <div class="modal fade" id="publishModal" tabindex="-1" aria-labelledby="publishModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            @using (Html.BeginForm("Publish", "Questionnaires", FormMethod.Post, new { @class = "modal-content" }))
+            {
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="publishId" />
+                <div class="modal-header">
+                    <h2 class="modal-title h3" id="publishModalLabel">Publicar cuestionario</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="btn btn-primary">Publicar</button>
-            </div>
-        }
+                <div class="modal-body">
+                    <p class="cq-text-sm cq-text-muted mb-3">Una vez publicada, la versión queda inmutable. Las cargas existentes mantienen su versión.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Notas del cambio</label>
+                        <textarea name="changeNote" rows="3" class="form-control" placeholder="Describa qué cambia respecto a la versión anterior"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Publicar</button>
+                </div>
+            }
+        </div>
     </div>
-</div>
 
-@* Q7 — Modal Archivar *@
-<div class="modal fade" id="archiveModal" tabindex="-1" aria-labelledby="archiveModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        @using (Html.BeginForm("Archive", "Questionnaires", FormMethod.Post, new { @class = "modal-content" }))
-        {
-            @Html.AntiForgeryToken()
-            <input type="hidden" name="id" id="archiveId" />
-            <div class="modal-header">
-                <h2 class="modal-title h3" id="archiveModalLabel">Archivar cuestionario</h2>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <div class="modal-body">
-                <p>¿Querés archivar <strong id="archiveTitle"></strong>?</p>
-                <p class="cq-text-sm cq-text-muted mb-0">
-                    Archivar <strong>cambia el estado</strong> del cuestionario a <em>Archivado</em>: no se puede usar
-                    para nuevas cargas y desaparece del listado por defecto (queda visible con el filtro <em>Archivado</em>).
-                    Podés desarchivarlo publicando una nueva versión.
-                    Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos "borrar": romperíamos su trazabilidad.
-                </p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="btn btn-danger">Archivar</button>
-            </div>
-        }
+    @* Q7 — Modal Archivar *@
+    <div class="modal fade" id="archiveModal" tabindex="-1" aria-labelledby="archiveModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            @using (Html.BeginForm("Archive", "Questionnaires", FormMethod.Post, new { @class = "modal-content" }))
+            {
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="id" id="archiveId" />
+                <div class="modal-header">
+                    <h2 class="modal-title h3" id="archiveModalLabel">Archivar cuestionario</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Querés archivar <strong id="archiveTitle"></strong>?</p>
+                    <p class="cq-text-sm cq-text-muted mb-0">
+                        Archivar <strong>cambia el estado</strong> del cuestionario a <em>Archivado</em>: no se puede usar
+                        para nuevas cargas y desaparece del listado por defecto (queda visible con el filtro <em>Archivado</em>).
+                        Podés desarchivarlo publicando una nueva versión.
+                        Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos "borrar": romperíamos su trazabilidad.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger">Archivar</button>
+                </div>
+            }
+        </div>
     </div>
-</div>
+}
 
 @section scripts {
 <script>

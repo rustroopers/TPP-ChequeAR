@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Application.Services
@@ -41,20 +42,31 @@ namespace ChequeAR.Application.Services
         private readonly IQuestionnaireResponseRepository _responses;
         private readonly IQuestionnaireRepository _questionnaires;
         private readonly IUserRepository _users;
+        private readonly SpecialtyCatalogService _specialties;
+        private readonly ISpecialtyGuard _guard;
 
         public HomeDashboardService(
             IQuestionnaireResponseRepository responses,
             IQuestionnaireRepository questionnaires,
-            IUserRepository users)
+            IUserRepository users,
+            SpecialtyCatalogService specialties,
+            ISpecialtyGuard guard)
         {
             _responses = responses;
             _questionnaires = questionnaires;
             _users = users;
+            _specialties = specialties;
+            _guard = guard;
         }
 
         public async Task<IReadOnlyList<RecentEncounterDto>> RecentEncountersAsync(int take = 5)
         {
-            var recientes = await _responses.SearchAsync(null, null, null, 0, take);
+            // Recientes va restringido por especialidad: un Jefe/Medico ve SOLO fichas de las
+            // suyas. El scope lo resuelve el guard (Administrador => sin restriccion), y el
+            // filtrado ocurre en la consulta, no despues de traer las filas -- si se filtrara
+            // aca, "las ultimas 5" podrian quedar en menos de 5 al descartar las ajenas.
+            var scope = _guard.Scope;
+            var recientes = await _responses.SearchAsync(null, null, null, 0, take, scope);
             if (recientes.Count == 0) return new List<RecentEncounterDto>();
 
             // Una sola consulta en lugar de una por ficha. El cache manual del controller
@@ -64,10 +76,14 @@ namespace ChequeAR.Application.Services
             var porId = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
             foreach (var id in ids)
             {
+                // Recorre por id directo (no vía QuestionnaireService): el scope ya se aplicó
+                // en SearchAsync, así que estos cuestionarios son los de las fichas que el
+                // usuario tiene permitido ver -- acá sólo se resuelven sus títulos.
                 var q = await _questionnaires.GetAsync(id);
                 if (q != null) porId[id] = q;
             }
 
+            var cat = await _specialties.GetAsync();
             return recientes.Select(r =>
             {
                 porId.TryGetValue(r.QuestionnaireId, out var q);
@@ -80,7 +96,7 @@ namespace ChequeAR.Application.Services
                     PatientHospitalId = r.PatientHospitalId,
                     QuestionnaireId = r.QuestionnaireId,
                     QuestionnaireTitle = q?.Title ?? r.QuestionnaireId.ToString(),
-                    SpecialtyCode = q?.SpecialtyCode ?? "general",
+                    SpecialtyCode = cat.CodeOrDefault(q?.SpecialtyCode),
                     SpecialtyDisplay = q?.SpecialtyDisplay,
                     Status = r.Status,
                     LastSavedAt = r.LastSavedAt

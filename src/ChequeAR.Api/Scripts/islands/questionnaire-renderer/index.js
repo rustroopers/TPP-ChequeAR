@@ -1020,7 +1020,6 @@
                     <button class="btn btn-outline-secondary" :disabled="submitting || lockedByOther" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
                     <button class="btn btn-primary" :disabled="submitting || lockedByOther || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
                 </div>\
-                <p class="cq-text-xs cq-text-muted text-end mt-2 mb-0">{{ isComplete() ? \'Ya están todas las preguntas obligatorias respondidas: puede finalizar la ficha o guardar el avance para retomarla más tarde.\' : \'Guarde lo cargado y retome esta ficha más tarde desde el historial del paciente, o finalice para dejarla completa.\' }}</p>\
             </div>\
         </div>\
     </div>\

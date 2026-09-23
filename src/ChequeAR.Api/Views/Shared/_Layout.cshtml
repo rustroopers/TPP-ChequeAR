@@ -1,14 +1,11 @@
-﻿@{
+@{
     var pageId = ViewBag.PageId as string ?? "";
     var pageTitle = ViewBag.Title as string ?? "ChequeAR";
     var lang = (Request.Cookies["chequear_lang"] != null ? Request.Cookies["chequear_lang"].Value : "es-AR");
-    // Cache-busting para assets locales: appendea ?v=<mtime> así cualquier cambio
-    // se ve con F5 normal en dev, sin necesidad de Ctrl+F5. En prod tampoco molesta:
-    // el navegador cachea normal hasta que el archivo cambie.
-    Func<string, string> asset = path => {
-        try { return Url.Content(path) + "?v=" + System.IO.File.GetLastWriteTimeUtc(Server.MapPath(path)).Ticks; }
-        catch { return Url.Content(path); }
-    };
+    // Cache-busting para assets locales (?v=<mtime>): ahora lo hace Helpers/Asset.cs, que
+    // las vistas hijas también pueden usar para sus islas -- esta lambda sólo vivía acá y
+    // los <script> de las islas quedaban sin versionar, que era justo el caso molesto.
+    Func<string, string> asset = path => ChequeAR.Api.Helpers.Asset.Url(path);
 }
 <!DOCTYPE html>
 <html lang="@lang">
@@ -24,6 +21,10 @@
     @if (Request.IsAuthenticated)
     {
         <meta name="cq-token" content="@ChequeAR.Api.Auth.SessionToken.IssueFor(User)" />
+        @* El rol propio, no un secreto: el usuario ya sabe cuál es. Sirve para que las
+           islas Vue (p. ej. questionnaire-editor) decidan qué mostrar sin tener que
+           decodificar el JWT. La autorización real sigue del lado del server. *@
+        <meta name="cq-role" content="@ChequeAR.Api.Auth.CurrentUser.PrincipalRole(User as System.Security.Claims.ClaimsPrincipal)" />
     }
 
     @* TODO prod: vendor a wwwroot/lib/ y servir local (spec 006 NFR-FE assumptions). *@

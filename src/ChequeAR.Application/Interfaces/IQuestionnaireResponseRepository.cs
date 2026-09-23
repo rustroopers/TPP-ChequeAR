@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 
@@ -9,7 +10,14 @@ namespace ChequeAR.Application.Interfaces
     public interface IQuestionnaireResponseRepository
     {
         Task<QuestionnaireResponse> GetAsync(Guid id);
-        Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take);
+
+        /// <param name="scope">
+        /// Restringe por la especialidad del Questionnaire al que pertenece cada respuesta
+        /// (join, QuestionnaireResponse no tiene columna de especialidad propia — ver C2 en
+        /// specs/011). Null = sin restricción (las vistas de paciente, fuera de alcance de
+        /// esta feature, no lo pasan y conservan el comportamiento de siempre).
+        /// </param>
+        Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take, SpecialtyScope scope = null);
         Task AddAsync(QuestionnaireResponse r);
         Task UpdateAsync(QuestionnaireResponse r);
         Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items);
