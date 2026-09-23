@@ -102,7 +102,7 @@ else
                                 <i class="bi bi-three-dots"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
-                                @if (canWrite)
+                                @if (canWrite && q.Status != "archived")
                                 {
                                     <li><a class="dropdown-item" href="@Url.Action("Edit", new { id = q.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
                                 }
@@ -111,6 +111,9 @@ else
                                 @if (canWrite)
                                 {
                                     <li><hr class="dropdown-divider" /></li>
+                                    @* Publicar sobre un archivado es intencional: es la única forma de
+                                       desarchivarlo (ver Questionnaire.CanPublish y el texto del modal
+                                       de Archivar más abajo). *@
                                     if (!(q.Status == "published" && !q.HasUnpublishedChanges))
                                     {
                                         <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
