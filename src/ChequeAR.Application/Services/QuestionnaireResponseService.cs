@@ -253,6 +253,44 @@ namespace ChequeAR.Application.Services
         }
 
         /// <summary>
+        /// Descarta una ficha InProgress sin terminar de completar (ej. el médico prefiere
+        /// arrancarla de cero en vez de retomar un borrador viejo). Queda marcada
+        /// EnteredInError -- no se borra, para no perder el rastro de auditoría -- y libera
+        /// el lock si lo tenía. Mismo criterio de "lock libre u ocupado por este mismo
+        /// usuario" que AcquireLockAsync: no hace falta haber tomado el lock antes para
+        /// descartar, pero si otro médico está editando en este momento, se rechaza.
+        /// </summary>
+        public async Task<QuestionnaireResponse> AbandonAsync(Guid id, string userId)
+        {
+            _access.EnsureCan(Permissions.EncounterWrite);
+            var r = await _repo.GetAsync(id);
+            if (r == null) throw new InvalidOperationException("Not found");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
+            if (r.Status != ResponseStatus.InProgress)
+                throw new InvalidOperationException("Ya no está en curso: probablemente otro usuario ya la finalizó.");
+
+            var now = DateTime.UtcNow;
+            var free = !r.LockToken.HasValue || !r.LockExpiresAt.HasValue || r.LockExpiresAt.Value < now;
+            var ownedBySameUser = r.LockedByUserId == userId;
+            if (!free && !ownedBySameUser)
+                throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
+
+            r.Status = ResponseStatus.EnteredInError;
+            var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
+            var pinned = ResolveVersion(questionnaire, r.QuestionnaireVersionId);
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
+                r, FhirQuestionnaireReader.Read(pinned?.FhirJson), DemographicsFrom(r.FhirJson));
+
+            ClearLock(r);
+            r.LastSavedAt = now;
+            r.ConcurrencyVersion++;
+            await _repo.UpdateAsync(r);
+
+            _audit.Enqueue(AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$abandon", userId));
+            return r;
+        }
+
+        /// <summary>
         /// Vista previa de re-anclar la ficha a la versión vigente del cuestionario: qué
         /// respuestas se conservan, qué preguntas nuevas aparecen y qué respuestas se
         /// descartarían. No modifica nada. Sirve para que el médico decida si actualiza.

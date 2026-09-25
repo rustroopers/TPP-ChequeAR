@@ -209,6 +209,87 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(ResponseStatus.InProgress, response.Status);
         }
 
+        // "Empezar de nuevo" sobre un borrador InProgress: queda EnteredInError (no se
+        // borra, para no perder el rastro de auditoría) y libera el lock si lo tenía.
+        [Fact]
+        public async Task AbandonAsync_MarksEnteredInErrorAndClearsLock()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                PatientHospitalId = "PAC-1",
+                Status = ResponseStatus.InProgress,
+                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"status\":\"in-progress\"}",
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+
+            var abandoned = await _sut.AbandonAsync(id, "u");
+
+            Assert.Equal(ResponseStatus.EnteredInError, abandoned.Status);
+            Assert.Equal("entered-in-error", (string)JObject.Parse(abandoned.FhirJson)["status"]);
+            Assert.Null(abandoned.LockToken);
+            Assert.Null(abandoned.LockedByUserId);
+        }
+
+        // Sin lock tomado (el caso normal: se descarta ANTES de entrar a editar, desde el
+        // selector de paciente) también tiene que poder descartarse.
+        [Fact]
+        public async Task AbandonAsync_WithoutLock_Succeeds()
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                PatientHospitalId = "PAC-1",
+                Status = ResponseStatus.InProgress,
+                FhirJson = "{\"resourceType\":\"QuestionnaireResponse\",\"status\":\"in-progress\"}"
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+
+            var abandoned = await _sut.AbandonAsync(id, "u");
+
+            Assert.Equal(ResponseStatus.EnteredInError, abandoned.Status);
+        }
+
+        // Si otro médico la tiene bloqueada en este momento, no se puede descartar por
+        // debajo: mismo criterio que cualquier otra escritura sobre una ficha en edición.
+        [Fact]
+        public async Task AbandonAsync_LockedByAnotherUser_Throws()
+        {
+            var id = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                Status = ResponseStatus.InProgress,
+                LockToken = Guid.NewGuid(),
+                LockedByUserId = "otro-medico",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+
+            await Assert.ThrowsAsync<LockConflictException>(() => _sut.AbandonAsync(id, "u"));
+        }
+
+        // Una ficha ya finalizada no es un "borrador" que se pueda descartar.
+        [Fact]
+        public async Task AbandonAsync_NotInProgress_Throws()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new QuestionnaireResponse { Id = id, Status = ResponseStatus.Completed });
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AbandonAsync(id, "u"));
+        }
+
         // EL CASO REPORTADO: se empieza a completar con la v1 y alguien publica la v2 en el
         // medio. La ficha tiene que quedar anclada a la v1 y conservar SUS textos, no
         // ajustarse a la version nueva.

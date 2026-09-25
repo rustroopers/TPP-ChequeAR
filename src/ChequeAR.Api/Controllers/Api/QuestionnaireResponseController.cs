@@ -323,6 +323,35 @@ namespace ChequeAR.Api.Controllers.Api
             }
         }
 
+        // Descarta un borrador InProgress (el médico eligió "Empezar de nuevo" en vez de
+        // retomarlo). No exige X-Lock-Token: a diferencia de $finalize/$save, esto no cierra
+        // una sesión de edición propia sino que se dispara ANTES de abrir una, desde el
+        // selector de paciente. El service igual rechaza si otro médico la tiene bloqueada.
+        [HttpPost, Route("{id:guid}/$abandon"), RequiresPermissionApi(Permissions.EncounterWrite)]
+        public async Task<IHttpActionResult> Abandon(Guid id)
+        {
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            try
+            {
+                var r = await _service.AbandonAsync(id, userId);
+                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+                response.Headers.ETag = ETagFor(r);
+                return ResponseMessage(response);
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
+            }
+            catch (LockConflictException ex)
+            {
+                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Content((HttpStatusCode)422, new { error = ex.Message });
+            }
+        }
+
         // Vista previa de "pasar a la versión vigente": qué se conserva / se agrega / se
         // descartaría. Sólo lectura, no toca la ficha ni exige el lock.
         [HttpGet, Route("{id:guid}/$retarget-preview"), RequiresPermissionApi(Permissions.EncounterWrite)]
