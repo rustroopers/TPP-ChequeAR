@@ -6,13 +6,22 @@
             level = level || "info";
             var stack = document.getElementById("cq-toasts");
             if (!stack) return;
+            message = String(message);
+            var existing = Array.prototype.find.call(stack.children, function (t) {
+                return t.dataset.level === level && t.dataset.message === message;
+            });
+            if (existing) return;
+
             var el = document.createElement("div");
             el.className = "toast align-items-center text-bg-" + (level === "error" ? "danger" : level) + " border-0 show";
             el.setAttribute("role", "status");
+            el.dataset.level = level;
+            el.dataset.message = message;
             el.innerHTML = '<div class="d-flex">' +
-                '<div class="toast-body">' + message + '</div>' +
+                '<div class="toast-body"></div>' +
                 '<button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Cerrar"></button>' +
                 '</div>';
+            el.querySelector(".toast-body").textContent = message;
             el.querySelector(".btn-close").addEventListener("click", function () { el.remove(); });
             stack.appendChild(el);
             if (level !== "error") setTimeout(function () { el.remove(); }, 4000);

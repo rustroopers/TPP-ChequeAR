@@ -193,7 +193,7 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status == ResponseStatus.Completed)
                 return r;
@@ -264,7 +264,7 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status != ResponseStatus.InProgress)
                 throw new InvalidOperationException("Ya no está en curso: probablemente otro usuario ya la finalizó.");
@@ -298,7 +298,7 @@ namespace ChequeAR.Application.Services
         public async Task<RetargetPreview> BuildRetargetPreviewAsync(Guid id)
         {
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
@@ -346,10 +346,10 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status != ResponseStatus.InProgress)
-                throw new InvalidOperationException("Only in-progress responses can change version");
+                throw new InvalidOperationException("Esta ficha ya no está en curso: probablemente otro usuario la finalizó o la descartó.");
 
             var now = DateTime.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);
@@ -439,10 +439,10 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status != ResponseStatus.InProgress)
-                throw new InvalidOperationException("Only in-progress responses can be locked");
+                throw new InvalidOperationException("Esta ficha ya no está en curso: probablemente otro usuario la finalizó o la descartó.");
 
             var now = DateTime.UtcNow;
             var free = !r.LockToken.HasValue || !r.LockExpiresAt.HasValue || r.LockExpiresAt.Value < now;
@@ -467,7 +467,7 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             EnsureLockOwnedOrRenew(r, userId, lockToken, DateTime.UtcNow);
             r.ConcurrencyVersion++;
@@ -490,7 +490,7 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.LockToken != lockToken || r.LockedByUserId != userId) return;
 
@@ -529,10 +529,10 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("Not found");
+            if (r == null) throw new InvalidOperationException("La ficha no existe.");
             await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
             if (r.Status != ResponseStatus.InProgress)
-                throw new InvalidOperationException("Cannot save progress on a response that is not in progress");
+                throw new InvalidOperationException("Esta ficha ya no está en curso: probablemente otro usuario la finalizó o la descartó.");
 
             var now = DateTime.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);

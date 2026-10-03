@@ -73,8 +73,17 @@
     "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 }
 
+html {
+  color-scheme: light;
+  background: #f8fafc;
+}
+
 html, body {
   height: 100%;
+}
+
+.cq-preload *, .cq-preload *::before, .cq-preload *::after {
+  transition: none !important;
 }
 
 body {
@@ -940,16 +949,6 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
     background: rgba(15, 23, 42, 0.4);
     z-index: 35;
   }
-  /* En mobile el "colapsado" no aplica: pasa a estar visible u oculto. */
-  body.cq-sidebar-collapsed .cq-sidebar__label,
-  body.cq-sidebar-collapsed .cq-sidebar__group-label {
-    display: block;
-  }
-  body.cq-sidebar-collapsed .cq-sidebar__item {
-    justify-content: flex-start;
-    padding: 10px 12px;
-    gap: 12px;
-  }
   /* Touch targets: subir a ≥44px para uso con dedo. */
   .cq-sidebar__item {
     padding: 12px 14px;
@@ -1474,70 +1473,6 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
 /* Un card empty state que se estire al ancho del contenedor: la card "Sin fichas
    previas" quedaba corta a la derecha. */
 .cq-card--stretch { width: 100%; max-width: none; }
-
-/* ===== Etapa 2: sidebar colapsable =====
-   Diseño hover-to-expand:
-   - En desktop la sidebar SIEMPRE arranca colapsada (columna del grid: 64px).
-   - .cq-sidebar__inner es el elemento que se anima: cambia sólo width.
-   - Los items MANTIENEN su padding, gap y justify siempre iguales — así el
-     fondo violeta del item activo no se estira ni se corre durante la
-     animación (que era lo que hacía que se viera feo).
-   - Los labels y group-labels están siempre en el DOM y quedan tapados por
-     overflow:hidden del inner cuando la columna es angosta; al expandirse
-     "aparecen" al aumentar el ancho, sin animación propia.
-   - .cq-sidebar--force-collapse la aplica el JS al clickear un item para
-     forzar el colapso antes de que arranque la navegación. */
-body.cq-sidebar-collapsed .cq-app {
-  grid-template-columns: 64px 1fr;
-}
-.cq-sidebar__group-label {
-  display: none;
-}
-
-@media (min-width: 769px) {
-  body.cq-sidebar-collapsed .cq-sidebar {
-    position: relative;
-    z-index: 25;
-  }
-  /* Estado base (colapsado): las transitions aplican al VOLVER a este estado
-     — o sea al salir del hover. Un transition-delay de 350ms hace que la
-     sidebar se quede expandida unos milisegundos despues de sacar el mouse
-     antes de empezar a contraerse (menos flicker si el usuario se sale sin
-     querer y vuelve rapido). El estado :hover pisa este transition sin delay
-     para que la apertura sea inmediata. */
-  body.cq-sidebar-collapsed .cq-sidebar__inner {
-    width: 64px;
-    min-height: calc(100vh - 56px);
-    overflow-x: hidden;
-    background: #fff;
-    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
-    border-right: 1px solid transparent;
-    transition:
-      width 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 350ms,
-      box-shadow 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 350ms,
-      border-color 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 350ms;
-    will-change: width;
-  }
-  body.cq-sidebar-collapsed .cq-sidebar__label,
-  body.cq-sidebar-collapsed .cq-sidebar__group-label {
-    opacity: 0;
-    transition: opacity 300ms ease 350ms;
-  }
-  body.cq-sidebar-collapsed .cq-sidebar:hover:not(.cq-sidebar--force-collapse) .cq-sidebar__inner {
-    width: 340px;
-    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.08);
-    border-right-color: var(--cq-neutral-200);
-    transition:
-      width 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 0ms,
-      box-shadow 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 0ms,
-      border-color 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 0ms;
-  }
-  body.cq-sidebar-collapsed .cq-sidebar:hover:not(.cq-sidebar--force-collapse) .cq-sidebar__label,
-  body.cq-sidebar-collapsed .cq-sidebar:hover:not(.cq-sidebar--force-collapse) .cq-sidebar__group-label {
-    opacity: 1;
-    transition: opacity 400ms ease 300ms;
-  }
-}
 
 .cq-sidebar-toggle {
   padding: 6px 8px !important;

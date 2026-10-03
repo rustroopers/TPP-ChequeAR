@@ -7,10 +7,11 @@
     Func<string, string> asset = path => ChequeAR.Api.Helpers.Asset.Url(path);
 }
 <!DOCTYPE html>
-<html lang="es-AR">
+<html lang="es-AR" class="cq-preload">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
     <title>ChequeAR</title>
     <link rel="icon" type="image/png" href="@asset("~/Content/img/favicon-512.png")" />
 
@@ -50,8 +51,11 @@
     <script src="@asset("~/Scripts/cq-autofilter.js")"></script>
     <script src="@asset("~/Scripts/cq-select-enhance.js")"></script>
     <script>
-        // Sidebar: en desktop queda siempre desplegada (240px, sin colapsar a
-        // íconos ni expandir al hover).
+        window.addEventListener("load", function () {
+            requestAnimationFrame(function () {
+                document.documentElement.classList.remove("cq-preload");
+            });
+        });
 
         // Bootstrap tooltips — activa todo [data-bs-toggle="tooltip"] al cargar.
         // Los tooltips ahora se reservan para etiquetar íconos sin texto (Acciones,
