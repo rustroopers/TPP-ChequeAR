@@ -1,17 +1,17 @@
 @{
     var pageId = ViewBag.PageId as string ?? "";
     var pageTitle = ViewBag.Title as string ?? "ChequeAR";
-    var lang = (Request.Cookies["chequear_lang"] != null ? Request.Cookies["chequear_lang"].Value : "es-AR");
     // Cache-busting para assets locales (?v=<mtime>): ahora lo hace Helpers/Asset.cs, que
     // las vistas hijas también pueden usar para sus islas -- esta lambda sólo vivía acá y
     // los <script> de las islas quedaban sin versionar, que era justo el caso molesto.
     Func<string, string> asset = path => ChequeAR.Api.Helpers.Asset.Url(path);
 }
 <!DOCTYPE html>
-<html lang="@lang">
+<html lang="es-AR" class="cq-preload">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
     <title>ChequeAR</title>
     <link rel="icon" type="image/png" href="@asset("~/Content/img/favicon-512.png")" />
 
@@ -51,68 +51,11 @@
     <script src="@asset("~/Scripts/cq-autofilter.js")"></script>
     <script src="@asset("~/Scripts/cq-select-enhance.js")"></script>
     <script>
-        // Sidebar: en desktop (>1024px) colapsa a modo íconos y persiste en
-        // localStorage. En mobile (<=1024px) la sidebar es un drawer off-canvas:
-        // el mismo toggle abre/cierra `cq-sidebar-open` (sin persistir: no tiene
-        // sentido reabrirlo automáticamente en la próxima navegación), y un click
-        // fuera o en un item la cierra. Antes en mobile el sidebar estaba oculto y
-        // no había manera de navegar.
-        (function () {
-            // Ya no hay hamburguesa: en desktop la sidebar siempre queda
-            // colapsada y se expande al hover. En mobile queda como estaba
-            // (drawer off-canvas — sin toggle por ahora).
-            var root = document.body;
-            var mq = window.matchMedia("(max-width: 1024px)");
-            if (!mq.matches) root.classList.add("cq-sidebar-collapsed");
-
-            // Fresh page load en desktop: si el usuario venia clickeando un
-            // item de la sidebar (o entra con el mouse ya sobre ella), el
-            // :hover CSS dispararia la expansion apenas se mueva un pixel.
-            // Aplicamos force-collapse hasta la primera "salida real" del
-            // sidebar — mouseleave si estaba dentro, o mousemove fuera del
-            // sidebar si nunca estuvo — y ahi limpiamos para que el siguiente
-            // hover expanda normal.
-            if (!mq.matches) {
-                var initSb = document.querySelector(".cq-sidebar");
-                if (initSb) {
-                    initSb.classList.add("cq-sidebar--force-collapse");
-                    var clearFn = function () {
-                        initSb.classList.remove("cq-sidebar--force-collapse");
-                        initSb.removeEventListener("mouseleave", clearFn);
-                        document.removeEventListener("mousemove", maybeClear);
-                    };
-                    var maybeClear = function (ev) {
-                        if (!initSb.contains(ev.target)) clearFn();
-                    };
-                    initSb.addEventListener("mouseleave", clearFn);
-                    document.addEventListener("mousemove", maybeClear);
-                }
-            }
-
-            document.addEventListener("click", function (e) {
-                // Al clickear un item, forzamos colapso visual inmediato antes
-                // de que arranque la navegación. La clase se limpia sola al
-                // sacar el cursor para no bloquear el próximo hover.
-                if (!mq.matches && root.classList.contains("cq-sidebar-collapsed")) {
-                    var item = e.target.closest(".cq-sidebar__item");
-                    if (item) {
-                        var sb = document.querySelector(".cq-sidebar");
-                        if (sb) {
-                            sb.classList.add("cq-sidebar--force-collapse");
-                            sb.addEventListener("mouseleave", function onLeave() {
-                                sb.classList.remove("cq-sidebar--force-collapse");
-                                sb.removeEventListener("mouseleave", onLeave);
-                            });
-                        }
-                    }
-                }
+        window.addEventListener("load", function () {
+            requestAnimationFrame(function () {
+                document.documentElement.classList.remove("cq-preload");
             });
-
-            mq.addEventListener("change", function () {
-                if (mq.matches) root.classList.remove("cq-sidebar-collapsed");
-                else root.classList.add("cq-sidebar-collapsed");
-            });
-        })();
+        });
 
         // Bootstrap tooltips — activa todo [data-bs-toggle="tooltip"] al cargar.
         // Los tooltips ahora se reservan para etiquetar íconos sin texto (Acciones,

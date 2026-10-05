@@ -171,6 +171,28 @@ else
     </div>
 </div>
 
+@* R2b — Si ya hay una ficha InProgress de ESE cuestionario para el paciente, se pregunta
+   antes de entrar: sin esto, "Cargar ficha" retomaba el borrador en silencio y era fácil
+   no darse cuenta y pensar que se estaba empezando de cero (o al revés). *@
+<div class="modal fade" id="resumeChoiceModal" tabindex="-1" aria-hidden="true" aria-labelledby="resumeChoiceTitle">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h3" id="resumeChoiceTitle">Ya hay una ficha en curso</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="cq-text-sm">Este paciente ya tiene una ficha de <strong id="resumeChoiceQTitle">este cuestionario</strong> sin terminar. ¿Querés continuar donde quedó o empezarla de nuevo?</p>
+                <p class="cq-text-sm cq-text-muted">Empezar de nuevo descarta todo lo cargado en la ficha anterior. Esta acción no se puede deshacer.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" id="resumeChoiceRestartBtn">Empezar de nuevo</button>
+                <button type="button" class="btn btn-primary" id="resumeChoiceContinueBtn">Continuar edición</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section scripts {
 <script>
     // --- Pacientes recientes -------------------------------------------------
@@ -277,15 +299,111 @@ else
         document.getElementById("selectQStartBtn").onclick = function () {
             var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
             if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "error"); return; }
-            location.href = "@Url.Action("Load", "Encounters")" + "?patientId=" + pid + "&questionnaireId=" + qid;
+            var draft = draftIdByQid[qid.toLowerCase()];
+            if (draft) {
+                openResumeChoice(pid, qid, draft.id, questionnaireTitleFor(qid));
+            } else {
+                goToLoad(pid, qid);
+            }
         };
     });
 
+    function goToLoad(pid, qid) {
+        location.href = "@Url.Action("Load", "Encounters")" + "?patientId=" + pid + "&questionnaireId=" + qid;
+    }
+
+    // Título mostrado en el modal "en curso": el texto del cuestionario elegido, sin el
+    // "vN" que lo acompaña en la lista.
+    function questionnaireTitleFor(qid) {
+        var opt = document.querySelector('.cq-q-option input[value="' + CSS.escape(qid) + '"]');
+        var titleEl = opt && opt.closest(".cq-q-option").querySelector(".fw-semibold");
+        if (!titleEl) return null;
+        var clone = titleEl.cloneNode(true);
+        var verSpan = clone.querySelector("span");
+        if (verSpan) verSpan.remove();
+        return clone.textContent.trim();
+    }
+
+    // Pregunta si continuar el borrador InProgress o descartarlo y empezar de cero. Sale del
+    // selector de cuestionario (que ya sabe, por loadLastEntries, si hay uno para ese qid).
+    function openResumeChoice(pid, qid, draftId, qTitle) {
+        var selectModalEl = document.getElementById("selectQModal");
+        var resumeModalEl = document.getElementById("resumeChoiceModal");
+        document.getElementById("resumeChoiceQTitle").textContent = qTitle || "este cuestionario";
+
+        var continueBtn = document.getElementById("resumeChoiceContinueBtn");
+        var restartBtn = document.getElementById("resumeChoiceRestartBtn");
+        continueBtn.disabled = false;
+        restartBtn.disabled = false;
+
+        // El médico puede haber tenido este modal abierto un rato largo (lo estaba
+        // pensando, atendió el teléfono, etc.) mientras otro colega terminaba justo ESA
+        // ficha. Antes de actuar, se revalida contra el server en vez de confiar en el
+        // estado que tenía cuando se abrió el selector: sin este chequeo, "Continuar" no
+        // encontraba más el borrador InProgress y terminaba creando una ficha en blanco
+        // sin avisar — exactamente el "empezar de 0 sin darme cuenta" que se quería evitar.
+        function otherUserFinishedFirst() {
+            restartBtn.disabled = false;
+            continueBtn.disabled = false;
+            window.cqToast && cqToast("Otro usuario ya finalizó esta ficha mientras tanto.", "error");
+            bootstrap.Modal.getOrCreateInstance(resumeModalEl).hide();
+        }
+
+        continueBtn.onclick = function () {
+            continueBtn.disabled = true;
+            var meta = document.querySelector('meta[name="cq-token"]');
+            fetch("/fhir/r5/QuestionnaireResponse/" + draftId, {
+                headers: { "Authorization": "Bearer " + (meta ? meta.getAttribute("content") : "") }
+            }).then(function (r) {
+                if (r.status === 404) return null;
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return r.json();
+            }).then(function (resource) {
+                if (!resource || resource.status !== "in-progress") { otherUserFinishedFirst(); return; }
+                goToLoad(pid, qid);
+            }).catch(function () {
+                continueBtn.disabled = false;
+                window.cqToast && cqToast("No se pudo verificar el estado de la ficha. Probá de nuevo.", "error");
+            });
+        };
+        restartBtn.onclick = function () {
+            restartBtn.disabled = true;
+            var meta = document.querySelector('meta[name="cq-token"]');
+            fetch("/fhir/r5/QuestionnaireResponse/" + draftId + "/$abandon", {
+                method: "POST",
+                headers: { "Authorization": "Bearer " + (meta ? meta.getAttribute("content") : "") }
+            }).then(function (r) {
+                if (r.ok) { goToLoad(pid, qid); return; }
+                // 422 = ya no está InProgress (alguien la finalizó justo antes de este
+                // click): no hay nada que descartar, y arrancar una ficha nueva en blanco
+                // sin decir nada sería el mismo problema al revés.
+                if (r.status === 422) { otherUserFinishedFirst(); return; }
+                throw new Error("HTTP " + r.status);
+            }).catch(function () {
+                restartBtn.disabled = false;
+                window.cqToast && cqToast("No se pudo descartar la ficha anterior. Probá de nuevo.", "error");
+            });
+        };
+
+        // El selector queda abajo, listo para el "Cancelar" del modal de arriba: si el
+        // médico cancela acá, vuelve a ver el cuestionario que había elegido en vez de la
+        // pantalla de pacientes a secas.
+        selectModalEl.addEventListener("hidden.bs.modal", function onHidden() {
+            selectModalEl.removeEventListener("hidden.bs.modal", onHidden);
+            bootstrap.Modal.getOrCreateInstance(resumeModalEl).show();
+        });
+        bootstrap.Modal.getOrCreateInstance(selectModalEl).hide();
+    }
+
     // "Última carga para este paciente": se consulta al abrir el modal. Si la consulta
-    // falla no se escribe nada — es preferible el silencio a inventar una fecha.
+    // falla no se escribe nada — es preferible el silencio a inventar una fecha. De paso
+    // arma draftIdByQid (qid -> ficha InProgress), que usa "Comenzar carga" para decidir si
+    // hay que preguntar "continuar o empezar de nuevo".
+    var draftIdByQid = {};
     function loadLastEntries(patientId) {
         var labels = document.querySelectorAll(".cq-q-last");
         Array.prototype.forEach.call(labels, function (el) { el.textContent = ""; });
+        draftIdByQid = {};
         var meta = document.querySelector('meta[name="cq-token"]');
         if (!meta) return;
         fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200", {
@@ -304,6 +422,11 @@ else
                 var when = r.authored;
                 if (!qid || !when) return;
                 if (!lastByQ[qid] || when > lastByQ[qid]) lastByQ[qid] = when;
+                // A lo sumo debería haber una InProgress por paciente+cuestionario; si hay
+                // más de una (dato viejo), nos quedamos con la más reciente.
+                if (r.status === "in-progress" && r.id && (!draftIdByQid[qid] || when > draftIdByQid[qid].when)) {
+                    draftIdByQid[qid] = { id: r.id, when: when };
+                }
             });
             Array.prototype.forEach.call(labels, function (el) {
                 var when = lastByQ[(el.getAttribute("data-qid") || "").toLowerCase()];

@@ -37,9 +37,10 @@ namespace ChequeAR.Tests.MockHospital
         [InlineData("VW_OBSERVACION_LAB","ID_OBSERVACION",  "ID_PACIENTE || '|' || COD_LOINC || '|' || NVL(TO_CHAR(VALOR_NUMERICO),'') || '|' || NVL(VALOR_TEXTO,'')")]
         public void Seed_HashEsEstableEntreLecturas(string view, string orderBy, string columnExpr)
         {
+            // Suma de hashes por fila y no LISTAGG de la vista entera: con el dataset actual
+            // la concatenación supera los 4000 bytes de VARCHAR2 y Oracle corta con ORA-01489.
             string hashSql =
-                $"SELECT STANDARD_HASH(LISTAGG({columnExpr}, ';') " +
-                $"WITHIN GROUP (ORDER BY {orderBy}), 'SHA256') " +
+                $"SELECT TO_CHAR(SUM(ORA_HASH({orderBy} || '|' || {columnExpr}))) " +
                 $"FROM HOSPITAL_MOCK.{view}";
 
             var h1 = _fx.ScalarString(hashSql);

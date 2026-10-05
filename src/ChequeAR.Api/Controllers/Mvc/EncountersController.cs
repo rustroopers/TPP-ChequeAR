@@ -419,12 +419,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                     ChequeAR.Api.Helpers.AuditPresentation.ParseRef(e.EntityRef, out _, out _, out var suffix);
                     var isSave = suffix != null && suffix.StartsWith("save", StringComparison.OrdinalIgnoreCase);
                     var isFinalize = suffix != null && suffix.StartsWith("finalize", StringComparison.OrdinalIgnoreCase);
+                    var isAbandon = suffix != null && suffix.StartsWith("abandon", StringComparison.OrdinalIgnoreCase);
 
-                    // Sólo interesa lo que se COMPLETÓ: un avance guardado (con su diff) o la
-                    // finalización. Se descartan "edición iniciada" ($lock) — alguien pudo abrir
-                    // la ficha y cerrarla sin tocar nada —, "ficha iniciada" (create) y los
-                    // cambios de versión: ninguno registra trabajo hecho sobre las respuestas.
-                    if (!isSave && !isFinalize) continue;
+                    // Sólo interesa lo que se COMPLETÓ: un avance guardado (con su diff), la
+                    // finalización, o el descarte de la ficha. Se descartan "edición iniciada"
+                    // ($lock) — alguien pudo abrir la ficha y cerrarla sin tocar nada —, "ficha
+                    // iniciada" (create) y los cambios de versión: ninguno registra trabajo
+                    // hecho sobre las respuestas.
+                    if (!isSave && !isFinalize && !isAbandon) continue;
 
                     var av = ChequeAR.Api.Helpers.AuditPresentation.Describe(e.EntityRef, e.Action);
                     var entry = new EncounterHistoryEntry

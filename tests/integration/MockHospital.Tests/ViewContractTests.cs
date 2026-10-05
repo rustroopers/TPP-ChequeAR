@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Infrastructure.Oracle;
 using Oracle.ManagedDataAccess.Client;
@@ -23,12 +24,14 @@ namespace ChequeAR.Tests.MockHospital
         public ViewContractTests(MockHospitalFixture fx)
         {
             _fx = fx;
+            // Calificadas con el schema: la allowlist compara el nombre exacto que se
+            // consulta, y estos tests consultan HOSPITAL_MOCK.VW_*.
             _allowlist = new[]
             {
                 "VW_PACIENTE", "VW_EPISODIO", "VW_DIAGNOSTICO", "VW_OBSERVACION_LAB",
                 "VW_SIGNOS_VITALES", "VW_MEDICACION", "VW_ALERGIA", "VW_PROFESIONAL",
                 "VW_ESPECIALIDAD", "VW_TURNO"
-            };
+            }.Select(v => "HOSPITAL_MOCK." + v).ToArray();
         }
 
         [Fact]

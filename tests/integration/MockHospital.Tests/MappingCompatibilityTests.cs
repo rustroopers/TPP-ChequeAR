@@ -55,11 +55,13 @@ namespace ChequeAR.Tests.MockHospital
                 "VW_SIGNOS_VITALES", "VW_MEDICACION", "VW_ALERGIA", "VW_PROFESIONAL",
                 "VW_ESPECIALIDAD", "VW_TURNO"
             };
-            var client = new OracleViewClient(_fx.ConnectionStringRO, allowlist);
+            // La allowlist compara el nombre exacto que se consulta: va calificada.
+            var qualified = allowlist.Select(v => "HOSPITAL_MOCK." + v).ToArray();
+            var client = new OracleViewClient(_fx.ConnectionStringRO, qualified);
 
-            foreach (var view in allowlist)
+            foreach (var view in qualified)
             {
-                var rows = await client.QueryAsync("HOSPITAL_MOCK." + view, filters: null);
+                var rows = await client.QueryAsync(view, filters: null);
                 Assert.NotNull(rows); // Lista vacía es válida; null no.
             }
         }

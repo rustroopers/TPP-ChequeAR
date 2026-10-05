@@ -99,8 +99,9 @@ namespace ChequeAR.Infrastructure.Repositories
             }
             catch (DbUpdateConcurrencyException ex)
             {
-                var stale = ex.Entries.Select(e => e.Entity).OfType<Questionnaire>().FirstOrDefault();
-                var expected = stale?.ConcurrencyVersion ?? 0;
+                var entry = ex.Entries.FirstOrDefault(e => e.Entity is Questionnaire);
+                var stale = entry?.Entity as Questionnaire;
+                var expected = entry?.OriginalValues.GetValue<int>(nameof(Questionnaire.ConcurrencyVersion)) ?? 0;
                 var actual = expected;
                 if (stale != null)
                 {
