@@ -44,6 +44,45 @@ namespace ChequeAR.Application.Validation
             return missing;
         }
 
+        /// <summary>
+        /// Vacía las respuestas de las preguntas que la condición enableWhen deja ocultas. FHIR
+        /// lo exige (un ítem deshabilitado no puede tener respuestas) y es lo que ve el médico:
+        /// una respuesta cargada cuando la pregunta estaba visible no puede sobrevivir a que la
+        /// condición deje de cumplirse. La visibilidad se calcula una sola vez, con las
+        /// respuestas originales, igual que el renderer.
+        /// </summary>
+        /// <returns>Los linkId cuyas respuestas se vaciaron.</returns>
+        public static IReadOnlyList<string> ClearHiddenAnswers(
+            RenderableQuestionnaire structure, ICollection<QuestionnaireResponseItem> items)
+        {
+            var cleared = new List<string>();
+            if (structure == null || items == null || items.Count == 0) return cleared;
+
+            var answers = AnswersByLinkId(items);
+            var questions = structure.Groups.SelectMany(g => g.Questions).ToList();
+            var typeByLinkId = new Dictionary<string, string>();
+            foreach (var q in questions)
+                if (q.LinkId != null && !typeByLinkId.ContainsKey(q.LinkId)) typeByLinkId[q.LinkId] = q.Type;
+
+            var hidden = new HashSet<string>(questions
+                .Where(q => q.LinkId != null && !IsVisible(q, answers, typeByLinkId))
+                .Select(q => q.LinkId));
+
+            foreach (var item in items)
+            {
+                if (item?.LinkId == null || !hidden.Contains(item.LinkId) || ValueOf(item) == null) continue;
+                item.ValueBoolean = null;
+                item.ValueInteger = null;
+                item.ValueDecimal = null;
+                item.ValueDate = null;
+                item.ValueString = null;
+                item.ValueCode = null;
+                item.AttachmentId = null;
+                if (!cleared.Contains(item.LinkId)) cleared.Add(item.LinkId);
+            }
+            return cleared;
+        }
+
         /// <summary>linkId -> valores respondidos (sin los vacíos). Una opción múltiple aporta un valor por opción.</summary>
         public static Dictionary<string, List<object>> AnswersByLinkId(IEnumerable<QuestionnaireResponseItem> items)
         {

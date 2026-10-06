@@ -163,6 +163,54 @@ namespace ChequeAR.Tests.Application
             Assert.Empty(EnableWhenEvaluator.MissingRequired(s, new List<QuestionnaireResponseItem>()));
         }
 
+        // ---- ClearHiddenAnswers ----
+
+        [Fact]
+        public void ClearHiddenAnswers_VaciaLaRespuestaDeUnaPreguntaQueQuedoOculta()
+        {
+            var s = Estructura(
+                Pregunta("fc", type: "integer"),
+                Pregunta("ta", type: "integer", cond: new RenderableCondition { Question = "fc", Op = ">", Value = 5L }));
+            var ta = new QuestionnaireResponseItem { LinkId = "ta", ValueInteger = 23 };
+            var items = new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "fc", ValueInteger = 0 }, ta };
+
+            var vaciadas = EnableWhenEvaluator.ClearHiddenAnswers(s, items);
+
+            Assert.Equal(new[] { "ta" }, vaciadas);
+            Assert.Null(ta.ValueInteger);
+            Assert.Equal(0, items[0].ValueInteger);
+        }
+
+        [Fact]
+        public void ClearHiddenAnswers_NoTocaLasVisibles()
+        {
+            var s = Estructura(
+                Pregunta("fc", type: "integer"),
+                Pregunta("ta", type: "integer", cond: new RenderableCondition { Question = "fc", Op = ">", Value = 5L }));
+            var ta = new QuestionnaireResponseItem { LinkId = "ta", ValueInteger = 23 };
+
+            var vaciadas = EnableWhenEvaluator.ClearHiddenAnswers(s,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "fc", ValueInteger = 80 }, ta });
+
+            Assert.Empty(vaciadas);
+            Assert.Equal(23, ta.ValueInteger);
+        }
+
+        [Fact]
+        public void ClearHiddenAnswers_VaciaTodosLosValoresYElAdjunto()
+        {
+            var s = Estructura(
+                Pregunta("fiebre", type: "boolean"),
+                Pregunta("estudio", type: "attachment", cond: new RenderableCondition { Question = "fiebre", Op = "=", Value = true }));
+            var estudio = new QuestionnaireResponseItem { LinkId = "estudio", AttachmentId = Guid.NewGuid(), ValueString = "rx.pdf" };
+
+            EnableWhenEvaluator.ClearHiddenAnswers(s,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "fiebre", ValueBoolean = false }, estudio });
+
+            Assert.Null(estudio.AttachmentId);
+            Assert.Null(estudio.ValueString);
+        }
+
         [Fact]
         public void SinEstructura_NoSeValida()
         {

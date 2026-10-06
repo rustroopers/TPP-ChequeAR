@@ -231,6 +231,12 @@ namespace ChequeAR.Application.Services
             r.Status = ResponseStatus.Completed;
             var structure = await PinnedStructureAsync(r);
 
+            // Una respuesta cargada cuando la pregunta estaba visible no puede quedar en la ficha
+            // finalizada si la condición dejó de cumplirse (FHIR: un ítem deshabilitado no tiene
+            // respuestas). Va antes de todo lo demás: la validación, el recurso FHIR, la foto de
+            // auditoría y el diff de la sesión tienen que ver la ficha ya limpia.
+            EnableWhenEvaluator.ClearHiddenAnswers(structure, r.Items);
+
             // Obligatorias visibles: el renderer ya las exige, pero esa validación vive en el
             // navegador y una llamada directa a $finalize la saltearía.
             var missing = EnableWhenEvaluator.MissingRequired(structure, r.Items);

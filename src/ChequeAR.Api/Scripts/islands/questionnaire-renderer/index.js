@@ -348,7 +348,11 @@
                 var items = [];
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (q) {
-                        if (!isVisible(q)) return;
+                        // Oculta: se manda VACÍA, no se saltea. El servidor mezcla por linkId y
+                        // conserva lo que no le llega, así que una respuesta guardada antes de que
+                        // la pregunta se ocultara terminaba en la ficha finalizada. El valor sigue
+                        // en `answers`: si la condición vuelve a cumplirse, reaparece.
+                        if (!isVisible(q)) { items.push({ LinkId: q.linkId, QuestionType: q.type }); return; }
                         toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });

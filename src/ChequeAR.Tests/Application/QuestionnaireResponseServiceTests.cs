@@ -190,6 +190,28 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(ResponseStatus.Completed, finalized.Status);
         }
 
+        // Bug reportado: TA sistólica sólo aplica si FC > 5. Se cargó TA = 23 con FC alta, se
+        // guardó, y al volver a editar FC pasó a 0: la pregunta desapareció de la pantalla pero
+        // el 23 guardado terminaba en la ficha finalizada.
+        [Fact]
+        public async Task FinalizeAsync_NoConservaRespuestasDePreguntasQueQuedaronOcultas()
+        {
+            const string json =
+                "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+                "{\"linkId\":\"fc\",\"text\":\"Frecuencia cardíaca\",\"type\":\"integer\"}," +
+                "{\"linkId\":\"ta\",\"text\":\"Tensión arterial sistólica\",\"type\":\"integer\"," +
+                "\"enableWhen\":[{\"question\":\"fc\",\"operator\":\">\",\"answerInteger\":5}]}]}";
+            var (id, lockToken, response) = FichaConLock(json);
+            response.Items.Add(new QuestionnaireResponseItem { LinkId = "fc", ValueInteger = 0 });
+            response.Items.Add(new QuestionnaireResponseItem { LinkId = "ta", ValueInteger = 23 });
+
+            var finalized = await _sut.FinalizeAsync(id, "u", lockToken);
+
+            Assert.Null(finalized.Items.Single(i => i.LinkId == "ta").ValueInteger);
+            var taEnFhir = JObject.Parse(finalized.FhirJson).SelectTokens("$..item[?(@.linkId == 'ta')]").FirstOrDefault();
+            Assert.True(taEnFhir == null || taEnFhir["answer"] == null, "La TA oculta no puede tener respuesta en el recurso FHIR.");
+        }
+
         // El autosave corre cada pocos segundos: tiene que leer sólo la versión anclada, no el
         // cuestionario entero con todas sus versiones, secciones, preguntas y opciones.
         [Fact]
