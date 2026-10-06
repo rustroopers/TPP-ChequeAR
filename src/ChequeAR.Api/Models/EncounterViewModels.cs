@@ -98,6 +98,8 @@ namespace ChequeAR.Api.Models
         public int QuestionnaireVersion { get; set; }
         public string Author { get; set; }
         public string FinalizedAt { get; set; }
+        /// <summary>Borrador descartado ($abandon): se muestra en lectura, pero no es una ficha finalizada.</summary>
+        public bool IsDiscarded { get; set; }
         public List<QuestionGroupAnswered> Groups { get; set; } = new List<QuestionGroupAnswered>();
     }
 

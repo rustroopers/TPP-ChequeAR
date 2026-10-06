@@ -65,7 +65,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                             openUrl = Url.Action("View", "Encounters", new { id = e.Id });
                             break;
                         case ChequeAR.Domain.Enums.ResponseStatus.EnteredInError:
-                            status = "error";
+                            // Borrador descartado ($abandon): no es un error del sistema.
+                            status = "discarded";
                             openUrl = Url.Action("View", "Encounters", new { id = e.Id });
                             break;
                         default:

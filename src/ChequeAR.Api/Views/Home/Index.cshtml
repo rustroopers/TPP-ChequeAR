@@ -99,7 +99,8 @@
                     <span class="cq-chip cq-chip--zone-@lastEncounter.SpecialtyColor">@lastEncounter.SpecialtyLabel</span>
                     @if (lastEncounter.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
                     else if (lastEncounter.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
-                    else { <span class="cq-badge cq-badge--archived">@lastEncounter.Status</span> }
+                    else if (lastEncounter.Status == "amended") { <span class="cq-badge cq-badge--archived">Enmendada</span> }
+                    else { <span class="cq-badge cq-badge--archived" title="Respuesta incompleta descartada">Descartada</span> }
                     <span class="cq-text-xs cq-text-muted ms-auto">@lastEncounter.UpdatedAt</span>
                 </div>
             }
@@ -194,7 +195,7 @@ else
                         @if (enc.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
                         else if (enc.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
                         else if (enc.Status == "amended") { <span class="cq-badge cq-badge--archived">Enmendada</span> }
-                        else { <span class="cq-badge cq-badge--archived">Con error</span> }
+                        else { <span class="cq-badge cq-badge--archived" title="Respuesta incompleta descartada">Descartada</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@enc.UpdatedAt</td>
                     <td class="text-end">
