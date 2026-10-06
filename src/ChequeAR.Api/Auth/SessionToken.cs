@@ -20,7 +20,7 @@ namespace ChequeAR.Api.Auth
             if (principal == null || principal.Identity == null || !principal.Identity.IsAuthenticated)
                 return string.Empty;
 
-            var jwt = ServiceComposition.Resolve<JwtIssuer>();
+            var jwt = ServiceComposition.Container?.GetInstance<JwtIssuer>();
             if (jwt == null) return string.Empty;
 
             var info = SessionCookie.ToUserInfo(principal);

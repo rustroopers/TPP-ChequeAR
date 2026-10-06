@@ -22,12 +22,14 @@ namespace ChequeAR.Api
             // de la primera conexion, y ServiceComposition ya arma los repositorios.
             OracleWalletConfig.Configure(ConfigurationManager.AppSettings["Oracle:WalletDir"]);
 
-            ServiceComposition.Configure();
-            System.Web.Mvc.DependencyResolver.SetResolver(ServiceComposition.MvcResolver);
+            // La composición registra los controllers de Web API contra la misma configuración
+            // que después arma WebApiConfig, y verifica todo el grafo antes de seguir.
+            var container = ServiceComposition.Configure(GlobalConfiguration.Configuration);
+            System.Web.Mvc.DependencyResolver.SetResolver(ServiceComposition.MvcResolver(container));
 
             AreaRegistration.RegisterAllAreas();
             GlobalConfiguration.Configure(WebApiConfig.Register);
-            GlobalConfiguration.Configuration.DependencyResolver = ServiceComposition.WebApiResolver;
+            GlobalConfiguration.Configuration.DependencyResolver = ServiceComposition.WebApiResolver(container);
 
             // El anti-forgery, ante una identidad claims-based, exige NameIdentifier Y el claim
             // 'identityprovider' de ACS —el mensaje de error dice "or" pero pide los dos— y sin

@@ -9,9 +9,8 @@ namespace ChequeAR.Api.Auth
     /// <summary>
     /// Adaptador de ClaimsPrincipal a ICurrentUser (que vive en Application, sin conocer
     /// System.Web ni Web API). El principal se lee LAZY en cada acceso a una propiedad, no
-    /// se cachea en el ctor: el DI de este proyecto (ServiceComposition) no tiene scope por
-    /// request, así que una instancia larga podría sobrevivir a varias requests con usuarios
-    /// distintos si se cacheara acá.
+    /// se cachea en el ctor: así la instancia sirve igual sea cual sea el ciclo de vida con
+    /// que la registre la composición, y nunca puede mezclar usuarios de requests distintos.
     ///
     /// Sirve a los dos pipelines con el mismo código: en MVC, HttpContext.Current.User trae
     /// el principal reconstruido por Global.asax (cookie Forms); en Web API, el filtro JWT

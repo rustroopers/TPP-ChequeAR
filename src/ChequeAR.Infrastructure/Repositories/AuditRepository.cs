@@ -11,14 +11,20 @@ using ChequeAR.Infrastructure.EF;
 namespace ChequeAR.Infrastructure.Repositories
 {
     /// <summary>
-    /// Es dueño de su contexto: cada instancia recibe uno nuevo (ver ServiceComposition) y lo
-    /// libera en Dispose. AuditDispatcher depende de eso para no retener un DbContext de por
-    /// vida.
+    /// Se usa de dos maneras (ver ServiceComposition): con el contexto del request, que libera
+    /// el contenedor, o con uno propio por operación, que es como lo usa AuditDispatcher (un
+    /// singleton que no puede retener un DbContext de por vida). <c>ownsContext</c> dice cuál.
     /// </summary>
     public sealed class AuditRepository : IAuditRepository, IDisposable
     {
         private readonly ChequeARDbContext _ctx;
-        public AuditRepository(ChequeARDbContext ctx) { _ctx = ctx; }
+        private readonly bool _ownsContext;
+
+        public AuditRepository(ChequeARDbContext ctx, bool ownsContext)
+        {
+            _ctx = ctx;
+            _ownsContext = ownsContext;
+        }
 
         public async Task AddAsync(AuditEvent evt)
         {
@@ -72,6 +78,9 @@ namespace ChequeAR.Infrastructure.Repositories
             return await q.OrderByDescending(x => x.Recorded).ToListAsync();
         }
 
-        public void Dispose() => _ctx.Dispose();
+        public void Dispose()
+        {
+            if (_ownsContext) _ctx.Dispose();
+        }
     }
 }
