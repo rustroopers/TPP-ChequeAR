@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
@@ -7,19 +8,13 @@ using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Application.Services
 {
-    /// <summary>
-    /// Consultas sobre el registro de auditoría.
-    ///
-    /// Esta lógica vivía repartida en dos controllers, que traían 5000 filas y filtraban y
-    /// paginaban en memoria. Además de estar en la capa equivocada, ese código no tenía
-    /// ninguna prueba: no se puede probar filtrado y paginación sin instanciar la capa web.
-    /// </summary>
+    /// <summary>Consultas sobre el registro de auditoría.</summary>
     public class AuditQueryService
     {
         /// <summary>
-        /// Tope de filas que se traen para filtrar. Es el comportamiento que ya existía, hecho
-        /// explícito: por encima de esto la auditoría necesita filtrado del lado de la base
-        /// (IAuditRepository con más parámetros), no un número más grande acá.
+        /// Tope de filas del listado GLOBAL (sin recurso): los eventos más recientes que se
+        /// traen para filtrar y paginar. Las búsquedas por recurso o por identificador no
+        /// tienen tope: van directo a la base.
         /// </summary>
         public const int MaxFilas = 5000;
 
@@ -32,14 +27,25 @@ namespace ChequeAR.Application.Services
             string agentUserId = null, string action = null, string entityRef = null,
             DateTime? fromUtc = null, DateTime? toUtc = null, int skip = 0, int take = 50)
         {
-            var todos = await _repo.SearchAsync(agentUserId, action, fromUtc, toUtc, MaxFilas);
-
-            IEnumerable<AuditEvent> filtrados = todos ?? new List<AuditEvent>();
+            IEnumerable<AuditEvent> filtrados;
             if (!string.IsNullOrEmpty(entityRef))
-                filtrados = filtrados.Where(x => x.EntityRef == entityRef);
+            {
+                // Con recurso, la base devuelve SOLO sus eventos (sin la ventana de los últimos
+                // MaxFilas, que dejaba afuera a los recursos viejos) y el resto de los
+                // filtros se aplica sobre ese conjunto acotado, con la misma semántica que
+                // IAuditRepository.SearchAsync.
+                var delRecurso = await _repo.ForEntityAsync(entityRef, includeOperations: false)
+                                 ?? new List<AuditEvent>();
+                filtrados = delRecurso.Where(x => x.EntityRef == entityRef
+                                                  && Matches(x, agentUserId, action, fromUtc, toUtc));
+            }
+            else
+            {
+                filtrados = await _repo.SearchAsync(agentUserId, action, fromUtc, toUtc, MaxFilas)
+                            ?? new List<AuditEvent>();
+            }
 
             var lista = filtrados.ToList();
-
             return new AuditPage
             {
                 // El total es el de la búsqueda completa, no el de la página: con el de la
@@ -58,20 +64,29 @@ namespace ChequeAR.Application.Services
         public async Task<IReadOnlyList<AuditEvent>> ForResponseAsync(Guid responseId)
         {
             var prefix = "QuestionnaireResponse/" + responseId;
-            var todos = await _repo.SearchAsync(null, null, null, null, MaxFilas);
-            return (todos ?? new List<AuditEvent>())
+            var eventos = await _repo.ForEntityAsync(prefix, includeOperations: true);
+            // El repositorio ya filtra; se re-verifica acá porque esta regla (separador exacto)
+            // es la que define qué eventos son de la ficha, y no debe depender del proveedor SQL.
+            return (eventos ?? new List<AuditEvent>())
                 .Where(e => e.EntityRef == prefix
                             || (e.EntityRef != null && e.EntityRef.StartsWith(prefix + "$", StringComparison.Ordinal)))
                 .OrderByDescending(e => e.Recorded)
                 .ToList();
         }
 
-        public async Task<AuditEvent> GetAsync(Guid id)
+        public Task<AuditEvent> GetAsync(Guid id) => _repo.GetAsync(id);
+
+        private static bool Matches(AuditEvent e, string agentUserId, string action, DateTime? fromUtc, DateTime? toUtc)
         {
-            // El repositorio no expone búsqueda por identificador; se filtra sobre la ventana
-            // amplia. Optimización futura: IAuditRepository.GetAsync(id).
-            var todos = await _repo.SearchAsync(null, null, null, null, MaxFilas);
-            return (todos ?? new List<AuditEvent>()).FirstOrDefault(e => e.Id == id);
+            if (!string.IsNullOrEmpty(agentUserId)
+                && (e.AgentUserId == null
+                    || e.AgentUserId.ToLower(CultureInfo.InvariantCulture)
+                        .IndexOf(agentUserId.ToLower(CultureInfo.InvariantCulture), StringComparison.Ordinal) < 0))
+                return false;
+            if (!string.IsNullOrEmpty(action) && e.Action != action) return false;
+            if (fromUtc.HasValue && e.Recorded < fromUtc.Value) return false;
+            if (toUtc.HasValue && e.Recorded >= toUtc.Value) return false;
+            return true;
         }
     }
 

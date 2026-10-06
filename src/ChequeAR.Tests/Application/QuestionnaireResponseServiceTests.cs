@@ -161,6 +161,56 @@ namespace ChequeAR.Tests.Application
             Assert.Null(finalized.LockedByUserId);
         }
 
+        private const string ConObligatoria =
+            "{\"resourceType\":\"Questionnaire\",\"item\":[{\"linkId\":\"edad\",\"text\":\"Edad\",\"type\":\"integer\",\"required\":true}]}";
+
+        // La validación de obligatorias vivía sólo en el navegador: una llamada directa a
+        // $finalize cerraba fichas incompletas.
+        [Fact]
+        public async Task FinalizeAsync_ObligatoriaSinResponder_RechazaYQuedaEnCurso()
+        {
+            var (id, lockToken, response) = FichaConLock(ConObligatoria);
+
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.FinalizeAsync(id, "u", lockToken));
+
+            Assert.Contains(ex.Errors, e => e.Contains("Edad"));
+            Assert.Equal(ResponseStatus.InProgress, response.Status);
+            Assert.Equal(lockToken, response.LockToken);
+            _repo.Verify(r => r.UpdateAsync(It.IsAny<QuestionnaireResponse>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task FinalizeAsync_ObligatoriaRespondida_Finaliza()
+        {
+            var (id, lockToken, response) = FichaConLock(ConObligatoria);
+            response.Items.Add(new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 7 });
+
+            var finalized = await _sut.FinalizeAsync(id, "u", lockToken);
+
+            Assert.Equal(ResponseStatus.Completed, finalized.Status);
+        }
+
+        private (Guid id, Guid lockToken, QuestionnaireResponse response) FichaConLock(string questionnaireJson)
+        {
+            var id = Guid.NewGuid();
+            var questionnaireId = Guid.NewGuid();
+            var lockToken = Guid.NewGuid();
+            var response = new QuestionnaireResponse
+            {
+                Id = id,
+                QuestionnaireId = questionnaireId,
+                PatientHospitalId = "PAC-1",
+                Status = ResponseStatus.InProgress,
+                LockToken = lockToken,
+                LockedByUserId = "u",
+                LockExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId, questionnaireJson));
+            _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
+            return (id, lockToken, response);
+        }
+
         // Si el lock lo tiene otro usuario, finalizar no puede cerrarle la sesión: se
         // rechaza igual que un guardado parcial.
         [Fact]

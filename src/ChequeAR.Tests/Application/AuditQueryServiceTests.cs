@@ -10,11 +10,7 @@ using Xunit;
 
 namespace ChequeAR.Tests.Application
 {
-    /// <summary>
-    /// Filtrado y paginación de auditoría. Vivía repartido en dos controllers, que traían
-    /// 5000 filas y filtraban en memoria — sin ninguna prueba, porque no se puede probar sin
-    /// levantar la capa web.
-    /// </summary>
+    /// <summary>Filtrado, paginación y búsquedas por recurso del registro de auditoría.</summary>
     public class AuditQueryServiceTests
     {
         private readonly Mock<IAuditRepository> _repo = new Mock<IAuditRepository>();
@@ -69,18 +65,67 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public async Task BuscarPorIdentificador_DevuelveNullSiNoExiste()
         {
-            Devuelve(Evento("a"));
+            _repo.Setup(r => r.GetAsync(It.IsAny<Guid>())).ReturnsAsync((AuditEvent)null);
 
             Assert.Null(await _sut.GetAsync(Guid.NewGuid()));
         }
 
+        /// <summary>
+        /// Va directo por id a la base. Antes se buscaba dentro de los últimos 5000 eventos,
+        /// así que el detalle de un evento viejo daba 404.
+        /// </summary>
         [Fact]
-        public async Task BuscarPorIdentificador_EncuentraElEvento()
+        public async Task BuscarPorIdentificador_VaPorIdALaBase_SinVentanaDeEventos()
         {
             var e = Evento("a");
-            Devuelve(e);
+            _repo.Setup(r => r.GetAsync(e.Id)).ReturnsAsync(e);
 
             Assert.Equal(e.Id, (await _sut.GetAsync(e.Id)).Id);
+            _repo.Verify(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()), Times.Never);
+        }
+
+        /// <summary>
+        /// Con recurso, la búsqueda no pasa por la ventana global de MaxFilas: los eventos de
+        /// un recurso viejo tienen que aparecer aunque haya miles más recientes de otros.
+        /// </summary>
+        [Fact]
+        public async Task FiltroPorRecurso_ConsultaSoloEseRecurso_SinVentanaGlobal()
+        {
+            Devuelve(Evento("Questionnaire/a"));
+
+            await _sut.SearchAsync(entityRef: "Questionnaire/a");
+
+            _repo.Verify(r => r.ForEntityAsync("Questionnaire/a", false), Times.Once);
+            _repo.Verify(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task FiltroPorRecurso_AplicaTambienUsuarioAccionYFechas()
+        {
+            var t0 = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+            var ok = EventoEn("Questionnaire/a", t0);
+            var otroUsuario = EventoEn("Questionnaire/a", t0); otroUsuario.AgentUserId = "dra.perez";
+            var otraAccion = EventoEn("Questionnaire/a", t0); otraAccion.Action = "C";
+            var fueraDeRango = EventoEn("Questionnaire/a", t0.AddDays(2));
+            Devuelve(ok, otroUsuario, otraAccion, fueraDeRango);
+
+            var pagina = await _sut.SearchAsync(agentUserId: "GOMEZ", action: "U", entityRef: "Questionnaire/a",
+                fromUtc: t0.AddHours(-1), toUtc: t0.AddDays(1));
+
+            Assert.Equal(new[] { ok.Id }, pagina.Items.Select(e => e.Id));
+        }
+
+        [Fact]
+        public async Task ForResponse_PideALaBaseLosEventosDeLaFichaConSusOperaciones()
+        {
+            var id = Guid.NewGuid();
+            Devuelve();
+
+            await _sut.ForResponseAsync(id);
+
+            _repo.Verify(r => r.ForEntityAsync("QuestionnaireResponse/" + id, true), Times.Once);
         }
 
         // ---- ForResponseAsync: historial de UNA ficha (pantalla "Detalle") ----
@@ -142,10 +187,18 @@ namespace ChequeAR.Tests.Application
             Assert.Empty(await _sut.ForResponseAsync(id));
         }
 
+        /// <summary>
+        /// El doble devuelve el mismo conjunto por cualquier vía de consulta: el servicio es el
+        /// responsable de quedarse sólo con lo que corresponde.
+        /// </summary>
         private void Devuelve(params AuditEvent[] eventos)
-            => _repo.Setup(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
-                                              It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()))
-                    .ReturnsAsync((IReadOnlyList<AuditEvent>)eventos.ToList());
+        {
+            _repo.Setup(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
+                                           It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()))
+                 .ReturnsAsync((IReadOnlyList<AuditEvent>)eventos.ToList());
+            _repo.Setup(r => r.ForEntityAsync(It.IsAny<string>(), It.IsAny<bool>()))
+                 .ReturnsAsync((IReadOnlyList<AuditEvent>)eventos.ToList());
+        }
 
         private static AuditEvent Evento(string entityRef) => EventoEn(entityRef, DateTime.UtcNow);
 

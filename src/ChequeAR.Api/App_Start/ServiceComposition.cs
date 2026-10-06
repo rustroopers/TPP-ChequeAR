@@ -112,8 +112,10 @@ namespace ChequeAR.Api.App_Start
             // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
             _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(25) };
 
-            // AuditDispatcher requiere repo; usamos una factory que crea su propio contexto.
-            _audit = new AuditDispatcher(NewAuditRepository(), 1000);
+            // Factory y no instancia: el dispatcher es singleton y pide un repositorio (con su
+            // DbContext) nuevo por operación, que libera al terminar.
+            _audit = new AuditDispatcher(NewAuditRepository, 1000,
+                (ex, message) => Log.Error(ex, "{AuditMessage}", message));
 
             // Mismo criterio: singleton con su propia factory de repositorio (DbContext
             // nuevo por recarga, descartado al terminar). El catálogo cambia rarísimo, así
@@ -279,6 +281,12 @@ namespace ChequeAR.Api.App_Start
             Register<Controllers.Mvc.VariablesController>(() => new Controllers.Mvc.VariablesController(Resolve<ClinicalVariableService>()));
             Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController());
             Register<Controllers.Mvc.ErrorController>(() => new Controllers.Mvc.ErrorController());
+        }
+
+        /// <summary>Vacía la cola de auditoría antes de que el proceso termine (Application_End).</summary>
+        public static void Shutdown()
+        {
+            _audit?.Dispose();
         }
 
         public static void Register<TService>(Func<object> factory)

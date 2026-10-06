@@ -7,6 +7,7 @@ using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
+using ChequeAR.Application.Validation;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
@@ -207,6 +208,17 @@ namespace ChequeAR.Application.Services
             var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
             var pinned = ResolveVersion(questionnaire, r.QuestionnaireVersionId);
             var structure = FhirQuestionnaireReader.Read(pinned?.FhirJson);
+
+            // Obligatorias visibles: el renderer ya las exige, pero esa validación vive en el
+            // navegador y una llamada directa a $finalize la saltearía.
+            var missing = EnableWhenEvaluator.MissingRequired(structure, r.Items);
+            if (missing.Count > 0)
+            {
+                r.Status = ResponseStatus.InProgress;
+                throw new ValidationFailedException(missing.Select(q =>
+                    "Falta responder la pregunta obligatoria \"" + (string.IsNullOrWhiteSpace(q.Text) ? q.LinkId : q.Text) + "\"."));
+            }
+
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, structure, DemographicsFrom(r.FhirJson));
 
             var validation = _validator.Validate(r.FhirJson);

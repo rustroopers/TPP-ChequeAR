@@ -84,6 +84,8 @@ namespace ChequeAR.Api
 
         protected void Application_End()
         {
+            // Antes de cerrar Serilog: los eventos que no se puedan persistir se loguean.
+            ServiceComposition.Shutdown();
             Log.CloseAndFlush();
         }
     }

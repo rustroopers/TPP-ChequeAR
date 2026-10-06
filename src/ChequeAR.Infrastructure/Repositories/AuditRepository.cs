@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Globalization;
@@ -9,7 +10,12 @@ using ChequeAR.Infrastructure.EF;
 
 namespace ChequeAR.Infrastructure.Repositories
 {
-    public class AuditRepository : IAuditRepository
+    /// <summary>
+    /// Es dueño de su contexto: cada instancia recibe uno nuevo (ver ServiceComposition) y lo
+    /// libera en Dispose. AuditDispatcher depende de eso para no retener un DbContext de por
+    /// vida.
+    /// </summary>
+    public sealed class AuditRepository : IAuditRepository, IDisposable
     {
         private readonly ChequeARDbContext _ctx;
         public AuditRepository(ChequeARDbContext ctx) { _ctx = ctx; }
@@ -28,7 +34,7 @@ namespace ChequeAR.Infrastructure.Repositories
 
         public async Task<IReadOnlyList<AuditEvent>> SearchAsync(string agentUserId, string action, System.DateTime? fromUtc, System.DateTime? toUtc, int max)
         {
-            var q = _ctx.AuditEvents.AsQueryable();
+            IQueryable<AuditEvent> q = _ctx.AuditEvents.AsNoTracking();
             if (!string.IsNullOrEmpty(agentUserId))
             {
                 var u = agentUserId.ToLower(CultureInfo.InvariantCulture);
@@ -42,7 +48,30 @@ namespace ChequeAR.Infrastructure.Repositories
             if (!string.IsNullOrEmpty(action)) q = q.Where(x => x.Action == action);
             if (fromUtc.HasValue) q = q.Where(x => x.Recorded >= fromUtc.Value);
             if (toUtc.HasValue) q = q.Where(x => x.Recorded < toUtc.Value);
-            return await q.OrderByDescending(x => x.Recorded).Skip(0).Take(max).ToListAsync();
+            return await q.OrderByDescending(x => x.Recorded).Take(max).ToListAsync();
         }
+
+        public Task<AuditEvent> GetAsync(Guid id) =>
+            _ctx.AuditEvents.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+
+        public async Task<IReadOnlyList<AuditEvent>> ForEntityAsync(string entityRef, bool includeOperations)
+        {
+            if (string.IsNullOrEmpty(entityRef)) return new List<AuditEvent>();
+
+            IQueryable<AuditEvent> q = _ctx.AuditEvents.AsNoTracking();
+            if (includeOperations)
+            {
+                // StartsWith se traduce a LIKE 'ref$%' ('$' no es comodín de LIKE).
+                var withOperation = entityRef + "$";
+                q = q.Where(x => x.EntityRef == entityRef || x.EntityRef.StartsWith(withOperation));
+            }
+            else
+            {
+                q = q.Where(x => x.EntityRef == entityRef);
+            }
+            return await q.OrderByDescending(x => x.Recorded).ToListAsync();
+        }
+
+        public void Dispose() => _ctx.Dispose();
     }
 }
