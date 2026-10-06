@@ -38,13 +38,19 @@ namespace ChequeAR.Application.Services
             _specialties = specialties;
         }
 
+        /// <summary>
+        /// Tope de resultados de la búsqueda de pacientes. Llegar a este número significa que
+        /// puede haber más coincidencias: el total no se conoce.
+        /// </summary>
+        public const int MaxSearchResults = 50;
+
         public async Task<IReadOnlyList<PatientSearchHit>> SearchAsync(string query)
         {
             if (string.IsNullOrWhiteSpace(query)) return new List<PatientSearchHit>();
 
             try
             {
-                var rows = await _oracle.SearchAsync(PatientView, SearchColumns, query);
+                var rows = await _oracle.SearchAsync(PatientView, SearchColumns, query, MaxSearchResults);
                 var result = new List<PatientSearchHit>();
                 foreach (var row in rows) result.Add(MapRow(row, null));
                 if (result.Count > 0) return result;
@@ -75,46 +81,57 @@ namespace ChequeAR.Application.Services
             return await _qrRepo.SearchAsync(hospitalId, null, null, 0, take);
         }
 
+        /// <summary>Total de fichas del paciente, sin el tope de <see cref="GetEncountersAsync"/>.</summary>
+        public Task<int> CountEncountersAsync(string hospitalId) => _qrRepo.CountAsync(hospitalId);
+
         // ---- Modo degradado: pacientes derivados de las respuestas propias ----
+
+        /// <summary>Fichas recientes entre las que se busca cuando el hospital no responde.</summary>
+        private const int DegradedScan = 500;
 
         private async Task<IReadOnlyList<PatientSearchHit>> SearchFromResponsesAsync(string query)
         {
-            var responses = await _qrRepo.SearchAsync(null, null, null, 0, 500);
-            var hits = new List<PatientSearchHit>();
-            foreach (var g in responses.Where(r => !string.IsNullOrEmpty(r.PatientHospitalId))
-                                       .GroupBy(r => r.PatientHospitalId))
-            {
-                hits.Add(await BuildHitAsync(g.Key, g.ToList()));
-            }
-
+            var responses = await _qrRepo.SearchAsync(null, null, null, 0, DegradedScan);
             var q = query.Trim().ToLowerInvariant();
-            return hits.Where(h =>
-                (h.HospitalId ?? "").ToLowerInvariant().Contains(q) ||
-                (h.FullName ?? "").ToLowerInvariant().Contains(q)).ToList();
+
+            // Se filtra ANTES de armar cada resultado: el nombre sale del recurso FHIR que ya
+            // está en memoria, así que matchear es barato; lo caro (resolver la especialidad)
+            // se hace sólo para los pacientes que coinciden.
+            var matches = responses
+                .Where(r => !string.IsNullOrEmpty(r.PatientHospitalId))
+                .GroupBy(r => r.PatientHospitalId)
+                .Select(g => new { HospitalId = g.Key, Responses = (IReadOnlyList<QuestionnaireResponse>)g.ToList() })
+                .Where(p => p.HospitalId.ToLowerInvariant().Contains(q)
+                            || (LatestDemographics(p.Responses)?.Name ?? "").ToLowerInvariant().Contains(q))
+                .ToList();
+
+            var catalog = await _specialties.GetAsync();
+            var specialtyByQuestionnaire = new Dictionary<Guid, string>();
+            var hits = new List<PatientSearchHit>();
+            foreach (var m in matches.Take(MaxSearchResults))
+                hits.Add(await BuildHitAsync(m.HospitalId, m.Responses, catalog, specialtyByQuestionnaire));
+            return hits;
         }
 
         private async Task<PatientSearchHit> BuildHitAsync(string hospitalId, IReadOnlyList<QuestionnaireResponse> responses)
+            => await BuildHitAsync(hospitalId, responses, await _specialties.GetAsync(), new Dictionary<Guid, string>());
+
+        /// <param name="specialtyByQuestionnaire">Caché por cuestionario: varios pacientes suelen compartirlo.</param>
+        private async Task<PatientSearchHit> BuildHitAsync(
+            string hospitalId, IReadOnlyList<QuestionnaireResponse> responses,
+            SpecialtyCatalog catalog, Dictionary<Guid, string> specialtyByQuestionnaire)
         {
             var latest = responses.OrderByDescending(r => r.AuthoredAt).First();
             var demo = FhirPatientReader.Read(latest.FhirJson);
 
-            string specialtyCode = null, specialtyLabel = null;
-            try
+            // Sólo el código de especialidad (una columna), no el agregado del cuestionario.
+            if (!specialtyByQuestionnaire.TryGetValue(latest.QuestionnaireId, out var specialtyCode))
             {
-                var q = await _qRepo.GetAsync(latest.QuestionnaireId);
-                if (q != null)
-                {
-                    specialtyCode = q.SpecialtyCode;
-                    // Caer al código dejaba "reuma" como label en las pantallas de paciente
-                    // y encuentro: el editor guarda SpecialtyDisplay en null, así que ese
-                    // fallback era el caso normal, no el borde.
-                    var cat = await _specialties.GetAsync();
-                    specialtyLabel = cat.Label(q.SpecialtyCode, q.SpecialtyDisplay);
-                }
+                try { specialtyCode = await _qRepo.GetSpecialtyCodeAsync(latest.QuestionnaireId); }
+                catch { specialtyCode = null; /* modo degradado: sin especialidad, se usa la de omisión */ }
+                specialtyByQuestionnaire[latest.QuestionnaireId] = specialtyCode;
             }
-            catch { /* ignore */ }
 
-            var catalog = await _specialties.GetAsync();
             return new PatientSearchHit
             {
                 HospitalId = hospitalId,
@@ -122,9 +139,12 @@ namespace ChequeAR.Application.Services
                 AgeLabel = demo?.AgeLabel,
                 BirthDateLabel = demo?.BirthDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 SpecialtyCode = catalog.CodeOrDefault(specialtyCode),
-                SpecialtyLabel = specialtyLabel ?? catalog.DefaultLabel
+                SpecialtyLabel = catalog.Label(specialtyCode)
             };
         }
+
+        private static PatientDemographics LatestDemographics(IReadOnlyList<QuestionnaireResponse> responses)
+            => FhirPatientReader.Read(responses.OrderByDescending(r => r.AuthoredAt).First().FhirJson);
 
         /// Mapea una fila de VW_PACIENTE. La vista no expone edad ni especialidad:
         /// la edad se calcula de FECHA_NACIMIENTO y la especialidad no pertenece

@@ -190,6 +190,24 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(ResponseStatus.Completed, finalized.Status);
         }
 
+        // El autosave corre cada pocos segundos: tiene que leer sólo la versión anclada, no el
+        // cuestionario entero con todas sus versiones, secciones, preguntas y opciones.
+        [Fact]
+        public async Task SaveProgressAsync_LeeSoloLaVersionAnclada()
+        {
+            var (id, lockToken, response) = FichaConLock(ConObligatoria);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = ConObligatoria });
+
+            await _sut.SaveProgressAsync(id, "u", lockToken, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 7 } });
+
+            _qRepo.Verify(r => r.GetAsync(It.IsAny<Guid>()), Times.Never);
+            Assert.Equal("Edad", (string)JObject.Parse(response.FhirJson).SelectToken("item[0].text"));
+        }
+
         private (Guid id, Guid lockToken, QuestionnaireResponse response) FichaConLock(string questionnaireJson)
         {
             var id = Guid.NewGuid();
@@ -337,7 +355,7 @@ namespace ChequeAR.Tests.Application
             var id = Guid.NewGuid();
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new QuestionnaireResponse { Id = id, Status = ResponseStatus.Completed });
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AbandonAsync(id, "u"));
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.AbandonAsync(id, "u"));
         }
 
         // EL CASO REPORTADO: se empieza a completar con la v1 y alguien publica la v2 en el
@@ -400,7 +418,7 @@ namespace ChequeAR.Tests.Application
             _qRepo.Setup(r => r.GetAsync(questionnaireId))
                   .ReturnsAsync(new Questionnaire { Id = questionnaireId, Status = QuestionnaireStatus.Draft });
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateAsync(
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.CreateAsync(
                 new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "PAC-1" }, "u"));
         }
 
@@ -468,7 +486,7 @@ namespace ChequeAR.Tests.Application
             _qRepo.Setup(r => r.GetAsync(questionnaireId))
                   .ReturnsAsync(new Questionnaire { Id = questionnaireId, Status = QuestionnaireStatus.Retired });
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateAsync(
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.CreateAsync(
                 new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "HC-1" }, "u"));
         }
         // --- Lock de sesión de edición -----------------------------------------------
@@ -533,7 +551,7 @@ namespace ChequeAR.Tests.Application
             var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.Completed };
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AcquireLockAsync(id, "u"));
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.AcquireLockAsync(id, "u"));
         }
 
         [Fact]
@@ -1024,7 +1042,7 @@ namespace ChequeAR.Tests.Application
             var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.InProgress };
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => _sut.SaveProgressAsync(id, "u", Guid.NewGuid(), null, new List<QuestionnaireResponseItem>()));
         }
 
@@ -1123,7 +1141,7 @@ namespace ChequeAR.Tests.Application
             var response = new QuestionnaireResponse { Id = id, Status = ResponseStatus.Completed };
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(response);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => _sut.SaveProgressAsync(id, "u", Guid.NewGuid(), null, new List<QuestionnaireResponseItem>()));
         }
 

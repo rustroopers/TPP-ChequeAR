@@ -70,8 +70,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.Items.Clear();
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
@@ -146,8 +147,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     model.Rows.Add(previewRow);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
@@ -186,8 +188,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     NullValueHandling = NullValueHandling.Ignore
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);

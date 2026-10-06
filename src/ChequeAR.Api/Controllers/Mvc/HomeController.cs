@@ -101,8 +101,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     };
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.RecentEncounters.Clear();
                 model.Kpis = null;
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";

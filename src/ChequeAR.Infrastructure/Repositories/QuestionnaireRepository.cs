@@ -172,6 +172,12 @@ namespace ChequeAR.Infrastructure.Repositories
                 .FirstOrDefaultAsync(v => v.QuestionnaireId == questionnaireId && v.VersionNumber == versionNumber);
         }
 
+        public Task<QuestionnaireVersion> GetVersionByIdAsync(Guid questionnaireId, Guid versionId)
+        {
+            return _ctx.QuestionnaireVersions.AsNoTracking()
+                .FirstOrDefaultAsync(v => v.Id == versionId && v.QuestionnaireId == questionnaireId);
+        }
+
         public Task<string> GetSpecialtyCodeAsync(Guid questionnaireId)
         {
             return _ctx.Questionnaires

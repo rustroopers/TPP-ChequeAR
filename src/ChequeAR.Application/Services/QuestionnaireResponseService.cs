@@ -63,6 +63,10 @@ namespace ChequeAR.Application.Services
             string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take)
             => _repo.SearchAsync(patientHospitalId, questionnaireId, status, skip, take, _guard.Scope);
 
+        /// <summary>Total sin paginar de <see cref="SearchAsync"/>, con los mismos filtros y el mismo scope.</summary>
+        public Task<int> CountAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status)
+            => _repo.CountAsync(patientHospitalId, questionnaireId, status, _guard.Scope);
+
         public Task<bool> HasResponsesAsync(Guid questionnaireId) => _repo.HasResponsesAsync(questionnaireId);
 
         /// <summary>Chequea el scope contra la especialidad del Questionnaire dado, sin traer el agregado completo.</summary>
@@ -72,24 +76,67 @@ namespace ChequeAR.Application.Services
             _guard.EnsureAllows(code);
         }
 
+        private const string NotInProgressMessage =
+            "Esta ficha ya no está en curso: probablemente otro usuario la finalizó o la descartó.";
+
+        /// <summary>La ficha, si existe y su cuestionario está dentro del scope del usuario.</summary>
+        private async Task<QuestionnaireResponse> LoadAsync(Guid id)
+        {
+            var r = await _repo.GetAsync(id);
+            if (r == null) throw new NotFoundException("La ficha no existe.");
+            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
+            return r;
+        }
+
+        /// <summary><see cref="LoadAsync"/> para escribirla: exige además el permiso de carga de fichas.</summary>
+        private async Task<QuestionnaireResponse> LoadForWriteAsync(Guid id)
+        {
+            _access.EnsureCan(Permissions.EncounterWrite);
+            return await LoadAsync(id);
+        }
+
+        /// <summary>
+        /// Estructura de la versión a la que está anclada la ficha. Va directo a esa versión:
+        /// el autosave corre cada pocos segundos y cargar el cuestionario entero (todas sus
+        /// versiones, secciones, preguntas y opciones) para leer un solo JSON era desperdicio.
+        /// Las fichas anteriores al anclaje (sin versión) caen a la vigente.
+        /// </summary>
+        private async Task<RenderableQuestionnaire> PinnedStructureAsync(QuestionnaireResponse r)
+        {
+            QuestionnaireVersion pinned = null;
+            if (r.QuestionnaireVersionId != Guid.Empty)
+                pinned = await _qRepo.GetVersionByIdAsync(r.QuestionnaireId, r.QuestionnaireVersionId);
+            if (pinned == null)
+                pinned = (await _qRepo.GetAsync(r.QuestionnaireId))?.VersionOrCurrent(r.QuestionnaireVersionId);
+            return FhirQuestionnaireReader.Read(pinned?.FhirJson);
+        }
+
+        /// <summary><see cref="LoadForWriteAsync"/> que además tiene que seguir en curso.</summary>
+        private async Task<QuestionnaireResponse> LoadInProgressForWriteAsync(Guid id)
+        {
+            var r = await LoadForWriteAsync(id);
+            if (r.Status != ResponseStatus.InProgress) throw new BusinessRuleException(NotInProgressMessage);
+            return r;
+        }
+
         public async Task<QuestionnaireResponse> CreateAsync(QuestionnaireResponse r, string userId)
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             if (string.IsNullOrEmpty(r.PatientHospitalId))
-                throw new ArgumentException("PatientHospitalId is required");
+                throw new ArgumentException("Falta el paciente de la ficha (PatientHospitalId).");
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
-            if (q == null) throw new InvalidOperationException("Questionnaire not found");
+            if (q == null) throw new BusinessRuleException("El cuestionario de la ficha no existe.");
             _guard.EnsureAllows(q.SpecialtyCode);
             if (q.Status == QuestionnaireStatus.Retired)
-                throw new InvalidOperationException("Cannot answer retired questionnaire");
+                throw new BusinessRuleException("El cuestionario está archivado: no admite fichas nuevas.");
 
             // Anclaje de versión: la ficha queda atada a la versión con la que se completó,
             // aunque se publique otra en el medio. El cliente manda la que rendirizó; si no
             // la manda, se cae a la vigente. Sin versión publicada no hay nada que responder.
-            var pinned = ResolveVersion(q, r.QuestionnaireVersionId);
+            var pinned = q.VersionOrCurrent(r.QuestionnaireVersionId);
             if (pinned == null)
-                throw new InvalidOperationException("Questionnaire has no published version to answer");
+                throw new BusinessRuleException("El cuestionario no tiene ninguna versión publicada para responder.");
             r.QuestionnaireVersionId = pinned.Id;
 
             r.Id = Guid.NewGuid();
@@ -164,26 +211,6 @@ namespace ChequeAR.Application.Services
             return null;
         }
 
-        /// <summary>
-        /// La versión pedida si existe; si no, la vigente. Null si el cuestionario nunca
-        /// se publicó. Una versión ya no vigente sigue siendo válida: es justamente el
-        /// caso de la ficha que se empezó antes de la última publicación.
-        /// </summary>
-        private static QuestionnaireVersion ResolveVersion(Questionnaire q, Guid requestedVersionId)
-        {
-            if (q?.Versions == null || q.Versions.Count == 0) return null;
-            if (requestedVersionId != Guid.Empty)
-            {
-                var requested = q.Versions.FirstOrDefault(v => v.Id == requestedVersionId);
-                if (requested != null) return requested;
-            }
-            if (q.CurrentVersionId.HasValue)
-            {
-                var current = q.Versions.FirstOrDefault(v => v.Id == q.CurrentVersionId.Value);
-                if (current != null) return current;
-            }
-            return q.Versions.OrderByDescending(v => v.VersionNumber).First();
-        }
 
         /// <param name="lockToken">
         /// Token de la sesión de edición que se cierra con esta finalización. Exigirlo
@@ -192,10 +219,7 @@ namespace ChequeAR.Application.Services
         /// </param>
         public async Task<QuestionnaireResponse> FinalizeAsync(Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
         {
-            _access.EnsureCan(Permissions.EncounterWrite);
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
+            var r = await LoadForWriteAsync(id);
             if (r.Status == ResponseStatus.Completed)
                 return r;
 
@@ -205,9 +229,7 @@ namespace ChequeAR.Application.Services
             // Se regenera con status completed antes de validar: el recurso guardado al
             // crear dice "in-progress" y quedaría contradiciendo el estado final.
             r.Status = ResponseStatus.Completed;
-            var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
-            var pinned = ResolveVersion(questionnaire, r.QuestionnaireVersionId);
-            var structure = FhirQuestionnaireReader.Read(pinned?.FhirJson);
+            var structure = await PinnedStructureAsync(r);
 
             // Obligatorias visibles: el renderer ya las exige, pero esa validación vive en el
             // navegador y una llamada directa a $finalize la saltearía.
@@ -235,7 +257,7 @@ namespace ChequeAR.Application.Services
             var snapshot = BuildFullSnapshot(structure, r.Items);
 
             r.LastSavedAt = now;
-            ClearLock(r);   // ya no hay nada que seguir editando ni que bloquear
+            r.ReleaseLock();   // ya no hay nada que seguir editando ni que bloquear
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
 
@@ -274,26 +296,17 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<QuestionnaireResponse> AbandonAsync(Guid id, string userId)
         {
-            _access.EnsureCan(Permissions.EncounterWrite);
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
-            if (r.Status != ResponseStatus.InProgress)
-                throw new InvalidOperationException("Ya no está en curso: probablemente otro usuario ya la finalizó.");
+            var r = await LoadInProgressForWriteAsync(id);
 
             var now = DateTime.UtcNow;
-            var free = !r.LockToken.HasValue || !r.LockExpiresAt.HasValue || r.LockExpiresAt.Value < now;
-            var ownedBySameUser = r.LockedByUserId == userId;
-            if (!free && !ownedBySameUser)
+            if (!r.CanBeLockedBy(userId, now))
                 throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
 
             r.Status = ResponseStatus.EnteredInError;
-            var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
-            var pinned = ResolveVersion(questionnaire, r.QuestionnaireVersionId);
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
-                r, FhirQuestionnaireReader.Read(pinned?.FhirJson), DemographicsFrom(r.FhirJson));
+                r, await PinnedStructureAsync(r), DemographicsFrom(r.FhirJson));
 
-            ClearLock(r);
+            r.ReleaseLock();
             r.LastSavedAt = now;
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
@@ -309,13 +322,11 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<RetargetPreview> BuildRetargetPreviewAsync(Guid id)
         {
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
+            var r = await LoadAsync(id);
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
-            var pinned = ResolveVersion(q, r.QuestionnaireVersionId);
-            var current = ResolveVersion(q, Guid.Empty);
+            var pinned = q?.VersionOrCurrent(r.QuestionnaireVersionId);
+            var current = q?.CurrentVersion();
             var preview = new RetargetPreview
             {
                 FromVersion = pinned?.VersionNumber ?? 0,
@@ -356,22 +367,17 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<QuestionnaireResponse> RetargetToCurrentVersionAsync(Guid id, string userId, Guid lockToken)
         {
-            _access.EnsureCan(Permissions.EncounterWrite);
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
-            if (r.Status != ResponseStatus.InProgress)
-                throw new InvalidOperationException("Esta ficha ya no está en curso: probablemente otro usuario la finalizó o la descartó.");
+            var r = await LoadInProgressForWriteAsync(id);
 
             var now = DateTime.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
-            var current = ResolveVersion(q, Guid.Empty);
-            if (current == null) throw new InvalidOperationException("Questionnaire has no published version");
+            var current = q?.CurrentVersion();
+            if (current == null) throw new BusinessRuleException("El cuestionario no tiene ninguna versión publicada.");
             if (current.Id == r.QuestionnaireVersionId) return r;   // ya está en la vigente
 
-            var pinned = ResolveVersion(q, r.QuestionnaireVersionId);
+            var pinned = q?.VersionOrCurrent(r.QuestionnaireVersionId);
             var currentStructure = FhirQuestionnaireReader.Read(current.FhirJson);
             var currentLinkIds = new HashSet<string>(FlattenTexts(currentStructure).Keys);
 
@@ -388,7 +394,7 @@ namespace ChequeAR.Application.Services
                     LinkId = ans.Key,
                     Text = pinnedTexts.TryGetValue(ans.Key, out var t) && !string.IsNullOrWhiteSpace(t) ? t : ans.Key,
                     Before = ans.Value,
-                    After = "—"   // descartada al pasar de versión
+                    After = ResponseAnswerFormatter.Empty   // descartada al pasar de versión
                 });
             }
 
@@ -436,8 +442,8 @@ namespace ChequeAR.Application.Services
             var result = new Dictionary<string, string>();
             foreach (var gr in (items ?? new List<QuestionnaireResponseItem>()).GroupBy(i => i.LinkId ?? string.Empty))
             {
-                var formatted = FormatAnswers(gr.ToList());
-                if (formatted != "—") result[gr.Key] = formatted;
+                var formatted = ResponseAnswerFormatter.Format(gr.ToList());
+                if (formatted != ResponseAnswerFormatter.Empty) result[gr.Key] = formatted;
             }
             return result;
         }
@@ -449,23 +455,13 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task<QuestionnaireResponse> AcquireLockAsync(Guid id, string userId)
         {
-            _access.EnsureCan(Permissions.EncounterWrite);
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
-            if (r.Status != ResponseStatus.InProgress)
-                throw new InvalidOperationException("Esta ficha ya no está en curso: probablemente otro usuario la finalizó o la descartó.");
+            var r = await LoadInProgressForWriteAsync(id);
 
             var now = DateTime.UtcNow;
-            var free = !r.LockToken.HasValue || !r.LockExpiresAt.HasValue || r.LockExpiresAt.Value < now;
-            var ownedBySameUser = r.LockedByUserId == userId;
-            if (!free && !ownedBySameUser)
+            if (!r.CanBeLockedBy(userId, now))
                 throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
 
-            r.LockToken = Guid.NewGuid();
-            r.LockedByUserId = userId;
-            r.LockedAt = now;
-            r.LockExpiresAt = now.Add(LockTtl);
+            r.AcquireLock(userId, now, LockTtl);
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
             // "Edición iniciada": deja traza de cada acceso de edición (quién abrió la ficha y
@@ -477,10 +473,7 @@ namespace ChequeAR.Application.Services
         /// <summary>Extiende el vencimiento del lock vigente (heartbeat / aviso de "1 minuto").</summary>
         public async Task<QuestionnaireResponse> RenewLockAsync(Guid id, string userId, Guid lockToken)
         {
-            _access.EnsureCan(Permissions.EncounterWrite);
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
+            var r = await LoadForWriteAsync(id);
             EnsureLockOwnedOrRenew(r, userId, lockToken, DateTime.UtcNow);
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
@@ -500,21 +493,16 @@ namespace ChequeAR.Application.Services
         public async Task ReleaseLockAsync(
             Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
         {
-            _access.EnsureCan(Permissions.EncounterWrite);
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
-            if (r.LockToken != lockToken || r.LockedByUserId != userId) return;
+            var r = await LoadForWriteAsync(id);
+            if (!r.IsLockHeldBy(userId, lockToken)) return;
 
             List<ResponseFieldChange> changes = null;
             if (sessionBaseline != null)
             {
-                var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
-                var pinned = ResolveVersion(questionnaire, r.QuestionnaireVersionId);
-                changes = BuildNetDiff(sessionBaseline, r.Items, FhirQuestionnaireReader.Read(pinned?.FhirJson));
+                changes = BuildNetDiff(sessionBaseline, r.Items, await PinnedStructureAsync(r));
             }
 
-            ClearLock(r);
+            r.ReleaseLock();
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
 
@@ -539,12 +527,7 @@ namespace ChequeAR.Application.Services
         public async Task<QuestionnaireResponse> SaveProgressAsync(
             Guid id, string userId, Guid lockToken, int? expectedVersion, ICollection<QuestionnaireResponseItem> items)
         {
-            _access.EnsureCan(Permissions.EncounterWrite);
-            var r = await _repo.GetAsync(id);
-            if (r == null) throw new InvalidOperationException("La ficha no existe.");
-            await EnsureAllowsQuestionnaireAsync(r.QuestionnaireId);
-            if (r.Status != ResponseStatus.InProgress)
-                throw new InvalidOperationException("Esta ficha ya no está en curso: probablemente otro usuario la finalizó o la descartó.");
+            var r = await LoadInProgressForWriteAsync(id);
 
             var now = DateTime.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);
@@ -567,8 +550,7 @@ namespace ChequeAR.Application.Services
             // repo, que sabe cómo borrar los items viejos sin violar la FK requerida.
             var keptItems = (r.Items ?? new List<QuestionnaireResponseItem>())
                 .Where(i => !touchedLinkIds.Contains(i.LinkId)).ToList();
-            var questionnaire = await _qRepo.GetAsync(r.QuestionnaireId);
-            var pinned = ResolveVersion(questionnaire, r.QuestionnaireVersionId);
+            var structure = await PinnedStructureAsync(r);
             var mergedForFhir = new QuestionnaireResponse
             {
                 Id = r.Id,
@@ -580,7 +562,7 @@ namespace ChequeAR.Application.Services
                 Items = keptItems.Concat(incoming).ToList()
             };
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
-                mergedForFhir, FhirQuestionnaireReader.Read(pinned?.FhirJson), DemographicsFrom(r.FhirJson));
+                mergedForFhir, structure, DemographicsFrom(r.FhirJson));
 
             r.LastSavedAt = now;
             r.IsAutosave = true;
@@ -617,7 +599,7 @@ namespace ChequeAR.Application.Services
                     section.Answers.Add(new ResponseSnapshotAnswer
                     {
                         Text = string.IsNullOrWhiteSpace(question.Text) ? question.LinkId : question.Text,
-                        Answer = FormatAnswers(byLink.TryGetValue(key, out var its) ? its : null)
+                        Answer = ResponseAnswerFormatter.Format(byLink.TryGetValue(key, out var its) ? its : null)
                     });
                 }
                 if (section.Answers.Count > 0) sections.Add(section);
@@ -664,8 +646,8 @@ namespace ChequeAR.Application.Services
             foreach (var linkId in touchedLinkIds)
             {
                 var key = linkId ?? string.Empty;
-                var before = FormatAnswers(beforeByLink.TryGetValue(key, out var b) ? b : null);
-                var after = FormatAnswers(afterByLink.TryGetValue(key, out var a) ? a : null);
+                var before = ResponseAnswerFormatter.Format(beforeByLink.TryGetValue(key, out var b) ? b : null);
+                var after = ResponseAnswerFormatter.Format(afterByLink.TryGetValue(key, out var a) ? a : null);
                 if (before == after) continue;   // reguardado sin novedad
                 changes.Add(new ResponseFieldChange
                 {
@@ -678,32 +660,6 @@ namespace ChequeAR.Application.Services
             return changes;
         }
 
-        private static string FormatAnswers(List<QuestionnaireResponseItem> items)
-        {
-            if (items == null || items.Count == 0) return "—";
-            var values = items.Select(FormatAnswer).Where(v => v != "—").ToList();
-            return values.Count > 0 ? string.Join(", ", values) : "—";
-        }
-
-        private static string FormatAnswer(QuestionnaireResponseItem item)
-        {
-            if (item == null) return "—";
-            if (item.ValueBoolean.HasValue) return item.ValueBoolean.Value ? "Sí" : "No";
-            if (item.ValueInteger.HasValue) return item.ValueInteger.Value.ToString(CultureInfo.InvariantCulture);
-            if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value.ToString(CultureInfo.InvariantCulture);
-            if (item.ValueDate.HasValue) return item.ValueDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
-            if (!string.IsNullOrEmpty(item.ValueCode)) return item.ValueCode;
-            return "—";
-        }
-
-        private static void ClearLock(QuestionnaireResponse r)
-        {
-            r.LockToken = null;
-            r.LockedByUserId = null;
-            r.LockedAt = null;
-            r.LockExpiresAt = null;
-        }
 
         /// <summary>
         /// Valida que quien escribe sea dueño del lock vigente, y de paso implementa el
@@ -716,11 +672,11 @@ namespace ChequeAR.Application.Services
         private static void EnsureLockOwnedOrRenew(QuestionnaireResponse r, string userId, Guid lockToken, DateTime now)
         {
             if (!r.LockToken.HasValue)
-                throw new InvalidOperationException("No hay una sesión de edición activa: hay que tomar el lock ($lock) antes de guardar.");
-            if (r.LockToken.Value != lockToken || r.LockedByUserId != userId)
+                throw new BusinessRuleException("No hay una sesión de edición activa: hay que tomar el lock ($lock) antes de guardar.");
+            if (!r.IsLockHeldBy(userId, lockToken))
                 throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
 
-            r.LockExpiresAt = now.Add(LockTtl);
+            r.RenewLock(now, LockTtl);
         }
     }
 }

@@ -75,6 +75,14 @@ namespace ChequeAR.Application.Services
             return q;
         }
 
+        /// <summary>
+        /// Lectura SIN filtro de especialidad, a propósito: el historial de un paciente muestra
+        /// todas sus fichas, también las de cuestionarios de otra especialidad (decisión de la
+        /// feature 011, para no fragmentar la historia clínica). Sólo para rotular el historial
+        /// (título, especialidad, versión); editar o responder pasa por <see cref="GetAsync"/>.
+        /// </summary>
+        public Task<Questionnaire> GetForPatientHistoryAsync(Guid id) => _repo.GetAsync(id);
+
         public async Task<IReadOnlyList<Questionnaire>> SearchAsync(
             QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)
         {
@@ -281,11 +289,11 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.QuestionnaireWrite);
             var q = await _repo.GetAsync(id);
-            if (q == null) throw new InvalidOperationException("Not found");
+            if (q == null) throw new NotFoundException("El cuestionario no existe.");
             // ¿Puedo tocar ESTE cuestionario? (chequeo sobre el código ACTUAL, antes que nada).
             _guard.EnsureAllows(q.SpecialtyCode);
             if (q.Status == QuestionnaireStatus.Retired)
-                throw new InvalidOperationException("Retired questionnaires cannot be edited");
+                throw new BusinessRuleException("Un cuestionario archivado no se puede editar.");
 
             // Chequeo temprano: da un error claro sin tocar la base. La carrera que queda
             // entre este read y el write la ataja el token de concurrencia en el UPDATE.
@@ -357,9 +365,9 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.QuestionnaireWrite);
             var q = await _repo.GetAsync(id);
-            if (q == null) throw new InvalidOperationException("Not found");
+            if (q == null) throw new NotFoundException("El cuestionario no existe.");
             _guard.EnsureAllows(q.SpecialtyCode);
-            if (!q.CanPublish()) throw new InvalidOperationException("Questionnaire cannot be published in current state");
+            if (!q.CanPublish()) throw new BusinessRuleException("No hay nada para publicar: el cuestionario no tiene preguntas o no tiene cambios desde la última versión.");
 
             // Chequeo defensivo antes de congelar: una versión publicada tiene que ser
             // reproducible, y una pregunta sin variable no se puede explicar contra el catálogo.
@@ -410,7 +418,7 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.QuestionnaireWrite);
             var source = await _repo.GetAsync(id);
-            if (source == null) throw new InvalidOperationException("Not found");
+            if (source == null) throw new NotFoundException("El cuestionario no existe.");
             _guard.EnsureAllows(source.SpecialtyCode);
 
             var copy = new Questionnaire
@@ -493,7 +501,7 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.QuestionnaireDelete);
             var q = await _repo.GetAsync(id);
-            if (q == null) throw new InvalidOperationException("Not found");
+            if (q == null) throw new NotFoundException("El cuestionario no existe.");
             _guard.EnsureAllows(q.SpecialtyCode);
 
             if (await _responses.HasResponsesAsync(id))
@@ -518,10 +526,10 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.QuestionnaireWrite);
             var q = await _repo.GetAsync(id);
-            if (q == null) throw new InvalidOperationException("Not found");
+            if (q == null) throw new NotFoundException("El cuestionario no existe.");
             _guard.EnsureAllows(q.SpecialtyCode);
             if (q.Status == QuestionnaireStatus.Retired)
-                throw new InvalidOperationException("Questionnaire is already archived");
+                throw new BusinessRuleException("El cuestionario ya está archivado.");
             q.Status = QuestionnaireStatus.Retired;
             q.UpdatedAt = DateTime.UtcNow;
             q.ConcurrencyVersion++;

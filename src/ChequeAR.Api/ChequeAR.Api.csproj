@@ -111,12 +111,13 @@
     <Compile Include="Auth\SessionToken.cs" />
     <Compile Include="Auth\RequiresPermissionAttribute.cs" />
     <Compile Include="Auth\RequiresPermissionApiAttribute.cs" />
-    <Compile Include="Filters\PermissionExceptionFilter.cs" />
+    <Compile Include="Filters\ApiExceptionFilter.cs" />
     <Compile Include="Filters\MvcPermissionExceptionFilter.cs" />
     <Compile Include="Helpers\ArgentinaTime.cs" />
     <Compile Include="Helpers\Asset.cs" />
     <Compile Include="Helpers\AuditPresentation.cs" />
     <Compile Include="Helpers\CqLocalizer.cs" />
+    <Compile Include="Helpers\HandledErrors.cs" />
     <Compile Include="Middleware\AuditMiddleware.cs" />
     <Compile Include="Middleware\WebApiExceptionLogger.cs" />
     <Compile Include="Controllers\Mvc\HomeController.cs" />

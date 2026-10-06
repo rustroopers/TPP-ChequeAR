@@ -9,6 +9,22 @@
         register: function (name, component) {
             registry[name] = component;
             mountPending(name);
+        },
+        // Credenciales para llamar a la API desde cualquier isla. El JWT lo estampa
+        // _Layout en <meta name="cq-token"> (ver Auth/SessionToken). Único lugar que lo
+        // lee: antes cada isla tenía su propia copia de esto.
+        auth: {
+            token: function () {
+                var m = document.querySelector('meta[name="cq-token"]');
+                return m ? m.getAttribute('content') : null;
+            },
+            /// json=true agrega Content-Type: application/json (no va con FormData).
+            headers: function (json) {
+                var h = json ? { 'Content-Type': 'application/json' } : {};
+                var t = window.ChequeARIslands.auth.token();
+                if (t) h['Authorization'] = 'Bearer ' + t;
+                return h;
+            }
         }
     };
 

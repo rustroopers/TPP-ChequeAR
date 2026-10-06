@@ -5,16 +5,8 @@
  * exporta a Excel/CSV (POST /api/reports/export).
  */
 (function () {
-    function token() {
-        var m = document.querySelector('meta[name="cq-token"]');
-        return m ? m.getAttribute('content') : null;
-    }
-    function authHeaders() {
-        var h = { 'Content-Type': 'application/json' };
-        var t = token();
-        if (t) h['Authorization'] = 'Bearer ' + t;
-        return h;
-    }
+    function token() { return window.ChequeARIslands.auth.token(); }
+    function authHeaders() { return window.ChequeARIslands.auth.headers(true); }
     // Questionnaire.item.type de FHIR R5 -> categoría de filtro.
     //
     // Antes llegaba el enum del backend serializado como número; ahora llega el recurso FHIR,

@@ -49,6 +49,22 @@ namespace ChequeAR.Tests.Application
             Assert.NotNull(result);
         }
 
+        /// <summary>
+        /// El historial del paciente no se fragmenta por especialidad (feature 011): un
+        /// cuestionario de otra especialidad se rotula con su título, no con su Guid.
+        /// </summary>
+        [Fact]
+        public async Task GetForPatientHistory_FueraDeScope_Devuelve()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "onco", Title = "Onco basal" });
+            var sut = Sut(TestHelpers.GuardFor("cardio"));
+
+            var result = await sut.GetForPatientHistoryAsync(id);
+
+            Assert.Equal("Onco basal", result.Title);
+        }
+
         [Fact]
         public async Task CreateAsync_SinEspecialidad_ValidationFailed()
         {

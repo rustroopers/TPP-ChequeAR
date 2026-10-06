@@ -118,16 +118,8 @@
             var AUTOSAVE_DEBOUNCE_MS = 2500;
             var LOCK_WARNING_MS = 60000;
 
-            function token() {
-                var m = document.querySelector('meta[name="cq-token"]');
-                return m ? m.getAttribute('content') : null;
-            }
-            function authHeaders() {
-                var h = { 'Content-Type': 'application/json' };
-                var t = token();
-                if (t) h['Authorization'] = 'Bearer ' + t;
-                return h;
-            }
+            function token() { return window.ChequeARIslands.auth.token(); }
+            function authHeaders() { return window.ChequeARIslands.auth.headers(true); }
 
             function readOnly() {
                 return !sessionReady.value || !!lockedByOther.value || closedByOther.value;

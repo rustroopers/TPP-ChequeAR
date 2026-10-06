@@ -35,7 +35,8 @@ namespace ChequeAR.Api.Controllers.Api
             if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
             try
             {
-                var items = await _service.SearchAsync(st, titleContains, specialty, _offset, _count);
+                var items = await _service.SearchAsync(st, titleContains, specialty,
+                    FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count));
 
                 var total = await _service.CountAsync(st, titleContains, specialty);
                 var recursos = items.Select(q => (Hl7.Fhir.Model.Resource)ToFhir(q));
@@ -106,22 +107,10 @@ namespace ChequeAR.Api.Controllers.Api
             if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var created = await _service.CreateAsync(q, userId);
-                var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
-                response.Headers.ETag = ETagFor(created);
-                return ResponseMessage(response);
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
-            }
-            catch (ValidationFailedException ex)
-            {
-                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
-            }
+            var created = await _service.CreateAsync(q, userId);
+            var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
+            response.Headers.ETag = ETagFor(created);
+            return ResponseMessage(response);
         }
 
         [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
@@ -138,130 +127,50 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var updated = await _service.UpdateAsync(id, patch, userId, expectedVersion);
-                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(updated));
-                response.Headers.ETag = ETagFor(updated);
-                return ResponseMessage(response);
-            }
-            catch (ConcurrencyConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict,
-                    OperationOutcomes.Conflict(ex.ExpectedVersion, ex.ActualVersion));
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
-            }
-            catch (ValidationFailedException ex)
-            {
-                // Especialidad inexistente/inactiva al mover el cuestionario: 422, no 500.
-                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
-            }
-            catch (InvalidOperationException ex)
-            {
-                // Mismo criterio que Publish: "no existe" y "no se puede editar en este
-                // estado" (ej. archivado) son ambos errores del cliente, no del server.
-                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
-            }
+            var updated = await _service.UpdateAsync(id, patch, userId, expectedVersion);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(updated));
+            response.Headers.ETag = ETagFor(updated);
+            return ResponseMessage(response);
         }
 
         [HttpPost, Route("{id:guid}/$publish"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Publish(Guid id, [FromBody] PublishBody body)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var q = await _service.PublishAsync(id, userId, body?.ChangeNote);
-                return Ok(ToFhir(q));
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
-            }
-            catch (ValidationFailedException ex)
-            {
-                // UN issue por regla incumplida. Con un mensaje concatenado, quien publica
-                // arregla la primera regla, vuelve a intentar y descubre la segunda.
-                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
-            }
+            var q = await _service.PublishAsync(id, userId, body?.ChangeNote);
+            return Ok(ToFhir(q));
         }
 
         [HttpPost, Route("{id:guid}/$archive"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Archive(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                await _service.ArchiveAsync(id, userId);
-                return Ok();
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
-            }
+            await _service.ArchiveAsync(id, userId);
+            return Ok();
         }
 
         [HttpPost, Route("{id:guid}/$clone"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Clone(Guid id, [FromBody] CloneBody body)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var copy = await _service.CloneAsync(id, body?.Title, userId);
-                var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(copy));
-                response.Headers.ETag = ETagFor(copy);
-                return ResponseMessage(response);
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
-            }
-            catch (InvalidOperationException)
-            {
-                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
-            }
+            var copy = await _service.CloneAsync(id, body?.Title, userId);
+            var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(copy));
+            response.Headers.ETag = ETagFor(copy);
+            return ResponseMessage(response);
         }
 
         [HttpDelete, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireDelete)]
         public async Task<IHttpActionResult> Delete(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
+            var outcome = await _service.DeleteAsync(id, userId);
+            // Un 204 acá sería mentira: el recurso sigue existiendo, archivado.
+            if (outcome == DeleteOutcome.ArchivedBecauseInUse)
             {
-                var outcome = await _service.DeleteAsync(id, userId);
-                // Un 204 acá sería mentira: el recurso sigue existiendo, archivado.
-                if (outcome == DeleteOutcome.ArchivedBecauseInUse)
-                {
-                    return Ok(OperationOutcomes.Informational(
-                        "El cuestionario tiene respuestas cargadas: se archivó en vez de eliminarse."));
-                }
-                return StatusCode(HttpStatusCode.NoContent);
+                return Ok(OperationOutcomes.Informational(
+                    "El cuestionario tiene respuestas cargadas: se archivó en vez de eliminarse."));
             }
-            catch (SpecialtyForbiddenException)
-            {
-                // Delete es sólo-Admin (siempre Unrestricted): esto no debería poder
-                // ocurrir, pero se deja como defensa en profundidad.
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
-            }
-            catch (InvalidOperationException)
-            {
-                return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
-            }
+            return StatusCode(HttpStatusCode.NoContent);
         }
 
         public class PublishBody { public string ChangeNote { get; set; } }

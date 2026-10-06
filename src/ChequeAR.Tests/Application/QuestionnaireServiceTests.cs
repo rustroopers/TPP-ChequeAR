@@ -84,7 +84,7 @@ namespace ChequeAR.Tests.Application
         {
             _repo.Setup(r => r.GetAsync(It.IsAny<Guid>())).ReturnsAsync((Questionnaire)null);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<NotFoundException>(
                 () => _sut.UpdateAsync(Guid.NewGuid(), new Questionnaire(), "u"));
         }
 
@@ -95,7 +95,7 @@ namespace ChequeAR.Tests.Application
             var id = Guid.NewGuid();
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, Status = QuestionnaireStatus.Retired });
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => _sut.UpdateAsync(id, new Questionnaire { Title = "x" }, "u"));
         }
 
@@ -156,7 +156,7 @@ namespace ChequeAR.Tests.Application
         {
             _repo.Setup(r => r.GetAsync(It.IsAny<Guid>())).ReturnsAsync((Questionnaire)null);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<NotFoundException>(
                 () => _sut.PublishAsync(Guid.NewGuid(), "u"));
         }
 
@@ -169,7 +169,7 @@ namespace ChequeAR.Tests.Application
             // Active + no questions => CanPublish() false
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, Status = QuestionnaireStatus.Active });
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => _sut.PublishAsync(id, "u"));
         }
 

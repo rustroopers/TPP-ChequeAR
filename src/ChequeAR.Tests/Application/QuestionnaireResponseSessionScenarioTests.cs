@@ -221,10 +221,10 @@ namespace ChequeAR.Tests.Application
             var finalized = await _sut.FinalizeAsync(created.Id, "medico-a", token);
             var versionAtFinalize = finalized.ConcurrencyVersion;
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AcquireLockAsync(created.Id, "medico-b"));
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.AcquireLockAsync(created.Id, "medico-b"));
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => _sut.SaveProgressAsync(created.Id, "medico-a", token, null, Items(Decimal("peso", 40m))));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AbandonAsync(created.Id, "medico-a"));
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.AbandonAsync(created.Id, "medico-a"));
             var again = await _sut.FinalizeAsync(created.Id, "medico-b", Guid.NewGuid());
 
             Assert.Equal(ResponseStatus.Completed, again.Status);
@@ -241,7 +241,7 @@ namespace ChequeAR.Tests.Application
             var abandoned = await _sut.AbandonAsync(created.Id, "medico-a");
 
             Assert.Equal(ResponseStatus.EnteredInError, abandoned.Status);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AcquireLockAsync(created.Id, "medico-a"));
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.AcquireLockAsync(created.Id, "medico-a"));
         }
 
         // Después de "Guardar avance" la sesión quedó cerrada: un autosave rezagado de esa
@@ -253,9 +253,9 @@ namespace ChequeAR.Tests.Application
             var token = (await _sut.AcquireLockAsync(created.Id, "medico-a")).LockToken.Value;
             await _sut.ReleaseLockAsync(created.Id, "medico-a", token);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => _sut.SaveProgressAsync(created.Id, "medico-a", token, null, Items(Decimal("peso", 32.5m))));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.RenewLockAsync(created.Id, "medico-a", token));
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.RenewLockAsync(created.Id, "medico-a", token));
         }
 
         [Fact]
@@ -264,12 +264,12 @@ namespace ChequeAR.Tests.Application
             var id = Guid.NewGuid();
             var token = Guid.NewGuid();
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AcquireLockAsync(id, "u"));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.RenewLockAsync(id, "u", token));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.ReleaseLockAsync(id, "u", token));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.SaveProgressAsync(id, "u", token, null, Items()));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.FinalizeAsync(id, "u", token));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.AbandonAsync(id, "u"));
+            await Assert.ThrowsAsync<NotFoundException>(() => _sut.AcquireLockAsync(id, "u"));
+            await Assert.ThrowsAsync<NotFoundException>(() => _sut.RenewLockAsync(id, "u", token));
+            await Assert.ThrowsAsync<NotFoundException>(() => _sut.ReleaseLockAsync(id, "u", token));
+            await Assert.ThrowsAsync<NotFoundException>(() => _sut.SaveProgressAsync(id, "u", token, null, Items()));
+            await Assert.ThrowsAsync<NotFoundException>(() => _sut.FinalizeAsync(id, "u", token));
+            await Assert.ThrowsAsync<NotFoundException>(() => _sut.AbandonAsync(id, "u"));
             Assert.Null(await _sut.GetAsync(id));
         }
 
@@ -340,6 +340,12 @@ namespace ChequeAR.Tests.Application
 
             public Task<bool> HasResponsesAsync(Guid questionnaireId)
                 => Task.FromResult(_store.Values.Any(r => r.QuestionnaireId == questionnaireId));
+
+            public Task<int> CountAsync(string patientHospitalId = null, Guid? questionnaireId = null, ResponseStatus? status = null, SpecialtyScope scope = null)
+                => Task.FromResult(_store.Values.Count(r =>
+                    (patientHospitalId == null || r.PatientHospitalId == patientHospitalId)
+                    && (!questionnaireId.HasValue || r.QuestionnaireId == questionnaireId.Value)
+                    && (!status.HasValue || r.Status == status.Value)));
         }
     }
 }

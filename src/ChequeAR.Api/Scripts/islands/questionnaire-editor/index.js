@@ -737,10 +737,7 @@
                     .then(function () { importBusy.value = false; });
             }
 
-            function getToken() {
-                var meta = document.querySelector('meta[name="cq-token"]');
-                return meta ? meta.getAttribute('content') : null;
-            }
+            function getToken() { return window.ChequeARIslands.auth.token(); }
 
             // Catálogo de especialidades (CHEQUEAR.Specialty), reemplaza las 5 opciones que
             // antes venían hardcodeadas en este mismo archivo. /api/specialties exige Bearer

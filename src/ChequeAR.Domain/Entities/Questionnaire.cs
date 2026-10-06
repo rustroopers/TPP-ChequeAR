@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Domain.Entities
@@ -75,5 +76,36 @@ namespace ChequeAR.Domain.Entities
         {
             return Status == QuestionnaireStatus.Active && HasPendingChanges;
         }
+
+        /// <summary>
+        /// La versión vigente: la que apunta <see cref="CurrentVersionId"/> y, si quedó
+        /// colgado, la publicada más alta. Null si nunca se publicó.
+        /// </summary>
+        public QuestionnaireVersion CurrentVersion()
+        {
+            if (Versions == null || Versions.Count == 0) return null;
+            if (CurrentVersionId.HasValue)
+            {
+                var current = Versions.FirstOrDefault(v => v.Id == CurrentVersionId.Value);
+                if (current != null) return current;
+            }
+            return Versions.OrderByDescending(v => v.VersionNumber).First();
+        }
+
+        /// <summary>
+        /// Una versión publicada por su id. Null si no existe o si el id es vacío (fichas
+        /// anteriores al anclaje de versión).
+        /// </summary>
+        public QuestionnaireVersion FindVersion(Guid versionId)
+        {
+            if (Versions == null || versionId == Guid.Empty) return null;
+            return Versions.FirstOrDefault(v => v.Id == versionId);
+        }
+
+        /// <summary>
+        /// La versión pedida si existe; si no, la vigente. Una versión que ya no es la vigente
+        /// sigue siendo válida: es el caso de la ficha empezada antes de la última publicación.
+        /// </summary>
+        public QuestionnaireVersion VersionOrCurrent(Guid versionId) => FindVersion(versionId) ?? CurrentVersion();
     }
 }

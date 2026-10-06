@@ -31,7 +31,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // {action} de MVC (nombre del método), que gana sobre el query string y rompía el filtro.
         public async Task<ActionResult> Index(string user = null, string act = null, string resource = null, string from = null, string to = null, int page = 1)
         {
-            NormalizeDateRange(ref from, ref to);
+            ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             ViewBag.Title = "Auditoría";
             ViewBag.PageId = "audit";
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
@@ -54,8 +54,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Skip((model.Page - 1) * pageSize)
                     .Take(pageSize));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.Entries.Clear();
                 model.Total = 0;
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
@@ -70,8 +71,8 @@ namespace ChequeAR.Api.Controllers.Mvc
         /// </summary>
         private async Task<List<AuditEntry>> LoadFilteredAsync(string user, string act, string resource, string from, string to)
         {
-            var fromUtc = ParseArgDateToUtc(from, endOfDay: false);
-            var toUtc = ParseArgDateToUtc(to, endOfDay: true);
+            var fromUtc = ArgentinaTime.ParseFilterDateToUtc(from, endOfDay: false);
+            var toUtc = ArgentinaTime.ParseFilterDateToUtc(to, endOfDay: true);
 
             // El tope y el filtrado los decide el servicio: acá sólo se arma la pantalla.
             var items = (await _audit.SearchAsync(user, act, fromUtc: fromUtc, toUtc: toUtc,
@@ -101,35 +102,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             return entries;
         }
 
-        /// <summary>Fecha "yyyy-MM-dd" (local ARG) a límite UTC. endOfDay=true toma el día siguiente (cota superior exclusiva).</summary>
-        private static DateTime? ParseArgDateToUtc(string date, bool endOfDay)
-        {
-            if (!DateTime.TryParseExact((date ?? string.Empty).Trim(), "yyyy-MM-dd",
-                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
-                return null;
-            return ArgentinaTime.ToUtc(endOfDay ? d.Date.AddDays(1) : d.Date);
-        }
 
-        /// <summary>
-        /// Si "desde" quedó después de "hasta" (rango invertido, tipeado a mano en la URL o
-        /// pegado sin pasar por el date-range picker), se intercambian acá. Nunca debe llegar a
-        /// filtrarse con un rango negativo.
-        /// </summary>
-        private static void NormalizeDateRange(ref string from, ref string to)
-        {
-            var fd = ParseArgDateToUtc(from, endOfDay: false);
-            var td = ParseArgDateToUtc(to, endOfDay: false);
-            if (fd.HasValue && td.HasValue && fd.Value > td.Value)
-            {
-                var tmp = from; from = to; to = tmp;
-            }
-        }
 
         // A6b — Exportación. Reutiliza los mismos exporters (XLSX/CSV) que Reportes,
         // armando un ReportResult con las columnas visibles del listado.
         public async Task<ActionResult> Export(string user = null, string act = null, string resource = null, string from = null, string to = null, string format = "xlsx")
         {
-            NormalizeDateRange(ref from, ref to);
+            ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
             var entries = await LoadFilteredAsync(user, act, resource, from, to);
             var rows = entries.ConvertAll(e => new Dictionary<string, object>
@@ -200,8 +179,9 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(detail);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new AuditDetailViewModel { Id = id });
             }

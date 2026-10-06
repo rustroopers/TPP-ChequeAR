@@ -14,17 +14,33 @@ namespace ChequeAR.Application.Fhir
     /// </summary>
     public static class FhirBundles
     {
+        /// <summary>Tamaño de página cuando el cliente no manda <c>_count</c>.</summary>
+        public const int DefaultCount = 50;
+
+        /// <summary>
+        /// Tope de <c>_count</c>: sin él, un <c>_count=100000</c> traía la tabla entera (con
+        /// los recursos FHIR completos) en un solo pedido.
+        /// </summary>
+        public const int MaxCount = 200;
+
+        /// <summary><c>_count</c> del cliente llevado al rango válido: sin valor o no positivo, el de omisión; nunca más que el tope.</summary>
+        public static int ClampCount(int count) => count <= 0 ? DefaultCount : (count > MaxCount ? MaxCount : count);
+
+        /// <summary><c>_offset</c> del cliente: nunca negativo.</summary>
+        public static int ClampOffset(int offset) => offset < 0 ? 0 : offset;
+
         /// <param name="total">
         /// Total REAL de coincidencias, no el de la página. Es la diferencia entre "hay 3
         /// resultados" y "te estoy mostrando 3 de 240", y de eso depende toda paginación
-        /// del lado del cliente.
+        /// del lado del cliente. Null cuando no se conoce: FHIR lo define opcional, y omitirlo
+        /// es preferible a informar el tamaño de la página como si fuera el total.
         /// </param>
         /// <param name="baseUrl">
         /// Base del servidor FHIR (ej: https://host/fhir/r5). Se usa para el fullUrl de cada
         /// entrada. Si viene vacía, las entradas salen sin fullUrl en vez de con una URL
         /// relativa inválida.
         /// </param>
-        public static Bundle SearchSet(IEnumerable<Resource> resources, int total, string baseUrl = null)
+        public static Bundle SearchSet(IEnumerable<Resource> resources, int? total, string baseUrl = null)
         {
             var items = (resources ?? Enumerable.Empty<Resource>()).Where(r => r != null).ToList();
             var root = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/');

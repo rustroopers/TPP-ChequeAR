@@ -60,9 +60,11 @@ namespace ChequeAR.Api.Controllers.Api
             }
             catch (Exception ex)
             {
-                // Timeout / server caído / respuesta ilegible: el front lo muestra amable.
+                // Timeout / server caído / respuesta ilegible: el front lo muestra amable. El
+                // detalle queda en el log, no en la respuesta.
+                Serilog.Log.Warning(ex, "Falló la consulta al servidor terminológico (filtro {Filter})", filter);
                 return Content((HttpStatusCode)502,
-                    OperationOutcomes.Transient("No se pudo consultar SNOMED CT: " + ex.Message));
+                    OperationOutcomes.Transient("No se pudo consultar SNOMED CT."));
             }
         }
     }

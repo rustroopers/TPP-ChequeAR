@@ -94,6 +94,39 @@ namespace ChequeAR.Tests.Application
             Assert.Contains("\"resource\"", json);
         }
 
+        /// <summary>
+        /// Sin total conocido (búsqueda truncada) se omite, en vez de informar el tamaño de la
+        /// página como si fuera el total.
+        /// </summary>
+        [Fact]
+        public void TotalDesconocido_SeOmite()
+        {
+            var bundle = FhirBundles.SearchSet(new[] { Cuestionario("abc") }, total: null, baseUrl: Base);
+
+            Assert.Null(bundle.Total);
+            Assert.Single(bundle.Entry);
+        }
+
+        [Theory]
+        [InlineData(0, FhirBundles.DefaultCount)]
+        [InlineData(-5, FhirBundles.DefaultCount)]
+        [InlineData(10, 10)]
+        [InlineData(FhirBundles.MaxCount, FhirBundles.MaxCount)]
+        [InlineData(100000, FhirBundles.MaxCount)]
+        public void ClampCount_LlevaElPedidoAlRangoValido(int pedido, int esperado)
+        {
+            Assert.Equal(esperado, FhirBundles.ClampCount(pedido));
+        }
+
+        [Theory]
+        [InlineData(-1, 0)]
+        [InlineData(0, 0)]
+        [InlineData(40, 40)]
+        public void ClampOffset_NuncaNegativo(int pedido, int esperado)
+        {
+            Assert.Equal(esperado, FhirBundles.ClampOffset(pedido));
+        }
+
         private const string Base = "https://localhost:44301/fhir/r5";
 
         private static Questionnaire Cuestionario(string id)

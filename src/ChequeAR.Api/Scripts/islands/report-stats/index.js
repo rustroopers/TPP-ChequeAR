@@ -44,12 +44,7 @@
             var exporting = Vue.ref(false);
             var exportError = Vue.ref(null);
 
-            function authHeaders() {
-                var h = { 'Content-Type': 'application/json' };
-                var m = document.querySelector('meta[name="cq-token"]');
-                if (m) h['Authorization'] = 'Bearer ' + m.getAttribute('content');
-                return h;
-            }
+            function authHeaders() { return window.ChequeARIslands.auth.headers(true); }
 
             function load(query) {
                 if (!query || !query.questionnaireId) return;

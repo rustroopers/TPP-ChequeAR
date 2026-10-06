@@ -83,8 +83,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 Response.StatusCode = 403;
                 ViewBag.DataError = "No tenés acceso a esa especialidad.";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.Items.Clear();
                 model.Total = 0;
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
@@ -139,7 +140,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     title = q?.Title ?? "Cuestionario";
                     if (q != null)
                     {
-                        publishedVersion = CurrentVersionNumber(q);
+                        publishedVersion = q.CurrentVersion()?.VersionNumber ?? 0;
                         specialty = cat.CodeOrDefault(q.SpecialtyCode);
                         status = QuestionnaireStatusMap.ToUi(q.Status);
                         pendingChanges = q.HasUnpublishedChanges();
@@ -161,8 +162,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     return HttpNotFound();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Helpers.HandledErrors.Log(this, ex);
                     title = null;
                     publishedVersion = 0;
                     ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
@@ -245,24 +247,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 return new HttpStatusCodeResult(403, "No tenes acceso a esa especialidad.");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 return new HttpStatusCodeResult(500, "Ocurrió un error al procesar la solicitud.");
             }
         }
 
-        // Versión viva: la que apunta CurrentVersionId. Si por lo que sea quedó colgado,
-        // caemos a la más alta publicada. 0 = nunca se publicó.
-        private static int CurrentVersionNumber(ChequeAR.Domain.Entities.Questionnaire q)
-        {
-            if (q.Versions == null || q.Versions.Count == 0) return 0;
-            if (q.CurrentVersionId.HasValue)
-            {
-                var current = q.Versions.FirstOrDefault(v => v.Id == q.CurrentVersionId.Value);
-                if (current != null) return current.VersionNumber;
-            }
-            return q.Versions.Max(v => v.VersionNumber);
-        }
 
         // Arma el árbol secciones -> preguntas que consume la isla Vue. Las preguntas sin
         // sección se juntan en una sección implícita para que sean editables igual.
@@ -435,8 +426,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 return HttpNotFound();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new QuestionnaireDetailViewModel { Id = id });
             }
@@ -474,8 +466,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 return HttpNotFound();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.QuestionnaireTitle = null;
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new List<QuestionnaireVersionView>());
@@ -562,8 +555,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "No tenes acceso a la especialidad de ese cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudo publicar el cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
@@ -586,8 +580,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "No tenes acceso a la especialidad de ese cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudo archivar el cuestionario.";
                 TempData["ToastLevel"] = "error";
             }

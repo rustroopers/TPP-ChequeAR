@@ -23,7 +23,8 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpGet, Route(""), RequiresPermissionApi(Permissions.AuditRead)]
         public async Task<IHttpActionResult> Search([FromUri(Name = "agent.who")] string agentWho = null, [FromUri(Name = "entity.what")] string entityWhat = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
-            var pagina = await _audit.SearchAsync(agentWho, entityRef: entityWhat, skip: _offset, take: _count);
+            var pagina = await _audit.SearchAsync(agentWho, entityRef: entityWhat,
+                skip: FhirBundles.ClampOffset(_offset), take: FhirBundles.ClampCount(_count));
 
             var recursos = pagina.Items.Select(e => (Resource)ToFhir(e));
             return Ok(FhirBundles.SearchSet(recursos, pagina.Total, FhirBaseUrl()));
