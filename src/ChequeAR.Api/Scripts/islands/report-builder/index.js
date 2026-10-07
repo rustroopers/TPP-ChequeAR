@@ -118,7 +118,8 @@
             // Rehidrata el editor desde una consulta guardada (flujo "Editar consulta").
             function loadSavedReport(id) {
                 fetch('/api/reports/saved/' + id, { headers: authHeaders() })
-                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json(); })
                     .then(function (rep) {
                         reportName.value = rep.Name || rep.name || '';
                         var query = {};
@@ -294,7 +295,8 @@
                 q.page = p;
                 q.pageSize = PAGE_SIZE;
                 fetch('/api/reports/query', { method: 'POST', headers: authHeaders(), body: JSON.stringify(q) })
-                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json(); })
                     .then(function (data) {
                         // total es el de la COHORTE, no el de la pagina: lo usa totalPages.
                         total.value = data.total;
@@ -341,10 +343,8 @@
                 };
                 var url = editing ? '/api/reports/saved/' + currentReportId.value : '/api/reports/saved';
                 fetch(url, { method: editing ? 'PUT' : 'POST', headers: authHeaders(), body: JSON.stringify(body) })
-                    .then(function (r) {
-                        if (!r.ok) throw new Error('HTTP ' + r.status);
-                        return r.json().catch(function () { return null; });
-                    })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json().catch(function () { return null; }); })
                     .then(function (saved) {
                         if (saved && !editing) {
                             var id = saved.Id || saved.id;
@@ -377,7 +377,8 @@
                 if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 exporting.value = true;
                 fetch('/api/reports/export', { method: 'POST', headers: authHeaders(), body: JSON.stringify(buildQuery(format)) })
-                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.blob(); })
                     .then(function (blob) {
                         var url = URL.createObjectURL(blob);
                         var a = document.createElement('a');
