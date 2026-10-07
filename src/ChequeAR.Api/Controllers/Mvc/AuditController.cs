@@ -188,7 +188,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     await FillVersionDiffAsync(detail, av.ResourceId.Value, e.Recorded);
 
                 // Para una consulta guardada mostramos su nombre, alcance y condiciones; para un
-                // reporte consultado o exportado, las condiciones con las que se corrió.
+                // reporte exportado, las condiciones con las que se corrió.
                 if (av.ResourceType == "SavedReport" || av.ResourceType == "Report")
                     await FillReportDetailAsync(detail, e.FhirJson, saved: av.ResourceType == "SavedReport");
                 else if (av.ResourceType == "Patient")

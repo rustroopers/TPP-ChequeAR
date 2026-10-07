@@ -33,7 +33,6 @@ namespace ChequeAR.Api.Controllers.Api
             // superado) salen del executor como excepciones de Application y los traduce
             // ApiExceptionFilter; el executor ya devuelve el formato ancho.
             var wide = await _executor.ExecuteAsync(query);
-            _audit.ReportViewed(query, wide.Total);
             return Ok(new { total = wide.Total, rows = wide.Rows, page = query.Page, pageSize = query.PageSize });
         }
 
@@ -46,9 +45,7 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Stats([FromBody] ReportQuery query)
         {
             if (query == null) return BadRequest("body required");
-            var stats = await _executor.ExecuteStatsAsync(query);
-            _audit.StatsViewed(query, stats.Questions.Count);
-            return Ok(stats);
+            return Ok(await _executor.ExecuteStatsAsync(query));
         }
 
         /// <summary>

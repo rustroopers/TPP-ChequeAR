@@ -13,8 +13,8 @@ using Xunit;
 namespace ChequeAR.Tests.Application
 {
     /// <summary>
-    /// Los accesos de lectura (ver un reporte, exportarlo, mirar la evolución de un paciente,
-    /// bajar la auditoría) tienen que quedar registrados con QUÉ se consultó (FR-009).
+    /// Los accesos de lectura (exportar un reporte, mirar la evolución de un paciente, bajar
+    /// la auditoría) tienen que quedar registrados con QUÉ se consultó (FR-009).
     /// </summary>
     public class AccessAuditServiceTests
     {
@@ -42,63 +42,30 @@ namespace ChequeAR.Tests.Application
             return Assert.Single(_eventos);
         }
 
-        private ReportQuery Consulta(int page = 1) => new ReportQuery
+        private ReportQuery Consulta() => new ReportQuery
         {
             QuestionnaireId = _cuestionario,
-            Page = page,
             Authors = new List<string> { "dra.perez" },
             DateRange = new DateRange { From = new DateTime(2026, 1, 1), To = new DateTime(2026, 3, 31) }
         };
 
         [Fact]
-        public async Task ReportViewed_RegistraUnaLecturaConLaConsultaCompleta()
-        {
-            _sut.ReportViewed(Consulta(), total: 42);
-
-            var evt = await UnicoEventoAsync();
-            Assert.Equal("R", evt.Action);
-            Assert.Equal("dr.gomez", evt.AgentUserId);
-            Assert.Equal("Report", evt.EntityType);
-            Assert.Equal("Report/query?questionnaire=" + _cuestionario + "&rows=42", evt.EntityRef);
-
-            var foto = JsonConvert.DeserializeObject<SavedReportAuditSnapshot>(evt.FhirJson);
-            Assert.Equal(_cuestionario, foto.QuestionnaireId);
-            var consulta = JsonConvert.DeserializeObject<ReportQuery>(foto.QueryJson);
-            Assert.Equal("dra.perez", Assert.Single(consulta.Authors));
-            Assert.Equal(new DateTime(2026, 1, 1), consulta.DateRange.From);
-        }
-
-        // Pasar de página es seguir mirando la misma consulta: no se registra de nuevo.
-        [Fact]
-        public async Task ReportViewed_NoRegistraLasPaginasSiguientes()
-        {
-            _sut.ReportViewed(Consulta(page: 2), total: 42);
-
-            await _dispatcher.FlushAsync();
-            Assert.Empty(_eventos);
-        }
-
-        [Fact]
-        public async Task StatsViewed_RegistraUnaLectura()
-        {
-            _sut.StatsViewed(Consulta(), questions: 7);
-
-            var evt = await UnicoEventoAsync();
-            Assert.Equal("R", evt.Action);
-            Assert.Equal("Report/stats?questionnaire=" + _cuestionario + "&questions=7", evt.EntityRef);
-        }
-
-        [Fact]
-        public async Task ReportExported_RegistraLaExportacionConSusFiltros()
+        public async Task ReportExported_RegistraLaExportacionConLaConsultaCompleta()
         {
             _sut.ReportExported(Consulta(), total: 300);
 
             var evt = await UnicoEventoAsync();
             Assert.Equal("E", evt.Action);
             Assert.Equal("export", evt.Category);
+            Assert.Equal("dr.gomez", evt.AgentUserId);
+            Assert.Equal("Report", evt.EntityType);
             Assert.Equal("Report/export?questionnaire=" + _cuestionario + "&rows=300", evt.EntityRef);
+
             var foto = JsonConvert.DeserializeObject<SavedReportAuditSnapshot>(evt.FhirJson);
-            Assert.Contains("dra.perez", foto.QueryJson);
+            Assert.Equal(_cuestionario, foto.QuestionnaireId);
+            var consulta = JsonConvert.DeserializeObject<ReportQuery>(foto.QueryJson);
+            Assert.Equal("dra.perez", Assert.Single(consulta.Authors));
+            Assert.Equal(new DateTime(2026, 1, 1), consulta.DateRange.From);
         }
 
         [Fact]
@@ -146,8 +113,6 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public async Task ConsultaNula_NoRegistraNada()
         {
-            _sut.ReportViewed(null, 0);
-            _sut.StatsViewed(null, 0);
             _sut.ReportExported(null, 0);
             _sut.StatsExported(null, 0);
 

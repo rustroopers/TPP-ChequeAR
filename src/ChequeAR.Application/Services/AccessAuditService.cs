@@ -8,14 +8,16 @@ using Newtonsoft.Json;
 namespace ChequeAR.Application.Services
 {
     /// <summary>
-    /// Registra los accesos de LECTURA a datos clínicos agregados: ver un reporte o sus
-    /// estadísticas, exportarlos, ver la evolución de un paciente y exportar la propia
-    /// auditoría. Las altas y cambios los auditan los servicios que los hacen; esto cubre lo
-    /// que no modifica nada y por eso no dejaba rastro.
+    /// Registra los accesos de LECTURA a datos clínicos: exportar un reporte o sus
+    /// estadísticas, ver la evolución de un paciente y exportar la propia auditoría. Las
+    /// altas y cambios los auditan los servicios que los hacen; esto cubre lo que no modifica
+    /// nada y por eso no dejaba rastro.
     ///
-    /// Cada evento lleva la consulta completa (FR-009: QUÉ se consultó, no sólo que hubo una
-    /// consulta) en el mismo formato que la foto de un reporte guardado, para que el detalle
-    /// de auditoría la muestre igual.
+    /// Ver un reporte en pantalla NO se registra: sólo cuando los datos salen del sistema.
+    ///
+    /// Cada exportación lleva la consulta completa (FR-009: QUÉ se exportó, no sólo que hubo
+    /// una exportación) en el mismo formato que la foto de un reporte guardado, para que el
+    /// detalle de auditoría la muestre igual.
     /// </summary>
     public class AccessAuditService
     {
@@ -31,32 +33,16 @@ namespace ChequeAR.Application.Services
             _user = user;
         }
 
-        /// <summary>
-        /// Reporte visto en pantalla. Sólo la primera página: pasar de página es seguir
-        /// mirando la misma consulta, no una consulta nueva.
-        /// </summary>
-        public void ReportViewed(ReportQuery query, int total)
-        {
-            if (query == null || query.Page > 1) return;
-            Report("read", "Report/query?questionnaire=" + query.QuestionnaireId + "&rows=" + total, CategoryReport, query);
-        }
-
-        public void StatsViewed(ReportQuery query, int questions)
-        {
-            if (query == null) return;
-            Report("read", "Report/stats?questionnaire=" + query.QuestionnaireId + "&questions=" + questions, CategoryReport, query);
-        }
-
         public void ReportExported(ReportQuery query, int total)
         {
             if (query == null) return;
-            Report("execute", "Report/export?questionnaire=" + query.QuestionnaireId + "&rows=" + total, CategoryExport, query);
+            Export("Report/export?questionnaire=" + query.QuestionnaireId + "&rows=" + total, query);
         }
 
         public void StatsExported(ReportQuery query, int questions)
         {
             if (query == null) return;
-            Report("execute", "Report/statsExport?questionnaire=" + query.QuestionnaireId + "&questions=" + questions, CategoryExport, query);
+            Export("Report/statsExport?questionnaire=" + query.QuestionnaireId + "&questions=" + questions, query);
         }
 
         /// <summary>Evolución de un paciente: queda a qué paciente se miró y qué parámetros.</summary>
@@ -80,9 +66,9 @@ namespace ChequeAR.Application.Services
             _audit.Enqueue(evt);
         }
 
-        private void Report(string action, string entityRef, string category, ReportQuery query)
+        private void Export(string entityRef, ReportQuery query)
         {
-            var evt = AuditEventBuilder.For(action, entityRef, _user.Id, category: category);
+            var evt = AuditEventBuilder.For("execute", entityRef, _user.Id, category: CategoryExport);
             evt.FhirJson = JsonConvert.SerializeObject(new SavedReportAuditSnapshot
             {
                 QuestionnaireId = query.QuestionnaireId,

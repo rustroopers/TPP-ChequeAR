@@ -62,7 +62,7 @@ namespace ChequeAR.Api.Models
             = new List<ChequeAR.Application.Services.ResponseSnapshotSection>();
 
         // Foto de una consulta: reporte guardado (creado / modificado / eliminado), reporte
-        // consultado o exportado, evolución de un paciente o exportación de la auditoría.
+        // exportado, evolución de un paciente o exportación de la auditoría.
         public bool HasReportDetail { get; set; }
         public string ReportHeading { get; set; } = "Reporte";
         public string ConditionsHeading { get; set; } = "Condiciones";

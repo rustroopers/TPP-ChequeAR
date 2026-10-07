@@ -103,10 +103,8 @@ namespace ChequeAR.Api.Helpers
             }
             else if (type == "Report")
             {
-                // "Report/stats?…" y "Report/statsExport?…" son las estadísticas; el resto, la tabla.
-                var stats = entityRef.StartsWith("Report/stats", StringComparison.Ordinal);
-                if (actionCode == "R")
-                    return Set(view, Op.Read, stats ? "Estadísticas consultadas" : "Reporte consultado", "cq-badge--archived", "bi-eye");
+                // "Report/statsExport?…" son las estadísticas; el resto, la tabla.
+                var stats = entityRef.StartsWith("Report/statsExport", StringComparison.Ordinal);
                 return Set(view, Op.Export, stats ? "Estadísticas exportadas" : "Reporte exportado", "cq-badge--info", "bi-download");
             }
             else if (type == "Patient" && StartsWith(suffix, "trend"))
