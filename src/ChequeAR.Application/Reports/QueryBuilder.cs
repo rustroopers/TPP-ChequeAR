@@ -25,6 +25,11 @@ namespace ChequeAR.Application.Reports
         /// cohorte entera y salteaba el tope de la exportación.
         /// </summary>
         public const int MaxPageSize = 200;
+        public const int DefaultPageSize = 50;
+
+        /// <summary>Tamaño de página que se aplica para el pedido: el default si no vino, y nunca más que el máximo.</summary>
+        public static int EffectivePageSize(int requested)
+            => requested > 0 ? Math.Min(requested, MaxPageSize) : DefaultPageSize;
 
         private const string Projection =
             "v.\"ResponseId\", v.\"PatientHospitalId\", v.\"AuthoredAt\", v.\"QuestionnaireVersion\", " +
@@ -59,7 +64,7 @@ namespace ChequeAR.Application.Reports
                 // Se pagina por FICHA, no por fila: el resultado viene en formato largo (una
                 // fila por respuesta-pregunta), asi que un OFFSET plano cortaria una ficha al
                 // medio y el pivot devolveria una fila incompleta.
-                var take = q.PageSize > 0 ? Math.Min(q.PageSize, MaxPageSize) : 50;
+                var take = EffectivePageSize(q.PageSize);
                 // En long: una página absurda desbordaba el int y llegaba un OFFSET negativo.
                 var skip = (int)Math.Min(int.MaxValue, (long)(q.Page > 0 ? q.Page - 1 : 0) * take);
                 sql.AppendLine("  AND v.\"ResponseId\" IN (");

@@ -33,7 +33,9 @@ namespace ChequeAR.Api.Controllers.Api
             // superado) salen del executor como excepciones de Application y los traduce
             // ApiExceptionFilter; el executor ya devuelve el formato ancho.
             var wide = await _executor.ExecuteAsync(query);
-            return Ok(new { total = wide.Total, rows = wide.Rows, page = query.Page, pageSize = query.PageSize });
+            // Se informa el tamaño de página que realmente se aplicó, no el pedido: el builder
+            // lo acota, y un cliente que calcule páginas con el valor pedido se saltearía filas.
+            return Ok(new { total = wide.Total, rows = wide.Rows, page = Math.Max(1, query.Page), pageSize = QueryBuilder.EffectivePageSize(query.PageSize) });
         }
 
         /// <summary>

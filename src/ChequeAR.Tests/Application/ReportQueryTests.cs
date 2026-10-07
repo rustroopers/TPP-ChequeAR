@@ -330,6 +330,17 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(new DateTime(2026, 8, 11, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
         }
 
+        // Es el tamaño que la API le informa al cliente: tiene que ser el que se aplicó.
+        [Theory]
+        [InlineData(0, QueryBuilder.DefaultPageSize)]
+        [InlineData(-5, QueryBuilder.DefaultPageSize)]
+        [InlineData(25, 25)]
+        [InlineData(9999, QueryBuilder.MaxPageSize)]
+        public void EffectivePageSize_AcotaElPedido(int pedido, int esperado)
+        {
+            Assert.Equal(esperado, QueryBuilder.EffectivePageSize(pedido));
+        }
+
         // '%' y '_' son comodines de LIKE: buscar "50%" tiene que buscar ese texto, no "50" + lo que sea.
         [Theory]
         [InlineData("50%", "%50\\%%")]
