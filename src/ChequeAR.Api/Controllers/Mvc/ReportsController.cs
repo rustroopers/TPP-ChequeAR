@@ -42,12 +42,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportListViewModel();
             try
             {
-                // Misma identidad que estampa SessionToken al emitir el bearer: sin login es
-                // "dev", con login el usuario real. Antes esta pantalla usaba "anonymous",
-                // así que nunca listaba los reportes que la API guardaba bajo "dev" —el
-                // listado salía siempre vacío aunque hubiera consultas guardadas.
-                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
-                    ? User.Identity.Name : "dev";
+                // Misma identidad que estampa SessionToken al emitir el bearer, que es con la
+                // que la API guarda los reportes: si difirieran, el listado saldría vacío.
+                var userId = User.Identity.Name;
                 // El scope de especialidad sale de ISpecialtyGuard adentro del servicio, no
                 // de acá: antes este controller mandaba `new string[0]`, así que un Jefe
                 // nunca veía los reportes que sus colegas de la misma especialidad
@@ -110,9 +107,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportPreviewViewModel();
             try
             {
-                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
-                    ? User.Identity.Name : "dev";
-                var resultado = await _saved.GetForUserAsync(id, userId);
+                var resultado = await _saved.GetForUserAsync(id, User.Identity.Name);
                 if (resultado.Outcome != SavedReportOutcome.Ok) return HttpNotFound();
                 var saved = resultado.Report;
 
@@ -171,9 +166,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportStatsViewModel { ReportId = id };
             try
             {
-                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
-                    ? User.Identity.Name : "dev";
-                var resultado = await _saved.GetForUserAsync(id, userId);
+                var resultado = await _saved.GetForUserAsync(id, User.Identity.Name);
                 if (resultado.Outcome != SavedReportOutcome.Ok) return HttpNotFound();
                 var saved = resultado.Report;
                 model.ReportName = saved.Name;

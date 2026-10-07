@@ -160,7 +160,7 @@ namespace ChequeAR.Api.Helpers
 
             JObject root;
             try { root = JObject.Parse(fhirJson); }
-            catch { return lines; }
+            catch (Newtonsoft.Json.JsonException) { return lines; }   // versión ilegible: sin detalle
 
             var title = (string)root["title"];
             if (!string.IsNullOrWhiteSpace(title)) lines.Add("Título: " + title);
