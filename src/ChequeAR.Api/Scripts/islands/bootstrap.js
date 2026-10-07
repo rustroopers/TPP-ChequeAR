@@ -30,9 +30,10 @@
             // Para encadenar tras un fetch: deja pasar la respuesta si fue exitosa y, si no,
             // rechaza con el motivo que mandó la API. Los errores llegan como OperationOutcome
             // (issue[].diagnostics); sin esto la persona veía "HTTP 422" en vez de, por
-            // ejemplo, "El reporte supera el máximo de fichas".
+            // ejemplo, "El reporte supera el máximo de fichas". Devuelve SIEMPRE una promesa,
+            // así sirve igual dentro de un .then que llamada directo.
             ensureOk: function (r) {
-                if (r.ok) return r;
+                if (r.ok) return Promise.resolve(r);
                 return r.json().catch(function () { return null; }).then(function (b) {
                     var textos = ((b && b.issue) || [])
                         .map(function (i) { return i.diagnostics; })
