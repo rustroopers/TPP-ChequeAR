@@ -194,8 +194,12 @@ namespace ChequeAR.Application.Reports
 
             if (string.Equals(p.Op, "contains", StringComparison.OrdinalIgnoreCase))
             {
-                ps.Add(QueryParameter.Text("p" + idx, "%" + Convert.ToString(p.Value, CultureInfo.InvariantCulture) + "%"));
-                return "UPPER(" + target + ") LIKE UPPER(:p" + idx + ")";
+                // '%' y '_' son comodines de LIKE: sin escaparlos, buscar "50%" o "a_b" matchea
+                // cualquier cosa en esa posición en vez del texto que la persona escribió.
+                var texto = Convert.ToString(p.Value, CultureInfo.InvariantCulture) ?? string.Empty;
+                texto = texto.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+                ps.Add(QueryParameter.Text("p" + idx, "%" + texto + "%"));
+                return "UPPER(" + target + ") LIKE UPPER(:p" + idx + ") ESCAPE '\\'";
             }
 
             if (string.Equals(p.Op, "in", StringComparison.OrdinalIgnoreCase))

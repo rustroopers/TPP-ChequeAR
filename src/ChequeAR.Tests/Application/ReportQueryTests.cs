@@ -329,5 +329,21 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(new DateTime(2026, 8, 10, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateFrom").Value);
             Assert.Equal(new DateTime(2026, 8, 11, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
         }
+
+        // '%' y '_' son comodines de LIKE: buscar "50%" tiene que buscar ese texto, no "50" + lo que sea.
+        [Theory]
+        [InlineData("50%", "%50\\%%")]
+        [InlineData("a_b", "%a\\_b%")]
+        [InlineData("c\\d", "%c\\\\d%")]
+        [InlineData("dolor", "%dolor%")]
+        public void Contains_EscapaLosComodinesDeLike(string buscado, string esperado)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.String));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", "contains", buscado)), schema);
+
+            Assert.Contains("ESCAPE '\\'", built.Sql);
+            Assert.Contains(built.Parameters, p => Equals(p.Value, esperado));
+        }
     }
 }
