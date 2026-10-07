@@ -108,7 +108,7 @@ namespace ChequeAR.Application.Services
     {
         public string User { get; set; }
         public string Action { get; set; }
-        public string Resource { get; set; }
+        public string Questionnaire { get; set; }
         public string From { get; set; }
         public string To { get; set; }
         public string Format { get; set; }

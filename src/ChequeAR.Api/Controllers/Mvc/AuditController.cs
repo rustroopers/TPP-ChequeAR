@@ -31,7 +31,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         // A6. OJO: el parámetro NO puede llamarse "action" — colisiona con el token de ruta
         // {action} de MVC (nombre del método), que gana sobre el query string y rompía el filtro.
-        public async Task<ActionResult> Index(string user = null, string act = null, string resource = null, string from = null, string to = null, int page = 1)
+        public async Task<ActionResult> Index(string user = null, string act = null, Guid? questionnaire = null, string from = null, string to = null, int page = 1)
         {
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             ViewBag.Title = "Auditoría";
@@ -44,7 +44,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             const int pageSize = 50;
             var model = new AuditListViewModel
             {
-                UserFilter = user, ActionFilter = act, ResourceFilter = resource,
+                UserFilter = user, ActionFilter = act, QuestionnaireFilter = questionnaire,
                 From = from, To = to, PageSize = pageSize,
                 // Acotada para que (página - 1) * tamaño no desborde.
                 Page = Math.Min(Math.Max(1, page), int.MaxValue / pageSize)
@@ -54,7 +54,8 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                var criteria = await BuildCriteriaAsync(user, act, resource, from, to);
+                model.Questionnaires.AddRange(await _questionnaires.ListTitlesAsync());
+                var criteria = BuildCriteria(user, act, questionnaire, from, to);
                 var pagina = await _audit.SearchAsync(criteria, (model.Page - 1) * pageSize, pageSize);
                 model.Total = pagina.Total;
                 model.Entries.AddRange(await ToEntriesAsync(pagina.Items));
@@ -69,23 +70,17 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
-        /// <summary>
-        /// Filtros del listado, tal como los entiende el servicio. El de "Recurso" busca por
-        /// título de cuestionario: el título no vive en la tabla de auditoría, así que primero
-        /// se resuelve a los ids que matchean y la base filtra por esos recursos.
-        /// </summary>
-        private async Task<AuditSearchCriteria> BuildCriteriaAsync(string user, string act, string resource, string from, string to)
+        /// <summary>Filtros del listado, tal como los entiende el servicio.</summary>
+        private static AuditSearchCriteria BuildCriteria(string user, string act, Guid? questionnaire, string from, string to)
         {
-            var criteria = new AuditSearchCriteria
+            return new AuditSearchCriteria
             {
                 AgentUserId = user,
                 Action = act,
+                QuestionnaireId = questionnaire,
                 FromUtc = ArgentinaTime.ParseFilterDateToUtc(from, endOfDay: false),
                 ToUtc = ArgentinaTime.ParseFilterDateToUtc(to, endOfDay: true)
             };
-            var res = (resource ?? string.Empty).Trim();
-            if (res.Length > 0) criteria.QuestionnaireIds = await _questionnaires.FindIdsByTitleAsync(res);
-            return criteria;
         }
 
         /// <summary>Eventos ya traídos de la base, con forma de pantalla.</summary>
@@ -115,26 +110,32 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         // A6b — Exportación. Reutiliza los mismos exporters (XLSX/CSV) que Reportes,
         // armando un ReportResult con las columnas visibles del listado.
-        public async Task<ActionResult> Export(string user = null, string act = null, string resource = null, string from = null, string to = null, string format = "xlsx")
+        public async Task<ActionResult> Export(string user = null, string act = null, Guid? questionnaire = null, string from = null, string to = null, string format = "xlsx")
         {
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
             List<AuditEntry> entries;
             try
             {
-                var criteria = await BuildCriteriaAsync(user, act, resource, from, to);
+                var criteria = BuildCriteria(user, act, questionnaire, from, to);
                 entries = await ToEntriesAsync(await _audit.ExportAsync(criteria));
             }
             catch (ChequeAR.Application.Exceptions.BusinessRuleException ex)
             {
                 // Demasiados eventos: se vuelve al listado con el motivo, no se baja un archivo recortado.
                 TempData["AuditExportError"] = ex.Message;
-                return RedirectToAction("Index", new { user, act, resource, from, to });
+                return RedirectToAction("Index", new { user, act, questionnaire, from, to });
             }
             // Bajar el registro de auditoría también es un acceso que tiene que quedar registrado.
+            string titulo = null;
+            if (questionnaire.HasValue)
+            {
+                var titulos = await _questionnaires.GetTitlesAsync(new[] { questionnaire.Value });
+                titulo = titulos.TryGetValue(questionnaire.Value, out var t) ? t : questionnaire.Value.ToString();
+            }
             _access.AuditExported(new AuditExportSnapshot
             {
-                User = user, Action = act, Resource = resource, From = from, To = to, Format = format
+                User = user, Action = act, Questionnaire = titulo, From = from, To = to, Format = format
             }, entries.Count);
             var rows = entries.ConvertAll(e => new Dictionary<string, object>
             {
@@ -366,7 +367,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             detail.NoConditionsText = "Sin filtros: incluye todos los eventos.";
             if (!string.IsNullOrWhiteSpace(snap.User)) detail.ReportConditions.Add("Usuario: " + snap.User);
             if (!string.IsNullOrWhiteSpace(snap.Action)) detail.ReportConditions.Add("Acción: " + ActionFilterLabel(snap.Action));
-            if (!string.IsNullOrWhiteSpace(snap.Resource)) detail.ReportConditions.Add("Recurso: " + snap.Resource);
+            if (!string.IsNullOrWhiteSpace(snap.Questionnaire)) detail.ReportConditions.Add("Cuestionario: " + snap.Questionnaire);
             if (!string.IsNullOrWhiteSpace(snap.From) || !string.IsNullOrWhiteSpace(snap.To))
                 detail.ReportConditions.Add("Período: " + (string.IsNullOrWhiteSpace(snap.From) ? "el inicio" : snap.From)
                                             + " a " + (string.IsNullOrWhiteSpace(snap.To) ? "hoy" : snap.To));

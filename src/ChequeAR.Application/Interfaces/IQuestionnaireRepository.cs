@@ -1,4 +1,5 @@
 using System;
+using ChequeAR.Application.Dtos;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using ChequeAR.Domain.Entities;
@@ -36,10 +37,10 @@ namespace ChequeAR.Application.Interfaces
         Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids);
 
         /// <summary>
-        /// Ids de los cuestionarios cuyo título contiene el texto, sin distinguir mayúsculas.
-        /// Incluye los eliminados: la auditoría tiene que poder encontrarlos por nombre.
+        /// Id y título de todos los cuestionarios, ordenados por título. Incluye los
+        /// eliminados: la auditoría tiene que poder filtrar por ellos.
         /// </summary>
-        Task<IReadOnlyList<Guid>> FindIdsByTitleAsync(string titleContains, int max);
+        Task<IReadOnlyList<QuestionnaireTitle>> ListTitlesAsync();
 
         /// <summary>Códigos de especialidad realmente presentes en los cuestionarios (para poblar el filtro).</summary>
         Task<IReadOnlyList<string>> GetSpecialtyCodesAsync();

@@ -1,4 +1,5 @@
 using System;
+using ChequeAR.Application.Dtos;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
@@ -208,19 +209,12 @@ namespace ChequeAR.Infrastructure.Repositories
             return rows.ToDictionary(r => r.Id, r => r.Title);
         }
 
-        public async Task<IReadOnlyList<Guid>> FindIdsByTitleAsync(string titleContains, int max)
+        public async Task<IReadOnlyList<QuestionnaireTitle>> ListTitlesAsync()
         {
-            if (string.IsNullOrWhiteSpace(titleContains)) return new List<Guid>();
-            var t = titleContains.Trim().ToLower(CultureInfo.InvariantCulture);
-            // Mismo criterio que SearchAsync: ToLower() sin cultura es lo que EF6 traduce a LOWER().
-#pragma warning disable CA1304, CA1311
             return await _ctx.Questionnaires
-                .Where(q => q.Title.ToLower().Contains(t))
-                .OrderBy(q => q.Id)
-                .Select(q => q.Id)
-                .Take(max)
+                .OrderBy(q => q.Title).ThenBy(q => q.Id)
+                .Select(q => new QuestionnaireTitle { Id = q.Id, Title = q.Title, IsDeleted = q.IsDeleted })
                 .ToListAsync();
-#pragma warning restore CA1304, CA1311
         }
     }
 }

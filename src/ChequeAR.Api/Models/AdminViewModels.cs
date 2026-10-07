@@ -18,7 +18,10 @@ namespace ChequeAR.Api.Models
     {
         public string UserFilter { get; set; }
         public string ActionFilter { get; set; }
-        public string ResourceFilter { get; set; }
+        public Guid? QuestionnaireFilter { get; set; }
+        /// <summary>Opciones del filtro: todos los cuestionarios, eliminados incluidos.</summary>
+        public List<ChequeAR.Application.Dtos.QuestionnaireTitle> Questionnaires { get; set; }
+            = new List<ChequeAR.Application.Dtos.QuestionnaireTitle>();
         public string From { get; set; }
         public string To { get; set; }
         public List<AuditEntry> Entries { get; set; } = new List<AuditEntry>();
