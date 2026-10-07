@@ -184,8 +184,8 @@ namespace ChequeAR.Tests.Application
             public bool Disposed { get; private set; }
             public Task AddAsync(AuditEvent evt) => Task.CompletedTask;
             public Task AddManyAsync(IEnumerable<AuditEvent> events) => Task.CompletedTask;
-            public Task<IReadOnlyList<AuditEvent>> SearchAsync(string agentUserId, string action, DateTime? fromUtc, DateTime? toUtc, int max)
-                => Task.FromResult((IReadOnlyList<AuditEvent>)new List<AuditEvent>());
+            public Task<AuditPage> SearchAsync(AuditSearchCriteria criteria, int skip, int take)
+                => Task.FromResult(new AuditPage());
             public Task<AuditEvent> GetAsync(Guid id) => Task.FromResult<AuditEvent>(null);
             public Task<IReadOnlyList<AuditEvent>> ForEntityAsync(string entityRef, bool includeOperations)
                 => Task.FromResult((IReadOnlyList<AuditEvent>)new List<AuditEvent>());

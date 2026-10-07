@@ -45,6 +45,11 @@
     </div>
 }
 
+@if (!string.IsNullOrEmpty(ViewBag.ExportError as string))
+{
+    <div class="alert alert-warning" role="alert">@ViewBag.ExportError</div>
+}
+
 @if (Model.Entries.Count == 0)
 {
     <div class="cq-card">

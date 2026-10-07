@@ -138,6 +138,15 @@ namespace ChequeAR.Application.Services
         public Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
             => _repo.GetTitlesAsync(ids);
 
+        /// <summary>
+        /// Oracle no admite más de 1000 valores en un IN, y quien busca por título espera
+        /// unos pocos cuestionarios, no miles.
+        /// </summary>
+        public const int MaxTitleMatches = 1000;
+
+        public Task<IReadOnlyList<Guid>> FindIdsByTitleAsync(string titleContains)
+            => _repo.FindIdsByTitleAsync(titleContains, MaxTitleMatches);
+
         public Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber)
             => _repo.GetVersionAsync(questionnaireId, versionNumber);
 

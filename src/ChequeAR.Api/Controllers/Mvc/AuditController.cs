@@ -43,16 +43,19 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new AuditListViewModel
             {
                 UserFilter = user, ActionFilter = act, ResourceFilter = resource,
-                From = from, To = to, Page = page < 1 ? 1 : page, PageSize = pageSize
+                From = from, To = to, PageSize = pageSize,
+                // Acotada para que (página - 1) * tamaño no desborde.
+                Page = Math.Min(Math.Max(1, page), int.MaxValue / pageSize)
             };
+            // Una exportación rechazada vuelve acá con el motivo (ver Export).
+            ViewBag.ExportError = TempData["AuditExportError"] as string;
 
             try
             {
-                var all = await LoadFilteredAsync(user, act, resource, from, to);
-                model.Total = all.Count;
-                model.Entries.AddRange(all
-                    .Skip((model.Page - 1) * pageSize)
-                    .Take(pageSize));
+                var criteria = await BuildCriteriaAsync(user, act, resource, from, to);
+                var pagina = await _audit.SearchAsync(criteria, (model.Page - 1) * pageSize, pageSize);
+                model.Total = pagina.Total;
+                model.Entries.AddRange(await ToEntriesAsync(pagina.Items));
             }
             catch (Exception ex)
             {
@@ -65,28 +68,33 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         /// <summary>
-        /// Aplica todos los filtros del listado: usuario/acción/fechas en la base y el
-        /// filtro de "Recurso" (por título legible) en memoria, ya que el título no vive en
-        /// la tabla de auditoría sino que se resuelve del cuestionario referenciado.
+        /// Filtros del listado, tal como los entiende el servicio. El de "Recurso" busca por
+        /// título de cuestionario: el título no vive en la tabla de auditoría, así que primero
+        /// se resuelve a los ids que matchean y la base filtra por esos recursos.
         /// </summary>
-        private async Task<List<AuditEntry>> LoadFilteredAsync(string user, string act, string resource, string from, string to)
+        private async Task<AuditSearchCriteria> BuildCriteriaAsync(string user, string act, string resource, string from, string to)
         {
-            var fromUtc = ArgentinaTime.ParseFilterDateToUtc(from, endOfDay: false);
-            var toUtc = ArgentinaTime.ParseFilterDateToUtc(to, endOfDay: true);
-
-            // El tope y el filtrado los decide el servicio: acá sólo se arma la pantalla.
-            var items = (await _audit.SearchAsync(user, act, fromUtc: fromUtc, toUtc: toUtc,
-                                                 skip: 0, take: AuditQueryService.MaxFilas)).Items;
-            var titles = await ResolveTitlesAsync(items);
-
+            var criteria = new AuditSearchCriteria
+            {
+                AgentUserId = user,
+                Action = act,
+                FromUtc = ArgentinaTime.ParseFilterDateToUtc(from, endOfDay: false),
+                ToUtc = ArgentinaTime.ParseFilterDateToUtc(to, endOfDay: true)
+            };
             var res = (resource ?? string.Empty).Trim();
+            if (res.Length > 0) criteria.QuestionnaireIds = await _questionnaires.FindIdsByTitleAsync(res);
+            return criteria;
+        }
+
+        /// <summary>Eventos ya traídos de la base, con forma de pantalla.</summary>
+        private async Task<List<AuditEntry>> ToEntriesAsync(IReadOnlyList<AuditEvent> items)
+        {
+            var titles = await ResolveTitlesAsync(items);
             var entries = new List<AuditEntry>();
             foreach (var e in items)
             {
                 var av = AuditPresentation.Describe(e.EntityRef, e.Action);
                 var label = ResourceLabel(av, titles, e.FhirJson);
-                if (res.Length > 0 && (label ?? string.Empty).IndexOf(res, StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
                 entries.Add(new AuditEntry
                 {
                     Id = e.Id,
@@ -109,7 +117,18 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
-            var entries = await LoadFilteredAsync(user, act, resource, from, to);
+            List<AuditEntry> entries;
+            try
+            {
+                var criteria = await BuildCriteriaAsync(user, act, resource, from, to);
+                entries = await ToEntriesAsync(await _audit.ExportAsync(criteria));
+            }
+            catch (ChequeAR.Application.Exceptions.BusinessRuleException ex)
+            {
+                // Demasiados eventos: se vuelve al listado con el motivo, no se baja un archivo recortado.
+                TempData["AuditExportError"] = ex.Message;
+                return RedirectToAction("Index", new { user, act, resource, from, to });
+            }
             var rows = entries.ConvertAll(e => new Dictionary<string, object>
             {
                 ["Fecha"] = e.Timestamp,
