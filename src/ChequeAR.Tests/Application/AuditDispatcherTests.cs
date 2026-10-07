@@ -72,6 +72,47 @@ namespace ChequeAR.Tests.Application
             Assert.Contains(errores, m => m.Contains("descartado"));
         }
 
+        // Un evento inválido no puede arrastrar al resto del lote ni gastarles intentos.
+        [Fact]
+        public async Task Flush_UnEventoInvalido_NoArrastraAlRestoDelLote()
+        {
+            var malo = Evento();
+            var buenos = new[] { Evento(), Evento() };
+            var guardados = new List<AuditEvent>();
+            var repo = new Mock<IAuditRepository>();
+            repo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
+                .ThrowsAsync(new InvalidOperationException("ORA-12899"));
+            repo.Setup(r => r.AddAsync(malo)).ThrowsAsync(new InvalidOperationException("ORA-12899"));
+            repo.Setup(r => r.AddAsync(It.Is<AuditEvent>(e => e != malo)))
+                .Returns(Task.CompletedTask).Callback<AuditEvent>(guardados.Add);
+
+            var sut = new AuditDispatcher(() => repo.Object, SinTimer, (ex, msg) => { });
+            sut.Enqueue(buenos[0]);
+            sut.Enqueue(malo);
+            sut.Enqueue(buenos[1]);
+
+            await sut.FlushAsync();
+
+            Assert.Equal(buenos, guardados);
+        }
+
+        // Con la base caída no se prueba evento por evento: cada uno esperaría su timeout.
+        [Fact]
+        public async Task Flush_ConLaBaseCaida_CortaElReintentoIndividualEnseguida()
+        {
+            var repo = new Mock<IAuditRepository>();
+            repo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
+                .ThrowsAsync(new InvalidOperationException("ORA-12541"));
+            repo.Setup(r => r.AddAsync(It.IsAny<AuditEvent>())).ThrowsAsync(new InvalidOperationException("ORA-12541"));
+
+            var sut = new AuditDispatcher(() => repo.Object, SinTimer, (ex, msg) => { });
+            for (var i = 0; i < 50; i++) sut.Enqueue(Evento());
+
+            await sut.FlushAsync();
+
+            repo.Verify(r => r.AddAsync(It.IsAny<AuditEvent>()), Times.Exactly(3));
+        }
+
         [Fact]
         public async Task PersistImmediately_SiLaBaseFalla_NoLanza_YLoEncolaParaElFlush()
         {
