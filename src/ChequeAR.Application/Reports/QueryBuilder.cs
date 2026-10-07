@@ -166,7 +166,7 @@ namespace ChequeAR.Application.Reports
 
                 if (p.Group != null) { BuildNode(p.Group, schema, sql, ps); continue; }
 
-                if (!ValidOps.Contains(p.Op))
+                if (p.Op == null || !ValidOps.Contains(p.Op))
                     throw new ArgumentException("Operador inválido: " + p.Op);
 
                 // El tipo sale de la PREGUNTA, no del valor que mando el cliente. Tambien

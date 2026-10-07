@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
 
@@ -79,7 +80,7 @@ namespace ChequeAR.Application.Reports
             // que el pivot y el SQL no puedan quedar desalineados: salen de la misma fuente.
             var questionnaire = await _questionnaires.GetAsync(q.QuestionnaireId);
             if (questionnaire == null)
-                throw new InvalidOperationException("El cuestionario del reporte no existe.");
+                throw new NotFoundException("El cuestionario del reporte no existe.");
             // Va directo a IQuestionnaireRepository (no a QuestionnaireService.GetAsync), así
             // que el guard de especialidad NO viene aplicado: sin esto, cualquiera que
             // conociera el GUID de un cuestionario podía ejecutar un reporte sobre datos de
@@ -87,7 +88,18 @@ namespace ChequeAR.Application.Reports
             _guard.EnsureAllows(questionnaire.SpecialtyCode);
             var schema = ReportSchema.From(questionnaire);
 
-            var built = _builder.Build(q, schema, paginate);
+            BuiltQuery built;
+            try
+            {
+                built = _builder.Build(q, schema, paginate);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is FormatException
+                                       || ex is InvalidCastException || ex is OverflowException)
+            {
+                // Filtro mal armado (linkId ajeno al cuestionario, operador inválido, valor no
+                // convertible): es un error del pedido, con mensaje pensado para quien lo armó.
+                throw new ValidationFailedException(new[] { ex.Message });
+            }
 
             // La ejecución la hace el adaptador: quién abre la conexión y cómo se bindean los
             // parámetros no es una decisión del negocio.
@@ -97,7 +109,7 @@ namespace ChequeAR.Application.Reports
 
             // El tope de fichas exportables SÍ es una regla de negocio, así que se aplica acá.
             if (!paginate && ejecutado.TotalResponses > MaxSyncRows)
-                throw new InvalidOperationException(
+                throw new BusinessRuleException(
                     "La consulta devuelve " + ejecutado.TotalResponses + " fichas y el máximo para exportar en línea es " +
                     MaxSyncRows + ". Acotá el rango de fechas o agregá filtros.");
 

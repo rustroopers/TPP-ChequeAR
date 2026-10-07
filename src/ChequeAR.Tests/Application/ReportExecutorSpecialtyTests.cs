@@ -93,8 +93,37 @@ namespace ChequeAR.Tests.Application
                 .ReturnsAsync(new QueryRunResult { TotalResponses = ReportExecutor.MaxSyncRows + 1 });
             var sut = Sut(TestHelpers.GuardFor("cardio"));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => sut.ExecuteAllAsync(new ReportQuery { QuestionnaireId = id }));
+        }
+
+        [Fact]
+        public async Task CuestionarioInexistente_LanzaNotFound()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync((Questionnaire)null);
+
+            await Assert.ThrowsAsync<NotFoundException>(
+                () => Sut(TestHelpers.UnrestrictedGuard()).ExecuteAsync(new ReportQuery { QuestionnaireId = id }));
+        }
+
+        [Fact]
+        public async Task FiltroMalArmado_LanzaValidacion_YNoEjecuta()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(Minimal(id, "cardio"));
+            var query = new ReportQuery
+            {
+                QuestionnaireId = id,
+                Filters = new FilterNode
+                {
+                    Predicates = new List<FilterPredicate> { new FilterPredicate { LinkId = "no-existe", Op = "=", Value = "x" } }
+                }
+            };
+
+            await Assert.ThrowsAsync<ValidationFailedException>(
+                () => Sut(TestHelpers.UnrestrictedGuard()).ExecuteAsync(query));
+            _runner.Verify(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>()), Times.Never);
         }
 
         [Fact]
