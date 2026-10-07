@@ -10,8 +10,8 @@ namespace ChequeAR.Application.Reports
     public class ReportExecutor
     {
         /// <summary>
-        /// Tope duro de la exportación sincrónica. FR-006 manda a background lo que pase de
-        /// 10k filas; mientras ese camino no exista, es preferible cortar con un error
+        /// Tope duro, en fichas, de la exportación sincrónica. FR-006 manda a background lo
+        /// que pase de 10k; mientras ese camino no exista, es preferible cortar con un error
         /// entendible que tumbar el proceso armando el archivo en memoria.
         /// </summary>
         public const int MaxSyncRows = 10000;
@@ -91,9 +91,11 @@ namespace ChequeAR.Application.Reports
 
             // La ejecución la hace el adaptador: quién abre la conexión y cómo se bindean los
             // parámetros no es una decisión del negocio.
-            var ejecutado = await _runner.RunAsync(built, paginate);
+            // El tope viaja al adaptador para que no llegue a leer las filas de una cohorte
+            // que igual se va a rechazar.
+            var ejecutado = await _runner.RunAsync(built, paginate ? (int?)null : MaxSyncRows);
 
-            // El tope de filas exportables SÍ es una regla de negocio, así que se aplica acá.
+            // El tope de fichas exportables SÍ es una regla de negocio, así que se aplica acá.
             if (!paginate && ejecutado.TotalResponses > MaxSyncRows)
                 throw new InvalidOperationException(
                     "La consulta devuelve " + ejecutado.TotalResponses + " fichas y el máximo para exportar en línea es " +

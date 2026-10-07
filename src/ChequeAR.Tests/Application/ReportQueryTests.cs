@@ -257,6 +257,26 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(25, built.Parameters.Single(p => p.Name == "Take").Value);
         }
 
+        [Fact]
+        public void PageSize_SeAcotaAlMaximo()
+        {
+            var q = Query();
+            q.PageSize = 1000000;
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.Equal(QueryBuilder.MaxPageSize, built.Parameters.Single(p => p.Name == "Take").Value);
+        }
+
+        [Fact]
+        public void PaginaAbsurda_NoDesbordaElOffset()
+        {
+            var q = Query();
+            q.Page = int.MaxValue; q.PageSize = 50;
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.True((int)built.Parameters.Single(p => p.Name == "Skip").Value >= 0);
+        }
+
         // La exportacion no pagina: un archivo cortado en la primera pagina seria peor que
         // un error, porque nadie lo notaria.
         [Fact]

@@ -20,6 +20,12 @@ namespace ChequeAR.Application.Reports
             "=","!=",">","<",">=","<=","in","between","exists","contains"
         };
 
+        /// <summary>
+        /// Máximo de fichas por página. Sin esto, un pageSize arbitrario en /query traía la
+        /// cohorte entera y salteaba el tope de la exportación.
+        /// </summary>
+        public const int MaxPageSize = 200;
+
         private const string Projection =
             "v.\"ResponseId\", v.\"PatientHospitalId\", v.\"AuthoredAt\", v.\"QuestionnaireVersion\", " +
             "v.\"AuthorUserId\", v.\"LinkId\", v.\"ValueDecimal\", v.\"ValueInteger\", v.\"ValueString\", " +
@@ -53,8 +59,9 @@ namespace ChequeAR.Application.Reports
                 // Se pagina por FICHA, no por fila: el resultado viene en formato largo (una
                 // fila por respuesta-pregunta), asi que un OFFSET plano cortaria una ficha al
                 // medio y el pivot devolveria una fila incompleta.
-                var take = q.PageSize > 0 ? q.PageSize : 50;
-                var skip = (q.Page > 0 ? q.Page - 1 : 0) * take;
+                var take = q.PageSize > 0 ? Math.Min(q.PageSize, MaxPageSize) : 50;
+                // En long: una página absurda desbordaba el int y llegaba un OFFSET negativo.
+                var skip = (int)Math.Min(int.MaxValue, (long)(q.Page > 0 ? q.Page - 1 : 0) * take);
                 sql.AppendLine("  AND v.\"ResponseId\" IN (");
                 sql.AppendLine("    SELECT \"ResponseId\" FROM (");
                 sql.AppendLine("      SELECT DISTINCT p.\"ResponseId\", p.\"AuthoredAt\"");
