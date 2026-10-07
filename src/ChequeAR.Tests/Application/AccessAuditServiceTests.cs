@@ -16,7 +16,7 @@ namespace ChequeAR.Tests.Application
     /// Los accesos de lectura (exportar un reporte, mirar la evolución de un paciente, bajar
     /// la auditoría) tienen que quedar registrados con QUÉ se consultó (FR-009).
     /// </summary>
-    public class AccessAuditServiceTests
+    public sealed class AccessAuditServiceTests : IDisposable
     {
         private readonly List<AuditEvent> _eventos = new List<AuditEvent>();
         private readonly AuditDispatcher _dispatcher;
@@ -35,6 +35,8 @@ namespace ChequeAR.Tests.Application
             usuario.SetupGet(u => u.Id).Returns("dr.gomez");
             _sut = new AccessAuditService(_dispatcher, usuario.Object);
         }
+
+        public void Dispose() => _dispatcher.Dispose();
 
         private async Task<AuditEvent> UnicoEventoAsync()
         {
