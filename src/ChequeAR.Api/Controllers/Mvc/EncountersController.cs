@@ -533,8 +533,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // El selector ofrece SOLO los cuestionarios que el paciente completó al menos una
                 // vez: son los únicos que pueden producir una serie. Un cuestionario con fichas
                 // en progreso, pero ninguna finalizada, no aporta datos y no tiene sentido ofrecerlo.
+                // Una ficha enmendada es una finalizada y corregida: cuenta, igual que en la vista.
                 var encs = await _patients.GetEncountersAsync(patientId, 500);
-                var completed = encs.Where(e => e.Status == ResponseStatus.Completed).ToList();
+                var completed = encs
+                    .Where(e => e.Status == ResponseStatus.Completed || e.Status == ResponseStatus.Amended)
+                    .ToList();
                 model.HasAnyCompleted = completed.Count > 0;
 
                 var titleCache = new Dictionary<Guid, string>();
