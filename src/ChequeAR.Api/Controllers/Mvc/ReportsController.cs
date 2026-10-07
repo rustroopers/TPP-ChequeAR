@@ -53,18 +53,18 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // nunca veía los reportes que sus colegas de la misma especialidad
                 // compartieron con Scope="specialty" -- sólo los propios.
                 var saved = await _saved.ListForUserAsync(userId);
-                // El titulo del cuestionario base, no su GUID. Se cachea porque varios
-                // reportes guardados suelen apuntar al mismo cuestionario.
-                var titles = new Dictionary<Guid, string>();
+                // El titulo del cuestionario base, no su GUID. Una sola consulta liviana (id y
+                // titulo) en vez de cargar cada cuestionario entero, con todas sus preguntas.
+                var titles = (await _questionnaires.ListTitlesAsync())
+                    .Where(q => !q.IsDeleted)
+                    .ToDictionary(q => q.Id, q => q.Title);
                 foreach (var r in saved)
                 {
-                    if (!titles.ContainsKey(r.QuestionnaireId))
-                        titles[r.QuestionnaireId] = (await _questionnaires.GetAsync(r.QuestionnaireId))?.Title;
-
                     model.Items.Add(new SavedReportItem
                     {
                         Id = r.Id, Name = r.Name,
-                        QuestionnaireTitle = titles[r.QuestionnaireId] ?? "(cuestionario eliminado)",
+                        QuestionnaireTitle = titles.TryGetValue(r.QuestionnaireId, out var title)
+                            ? title : "(cuestionario eliminado)",
                         Author = r.CreatedBy,
                         LastUsedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(r.UpdatedAt)
                     });

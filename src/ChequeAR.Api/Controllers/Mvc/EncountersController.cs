@@ -540,15 +540,16 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .ToList();
                 model.HasAnyCompleted = completed.Count > 0;
 
-                var titleCache = new Dictionary<Guid, string>();
-                foreach (var qId in completed.Select(e => e.QuestionnaireId).Distinct())
-                {
-                    if (!titleCache.ContainsKey(qId))
-                        titleCache[qId] = (await _questionnaires.GetAsync(qId))?.Title ?? qId.ToString();
-                }
+                // Sólo los títulos, en una consulta: cargar cada cuestionario entero para
+                // rotular un selector era una ida a la base (con todas sus preguntas) por opción.
+                var titles = await _questionnaires.GetTitlesAsync(completed.Select(e => e.QuestionnaireId));
                 model.AvailableQuestionnaires = completed
                     .GroupBy(e => e.QuestionnaireId)
-                    .Select(g => new TimelineFilterOption { Value = g.Key.ToString(), Label = titleCache[g.Key] })
+                    .Select(g => new TimelineFilterOption
+                    {
+                        Value = g.Key.ToString(),
+                        Label = titles.TryGetValue(g.Key, out var title) ? title : g.Key.ToString()
+                    })
                     .OrderBy(x => x.Label).ToList();
 
                 // Si el cuestionario elegido no está entre los que el paciente completó, se ignora
