@@ -115,6 +115,44 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(nuevo, existente.QuestionnaireId);
         }
 
+        [Theory]
+        [InlineData(null, "private", null, null)]            // sin nombre
+        [InlineData("   ", "private", null, null)]           // nombre en blanco
+        [InlineData("ok", "publico", null, null)]            // alcance desconocido
+        [InlineData("ok", "specialty", null, null)]          // compartida sin especialidad
+        [InlineData("ok", "private", null, "no es json")]    // definición ilegible
+        [InlineData("ok", "private", null, "[1,2]")]         // JSON, pero no un objeto
+        public async Task Crear_ConDatosInvalidos_SeRechaza_YNoTocaLaBase(string name, string scope, string specialty, string queryJson)
+        {
+            var nueva = new SavedReport { Name = name, Scope = scope, SpecialtyCode = specialty, QueryJson = queryJson };
+
+            await Assert.ThrowsAsync<ChequeAR.Application.Exceptions.ValidationFailedException>(
+                () => _sut.CreateAsync(nueva, "dr.gomez"));
+            _repo.Verify(r => r.AddAsync(It.IsAny<SavedReport>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Crear_SinAlcance_QuedaPrivada()
+        {
+            var creada = await _sut.CreateAsync(new SavedReport { Name = "mía" }, "dr.gomez");
+
+            Assert.Equal("private", creada.Scope);
+        }
+
+        [Fact]
+        public async Task Actualizar_ConDatosInvalidos_SeRechaza_YNoModificaLaConsulta()
+        {
+            var id = Guid.NewGuid();
+            var existente = Consulta(id, creadaPor: "dr.gomez");
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existente);
+
+            await Assert.ThrowsAsync<ChequeAR.Application.Exceptions.ValidationFailedException>(
+                () => _sut.UpdateAsync(id, new SavedReport { Name = "nuevo", Scope = "publico" }, "dr.gomez"));
+
+            Assert.Equal("Cohorte de control", existente.Name);
+            _repo.Verify(r => r.UpdateAsync(It.IsAny<SavedReport>()), Times.Never);
+        }
+
         [Fact]
         public async Task Inexistente_SeDistingueDeSinPermiso()
         {

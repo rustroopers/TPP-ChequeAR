@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
@@ -90,6 +91,8 @@ namespace ChequeAR.Application.Services
         {
             // SpecialtyCode es null para Scope="private" (no hay a qué especialidad
             // acotarlo); sólo se valida cuando efectivamente declara una.
+            nueva.Name = nueva.Name?.Trim();
+            nueva.Scope = Validar(nueva.Name, nueva.Scope, nueva.SpecialtyCode, nueva.QueryJson);
             if (!string.IsNullOrEmpty(nueva.SpecialtyCode)) _guard.EnsureAllows(nueva.SpecialtyCode);
 
             nueva.Id = Guid.NewGuid();
@@ -112,12 +115,17 @@ namespace ChequeAR.Application.Services
             if (!EsPropietario(actual, userId)) return SavedReportResult.Forbidden();
 
             var nuevaEspecialidad = patch.SpecialtyCode ?? actual.SpecialtyCode;
+            var nuevoNombre = (patch.Name ?? actual.Name)?.Trim();
+            var nuevaQuery = patch.QueryJson ?? actual.QueryJson;
+            // Se valida el resultado del merge ANTES de tocar la entidad: está trackeada, y
+            // un valor inválido asignado quedaría a un SaveChanges de persistirse.
+            var nuevoAlcance = Validar(nuevoNombre, patch.Scope ?? actual.Scope, nuevaEspecialidad, nuevaQuery);
             if (!string.IsNullOrEmpty(nuevaEspecialidad)) _guard.EnsureAllows(nuevaEspecialidad);
 
-            actual.Name = patch.Name ?? actual.Name;
-            actual.Scope = patch.Scope ?? actual.Scope;
+            actual.Name = nuevoNombre;
+            actual.Scope = nuevoAlcance;
             actual.SpecialtyCode = nuevaEspecialidad;
-            actual.QueryJson = patch.QueryJson ?? actual.QueryJson;
+            actual.QueryJson = nuevaQuery;
             // El cuestionario base acompaña a los filtros: si sólo se actualizara QueryJson,
             // la consulta quedaría con filtros de un cuestionario y el id de otro.
             if (patch.QuestionnaireId != Guid.Empty) actual.QuestionnaireId = patch.QuestionnaireId;
@@ -137,6 +145,43 @@ namespace ChequeAR.Application.Services
             await _repo.DeleteAsync(id);
             Auditar("delete", actual, userId);
             return SavedReportResult.Ok(actual);
+        }
+
+        public const int MaxNameLength = 200;
+        public const int MaxQueryJsonLength = 64 * 1024;
+
+        /// <summary>
+        /// Reglas de una consulta guardada. La isla ya las cumple, pero la API recibe el
+        /// cuerpo tal cual: sin esto se guardaba cualquier nombre, alcance o definición.
+        /// </summary>
+        /// <returns>El alcance normalizado ("private" si no vino).</returns>
+        private static string Validar(string name, string scope, string specialtyCode, string queryJson)
+        {
+            var errores = new List<string>();
+            var alcance = string.IsNullOrWhiteSpace(scope) ? "private" : scope.Trim().ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(name)) errores.Add("El nombre del reporte es obligatorio.");
+            else if (name.Length > MaxNameLength) errores.Add("El nombre del reporte no puede superar los " + MaxNameLength + " caracteres.");
+
+            if (alcance != "private" && alcance != "specialty")
+                errores.Add("El alcance debe ser 'private' o 'specialty'.");
+            else if (alcance == "specialty" && string.IsNullOrWhiteSpace(specialtyCode))
+                errores.Add("Un reporte compartido debe indicar con qué especialidad se comparte.");
+
+            if (!string.IsNullOrEmpty(queryJson))
+            {
+                if (queryJson.Length > MaxQueryJsonLength) errores.Add("La definición de la consulta es demasiado grande.");
+                else if (!EsObjetoJson(queryJson)) errores.Add("La definición de la consulta no es un JSON válido.");
+            }
+
+            if (errores.Count > 0) throw new ValidationFailedException(errores);
+            return alcance;
+        }
+
+        private static bool EsObjetoJson(string json)
+        {
+            try { return Newtonsoft.Json.Linq.JToken.Parse(json).Type == Newtonsoft.Json.Linq.JTokenType.Object; }
+            catch (JsonException) { return false; }
         }
 
         /// <summary>
