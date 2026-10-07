@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -20,7 +21,31 @@ namespace ChequeAR.Tests.Application
 
         public PatientTrendServiceTests()
         {
-            _sut = new PatientTrendService(_qRepo.Object, _trends.Object);
+            _sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.UnrestrictedGuard());
+        }
+
+        // --- Scope de especialidad -----------------------------------------------------
+
+        [Fact]
+        public async Task GetSelectableParameters_CuestionarioFueraDeScope_Lanza()
+        {
+            var id = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "onco" });
+            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"));
+
+            await Assert.ThrowsAsync<SpecialtyForbiddenException>(() => sut.GetSelectableParametersAsync(id));
+        }
+
+        [Fact]
+        public async Task GetTrend_CuestionarioFueraDeScope_Lanza_YNoConsultaLasSeries()
+        {
+            var id = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "onco" });
+            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"));
+
+            await Assert.ThrowsAsync<SpecialtyForbiddenException>(() => sut.GetTrendAsync("HC-1", id, new[] { "peso" }));
+
+            _trends.Verify(t => t.GetSeriesAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IEnumerable<string>>()), Times.Never);
         }
 
         // --- Selección de parámetros ---------------------------------------------------

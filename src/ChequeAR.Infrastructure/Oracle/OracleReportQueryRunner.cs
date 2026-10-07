@@ -22,6 +22,10 @@ namespace ChequeAR.Infrastructure.Oracle
     /// </summary>
     public class OracleReportQueryRunner : IReportQueryRunner
     {
+        // El driver no corta solo (0 = sin límite): una consulta pesada dejaba el request
+        // colgado indefinidamente.
+        private const int CommandTimeoutSeconds = 60;
+
         private readonly string _connectionString;
 
         public OracleReportQueryRunner(string connectionString)
@@ -29,7 +33,7 @@ namespace ChequeAR.Infrastructure.Oracle
             _connectionString = connectionString;
         }
 
-        public async Task<QueryRunResult> RunAsync(BuiltQuery query, bool paginate)
+        public async Task<QueryRunResult> RunAsync(BuiltQuery query, int? maxResponses)
         {
             var rows = new List<Dictionary<string, object>>();
             int total;
@@ -41,15 +45,20 @@ namespace ChequeAR.Infrastructure.Oracle
                 using (var countCmd = new OracleCommand(query.CountSql, conn))
                 {
                     countCmd.BindByName = true;
+                    countCmd.CommandTimeout = CommandTimeoutSeconds;
                     countCmd.Parameters.AddRange(Traducir(query.Parameters));
                     total = Convert.ToInt32(await countCmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
                 }
+
+                if (maxResponses.HasValue && total > maxResponses.Value)
+                    return new QueryRunResult { Rows = rows, TotalResponses = total };
 
                 using (var cmd = new OracleCommand(query.Sql, conn))
                 {
                     // Bindeo por nombre: el constructor de consultas usa marcadores :nombre,
                     // no posicionales.
                     cmd.BindByName = true;
+                    cmd.CommandTimeout = CommandTimeoutSeconds;
                     // Parámetros NUEVOS y no los mismos del conteo: un OracleParameter no se
                     // puede compartir entre dos OracleCommand — al asignarlo al segundo,
                     // ODP.NET tira "El parámetro ya está contenido en otra colección".

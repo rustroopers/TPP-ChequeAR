@@ -20,6 +20,12 @@ namespace ChequeAR.Application.Reports
             "=","!=",">","<",">=","<=","in","between","exists","contains"
         };
 
+        /// <summary>
+        /// Máximo de fichas por página. Sin esto, un pageSize arbitrario en /query traía la
+        /// cohorte entera y salteaba el tope de la exportación.
+        /// </summary>
+        public const int MaxPageSize = 200;
+
         private const string Projection =
             "v.\"ResponseId\", v.\"PatientHospitalId\", v.\"AuthoredAt\", v.\"QuestionnaireVersion\", " +
             "v.\"AuthorUserId\", v.\"LinkId\", v.\"ValueDecimal\", v.\"ValueInteger\", v.\"ValueString\", " +
@@ -53,8 +59,9 @@ namespace ChequeAR.Application.Reports
                 // Se pagina por FICHA, no por fila: el resultado viene en formato largo (una
                 // fila por respuesta-pregunta), asi que un OFFSET plano cortaria una ficha al
                 // medio y el pivot devolveria una fila incompleta.
-                var take = q.PageSize > 0 ? q.PageSize : 50;
-                var skip = (q.Page > 0 ? q.Page - 1 : 0) * take;
+                var take = q.PageSize > 0 ? Math.Min(q.PageSize, MaxPageSize) : 50;
+                // En long: una página absurda desbordaba el int y llegaba un OFFSET negativo.
+                var skip = (int)Math.Min(int.MaxValue, (long)(q.Page > 0 ? q.Page - 1 : 0) * take);
                 sql.AppendLine("  AND v.\"ResponseId\" IN (");
                 sql.AppendLine("    SELECT \"ResponseId\" FROM (");
                 sql.AppendLine("      SELECT DISTINCT p.\"ResponseId\", p.\"AuthoredAt\"");
@@ -96,15 +103,18 @@ namespace ChequeAR.Application.Reports
                 q.DateRange.To = tmp;
             }
 
+            // El rango son DÍAS de Argentina y AuthoredAt está en UTC: comparar sin convertir
+            // corre la ventana tres horas (las fichas de 21 a 24 hs caen en el día siguiente).
+            // "Hasta" es el comienzo del día siguiente, como cota exclusiva.
             if (q.DateRange?.From != null)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" >= :DateFrom");
-                ps.Add(QueryParameter.Date("DateFrom", q.DateRange.From.Value));
+                ps.Add(QueryParameter.Date("DateFrom", ArgentinaClock.ToUtc(q.DateRange.From.Value.Date)));
             }
             if (q.DateRange?.To != null)
             {
-                sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" <= :DateTo");
-                ps.Add(QueryParameter.Date("DateTo", q.DateRange.To.Value));
+                sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" < :DateTo");
+                ps.Add(QueryParameter.Date("DateTo", ArgentinaClock.ToUtc(q.DateRange.To.Value.Date.AddDays(1))));
             }
 
             // Version del cuestionario con la que se completo la ficha. La vista ya expone la
@@ -156,7 +166,7 @@ namespace ChequeAR.Application.Reports
 
                 if (p.Group != null) { BuildNode(p.Group, schema, sql, ps); continue; }
 
-                if (!ValidOps.Contains(p.Op))
+                if (p.Op == null || !ValidOps.Contains(p.Op))
                     throw new ArgumentException("Operador inválido: " + p.Op);
 
                 // El tipo sale de la PREGUNTA, no del valor que mando el cliente. Tambien

@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using ChequeAR.Application.Reports;
 
 namespace ChequeAR.Api.Helpers
 {
@@ -10,43 +11,19 @@ namespace ChequeAR.Api.Helpers
     /// </summary>
     public static class ArgentinaTime
     {
-        private static readonly TimeZoneInfo Tz = Resolve();
         private static readonly CultureInfo Ar = new CultureInfo("es-AR");
 
-        private static TimeZoneInfo Resolve()
-        {
-            // El id cambia según el SO: Windows usa "Argentina Standard Time",
-            // Linux/IANA usa "America/Argentina/Buenos_Aires".
-            foreach (var id in new[] { "Argentina Standard Time", "America/Argentina/Buenos_Aires" })
-            {
-                try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-                catch (TimeZoneNotFoundException) { }
-                catch (InvalidTimeZoneException) { }
-            }
-            // Fallback: offset fijo (Argentina no aplica DST).
-            return TimeZoneInfo.CreateCustomTimeZone("AR", TimeSpan.FromHours(-3), "Argentina", "Argentina");
-        }
+        // La conversión en sí vive en Application (ArgentinaClock): los reportes la necesitan
+        // para armar la consulta. Acá queda el formato de pantalla.
 
         /// <summary>Instante (asumido UTC si no tiene Kind) llevado a hora de Argentina.</summary>
-        public static DateTime From(DateTime utc)
-        {
-            // Las columnas DATE de Oracle vuelven como Unspecified: se guardaron en UTC,
-            // así que las tratamos como tales.
-            var asUtc = utc.Kind == DateTimeKind.Unspecified
-                ? DateTime.SpecifyKind(utc, DateTimeKind.Utc)
-                : utc.ToUniversalTime();
-            return TimeZoneInfo.ConvertTimeFromUtc(asUtc, Tz);
-        }
+        public static DateTime From(DateTime utc) => ArgentinaClock.FromUtc(utc);
 
         /// <summary>Formatea un instante UTC directamente en hora de Argentina.</summary>
         public static string Format(DateTime utc, string format) => From(utc).ToString(format);
 
         /// <summary>Convierte una fecha/hora local de Argentina a UTC (para comparar contra columnas guardadas en UTC).</summary>
-        public static DateTime ToUtc(DateTime argLocal)
-        {
-            var unspecified = DateTime.SpecifyKind(argLocal, DateTimeKind.Unspecified);
-            return TimeZoneInfo.ConvertTimeToUtc(unspecified, Tz);
-        }
+        public static DateTime ToUtc(DateTime argLocal) => ArgentinaClock.ToUtc(argLocal);
 
         /// <summary>
         /// Fecha "yyyy-MM-dd" de un filtro (día local de Argentina) a límite UTC. Con

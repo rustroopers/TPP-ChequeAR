@@ -257,6 +257,26 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(25, built.Parameters.Single(p => p.Name == "Take").Value);
         }
 
+        [Fact]
+        public void PageSize_SeAcotaAlMaximo()
+        {
+            var q = Query();
+            q.PageSize = 1000000;
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.Equal(QueryBuilder.MaxPageSize, built.Parameters.Single(p => p.Name == "Take").Value);
+        }
+
+        [Fact]
+        public void PaginaAbsurda_NoDesbordaElOffset()
+        {
+            var q = Query();
+            q.Page = int.MaxValue; q.PageSize = 50;
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.True((int)built.Parameters.Single(p => p.Name == "Skip").Value >= 0);
+        }
+
         // La exportacion no pagina: un archivo cortado en la primera pagina seria peor que
         // un error, porque nadie lo notaria.
         [Fact]
@@ -286,8 +306,28 @@ namespace ChequeAR.Tests.Application
 
             var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
 
-            Assert.Equal(temprano, built.Parameters.Single(p => p.Name == "DateFrom").Value);
-            Assert.Equal(tarde, built.Parameters.Single(p => p.Name == "DateTo").Value);
+            Assert.Equal(new DateTime(2026, 1, 1, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(new DateTime(2026, 6, 2, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
+        }
+
+        // El rango son días de Argentina contra una columna en UTC. La isla manda
+        // T00:00:00 / T23:59:59 sin zona; lo que cuenta es el día.
+        [Fact]
+        public void RangoDeFechas_SeInterpretaComoDiasDeArgentina()
+        {
+            var q = Query();
+            q.DateRange = new DateRange
+            {
+                From = new DateTime(2026, 8, 10, 0, 0, 0),
+                To = new DateTime(2026, 8, 10, 23, 59, 59)
+            };
+
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.Contains("\"AuthoredAt\" >= :DateFrom", built.Sql);
+            Assert.Contains("\"AuthoredAt\" < :DateTo", built.Sql);
+            Assert.Equal(new DateTime(2026, 8, 10, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(new DateTime(2026, 8, 11, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
         }
     }
 }

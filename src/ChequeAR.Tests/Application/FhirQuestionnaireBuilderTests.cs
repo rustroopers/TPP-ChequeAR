@@ -428,8 +428,8 @@ namespace ChequeAR.Tests.Application
 
             var extensiones = (JArray)FirstItem(FhirQuestionnaireBuilder.Build(q, 1))["extension"];
 
-            Assert.Contains(extensiones, e => ((string)e["url"]).EndsWith("minValue") && (int)e["valueInteger"] == 2);
-            Assert.Contains(extensiones, e => ((string)e["url"]).EndsWith("maxValue") && (int)e["valueInteger"] == 9);
+            Assert.Contains(extensiones, e => ((string)e["url"]).EndsWith("minValue", StringComparison.Ordinal)&& (int)e["valueInteger"] == 2);
+            Assert.Contains(extensiones, e => ((string)e["url"]).EndsWith("maxValue", StringComparison.Ordinal)&& (int)e["valueInteger"] == 9);
         }
 
         [Fact]

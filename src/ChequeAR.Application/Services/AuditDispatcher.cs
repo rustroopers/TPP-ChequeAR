@@ -17,13 +17,20 @@ namespace ChequeAR.Application.Services
     /// que no es thread-safe): pide uno nuevo a la factory en cada operación y lo libera al
     /// terminar. Un fallo de la base nunca sale del callback del timer —en .NET Framework
     /// una excepción no manejada ahí termina el proceso—: se reporta por <c>onError</c> y el
-    /// lote vuelve a la cola hasta <see cref="MaxAttempts"/> intentos.
+    /// lote vuelve a la cola hasta <see cref="MaxAttempts"/> intentos, espaciados cada vez más.
     /// </summary>
     public class AuditDispatcher : IDisposable
     {
         /// <summary>Intentos de persistir un evento antes de descartarlo (reportándolo por onError).</summary>
-        public const int MaxAttempts = 5;
+        public const int MaxAttempts = 10;
         private const int BatchSize = 500;
+        /// <summary>Fallos seguidos, sin ningún acierto, que alcanzan para dar la base por caída.</summary>
+        private const int OutageProbe = 3;
+        /// <summary>
+        /// Espera máxima entre flushes fallidos. Con el timer fijo de 1 s los intentos se
+        /// agotaban en segundos; con espera creciente, MaxAttempts cubre varios minutos de caída.
+        /// </summary>
+        private const int MaxBackoffSeconds = 60;
 
         private readonly Func<IAuditRepository> _repoFactory;
         private readonly bool _ownsRepositories;
@@ -32,6 +39,9 @@ namespace ChequeAR.Application.Services
         private readonly SemaphoreSlim _flushGate = new SemaphoreSlim(1, 1);
         private readonly Timer _timer;
         private int _disposed;
+        // Sólo los toca el callback del timer, que nunca corre en paralelo consigo mismo.
+        private int _failedFlushes;
+        private DateTime _nextTimerFlushUtc = DateTime.MinValue;
 
         /// <param name="repoFactory">Crea un repositorio nuevo por operación. Si es IDisposable, se libera al terminar.</param>
         /// <param name="onError">Recibe los fallos de persistencia (no debe lanzar).</param>
@@ -107,22 +117,66 @@ namespace ChequeAR.Application.Services
             }
             catch (Exception ex)
             {
-                var dropped = 0;
-                foreach (var p in batch)
-                {
-                    p.Attempts++;
-                    if (p.Attempts < MaxAttempts) _queue.Enqueue(p);
-                    else
-                    {
-                        dropped++;
-                        _onError(ex, "Evento de auditoría descartado tras " + MaxAttempts + " intentos: "
-                                     + p.Event?.Action + " " + p.Event?.EntityRef + " por " + p.Event?.AgentUserId
-                                     + " (" + p.Event?.Recorded.ToString("o", CultureInfo.InvariantCulture) + ")");
-                    }
-                }
+                var dropped = batch.Count == 1
+                    ? Requeue(batch, ex)
+                    : await RetryOneByOneAsync(batch, ex);
                 _onError(ex, "Falló el flush de auditoría (" + batch.Count + " eventos, " + dropped + " descartados).");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// El lote se guarda en una sola transacción, así que un único evento inválido lo
+        /// tumba entero. Se reintenta de a uno para aislarlo: si alguno entra, la base está
+        /// viva y sólo los que fallaron gastan un intento. Si no entra ninguno es una caída,
+        /// y se corta enseguida en vez de esperar un timeout por evento.
+        /// </summary>
+        /// <returns>Cantidad de eventos descartados.</returns>
+        private async Task<int> RetryOneByOneAsync(List<Pending> batch, Exception batchError)
+        {
+            var failed = new List<Pending>();
+            Exception lastError = batchError;
+            var anySaved = false;
+
+            for (var i = 0; i < batch.Count; i++)
+            {
+                if (!anySaved && failed.Count >= OutageProbe)
+                {
+                    failed.AddRange(batch.GetRange(i, batch.Count - i));
+                    break;
+                }
+                var p = batch[i];
+                try
+                {
+                    await WithRepositoryAsync(r => r.AddAsync(p.Event));
+                    anySaved = true;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    failed.Add(p);
+                }
+            }
+            return Requeue(failed, lastError);
+        }
+
+        /// <summary>Devuelve los eventos a la cola con un intento más, o los descarta si ya agotaron los suyos.</summary>
+        private int Requeue(List<Pending> failed, Exception ex)
+        {
+            var dropped = 0;
+            foreach (var p in failed)
+            {
+                p.Attempts++;
+                if (p.Attempts < MaxAttempts) _queue.Enqueue(p);
+                else
+                {
+                    dropped++;
+                    _onError(ex, "Evento de auditoría descartado tras " + MaxAttempts + " intentos: "
+                                 + p.Event?.Action + " " + p.Event?.EntityRef + " por " + p.Event?.AgentUserId
+                                 + " (" + p.Event?.Recorded.ToString("o", CultureInfo.InvariantCulture) + ")");
+                }
+            }
+            return dropped;
         }
 
         private async Task WithRepositoryAsync(Func<IAuditRepository, Task> action)
@@ -145,7 +199,17 @@ namespace ChequeAR.Application.Services
             if (!_flushGate.Wait(0)) return;
             try
             {
-                FlushBatchAsync().GetAwaiter().GetResult();
+                if (DateTime.UtcNow < _nextTimerFlushUtc) return;
+                if (FlushBatchAsync().GetAwaiter().GetResult())
+                {
+                    _failedFlushes = 0;
+                }
+                else
+                {
+                    _failedFlushes++;
+                    var espera = Math.Min(MaxBackoffSeconds, Math.Pow(2, Math.Min(_failedFlushes, 10)));
+                    _nextTimerFlushUtc = DateTime.UtcNow.AddSeconds(espera);
+                }
             }
             catch (Exception ex)
             {

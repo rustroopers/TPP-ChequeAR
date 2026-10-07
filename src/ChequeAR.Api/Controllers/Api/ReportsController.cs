@@ -1,7 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Configuration;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -11,7 +8,6 @@ using System.Web.Http;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Exporters;
-using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Reports;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
@@ -34,20 +30,11 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Query([FromBody] ReportQuery query)
         {
             if (query == null) return BadRequest("body required");
-            try
-            {
-                // El executor ya devuelve el formato ancho: pivotear era responsabilidad del
-                // llamador y la pantalla de Preview (MVC) se olvidaba de hacerlo, con lo cual
-                // mostraba el formato largo crudo. Ahora no hay forma de equivocarse.
-                var wide = await _executor.ExecuteAsync(query);
-                return Ok(new { total = wide.Total, rows = wide.Rows, page = query.Page, pageSize = query.PageSize });
-            }
-            catch (ArgumentException ex)
-            {
-                // Filtro mal armado (linkId ajeno al cuestionario, operador invalido, valor no
-                // parseable): es culpa del pedido, no del servidor.
-                return BadRequest(ex.Message);
-            }
+            // Los errores del pedido (filtro mal armado, cuestionario inexistente, tope
+            // superado) salen del executor como excepciones de Application y los traduce
+            // ApiExceptionFilter; el executor ya devuelve el formato ancho.
+            var wide = await _executor.ExecuteAsync(query);
+            return Ok(new { total = wide.Total, rows = wide.Rows, page = query.Page, pageSize = query.PageSize });
         }
 
         /// <summary>
@@ -59,14 +46,7 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Stats([FromBody] ReportQuery query)
         {
             if (query == null) return BadRequest("body required");
-            try
-            {
-                return Ok(await _executor.ExecuteStatsAsync(query));
-            }
-            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
-            {
-                return BadRequest(ex.Message);
-            }
+            return Ok(await _executor.ExecuteStatsAsync(query));
         }
 
         /// <summary>
@@ -80,15 +60,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             if (request == null || request.Query == null) return Request.CreateResponse(HttpStatusCode.BadRequest);
 
-            ReportStats stats;
-            try
-            {
-                stats = await _executor.ExecuteStatsAsync(request.Query);
-            }
-            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
-            {
-                return Request.CreateErrorResponse(HttpStatusCode.BadRequest, ex.Message);
-            }
+            var stats = await _executor.ExecuteStatsAsync(request.Query);
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             _audit.Enqueue(AuditEventBuilder.For(
@@ -110,17 +82,9 @@ namespace ChequeAR.Api.Controllers.Api
         {
             if (query == null) return Request.CreateResponse(HttpStatusCode.BadRequest);
 
-            ReportResult result;
-            try
-            {
-                // Sin paginar: una exportacion que saliera cortada en la primera pagina seria
-                // peor que un error, porque nadie lo notaria.
-                result = await _executor.ExecuteAllAsync(query);
-            }
-            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
-            {
-                return Request.CreateErrorResponse(HttpStatusCode.BadRequest, ex.Message);
-            }
+            // Sin paginar: una exportacion que saliera cortada en la primera pagina seria
+            // peor que un error, porque nadie lo notaria.
+            var result = await _executor.ExecuteAllAsync(query);
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             // FR-009 pide registrar QUE consulta y CUANTOS registros, no solo que hubo un export.
