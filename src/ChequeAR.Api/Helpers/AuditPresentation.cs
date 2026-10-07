@@ -347,8 +347,11 @@ namespace ChequeAR.Api.Helpers
         {
             switch ((op ?? string.Empty).ToLowerInvariant())
             {
-                case "exists":   return "fue respondida";
+                case "exists":
+                    return string.Equals(FormatValue(value), "false", StringComparison.OrdinalIgnoreCase) || string.Equals(FormatValue(value), "No", StringComparison.Ordinal)
+                        ? "no fue respondida" : "fue respondida";
                 case "contains": return "contiene «" + FormatValue(value) + "»";
+                case "notcontains": return "no contiene «" + FormatValue(value) + "»";
                 case "=":        return "es igual a " + FormatValue(value);
                 case "!=":       return "es distinto de " + FormatValue(value);
                 case ">":        return "es mayor que " + FormatValue(value);

@@ -330,6 +330,85 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(new DateTime(2026, 8, 11, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
         }
 
+        // Una condición negativa es la AUSENCIA de una respuesta que cumpla la positiva: así
+        // también la cumple la ficha donde la pregunta quedó sin responder.
+        [Theory]
+        [InlineData("!=", "A", "qri.\"ValueCode\" = :p1")]
+        [InlineData("exists", false, "qri.\"ValueCode\" IS NOT NULL")]
+        [InlineData("exists", "false", "qri.\"ValueCode\" IS NOT NULL")]
+        public void CondicionNegativa_EsLaAusenciaDeLaPositiva(string op, object valor, string positiva)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("dx", QuestionType.Choice));
+
+            var built = new QueryBuilder().Build(Query(Un("dx", op, valor)), schema);
+
+            Assert.Contains("NOT EXISTS (SELECT 1 FROM \"QuestionnaireResponseItem\" qri", built.Sql);
+            Assert.Contains(positiva, built.Sql);
+            Assert.DoesNotContain("!=", built.Sql);
+        }
+
+        [Theory]
+        [InlineData("=", "A")]
+        [InlineData("exists", null)]
+        [InlineData("exists", true)]
+        public void CondicionPositiva_NoSeNiega(string op, object valor)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("dx", QuestionType.Choice));
+
+            var built = new QueryBuilder().Build(Query(Un("dx", op, valor)), schema);
+
+            Assert.DoesNotContain("NOT EXISTS", built.Sql);
+        }
+
+        [Fact]
+        public void NoContenga_NiegaElContiene()
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.String));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", "notcontains", "fiebre")), schema);
+
+            Assert.Contains("NOT EXISTS", built.Sql);
+            Assert.Contains(" LIKE ", built.Sql);
+            Assert.Contains(built.Parameters, p => Equals(p.Value, "%fiebre%"));
+        }
+
+        // Texto libre: "Infección", "infeccion" e "INFECCION " son lo mismo para un filtro.
+        [Theory]
+        [InlineData("=")]
+        [InlineData("contains")]
+        public void Texto_SeComparaSinMayusculasNiTildes(string op)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.Text));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", op, "infección")), schema);
+
+            Assert.Contains("TRANSLATE(UPPER(", built.Sql);
+            Assert.Contains("'ÁÉÍÓÚÜÀÈÌÒÙ', 'AEIOUUAEIOU'", built.Sql);
+        }
+
+        [Fact]
+        public void Texto_SeaExactamente_IgnoraLosEspaciosDeLosBordes()
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.String));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", "=", "dolor")), schema);
+
+            Assert.Contains("TRIM(qri.\"ValueString\")", built.Sql);
+            Assert.Contains("TRIM(:p1)", built.Sql);
+        }
+
+        // El plegado es sólo para texto libre: un código de opción se compara tal cual.
+        [Fact]
+        public void Opcion_SeComparaTalCual()
+        {
+            var schema = ReportSchemaTests.SchemaCon(("dx", QuestionType.Choice));
+
+            var built = new QueryBuilder().Build(Query(Un("dx", "=", "A")), schema);
+
+            Assert.Contains("qri.\"ValueCode\" = :p1", built.Sql);
+            Assert.DoesNotContain("TRANSLATE", built.Sql);
+        }
+
         // Es el tamaño que la API le informa al cliente: tiene que ser el que se aplicó.
         [Theory]
         [InlineData(0, QueryBuilder.DefaultPageSize)]

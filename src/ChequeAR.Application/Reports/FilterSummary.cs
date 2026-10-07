@@ -71,6 +71,7 @@ namespace ChequeAR.Application.Reports
                 case "<=": return "menor o igual a";
                 case "in": return "es alguno de";
                 case "contains": return "contiene";
+                case "notcontains": return "no contiene";
                 default: return op;
             }
         }

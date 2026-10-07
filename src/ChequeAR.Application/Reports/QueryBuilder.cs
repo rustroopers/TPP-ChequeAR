@@ -17,8 +17,13 @@ namespace ChequeAR.Application.Reports
 
         private static readonly HashSet<string> ValidOps = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "=","!=",">","<",">=","<=","in","between","exists","contains"
+            "=","!=",">","<",">=","<=","in","between","exists","contains","notcontains"
         };
+
+        // Vocales acentuadas que se igualan a la vocal simple al comparar texto. La Ñ queda
+        // afuera a propósito: en castellano es otra letra ("ano" no es "año").
+        private const string Acentuadas = "ÁÉÍÓÚÜÀÈÌÒÙ";
+        private const string SinAcento = "AEIOUUAEIOU";
 
         /// <summary>
         /// Máximo de fichas por página. Sin esto, un pageSize arbitrario en /query traía la
@@ -179,14 +184,52 @@ namespace ChequeAR.Application.Reports
                 var col = schema.ColumnFor(p.LinkId);
                 var idx = ps.Count;
 
-                sql.Append("EXISTS (SELECT 1 FROM \"QuestionnaireResponseItem\" qri")
+                // Una condición negativa ("no sea", "no contenga", "no esté respondida") es la
+                // AUSENCIA de una respuesta que cumpla la positiva. Así una ficha donde la
+                // pregunta quedó vacía también cumple "no sea X"; comparando con != quedaba
+                // afuera, porque no tiene ninguna respuesta con la que comparar.
+                var negada = EsNegativa(p);
+                sql.Append(negada ? "NOT EXISTS" : "EXISTS")
+                   .Append(" (SELECT 1 FROM \"QuestionnaireResponseItem\" qri")
                    .Append(" WHERE qri.\"ResponseId\" = ").Append(Alias).Append(".\"ResponseId\"")
                    .Append(" AND qri.\"LinkId\" = :li").Append(idx);
                 ps.Add(QueryParameter.Text("li" + idx, p.LinkId));
 
-                sql.Append(" AND ").Append(Predicate(p, schema, col, idx, ps)).Append(')');
+                sql.Append(" AND ").Append(Predicate(Positiva(p), schema, col, idx, ps)).Append(')');
             }
             sql.Append(')');
+        }
+
+        /// <summary>"exists" con valor false es "no esté respondida"; el resto se reconoce por el operador.</summary>
+        private static bool EsNegativa(FilterPredicate p)
+        {
+            if (string.Equals(p.Op, "exists", StringComparison.OrdinalIgnoreCase))
+                return string.Equals(Convert.ToString(p.Value, CultureInfo.InvariantCulture), "false", StringComparison.OrdinalIgnoreCase);
+            return p.Op == "!=" || string.Equals(p.Op, "notcontains", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>La condición positiva cuya ausencia expresa una negativa; las demás quedan igual.</summary>
+        private static FilterPredicate Positiva(FilterPredicate p)
+        {
+            string op;
+            if (p.Op == "!=") op = "=";
+            else if (string.Equals(p.Op, "notcontains", StringComparison.OrdinalIgnoreCase)) op = "contains";
+            else return p;
+            return new FilterPredicate { LinkId = p.LinkId, Op = op, Value = p.Value };
+        }
+
+        /// <summary>
+        /// Texto listo para comparar sin distinguir mayúsculas ni tildes. Lo que escribe un
+        /// médico a mano no coincide letra por letra: "Infección", "infeccion" e "INFECCION"
+        /// tienen que ser el mismo texto para un filtro.
+        /// </summary>
+        private static string Plegado(string expr)
+            => "TRANSLATE(UPPER(" + expr + "), '" + Acentuadas + "', '" + SinAcento + "')";
+
+        private static bool EsTexto(ReportSchema schema, string linkId)
+        {
+            var tipo = schema.TypeOf(linkId);
+            return tipo == Domain.Enums.QuestionType.String || tipo == Domain.Enums.QuestionType.Text;
         }
 
         /// <summary>Condición sobre la columna tipada, según el operador.</summary>
@@ -204,7 +247,15 @@ namespace ChequeAR.Application.Reports
                 var texto = Convert.ToString(p.Value, CultureInfo.InvariantCulture) ?? string.Empty;
                 texto = texto.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
                 ps.Add(QueryParameter.Text("p" + idx, "%" + texto + "%"));
-                return "UPPER(" + target + ") LIKE UPPER(:p" + idx + ") ESCAPE '\\'";
+                return Plegado(target) + " LIKE " + Plegado(":p" + idx) + " ESCAPE '\\'";
+            }
+
+            // "Sea exactamente" sobre texto libre: mismo plegado que "contenga" y sin los
+            // espacios de los bordes, que nadie ve ni escribe a propósito.
+            if (p.Op == "=" && EsTexto(schema, p.LinkId))
+            {
+                ps.Add(QueryParameter.Text("p" + idx, Convert.ToString(p.Value, CultureInfo.InvariantCulture) ?? string.Empty));
+                return Plegado("TRIM(" + target + ")") + " = " + Plegado("TRIM(:p" + idx + ")");
             }
 
             if (string.Equals(p.Op, "in", StringComparison.OrdinalIgnoreCase))
