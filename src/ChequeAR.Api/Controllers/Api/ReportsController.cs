@@ -2,7 +2,6 @@ using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
@@ -18,9 +17,9 @@ namespace ChequeAR.Api.Controllers.Api
     public class ReportsController : ApiController
     {
         private readonly ReportExecutor _executor;
-        private readonly AuditDispatcher _audit;
+        private readonly AccessAuditService _audit;
 
-        public ReportsController(ReportExecutor executor, AuditDispatcher audit)
+        public ReportsController(ReportExecutor executor, AccessAuditService audit)
         {
             _executor = executor;
             _audit = audit;
@@ -34,6 +33,7 @@ namespace ChequeAR.Api.Controllers.Api
             // superado) salen del executor como excepciones de Application y los traduce
             // ApiExceptionFilter; el executor ya devuelve el formato ancho.
             var wide = await _executor.ExecuteAsync(query);
+            _audit.ReportViewed(query, wide.Total);
             return Ok(new { total = wide.Total, rows = wide.Rows, page = query.Page, pageSize = query.PageSize });
         }
 
@@ -46,7 +46,9 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Stats([FromBody] ReportQuery query)
         {
             if (query == null) return BadRequest("body required");
-            return Ok(await _executor.ExecuteStatsAsync(query));
+            var stats = await _executor.ExecuteStatsAsync(query);
+            _audit.StatsViewed(query, stats.Questions.Count);
+            return Ok(stats);
         }
 
         /// <summary>
@@ -62,11 +64,7 @@ namespace ChequeAR.Api.Controllers.Api
 
             var stats = await _executor.ExecuteStatsAsync(request.Query);
 
-            var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            _audit.Enqueue(AuditEventBuilder.For(
-                "execute",
-                "Report/statsExport?questionnaire=" + request.Query.QuestionnaireId + "&questions=" + stats.Questions.Count,
-                userId, category: "export"));
+            _audit.StatsExported(request.Query, stats.Questions.Count);
 
             var stream = StatsXlsxExporter.Export(stats, request.LinkIds, request.ChartTypes);
 
@@ -86,12 +84,8 @@ namespace ChequeAR.Api.Controllers.Api
             // peor que un error, porque nadie lo notaria.
             var result = await _executor.ExecuteAllAsync(query);
 
-            var userId = CurrentUser.Id(User as ClaimsPrincipal);
             // FR-009 pide registrar QUE consulta y CUANTOS registros, no solo que hubo un export.
-            _audit.Enqueue(AuditEventBuilder.For(
-                "execute",
-                "Report/export?questionnaire=" + query.QuestionnaireId + "&rows=" + result.Total,
-                userId, category: "export"));
+            _audit.ReportExported(query, result.Total);
 
             var format = (query.Format ?? "xlsx").ToLowerInvariant();
             var stream = format == "csv" ? CsvExporter.Export(result) : XlsxExporter.Export(result);

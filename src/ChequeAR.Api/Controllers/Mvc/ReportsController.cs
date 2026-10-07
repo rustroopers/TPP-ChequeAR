@@ -21,9 +21,12 @@ namespace ChequeAR.Api.Controllers.Mvc
         private readonly SavedReportService _saved;
         private readonly ReportExecutor _executor;
         private readonly QuestionnaireService _questionnaires;
+        private readonly AccessAuditService _audit;
 
-        public ReportsController(SavedReportService saved, ReportExecutor executor, QuestionnaireService questionnaires)
+        public ReportsController(SavedReportService saved, ReportExecutor executor, QuestionnaireService questionnaires,
+            AccessAuditService audit)
         {
+            _audit = audit;
             _saved = saved;
             _executor = executor;
             _questionnaires = questionnaires;
@@ -131,6 +134,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // respuesta-pregunta, con columnas ResponseId/LinkId/ValueDecimal, y un Total
                 // inflado por el numero de preguntas.
                 var result = await _executor.ExecuteAsync(query);
+                _audit.ReportViewed(query, result.Total);
                 model.Total = result.Total;
 
                 if (result.Rows.Count > 0)

@@ -17,7 +17,13 @@ namespace ChequeAR.Api.Controllers.Api
     public class PatientTrendController : ApiController
     {
         private readonly PatientTrendService _svc;
-        public PatientTrendController(PatientTrendService svc) { _svc = svc; }
+        private readonly AccessAuditService _audit;
+
+        public PatientTrendController(PatientTrendService svc, AccessAuditService audit)
+        {
+            _svc = svc;
+            _audit = audit;
+        }
 
         /// <summary>Parámetros graficables de un cuestionario (para poblar el selector).</summary>
         [HttpGet, Route("{hospitalId}/questionnaires/{questionnaireId:guid}/trend-parameters"), Authorize]
@@ -39,6 +45,9 @@ namespace ChequeAR.Api.Controllers.Api
                 return BadRequest("Hay que indicar al menos un 'linkId'.");
 
             var series = await _svc.GetTrendAsync(hospitalId, questionnaireId.Value, linkId);
+            // Sólo si hubo algo que mostrar: un pedido sin parámetros válidos no leyó datos.
+            if (series.Count > 0)
+                _audit.TrendViewed(hospitalId, questionnaireId.Value, series.ConvertAll(s => s.LinkId));
             return Ok(new { QuestionnaireId = questionnaireId.Value, PatientHospitalId = hospitalId, Series = series });
         }
     }

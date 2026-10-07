@@ -58,10 +58,14 @@ namespace ChequeAR.Api.Models
         public List<ChequeAR.Application.Services.ResponseSnapshotSection> ResponseSnapshot { get; set; }
             = new List<ChequeAR.Application.Services.ResponseSnapshotSection>();
 
-        // Foto de una consulta guardada (evento de reporte creado / modificado / eliminado).
+        // Foto de una consulta: reporte guardado (creado / modificado / eliminado), reporte
+        // consultado o exportado, evolución de un paciente o exportación de la auditoría.
         public bool HasReportDetail { get; set; }
-        public string ReportName { get; set; }
-        public string ReportScope { get; set; }              // etiqueta legible del alcance
+        public string ReportHeading { get; set; } = "Reporte";
+        public string ConditionsHeading { get; set; } = "Condiciones";
+        public string NoConditionsText { get; set; } = "Sin filtros: incluye todas las fichas del cuestionario.";
+        public string ReportName { get; set; }               // sólo reportes guardados
+        public string ReportScope { get; set; }              // etiqueta legible del alcance; sólo reportes guardados
         public string ReportQuestionnaire { get; set; }      // título del cuestionario base
         public List<string> ReportConditions { get; set; } = new List<string>();
     }

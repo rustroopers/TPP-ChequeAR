@@ -198,6 +198,7 @@ namespace ChequeAR.Api.App_Start
             container.Register<QuestionnaireService>();
             container.Register<QuestionnaireResponseService>();
             container.Register<AuditQueryService>();
+            container.Register<AccessAuditService>();
             container.Register<SavedReportService>();
             container.Register<UserService>();
             container.Register<ClinicalVariableService>();
