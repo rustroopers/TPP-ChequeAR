@@ -85,10 +85,10 @@ namespace ChequeAR.Application.Services
         /// <summary>Recurso afectado exacto, ej. "Questionnaire/{id}".</summary>
         public string EntityRef { get; set; }
         /// <summary>
-        /// Eventos de estos cuestionarios, incluidas sus operaciones ($publish, $archive…).
-        /// Una lista vacía no es "sin filtro": es una búsqueda sin resultados.
+        /// Todo lo que pasó con este cuestionario: sus eventos propios, incluidas las
+        /// operaciones ($publish, $archive…), y los reportes consultados o exportados sobre él.
         /// </summary>
-        public IReadOnlyCollection<Guid> QuestionnaireIds { get; set; }
+        public Guid? QuestionnaireId { get; set; }
     }
 
     public class AuditPage

@@ -39,11 +39,6 @@ namespace ChequeAR.Infrastructure.Repositories
             await _ctx.SaveChangesAsync();
         }
 
-        // "Questionnaire/" + los 36 caracteres del id: el tramo del EntityRef que identifica al
-        // cuestionario, antes del sufijo de operación ($publish, $archive…).
-        private const string QuestionnairePrefix = "Questionnaire/";
-        private const int QuestionnaireRefLength = 14 + 36;
-
         public async Task<AuditPage> SearchAsync(AuditSearchCriteria criteria, int skip, int take)
         {
             var agentUserId = criteria.AgentUserId;
@@ -67,11 +62,14 @@ namespace ChequeAR.Infrastructure.Repositories
             if (fromUtc.HasValue) q = q.Where(x => x.Recorded >= fromUtc.Value);
             if (toUtc.HasValue) q = q.Where(x => x.Recorded < toUtc.Value);
             if (!string.IsNullOrEmpty(entityRef)) q = q.Where(x => x.EntityRef == entityRef);
-            if (criteria.QuestionnaireIds != null)
+            if (criteria.QuestionnaireId.HasValue)
             {
-                var refs = criteria.QuestionnaireIds.Select(id => QuestionnairePrefix + id).Distinct().ToList();
-                if (refs.Count == 0) return new AuditPage();
-                q = q.Where(x => refs.Contains(x.EntityRef.Substring(0, QuestionnaireRefLength)));
+                // Eventos del cuestionario ("Questionnaire/{id}" + sufijo de operación) y de los
+                // reportes que corrieron sobre él ("Report/…?questionnaire={id}&…").
+                var propio = "Questionnaire/" + criteria.QuestionnaireId.Value;
+                var enReporte = "questionnaire=" + criteria.QuestionnaireId.Value;
+                q = q.Where(x => x.EntityRef.StartsWith(propio)
+                              || (x.EntityType == "Report" && x.EntityRef.Contains(enReporte)));
             }
 
             var total = await q.CountAsync();

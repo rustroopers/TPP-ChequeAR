@@ -52,11 +52,8 @@
                 loading.value = true; error.value = null;
                 fetch('/api/reports/stats', {
                     method: 'POST', headers: authHeaders(), body: JSON.stringify(query)
-                }).then(function (r) {
-                    if (r.ok) return r.json();
-                    return r.json().catch(function () { return null; }).then(function (b) {
-                        throw new Error((b && b.Message) || ('HTTP ' + r.status));
-                    });
+                }).then(window.ChequeARIslands.http.ensureOk).then(function (r) {
+                    return r.json();
                 }).then(function (d) {
                     stats.value = d;
                     Object.keys(selected).forEach(function (k) { delete selected[k]; });
@@ -171,11 +168,8 @@
                 fetch('/api/reports/stats/export', {
                     method: 'POST', headers: authHeaders(),
                     body: JSON.stringify({ Query: lastQuery.value, LinkIds: linkIds, ChartTypes: chartTypes })
-                }).then(function (r) {
-                    if (r.ok) return r.blob();
-                    return r.json().catch(function () { return null; }).then(function (b) {
-                        throw new Error((b && b.Message) || ('HTTP ' + r.status));
-                    });
+                }).then(window.ChequeARIslands.http.ensureOk).then(function (r) {
+                    return r.blob();
                 }).then(function (blob) {
                     var url = URL.createObjectURL(blob);
                     var a = document.createElement('a');

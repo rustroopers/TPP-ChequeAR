@@ -43,6 +43,29 @@ namespace ChequeAR.Api.Helpers
             if (Guid.TryParse(idPart, out var g)) id = g;
         }
 
+        /// <summary>Cuestionario de un evento de reporte ("Report/…?questionnaire={id}&amp;…"), si lo trae.</summary>
+        public static Guid? ReportQuestionnaireId(string entityRef)
+        {
+            const string key = "questionnaire=";
+            if (entityRef == null || !entityRef.StartsWith("Report/", StringComparison.Ordinal)) return null;
+            var at = entityRef.IndexOf(key, StringComparison.Ordinal);
+            if (at < 0) return null;
+            var value = entityRef.Substring(at + key.Length);
+            var amp = value.IndexOf('&');
+            if (amp >= 0) value = value.Substring(0, amp);
+            return Guid.TryParse(value, out var id) ? id : (Guid?)null;
+        }
+
+        /// <summary>Historia clínica de un evento de paciente ("Patient/{hc}$operación").</summary>
+        public static string PatientHospitalId(string entityRef)
+        {
+            const string prefix = "Patient/";
+            if (entityRef == null || !entityRef.StartsWith(prefix, StringComparison.Ordinal)) return null;
+            var value = entityRef.Substring(prefix.Length);
+            var dollar = value.LastIndexOf('$');
+            return dollar >= 0 ? value.Substring(0, dollar) : value;
+        }
+
         public static ActionView Describe(string entityRef, string actionCode)
         {
             ParseRef(entityRef, out var type, out var id, out var suffix);
@@ -80,7 +103,17 @@ namespace ChequeAR.Api.Helpers
             }
             else if (type == "Report")
             {
-                return Set(view, Op.Export, "Reporte exportado", "cq-badge--info", "bi-download");
+                // "Report/statsExport?…" son las estadísticas; el resto, la tabla.
+                var stats = entityRef.StartsWith("Report/statsExport", StringComparison.Ordinal);
+                return Set(view, Op.Export, stats ? "Estadísticas exportadas" : "Reporte exportado", "cq-badge--info", "bi-download");
+            }
+            else if (type == "Patient" && StartsWith(suffix, "trend"))
+            {
+                return Set(view, Op.Read, "Evolución consultada", "cq-badge--archived", "bi-graph-up");
+            }
+            else if (type == "AuditEvent" && actionCode == "E")
+            {
+                return Set(view, Op.Export, "Auditoría exportada", "cq-badge--info", "bi-download");
             }
             else if (type == "SavedReport")
             {
@@ -127,7 +160,7 @@ namespace ChequeAR.Api.Helpers
 
             JObject root;
             try { root = JObject.Parse(fhirJson); }
-            catch { return lines; }
+            catch (Newtonsoft.Json.JsonException) { return lines; }   // versión ilegible: sin detalle
 
             var title = (string)root["title"];
             if (!string.IsNullOrWhiteSpace(title)) lines.Add("Título: " + title);
@@ -314,8 +347,11 @@ namespace ChequeAR.Api.Helpers
         {
             switch ((op ?? string.Empty).ToLowerInvariant())
             {
-                case "exists":   return "fue respondida";
+                case "exists":
+                    return string.Equals(FormatValue(value), "false", StringComparison.OrdinalIgnoreCase) || string.Equals(FormatValue(value), "No", StringComparison.Ordinal)
+                        ? "no fue respondida" : "fue respondida";
                 case "contains": return "contiene «" + FormatValue(value) + "»";
+                case "notcontains": return "no contiene «" + FormatValue(value) + "»";
                 case "=":        return "es igual a " + FormatValue(value);
                 case "!=":       return "es distinto de " + FormatValue(value);
                 case ">":        return "es mayor que " + FormatValue(value);

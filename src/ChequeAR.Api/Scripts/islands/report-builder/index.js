@@ -12,6 +12,9 @@
     // Antes llegaba el enum del backend serializado como número; ahora llega el recurso FHIR,
     // así que el tipo es un string del estándar. 'coding' cubre opción cerrada y abierta:
     // para filtrar da lo mismo, en los dos casos se compara contra un código.
+    // Opciones de pantalla para el operador 'exists' de la API (que viaja con true/false).
+    var ANSWERED = 'answered', UNANSWERED = 'unanswered';
+
     function typeCategory(t) {
         switch (t) {
             case 'decimal': return 'decimal';
@@ -69,17 +72,31 @@
 
             // Etiquetas en palabras para que cada condición se lea como una frase:
             // "PCR sea mayor a 5", "Tratamiento actual sea Corticoides".
-            function opsFor(type) {
+            function opsFor(q) {
+                var type = q && q.type;
+                var ops;
                 if (type === 'integer' || type === 'decimal')
-                    return [{ v: '=', l: 'sea igual a' }, { v: '!=', l: 'sea distinto de' }, { v: '>', l: 'sea mayor a' }, { v: '>=', l: 'sea mayor o igual a' }, { v: '<', l: 'sea menor a' }, { v: '<=', l: 'sea menor o igual a' }];
-                if (type === 'choice')
-                    return [{ v: '=', l: 'sea' }, { v: '!=', l: 'no sea' }];
-                if (type === 'boolean')
-                    return [{ v: '=', l: 'sea' }];
-                if (type === 'date')
-                    return [{ v: '=', l: 'sea del' }, { v: '>=', l: 'sea desde' }, { v: '<=', l: 'sea hasta' }];
-                return [{ v: '=', l: 'sea' }, { v: '!=', l: 'no sea' }, { v: 'contains', l: 'contenga' }];
+                    ops = [{ v: '=', l: 'sea igual a' }, { v: '!=', l: 'sea distinto de' }, { v: '>', l: 'sea mayor a' }, { v: '>=', l: 'sea mayor o igual a' }, { v: '<', l: 'sea menor a' }, { v: '<=', l: 'sea menor o igual a' }];
+                else if (type === 'choice')
+                    ops = [{ v: '=', l: 'sea' }, { v: '!=', l: 'no sea' }];
+                else if (type === 'boolean')
+                    ops = [{ v: '=', l: 'sea' }];
+                else if (type === 'date')
+                    ops = [{ v: '=', l: 'sea del' }, { v: '>=', l: 'sea desde' }, { v: '<=', l: 'sea hasta' }];
+                else
+                    // Texto libre: lo que se escribe a mano casi nunca coincide letra por
+                    // letra, así que el default es "contenga". Las tres ignoran mayúsculas
+                    // y tildes (lo resuelve el servidor).
+                    ops = [{ v: 'contains', l: 'contenga' }, { v: 'notcontains', l: 'no contenga' }, { v: '=', l: 'sea exactamente' }];
+
+                // Una pregunta obligatoria siempre está respondida en una ficha finalizada:
+                // ofrecerlo ahí sería un filtro que no filtra nada.
+                if (q && !q.required)
+                    ops = ops.concat([{ v: ANSWERED, l: 'esté respondida' }, { v: UNANSWERED, l: 'no esté respondida' }]);
+                return ops;
             }
+            // "Esté respondida" no compara contra un valor, así que no lleva campo de valor.
+            function needsValue(op) { return op !== ANSWERED && op !== UNANSWERED; }
             function questionByLink(linkId) {
                 return questions.value.find(function (q) { return q.linkId === linkId; });
             }
@@ -97,6 +114,7 @@
                         linkId: it.linkId,
                         text: it.text,
                         type: typeCategory(it.type),
+                        required: !!it.required,
                         options: (it.answerOption || []).map(function (o) {
                             var c = o.valueCoding || {};
                             return { value: c.code, display: c.display || c.code };
@@ -118,7 +136,8 @@
             // Rehidrata el editor desde una consulta guardada (flujo "Editar consulta").
             function loadSavedReport(id) {
                 fetch('/api/reports/saved/' + id, { headers: authHeaders() })
-                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json(); })
                     .then(function (rep) {
                         reportName.value = rep.Name || rep.name || '';
                         var query = {};
@@ -138,6 +157,9 @@
                                     // El select de un booleano espera el string 'true'/'false';
                                     // guardado viene como bool.
                                     var val = (q && q.type === 'boolean') ? String(p.value) : p.value;
+                                    // 'exists' viaja con true/false; en pantalla son dos opciones.
+                                    if (p.op === 'exists')
+                                        return { linkId: p.linkId, op: (p.value === false || p.value === 'false') ? UNANSWERED : ANSWERED, value: '' };
                                     return { linkId: p.linkId, op: p.op, value: val };
                                 });
                             }
@@ -245,12 +267,12 @@
             function addFilter() {
                 if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar', 'info'); return; }
                 var q = questions.value[0];
-                filters.value.push({ linkId: q.linkId, op: opsFor(q.type)[0].v, value: q.type === 'boolean' ? 'true' : '' });
+                filters.value.push({ linkId: q.linkId, op: opsFor(q)[0].v, value: q.type === 'boolean' ? 'true' : '' });
             }
             function removeFilter(i) { filters.value.splice(i, 1); }
             function onQuestionChange(f) {
                 var q = questionByLink(f.linkId);
-                f.op = opsFor(q.type)[0].v;
+                f.op = opsFor(q)[0].v;
                 f.value = q.type === 'boolean' ? 'true' : '';
             }
 
@@ -277,8 +299,11 @@
                     };
                 }
                 var preds = filters.value
-                    .filter(function (f) { var q = questionByLink(f.linkId); return q && f.op && (q.type === 'boolean' || (f.value !== '' && f.value != null)); })
-                    .map(function (f) { return { linkId: f.linkId, op: f.op, value: coerce(questionByLink(f.linkId), f.value) }; });
+                    .filter(function (f) { var q = questionByLink(f.linkId); return q && f.op && (!needsValue(f.op) || q.type === 'boolean' || (f.value !== '' && f.value != null)); })
+                    .map(function (f) {
+                        if (!needsValue(f.op)) return { linkId: f.linkId, op: 'exists', value: f.op === ANSWERED };
+                        return { linkId: f.linkId, op: f.op, value: coerce(questionByLink(f.linkId), f.value) };
+                    });
                 if (preds.length) query.filters = { logic: combineMode.value, predicates: preds };
                 if (format) query.format = format;
                 return query;
@@ -294,7 +319,8 @@
                 q.page = p;
                 q.pageSize = PAGE_SIZE;
                 fetch('/api/reports/query', { method: 'POST', headers: authHeaders(), body: JSON.stringify(q) })
-                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json(); })
                     .then(function (data) {
                         // total es el de la COHORTE, no el de la pagina: lo usa totalPages.
                         total.value = data.total;
@@ -341,10 +367,8 @@
                 };
                 var url = editing ? '/api/reports/saved/' + currentReportId.value : '/api/reports/saved';
                 fetch(url, { method: editing ? 'PUT' : 'POST', headers: authHeaders(), body: JSON.stringify(body) })
-                    .then(function (r) {
-                        if (!r.ok) throw new Error('HTTP ' + r.status);
-                        return r.json().catch(function () { return null; });
-                    })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json().catch(function () { return null; }); })
                     .then(function (saved) {
                         if (saved && !editing) {
                             var id = saved.Id || saved.id;
@@ -377,7 +401,8 @@
                 if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
                 exporting.value = true;
                 fetch('/api/reports/export', { method: 'POST', headers: authHeaders(), body: JSON.stringify(buildQuery(format)) })
-                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.blob(); })
                     .then(function (blob) {
                         var url = URL.createObjectURL(blob);
                         var a = document.createElement('a');
@@ -402,7 +427,7 @@
                 currentReportId: currentReportId, reportName: reportName,
                 saving: saving, showSave: showSave, openSave: openSave, saveReport: saveReport,
                 dirty: dirty,
-                opsFor: opsFor, questionByLink: questionByLink,
+                opsFor: opsFor, needsValue: needsValue, questionByLink: questionByLink,
                 addFilter: addFilter, removeFilter: removeFilter, onQuestionChange: onQuestionChange,
                 preview: preview,
                 exportXlsx: function () { exportFile('xlsx', exportFilename('xlsx')); },
@@ -446,11 +471,12 @@
         </div>\
         <div class="col-md-3">\
             <select v-model="f.op" class="form-select form-select-sm">\
-                <option v-for="o in opsFor(questionByLink(f.linkId).type)" :key="o.v" :value="o.v">{{ o.l }}</option>\
+                <option v-for="o in opsFor(questionByLink(f.linkId))" :key="o.v" :value="o.v">{{ o.l }}</option>\
             </select>\
         </div>\
         <div class="col-md-3">\
-            <select v-if="questionByLink(f.linkId).type === \'boolean\'" v-model="f.value" class="form-select form-select-sm">\
+            <span v-if="!needsValue(f.op)"></span>\
+            <select v-else-if="questionByLink(f.linkId).type === \'boolean\'" v-model="f.value" class="form-select form-select-sm">\
                 <option value="true">Sí</option><option value="false">No</option>\
             </select>\
             <select v-else-if="questionByLink(f.linkId).type === \'choice\'" v-model="f.value" class="form-select form-select-sm">\

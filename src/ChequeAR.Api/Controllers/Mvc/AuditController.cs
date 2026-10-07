@@ -20,16 +20,18 @@ namespace ChequeAR.Api.Controllers.Mvc
     {
         private readonly AuditQueryService _audit;
         private readonly QuestionnaireService _questionnaires;
+        private readonly AccessAuditService _access;
 
-        public AuditController(AuditQueryService audit, QuestionnaireService questionnaires)
+        public AuditController(AuditQueryService audit, QuestionnaireService questionnaires, AccessAuditService access)
         {
             _audit = audit;
             _questionnaires = questionnaires;
+            _access = access;
         }
 
         // A6. OJO: el parámetro NO puede llamarse "action" — colisiona con el token de ruta
         // {action} de MVC (nombre del método), que gana sobre el query string y rompía el filtro.
-        public async Task<ActionResult> Index(string user = null, string act = null, string resource = null, string from = null, string to = null, int page = 1)
+        public async Task<ActionResult> Index(string user = null, string act = null, Guid? questionnaire = null, string from = null, string to = null, int page = 1)
         {
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             ViewBag.Title = "Auditoría";
@@ -42,7 +44,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             const int pageSize = 50;
             var model = new AuditListViewModel
             {
-                UserFilter = user, ActionFilter = act, ResourceFilter = resource,
+                UserFilter = user, ActionFilter = act, QuestionnaireFilter = questionnaire,
                 From = from, To = to, PageSize = pageSize,
                 // Acotada para que (página - 1) * tamaño no desborde.
                 Page = Math.Min(Math.Max(1, page), int.MaxValue / pageSize)
@@ -52,7 +54,8 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                var criteria = await BuildCriteriaAsync(user, act, resource, from, to);
+                model.Questionnaires.AddRange(await _questionnaires.ListTitlesAsync());
+                var criteria = BuildCriteria(user, act, questionnaire, from, to);
                 var pagina = await _audit.SearchAsync(criteria, (model.Page - 1) * pageSize, pageSize);
                 model.Total = pagina.Total;
                 model.Entries.AddRange(await ToEntriesAsync(pagina.Items));
@@ -67,23 +70,17 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
-        /// <summary>
-        /// Filtros del listado, tal como los entiende el servicio. El de "Recurso" busca por
-        /// título de cuestionario: el título no vive en la tabla de auditoría, así que primero
-        /// se resuelve a los ids que matchean y la base filtra por esos recursos.
-        /// </summary>
-        private async Task<AuditSearchCriteria> BuildCriteriaAsync(string user, string act, string resource, string from, string to)
+        /// <summary>Filtros del listado, tal como los entiende el servicio.</summary>
+        private static AuditSearchCriteria BuildCriteria(string user, string act, Guid? questionnaire, string from, string to)
         {
-            var criteria = new AuditSearchCriteria
+            return new AuditSearchCriteria
             {
                 AgentUserId = user,
                 Action = act,
+                QuestionnaireId = questionnaire,
                 FromUtc = ArgentinaTime.ParseFilterDateToUtc(from, endOfDay: false),
                 ToUtc = ArgentinaTime.ParseFilterDateToUtc(to, endOfDay: true)
             };
-            var res = (resource ?? string.Empty).Trim();
-            if (res.Length > 0) criteria.QuestionnaireIds = await _questionnaires.FindIdsByTitleAsync(res);
-            return criteria;
         }
 
         /// <summary>Eventos ya traídos de la base, con forma de pantalla.</summary>
@@ -94,7 +91,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             foreach (var e in items)
             {
                 var av = AuditPresentation.Describe(e.EntityRef, e.Action);
-                var label = ResourceLabel(av, titles, e.FhirJson);
+                var label = ResourceLabel(av, titles, e.FhirJson, e.EntityRef);
                 entries.Add(new AuditEntry
                 {
                     Id = e.Id,
@@ -113,22 +110,33 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         // A6b — Exportación. Reutiliza los mismos exporters (XLSX/CSV) que Reportes,
         // armando un ReportResult con las columnas visibles del listado.
-        public async Task<ActionResult> Export(string user = null, string act = null, string resource = null, string from = null, string to = null, string format = "xlsx")
+        public async Task<ActionResult> Export(string user = null, string act = null, Guid? questionnaire = null, string from = null, string to = null, string format = "xlsx")
         {
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
             List<AuditEntry> entries;
             try
             {
-                var criteria = await BuildCriteriaAsync(user, act, resource, from, to);
+                var criteria = BuildCriteria(user, act, questionnaire, from, to);
                 entries = await ToEntriesAsync(await _audit.ExportAsync(criteria));
             }
             catch (ChequeAR.Application.Exceptions.BusinessRuleException ex)
             {
                 // Demasiados eventos: se vuelve al listado con el motivo, no se baja un archivo recortado.
                 TempData["AuditExportError"] = ex.Message;
-                return RedirectToAction("Index", new { user, act, resource, from, to });
+                return RedirectToAction("Index", new { user, act, questionnaire, from, to });
             }
+            // Bajar el registro de auditoría también es un acceso que tiene que quedar registrado.
+            string titulo = null;
+            if (questionnaire.HasValue)
+            {
+                var titulos = await _questionnaires.GetTitlesAsync(new[] { questionnaire.Value });
+                titulo = titulos.TryGetValue(questionnaire.Value, out var t) ? t : questionnaire.Value.ToString();
+            }
+            _access.AuditExported(new AuditExportSnapshot
+            {
+                User = user, Action = act, Questionnaire = titulo, From = from, To = to, Format = format
+            }, entries.Count);
             var rows = entries.ConvertAll(e => new Dictionary<string, object>
             {
                 ["Fecha"] = e.Timestamp,
@@ -172,16 +180,21 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = ResourceLabel(av, titles, e.FhirJson)
+                    Resource = ResourceLabel(av, titles, e.FhirJson, e.EntityRef)
                 };
 
                 // Para una publicación mostramos de qué versión a qué versión pasó y el diff.
                 if (av.Operation == AuditPresentation.Op.Publish && av.ResourceId.HasValue)
                     await FillVersionDiffAsync(detail, av.ResourceId.Value, e.Recorded);
 
-                // Para una consulta guardada mostramos su nombre, alcance y condiciones.
-                if (av.ResourceType == "SavedReport")
-                    await FillReportDetailAsync(detail, e.FhirJson);
+                // Para una consulta guardada mostramos su nombre, alcance y condiciones; para un
+                // reporte exportado, las condiciones con las que se corrió.
+                if (av.ResourceType == "SavedReport" || av.ResourceType == "Report")
+                    await FillReportDetailAsync(detail, e.FhirJson, saved: av.ResourceType == "SavedReport");
+                else if (av.ResourceType == "Patient")
+                    await FillTrendDetailAsync(detail, e.FhirJson);
+                else if (av.ResourceType == "AuditEvent")
+                    FillAuditExportDetail(detail, e.FhirJson);
 
                 // Para una ficha: al finalizar se guardó la foto COMPLETA (todas las
                 // respuestas); en un guardado de avance, sólo el diff de esa sesión.
@@ -276,14 +289,18 @@ namespace ChequeAR.Api.Controllers.Mvc
         /// linkId contra las preguntas del cuestionario). Si la foto no es interpretable, no
         /// agrega nada: es un extra de presentación, no un dato crítico.
         /// </summary>
-        private async Task FillReportDetailAsync(AuditDetailViewModel detail, string fhirJson)
+        private async Task FillReportDetailAsync(AuditDetailViewModel detail, string fhirJson, bool saved)
         {
             var snap = AuditPresentation.ReadSavedReport(fhirJson);
             if (snap == null) return;
 
             detail.HasReportDetail = true;
-            detail.ReportName = snap.Name;
-            detail.ReportScope = ScopeLabel(snap.Scope, snap.SpecialtyCode);
+            // Nombre y alcance son del reporte guardado; una consulta suelta no los tiene.
+            if (saved)
+            {
+                detail.ReportName = snap.Name;
+                detail.ReportScope = ScopeLabel(snap.Scope, snap.SpecialtyCode);
+            }
 
             IReadOnlyDictionary<string, string> linkTexts = new Dictionary<string, string>();
             if (snap.QuestionnaireId != Guid.Empty)
@@ -306,6 +323,70 @@ namespace ChequeAR.Api.Controllers.Mvc
             detail.ReportConditions = AuditPresentation.DescribeReportConditions(snap.QueryJson, linkTexts);
         }
 
+        /// <summary>
+        /// Detalle de una consulta de evolución: paciente, cuestionario y parámetros mirados.
+        /// Si la foto no es interpretable no agrega nada.
+        /// </summary>
+        private async Task FillTrendDetailAsync(AuditDetailViewModel detail, string fhirJson)
+        {
+            TrendAuditSnapshot snap;
+            try { snap = Newtonsoft.Json.JsonConvert.DeserializeObject<TrendAuditSnapshot>(fhirJson ?? string.Empty); }
+            catch (Newtonsoft.Json.JsonException) { return; }
+            if (snap == null) return;
+
+            detail.HasReportDetail = true;
+            detail.ReportHeading = "Evolución";
+            detail.ConditionsHeading = "Consulta";
+            detail.ReportConditions.Add("Paciente: HC " + snap.PatientHospitalId);
+
+            var textos = new Dictionary<string, string>();
+            var q = await _questionnaires.GetAsync(snap.QuestionnaireId);
+            if (q != null)
+            {
+                detail.ReportQuestionnaire = q.Title;
+                foreach (var qq in q.Questions ?? new List<Question>())
+                    if (!string.IsNullOrEmpty(qq.LinkId) && !textos.ContainsKey(qq.LinkId))
+                        textos[qq.LinkId] = qq.Text;
+            }
+            var parametros = (snap.LinkIds ?? new List<string>())
+                .Select(l => textos.TryGetValue(l, out var t) && !string.IsNullOrWhiteSpace(t) ? t : l);
+            detail.ReportConditions.Add("Parámetros: " + string.Join(", ", parametros));
+        }
+
+        /// <summary>Detalle de una exportación de la auditoría: los filtros con los que se bajó.</summary>
+        private static void FillAuditExportDetail(AuditDetailViewModel detail, string fhirJson)
+        {
+            AuditExportSnapshot snap;
+            try { snap = Newtonsoft.Json.JsonConvert.DeserializeObject<AuditExportSnapshot>(fhirJson ?? string.Empty); }
+            catch (Newtonsoft.Json.JsonException) { return; }
+            if (snap == null) return;
+
+            detail.HasReportDetail = true;
+            detail.ReportHeading = "Exportación";
+            detail.ConditionsHeading = "Filtros";
+            detail.NoConditionsText = "Sin filtros: incluye todos los eventos.";
+            if (!string.IsNullOrWhiteSpace(snap.User)) detail.ReportConditions.Add("Usuario: " + snap.User);
+            if (!string.IsNullOrWhiteSpace(snap.Action)) detail.ReportConditions.Add("Acción: " + ActionFilterLabel(snap.Action));
+            if (!string.IsNullOrWhiteSpace(snap.Questionnaire)) detail.ReportConditions.Add("Cuestionario: " + snap.Questionnaire);
+            if (!string.IsNullOrWhiteSpace(snap.From) || !string.IsNullOrWhiteSpace(snap.To))
+                detail.ReportConditions.Add("Período: " + (string.IsNullOrWhiteSpace(snap.From) ? "el inicio" : snap.From)
+                                            + " a " + (string.IsNullOrWhiteSpace(snap.To) ? "hoy" : snap.To));
+        }
+
+        /// <summary>Mismas etiquetas que el selector "Acción" del listado.</summary>
+        private static string ActionFilterLabel(string code)
+        {
+            switch (code)
+            {
+                case "R": return "Consultas";
+                case "C": return "Creaciones";
+                case "U": return "Modificaciones";
+                case "D": return "Eliminaciones";
+                case "E": return "Exportaciones";
+                default: return code;
+            }
+        }
+
         /// <summary>Alcance legible: privada, o compartida con una especialidad.</summary>
         private static string ScopeLabel(string scope, string specialtyCode)
         {
@@ -323,14 +404,25 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 AuditPresentation.ParseRef(e.EntityRef, out var type, out var eid, out _);
                 if (type == "Questionnaire" && eid.HasValue) ids.Add(eid.Value);
+                // Un reporte se identifica por el cuestionario sobre el que corrió.
+                var deReporte = AuditPresentation.ReportQuestionnaireId(e.EntityRef);
+                if (deReporte.HasValue) ids.Add(deReporte.Value);
             }
             if (ids.Count == 0) return new Dictionary<Guid, string>();
             return await _questionnaires.GetTitlesAsync(ids);
         }
 
         /// <summary>Recurso legible: título del cuestionario si lo hay; si no, una ref limpia.</summary>
-        private static string ResourceLabel(AuditPresentation.ActionView av, IReadOnlyDictionary<Guid, string> titles, string fhirJson = null)
+        private static string ResourceLabel(AuditPresentation.ActionView av, IReadOnlyDictionary<Guid, string> titles, string fhirJson = null, string entityRef = null)
         {
+            var deReporte = AuditPresentation.ReportQuestionnaireId(entityRef);
+            if (deReporte.HasValue && titles.TryGetValue(deReporte.Value, out var tituloReporte)
+                && !string.IsNullOrWhiteSpace(tituloReporte))
+                return tituloReporte;
+            if (av.ResourceType == "Patient")
+                return "Paciente HC " + AuditPresentation.PatientHospitalId(entityRef);
+            if (av.ResourceType == "AuditEvent") return "Registro de auditoría";
+
             if (av.ResourceType == "Questionnaire" && av.ResourceId.HasValue
                 && titles.TryGetValue(av.ResourceId.Value, out var title)
                 && !string.IsNullOrWhiteSpace(title))
@@ -342,7 +434,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 return !string.IsNullOrWhiteSpace(snap?.Name) ? snap.Name : "Reporte guardado";
             }
             if (av.ResourceType == "QuestionnaireResponse") return "Respuesta de cuestionario";
-            if (av.ResourceType == "Report") return "Exportación de reporte";
+            if (av.ResourceType == "Report") return "Reporte";
             if (!string.IsNullOrWhiteSpace(av.ResourceType)) return av.ResourceType;
             return "—";
         }
