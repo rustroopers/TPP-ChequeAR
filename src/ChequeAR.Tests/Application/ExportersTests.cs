@@ -62,7 +62,49 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("\"dice \"\"hola\"\"\"", lines[1]);
         }
 
+        [Fact]
+        public void Csv_EscapaTambienLosEncabezados()
+        {
+            var csv = ReadCsv(CsvExporter.Export(Result(
+                new Dictionary<string, object> { { "Peso; en kg", 10 } })));
+
+            var lines = csv.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
+            Assert.Equal("\"Peso; en kg\"", lines[0]);
+        }
+
+        // Un texto que Excel interpretaría como fórmula sale forzado a texto; un número
+        // negativo no es una fórmula y no se toca.
+        [Theory]
+        [InlineData("=1+1", "'=1+1")]
+        [InlineData("+54 11 5555", "'+54 11 5555")]
+        [InlineData("@cmd", "'@cmd")]
+        [InlineData("-5", "-5")]
+        [InlineData("-3,5", "-3,5")]
+        public void Csv_NeutralizaFormulas_SinTocarNumerosNegativos(string valor, string esperado)
+        {
+            var csv = ReadCsv(CsvExporter.Export(Result(
+                new Dictionary<string, object> { { "Obs", valor } })));
+
+            var lines = csv.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
+            Assert.Equal(esperado, lines[1]);
+        }
+
         // ---- XLSX ----
+
+        [Fact]
+        public void Xlsx_DescartaCaracteresDeControlInvalidosEnXml()
+        {
+            var stream = XlsxExporter.Export(Result(
+                new Dictionary<string, object> { { "Obs", "a\u000Bb\tc\u0001" } }));
+
+            using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
+            {
+                var hoja = ReadEntry(zip, "xl/worksheets/sheet1.xml");
+                Assert.Contains(">ab\tc<", hoja);
+                // Si quedara un carácter inválido, el parser lo rechaza igual que Excel.
+                System.Xml.Linq.XDocument.Parse(hoja);
+            }
+        }
 
         private static Dictionary<string, ZipArchiveEntry> Entries(ZipArchive zip)
             => zip.Entries.ToDictionary(e => e.FullName, e => e);
