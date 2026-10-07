@@ -95,8 +95,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = label,
-                    IP = e.AgentIp
+                    Resource = label
                 });
             }
             return entries;
@@ -116,8 +115,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ["Fecha"] = e.Timestamp,
                 ["Usuario"] = e.Username,
                 ["Acción"] = e.Action,
-                ["Cuestionario"] = e.Resource,
-                ["IP"] = e.IP
+                ["Cuestionario"] = e.Resource
             });
 
             var result = new ReportResult { Total = rows.Count, Rows = rows };
@@ -155,8 +153,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = ResourceLabel(av, titles, e.FhirJson),
-                    IP = e.AgentIp
+                    Resource = ResourceLabel(av, titles, e.FhirJson)
                 };
 
                 // Para una publicación mostramos de qué versión a qué versión pasó y el diff.

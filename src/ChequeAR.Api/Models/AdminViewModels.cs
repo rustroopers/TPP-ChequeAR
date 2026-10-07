@@ -12,7 +12,6 @@ namespace ChequeAR.Api.Models
         public string ActionBadge { get; set; }   // clase css del badge (color)
         public string ActionIcon { get; set; }    // clase del ícono bootstrap
         public string Resource { get; set; }       // título del cuestionario o ref limpia
-        public string IP { get; set; }
     }
 
     public class AuditListViewModel
@@ -40,7 +39,6 @@ namespace ChequeAR.Api.Models
         public string ActionBadge { get; set; }
         public string ActionIcon { get; set; }
         public string Resource { get; set; }
-        public string IP { get; set; }
         public string UserAgent { get; set; }
 
         // Diff de versiones (solo para publicaciones de un cuestionario).
