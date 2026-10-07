@@ -103,15 +103,18 @@ namespace ChequeAR.Application.Reports
                 q.DateRange.To = tmp;
             }
 
+            // El rango son DÍAS de Argentina y AuthoredAt está en UTC: comparar sin convertir
+            // corre la ventana tres horas (las fichas de 21 a 24 hs caen en el día siguiente).
+            // "Hasta" es el comienzo del día siguiente, como cota exclusiva.
             if (q.DateRange?.From != null)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" >= :DateFrom");
-                ps.Add(QueryParameter.Date("DateFrom", q.DateRange.From.Value));
+                ps.Add(QueryParameter.Date("DateFrom", ArgentinaClock.ToUtc(q.DateRange.From.Value.Date)));
             }
             if (q.DateRange?.To != null)
             {
-                sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" <= :DateTo");
-                ps.Add(QueryParameter.Date("DateTo", q.DateRange.To.Value));
+                sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" < :DateTo");
+                ps.Add(QueryParameter.Date("DateTo", ArgentinaClock.ToUtc(q.DateRange.To.Value.Date.AddDays(1))));
             }
 
             // Version del cuestionario con la que se completo la ficha. La vista ya expone la

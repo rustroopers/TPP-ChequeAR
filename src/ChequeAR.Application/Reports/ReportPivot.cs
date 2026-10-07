@@ -38,7 +38,9 @@ namespace ChequeAR.Application.Reports
                 var row = new Dictionary<string, object>();
                 row["HC"] = Get(first, "PatientHospitalId");
                 var authored = Get(first, "AuthoredAt");
-                row["Fecha"] = authored is DateTime dt ? dt.ToString("yyyy-MM-dd", Ar) : authored;
+                // AuthoredAt está en UTC: sin convertir, una ficha de las 22 hs sale con la
+                // fecha del día siguiente.
+                row["Fecha"] = authored is DateTime dt ? ArgentinaClock.FromUtc(dt).ToString("yyyy-MM-dd", Ar) : authored;
 
                 // Valor legible por pregunta (último no nulo por linkId).
                 var valueByLink = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);

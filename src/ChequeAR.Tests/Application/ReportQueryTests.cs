@@ -306,8 +306,28 @@ namespace ChequeAR.Tests.Application
 
             var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
 
-            Assert.Equal(temprano, built.Parameters.Single(p => p.Name == "DateFrom").Value);
-            Assert.Equal(tarde, built.Parameters.Single(p => p.Name == "DateTo").Value);
+            Assert.Equal(new DateTime(2026, 1, 1, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(new DateTime(2026, 6, 2, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
+        }
+
+        // El rango son días de Argentina contra una columna en UTC. La isla manda
+        // T00:00:00 / T23:59:59 sin zona; lo que cuenta es el día.
+        [Fact]
+        public void RangoDeFechas_SeInterpretaComoDiasDeArgentina()
+        {
+            var q = Query();
+            q.DateRange = new DateRange
+            {
+                From = new DateTime(2026, 8, 10, 0, 0, 0),
+                To = new DateTime(2026, 8, 10, 23, 59, 59)
+            };
+
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.Contains("\"AuthoredAt\" >= :DateFrom", built.Sql);
+            Assert.Contains("\"AuthoredAt\" < :DateTo", built.Sql);
+            Assert.Equal(new DateTime(2026, 8, 10, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(new DateTime(2026, 8, 11, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
         }
     }
 }

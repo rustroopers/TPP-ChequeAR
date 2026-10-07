@@ -42,6 +42,20 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("7", ancho.Rows[1]["Edad"]);
         }
 
+        // 01:30 UTC del 23 son las 22:30 del 22 en Argentina.
+        [Fact]
+        public void ToWide_LaFechaSaleEnHoraDeArgentina()
+        {
+            var fila = Row(Guid.NewGuid(), "HC-1", "edad", "12");
+            fila["AuthoredAt"] = new DateTime(2026, 7, 23, 1, 30, 0);
+
+            var ancho = ReportPivot.ToWide(
+                new ReportResult { Rows = new List<Dictionary<string, object>> { fila } },
+                new List<KeyValuePair<string, string>> { new KeyValuePair<string, string>("edad", "Edad") });
+
+            Assert.Equal("2026-07-22", ancho.Rows[0]["Fecha"]);
+        }
+
         private static Dictionary<string, object> Row(Guid responseId, string hc, string linkId, string valueText)
         {
             return new Dictionary<string, object>
