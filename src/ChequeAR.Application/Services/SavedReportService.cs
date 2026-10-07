@@ -118,6 +118,9 @@ namespace ChequeAR.Application.Services
             actual.Scope = patch.Scope ?? actual.Scope;
             actual.SpecialtyCode = nuevaEspecialidad;
             actual.QueryJson = patch.QueryJson ?? actual.QueryJson;
+            // El cuestionario base acompaña a los filtros: si sólo se actualizara QueryJson,
+            // la consulta quedaría con filtros de un cuestionario y el id de otro.
+            if (patch.QuestionnaireId != Guid.Empty) actual.QuestionnaireId = patch.QuestionnaireId;
             actual.UpdatedAt = DateTime.UtcNow;
 
             await _repo.UpdateAsync(actual);

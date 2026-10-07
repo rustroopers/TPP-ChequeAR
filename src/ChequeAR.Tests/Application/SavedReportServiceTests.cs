@@ -99,6 +99,23 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
+        public async Task Actualizar_CambiaElCuestionarioBaseSiViene_YLoConservaSiNo()
+        {
+            var id = Guid.NewGuid();
+            var original = Guid.NewGuid();
+            var nuevo = Guid.NewGuid();
+            var existente = Consulta(id, creadaPor: "dr.gomez");
+            existente.QuestionnaireId = original;
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existente);
+
+            await _sut.UpdateAsync(id, new SavedReport { Name = "sin cuestionario" }, "dr.gomez");
+            Assert.Equal(original, existente.QuestionnaireId);
+
+            await _sut.UpdateAsync(id, new SavedReport { QuestionnaireId = nuevo }, "dr.gomez");
+            Assert.Equal(nuevo, existente.QuestionnaireId);
+        }
+
+        [Fact]
         public async Task Inexistente_SeDistingueDeSinPermiso()
         {
             // No es lo mismo 404 que 403: confundirlos filtra la existencia de recursos ajenos.
