@@ -156,7 +156,7 @@ namespace ChequeAR.Api.Helpers
 
             var required = item["required"] != null && (bool)item["required"];
             lines.Add(indent + "Pregunta: " + (text ?? "(sin texto)")
-                      + " [" + TypeLabel(type, (string)item["answerConstraint"])
+                      + " [" + TypeLabel(type, (string)item["answerConstraint"], item["repeats"]?.Type == JTokenType.Boolean && (bool)item["repeats"])
                       + (required ? ", obligatoria" : ", opcional") + "]");
 
             if (item["answerOption"] is JArray opts)
@@ -170,14 +170,14 @@ namespace ChequeAR.Api.Helpers
         /// <summary>
         /// Etiqueta legible por un clínico. Tiene que cubrir DOS vocabularios a la vez:
         ///
-        ///  - R5 (lo que se publica desde la feature 009): las preguntas de opción son
-        ///    'coding', y lo que separa la cerrada de la abierta es answerConstraint.
+        ///  - R5: las preguntas de opción son 'coding'; la selección múltiple es la que repite
+        ///    (o, en lo congelado antes de corregir ese mapeo, la que declara optionsOrString).
         ///  - R4 ('choice' / 'open-choice'): lo que quedó congelado en las versiones
         ///    publicadas antes, que son inmutables y se siguen mostrando en auditoría.
         ///
         /// Sin el caso 'coding' esta pantalla mostraría el literal crudo de FHIR a un médico.
         /// </summary>
-        private static string TypeLabel(string fhirType, string answerConstraint = null)
+        private static string TypeLabel(string fhirType, string answerConstraint = null, bool repeats = false)
         {
             switch (fhirType)
             {
@@ -191,11 +191,11 @@ namespace ChequeAR.Api.Helpers
                 case "attachment": return "adjunto";
 
                 case "coding":
-                    return answerConstraint == "optionsOrString" ? "opción o texto libre" : "opción única";
+                    return repeats || answerConstraint == "optionsOrString" ? "opción múltiple" : "opción única";
 
                 // Legado R4 de lo ya congelado.
                 case "choice": return "opción única";
-                case "open-choice": return "opción o texto libre";
+                case "open-choice": return "opción múltiple";
 
                 default: return fhirType ?? "—";
             }

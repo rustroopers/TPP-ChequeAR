@@ -13,6 +13,10 @@
             case "section": return "Sección";
             case "type": return "Tipo";
             case "required": return "Obligatoria";
+            case "repeats": return "Admite varias respuestas";
+            case "maxLength": return "Largo máximo";
+            case "pattern": return "Patrón";
+            case "accept": return "Formatos aceptados";
             case "unit": return "Unidad";
             case "range": return "Rango";
             case "options": return "Opciones";
@@ -94,7 +98,7 @@ else if (!d.HasChanges)
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-check2-circle"></i></div>
-            <div class="cq-empty__title">Las dos versiones tienen las mismas preguntas</div>
+            <div class="cq-empty__title">Las dos versiones son iguales</div>
         </div>
     </div>
 }
@@ -107,11 +111,19 @@ else
         <span class="cq-text-muted align-self-center">@d.Count(QuestionChangeKind.Unchanged) sin cambios</span>
     </div>
 
-    @if (d.TitleChanged)
+    if (d.TitleChanged)
     {
         <div class="cq-card mb-3">
             <div class="cq-text-sm cq-text-muted">Título del cuestionario</div>
             <div><del class="text-danger">@(d.TitleBefore ?? "—")</del> <i class="bi bi-arrow-right mx-1"></i> <ins class="text-success text-decoration-none">@(d.TitleAfter ?? "—")</ins></div>
+        </div>
+    }
+
+    if (d.DescriptionChanged)
+    {
+        <div class="cq-card mb-3">
+            <div class="cq-text-sm cq-text-muted">Descripción del cuestionario</div>
+            <div><del class="text-danger">@(d.DescriptionBefore ?? "—")</del> <i class="bi bi-arrow-right mx-1"></i> <ins class="text-success text-decoration-none">@(d.DescriptionAfter ?? "—")</ins></div>
         </div>
     }
 

@@ -42,6 +42,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 System.Tuple.Create("Cuestionarios", (string)null)
             };
 
+            if (page < 1) page = 1;
             var model = new QuestionnaireListViewModel
             {
                 SearchTerm = q, SpecialtyFilter = specialty, StatusFilter = status,
@@ -71,7 +72,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Status = QuestionnaireStatusMap.ToUi(it.Status),
                         UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(it.UpdatedAt),
                         Author = it.CreatedBy,
-                        HasUnpublishedChanges = it.HasUnpublishedChanges()
+                        HasUnpublishedChanges = it.HasUnpublishedChanges(),
+                        ConcurrencyVersion = it.ConcurrencyVersion
                     });
                 }
             }
@@ -137,25 +139,23 @@ namespace ChequeAR.Api.Controllers.Mvc
                 try
                 {
                     var q = await _svc.GetAsync(id.Value);
-                    title = q?.Title ?? "Cuestionario";
-                    if (q != null)
-                    {
-                        publishedVersion = q.CurrentVersion()?.VersionNumber ?? 0;
-                        specialty = cat.CodeOrDefault(q.SpecialtyCode);
-                        status = QuestionnaireStatusMap.ToUi(q.Status);
-                        pendingChanges = q.HasUnpublishedChanges();
-                        concurrencyVersion = q.ConcurrencyVersion;
-                        // El editor se hidrata con la estructura real desde el server; antes
-                        // arrancaba con datos de ejemplo hardcodeados y pisaba lo guardado.
-                        groups = BuildEditorGroups(q, await VariablesDe(q));
+                    // Un id inexistente no abre un editor vacío: el autoguardado le pegaría a
+                    // un recurso que no existe y la persona perdería lo que escriba.
+                    if (q == null) return HttpNotFound();
+                    title = q.Title ?? "Cuestionario";
+                    publishedVersion = q.CurrentVersion()?.VersionNumber ?? 0;
+                    specialty = cat.CodeOrDefault(q.SpecialtyCode);
+                    status = QuestionnaireStatusMap.ToUi(q.Status);
+                    pendingChanges = q.HasUnpublishedChanges();
+                    concurrencyVersion = q.ConcurrencyVersion;
+                    groups = BuildEditorGroups(q, await VariablesDe(q));
 
-                        var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
-                        if (coding != null)
-                        {
-                            code = coding.Code;
-                            codeDisplay = coding.Display;
-                            term = coding.Term;
-                        }
+                    var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
+                    if (coding != null)
+                    {
+                        code = coding.Code;
+                        codeDisplay = coding.Display;
+                        term = coding.Term;
                     }
                 }
                 catch (SpecialtyForbiddenException)
@@ -164,10 +164,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 catch (Exception ex)
                 {
+                    // No se abre el editor sin haber podido cargar el cuestionario: arrancaría
+                    // vacío y el autoguardado pisaría el título y la codificación guardados.
                     Helpers.HandledErrors.Log(this, ex);
-                    title = null;
-                    publishedVersion = 0;
-                    ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
+                    Response.StatusCode = 500;
+                    ViewBag.Code = 500;
+                    return View("~/Views/Error/Index.cshtml");
                 }
             }
 
@@ -212,7 +214,19 @@ namespace ChequeAR.Api.Controllers.Mvc
                 return HttpNotFound();
             }
             if (q == null) return HttpNotFound();
-            var payload = new { concurrencyVersion = q.ConcurrencyVersion, groups = BuildEditorGroups(q, await VariablesDe(q)) };
+            // Además de la estructura, la cabecera: el merge del editor la combina también, para
+            // que un título o una codificación cambiados por la otra persona no se pisen en silencio.
+            var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
+            var payload = new
+            {
+                concurrencyVersion = q.ConcurrencyVersion,
+                title = q.Title,
+                specialtyCode = q.SpecialtyCode,
+                code = coding?.Code,
+                codeDisplay = coding?.Display,
+                term = coding?.Term,
+                groups = BuildEditorGroups(q, await VariablesDe(q))
+            };
             return Content(
                 JsonConvert.SerializeObject(payload,
                     new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() }),
@@ -388,7 +402,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             try
             {
                 var q = await _svc.GetAsync(id);
-                if (q == null) return View("~/Views/Error/Index.cshtml");
+                if (q == null) return HttpNotFound();
                 var cat = await _specialties.GetAsync();
                 var model = new QuestionnaireDetailViewModel
                 {
@@ -449,15 +463,19 @@ namespace ChequeAR.Api.Controllers.Mvc
             try
             {
                 var q = await _svc.GetAsync(id);
-                ViewBag.QuestionnaireTitle = q?.Title;
-                var list = (q?.Versions ?? new List<ChequeAR.Domain.Entities.QuestionnaireVersion>())
+                if (q == null) return HttpNotFound();
+                ViewBag.QuestionnaireTitle = q.Title;
+                // Todas las versiones son publicadas; lo que distingue a una es si es la que
+                // usan hoy los clínicos. Un archivado no tiene versión en uso.
+                var vigente = q.Status == QuestionnaireStatus.Active ? q.CurrentVersion()?.Id : null;
+                var list = (q.Versions ?? new List<ChequeAR.Domain.Entities.QuestionnaireVersion>())
                     .OrderByDescending(v => v.VersionNumber)
                     .Select(v => new QuestionnaireVersionView
                     {
                         Version = v.VersionNumber,
                         Date = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.PublishedAt),
                         Author = v.PublishedBy,
-                        Status = "published",
+                        IsCurrent = v.Id == vigente,
                         ChangeNote = v.ChangeNote
                     }).ToList();
                 return View(list);
@@ -516,6 +534,15 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // publicada es inmutable y la comparación tiene que dar siempre lo mismo.
                 var antes = ChequeAR.Application.Fhir.FhirQuestionnaireReader.ReadDomain(vDesde.FhirJson);
                 var despues = ChequeAR.Application.Fhir.FhirQuestionnaireReader.ReadDomain(vHasta.FhirJson);
+                // Una versión ilegible no es un cuestionario vacío: compararla así mostraría
+                // todas sus preguntas como agregadas o quitadas, que es falso.
+                if (antes == null || despues == null)
+                {
+                    TempData["Toast"] = "No se pudo leer la versión " + (antes == null ? desde : hasta)
+                                      + " publicada, así que no se puede comparar.";
+                    TempData["ToastLevel"] = "error";
+                    return RedirectToAction("History", new { id });
+                }
 
                 var model = new QuestionnaireCompareViewModel
                 {
@@ -537,22 +564,52 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 return HttpNotFound();
             }
+            catch (Exception ex)
+            {
+                Helpers.HandledErrors.Log(this, ex);
+                TempData["Toast"] = "Ocurrió un error al comparar las versiones.";
+                TempData["ToastLevel"] = "error";
+                return RedirectToAction("History", new { id });
+            }
         }
 
+        /// <param name="concurrencyVersion">
+        /// Versión del registro que mostraba el listado al abrir el modal. Publicar congela lo
+        /// que hay en la base: si alguien guardó en el medio, se rechaza en vez de congelar
+        /// cambios que quien publica nunca vio.
+        /// </param>
         [HttpPost, ValidateAntiForgeryToken, RequiresPermission(Permissions.QuestionnaireWrite)]
-        public async Task<ActionResult> Publish(Guid id, string changeNote)
+        public async Task<ActionResult> Publish(Guid id, string changeNote, int? concurrencyVersion = null)
         {
-            var userId = User?.Identity?.Name ?? "unknown";
+            // Misma identidad que la API (CurrentUser): PublishedBy y la auditoría no pueden
+            // depender de qué pantalla se usó para publicar.
+            var userId = CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal);
             try
             {
-                await _svc.PublishAsync(id, userId, changeNote);
+                await _svc.PublishAsync(id, userId, changeNote, concurrencyVersion);
                 TempData["Toast"] = "Cuestionario publicado.";
                 TempData["ToastLevel"] = "success";
             }
             catch (SpecialtyForbiddenException)
             {
-                Response.StatusCode = 403;
-                TempData["Toast"] = "No tenes acceso a la especialidad de ese cuestionario.";
+                TempData["Toast"] = "No tenés acceso a la especialidad de ese cuestionario.";
+                TempData["ToastLevel"] = "error";
+            }
+            catch (ConcurrencyConflictException)
+            {
+                TempData["Toast"] = "Alguien guardó cambios en el cuestionario mientras tanto. Revisalo antes de publicarlo.";
+                TempData["ToastLevel"] = "error";
+            }
+            // Las reglas que impiden publicar (perfil FHIR, condiciones rotas, nada que publicar)
+            // son lo que la persona necesita leer para corregirlas: se muestran tal cual.
+            catch (ValidationFailedException ex)
+            {
+                TempData["Toast"] = "No se pudo publicar: " + string.Join(" ", ex.Errors);
+                TempData["ToastLevel"] = "error";
+            }
+            catch (BusinessRuleException ex)
+            {
+                TempData["Toast"] = "No se pudo publicar: " + ex.Message;
                 TempData["ToastLevel"] = "error";
             }
             catch (Exception ex)
@@ -567,7 +624,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         [HttpPost, ValidateAntiForgeryToken, RequiresPermission(Permissions.QuestionnaireWrite)]
         public async Task<ActionResult> Archive(Guid id)
         {
-            var userId = User?.Identity?.Name ?? "unknown";
+            var userId = CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal);
             try
             {
                 await _svc.ArchiveAsync(id, userId);
@@ -576,8 +633,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
             catch (SpecialtyForbiddenException)
             {
-                Response.StatusCode = 403;
-                TempData["Toast"] = "No tenes acceso a la especialidad de ese cuestionario.";
+                TempData["Toast"] = "No tenés acceso a la especialidad de ese cuestionario.";
+                TempData["ToastLevel"] = "error";
+            }
+            catch (BusinessRuleException ex)
+            {
+                TempData["Toast"] = ex.Message;
                 TempData["ToastLevel"] = "error";
             }
             catch (Exception ex)

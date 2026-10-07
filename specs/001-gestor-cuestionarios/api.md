@@ -7,8 +7,8 @@
 | `GET /fhir/r5/Questionnaire` (search) | ✅ implementado | `QuestionnaireController.Search` |
 | `GET /fhir/r5/Questionnaire/{id}` | ✅ implementado | con `Include(Versions, Questions)` |
 | `POST /fhir/r5/Questionnaire` | ✅ implementado | rol Admin/Jefe |
-| `PUT /fhir/r5/Questionnaire/{id}` | ✅ implementado | sin If-Match todavía |
-| `POST /fhir/r5/Questionnaire/{id}/$publish` | ✅ implementado | validación FHIR via `IFhirValidator` stub |
+| `PUT /fhir/r5/Questionnaire/{id}` | ✅ implementado | `If-Match` obligatorio (428 / 409) |
+| `POST /fhir/r5/Questionnaire/{id}/$publish` | ✅ implementado | `If-Match` obligatorio (428 / 409); validación FHIR + reglas de estructura |
 | `POST /fhir/r5/Questionnaire/{id}/$archive` | ✅ implementado | |
 | `DELETE /fhir/r5/Questionnaire/{id}` | ✅ implementado | soft delete |
 | `GET /fhir/r5/Questionnaire/{id}/_history/{vid}` | ⏳ pendiente | |
@@ -71,10 +71,14 @@ Actualiza un borrador. Si el cuestionario está `active`, crea una nueva versió
 
 #### `POST /Questionnaire/{id}/$publish`
 
-Operation: transiciona de `draft` a `active`. Valida que tenga ≥1 ítem, todas las preguntas con tipo válido, y pasa el validador HL7.
+Operation: transiciona de `draft` (o `retired`) a `active`. Valida que tenga ≥1 ítem, linkId únicos, condiciones completas que apunten a preguntas y opciones existentes, y pasa el validador. Un `retired` sin cambios pendientes se reactiva sin congelar una versión nueva.
 
-**Response 200**: `Questionnaire` con `status=active`.
+**Headers**: `If-Match: W/"{versionId}"` obligatorio: se congela lo que está en la base, así que hay que demostrar que se vio la última versión del registro.
+
+**Response 200**: `Questionnaire` con `status=active` (y `ETag`).
+**Response 409**: alguien guardó en el medio (`OperationOutcome` con versión esperada y encontrada).
 **Response 422**: `OperationOutcome` con errores de validación.
+**Response 428**: falta `If-Match`.
 
 #### `POST /Questionnaire/{id}/$archive`
 

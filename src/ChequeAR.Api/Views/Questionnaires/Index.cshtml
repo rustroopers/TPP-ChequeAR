@@ -116,7 +116,7 @@ else
                                        de Archivar más abajo). *@
                                     if (!(q.Status == "published" && !q.HasUnpublishedChanges))
                                     {
-                                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title" data-version="@q.ConcurrencyVersion"><i class="bi bi-send me-1"></i> Publicar</button></li>
                                     }
                                     if (q.Status != "archived")
                                     {
@@ -156,6 +156,7 @@ else
             {
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="id" id="publishId" />
+                <input type="hidden" name="concurrencyVersion" id="publishVersion" />
                 <div class="modal-header">
                     <h2 class="modal-title h3" id="publishModalLabel">Publicar cuestionario</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
@@ -190,8 +191,8 @@ else
                     <p>¿Querés archivar <strong id="archiveTitle"></strong>?</p>
                     <p class="cq-text-sm cq-text-muted mb-0">
                         Archivar <strong>cambia el estado</strong> del cuestionario a <em>Archivado</em>: no se puede usar
-                        para nuevas cargas y desaparece del listado por defecto (queda visible con el filtro <em>Archivado</em>).
-                        Podés desarchivarlo publicando una nueva versión.
+                        para nuevas cargas ni editar. Sigue en el listado con su estado, y el filtro <em>Archivado</em> los muestra solos.
+                        Podés reactivarlo con <em>Publicar</em>.
                         Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos "borrar": romperíamos su trazabilidad.
                     </p>
                 </div>
@@ -213,6 +214,7 @@ else
         var title = btn.getAttribute("data-title");
         if (btn.getAttribute("data-bs-target") === "#publishModal") {
             document.getElementById("publishId").value = id;
+            document.getElementById("publishVersion").value = btn.getAttribute("data-version");
         } else {
             document.getElementById("archiveId").value = id;
             document.getElementById("archiveTitle").textContent = title;

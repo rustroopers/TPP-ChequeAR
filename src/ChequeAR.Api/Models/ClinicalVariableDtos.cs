@@ -109,8 +109,8 @@ namespace ChequeAR.Api.Models
 
         /// <summary>
         /// No copia Id, IsActive, Revision ni auditoría: los pone el servicio. Un tipo que no
-        /// reconoce cae a String, y el servicio lo valida igual — así un cliente viejo no
-        /// provoca un 500 sino un 422 con el detalle.
+        /// reconoce se rechaza (QuestionTypeMap.FromUi): un 422 con el detalle, no un 500 ni
+        /// una variable de otro tipo.
         /// </summary>
         public static ClinicalVariable ToEntity(ClinicalVariableDto d)
         {

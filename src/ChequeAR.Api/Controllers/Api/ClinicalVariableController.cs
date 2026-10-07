@@ -39,7 +39,7 @@ namespace ChequeAR.Api.Controllers.Api
             [FromUri] bool includeInactive = false,
             [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
-            // type vacío = sin filtro. FromUi caería a String y filtraría de más.
+            // type vacío = sin filtro; un tipo desconocido es un 422 (QuestionTypeMap.FromUi).
             QuestionType? tipo = string.IsNullOrWhiteSpace(type) ? (QuestionType?)null : QuestionTypeMap.FromUi(type);
             var pagina = await _service.ListAsync(q, tipo, includeInactive ? (bool?)null : true, _offset, _count);
             return Ok(new

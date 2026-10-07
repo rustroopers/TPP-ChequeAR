@@ -1,3 +1,5 @@
+using System;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Domain.Enums;
 
 namespace ChequeAR.Application.Services
@@ -30,16 +32,31 @@ namespace ChequeAR.Application.Services
         /// enum. Case-insensitive porque "openChoice" y "openchoice" son el mismo tipo y no
         /// vale la pena rechazar un request por una mayúscula.
         ///
-        /// Un valor desconocido cae a String en vez de tirar: así un cliente desactualizado
-        /// provoca un 422 con el detalle de la validación y no un 500 opaco.
+        /// Sin tipo se asume String (el formulario lo trae preseleccionado). Un tipo que no
+        /// existe es un error del cliente y se rechaza con 422: convertirlo en String en
+        /// silencio crearía una variable distinta de la que se pidió.
         /// </summary>
+        /// <exception cref="ValidationFailedException">El código no corresponde a ningún tipo.</exception>
         public static QuestionType FromUi(string code)
         {
             if (string.IsNullOrWhiteSpace(code)) return QuestionType.String;
-            foreach (QuestionType t in System.Enum.GetValues(typeof(QuestionType)))
-                if (string.Equals(ToUi(t), code, System.StringComparison.OrdinalIgnoreCase))
-                    return t;
-            return QuestionType.String;
+            if (TryFromUi(code, out var type)) return type;
+            throw new ValidationFailedException(new[] { "Tipo de pregunta desconocido: '" + code + "'." });
+        }
+
+        /// <summary>Como <see cref="FromUi"/>, sin excepción: false si el código no corresponde a ningún tipo.</summary>
+        public static bool TryFromUi(string code, out QuestionType type)
+        {
+            foreach (QuestionType t in Enum.GetValues(typeof(QuestionType)))
+            {
+                if (string.Equals(ToUi(t), code?.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    type = t;
+                    return true;
+                }
+            }
+            type = QuestionType.String;
+            return false;
         }
     }
 }

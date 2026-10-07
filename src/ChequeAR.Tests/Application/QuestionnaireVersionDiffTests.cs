@@ -146,5 +146,51 @@ namespace ChequeAR.Tests.Application
             Assert.Null(FhirQuestionnaireReader.ReadDomain("no es json"));
             Assert.Null(FhirQuestionnaireReader.ReadDomain(null));
         }
+
+        // El código de una opción es lo que guardan las respuestas y sobre lo que agrupan los
+        // reportes: cambiarlo con el mismo texto es un cambio, aunque en pantalla se vea igual.
+        [Fact]
+        public void Compare_CambiaCodigoDeOpcionConMismoTexto_EsModificacion()
+        {
+            var a = P("tabaco-1", "¿Fuma?", QuestionType.Choice);
+            a.Options.Add(new AnswerOption { Code = "77176002", SnomedCode = "77176002", Display = "Fumador" });
+            var b = P("tabaco-1", "¿Fuma?", QuestionType.Choice);
+            b.Options.Add(new AnswerOption { Code = "65568007", SnomedCode = "65568007", Display = "Fumador" });
+
+            var d = QuestionnaireVersionDiff.Compare(Q("Control", a), Q("Control", b));
+
+            var c = Assert.Single(Assert.Single(d.Questions).Changes);
+            Assert.Equal("options", c.Field);
+            Assert.Contains("77176002", c.Before);
+            Assert.Contains("65568007", c.After);
+        }
+
+        [Fact]
+        public void Compare_CambiosDeValidacionYRepeticion_SeReportan()
+        {
+            var a = P("dni-1", "DNI", QuestionType.String, validation: "{\"maxLength\":8}");
+            var b = P("dni-1", "DNI", QuestionType.String, validation: "{\"maxLength\":10,\"pattern\":\"^[0-9]+$\"}");
+            b.RepeatsAllowed = true;
+
+            var d = QuestionnaireVersionDiff.Compare(Q("Control", a), Q("Control", b));
+
+            var campos = Assert.Single(d.Questions).Changes.Select(x => x.Field).ToList();
+            Assert.Contains("maxLength", campos);
+            Assert.Contains("pattern", campos);
+            Assert.Contains("repeats", campos);
+        }
+
+        [Fact]
+        public void Compare_CambiaDescripcion_HayCambios()
+        {
+            var a = Q("Control", P("peso-1", "Peso"));
+            var b = Q("Control", P("peso-1", "Peso"));
+            b.Description = "Control anual";
+
+            var d = QuestionnaireVersionDiff.Compare(a, b);
+
+            Assert.True(d.DescriptionChanged);
+            Assert.True(d.HasChanges);
+        }
     }
 }

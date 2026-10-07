@@ -176,7 +176,8 @@ namespace ChequeAR.Application.Services
 
             // Antes de AssignChildIds: el snapshot genera las AnswerOption desde la variable,
             // y tienen que existir para que ahí abajo reciban Id y OrderIndex.
-            await BindVariablesAsync(q, new HashSet<Guid>());
+            await BindVariablesAsync(q, new HashSet<Guid>(), NoPrevious);
+            EnsureStructure(QuestionnaireStructureRules.CheckForSave(q.Groups, AllQuestions(q)));
 
             // Asignar PKs/FKs a las entidades hijas: vienen del cliente sin Id (Guid.Empty),
             // y EF no genera Guids automáticamente -> sin esto, 2+ hijas colisionan en la PK.
@@ -187,14 +188,30 @@ namespace ChequeAR.Application.Services
             return q;
         }
 
+        private static readonly IReadOnlyDictionary<string, Question> NoPrevious =
+            new Dictionary<string, Question>();
+
         /// <summary>
-        /// Todas las preguntas del cuestionario, estén sueltas o dentro de una sección.
+        /// Todas las preguntas del cuestionario, estén sueltas o dentro de una sección, cada
+        /// una UNA vez. La entidad tiene dos formas según de dónde venga: la que arma el parser
+        /// cuelga las preguntas de cada sección, y la que carga EF las tiene en la colección
+        /// plana y además (por el fixup de relaciones) en la de su sección.
         /// </summary>
-        private static IEnumerable<Question> AllQuestions(Questionnaire q)
+        private static List<Question> AllQuestions(Questionnaire q)
         {
-            foreach (var question in q.Questions ?? new List<Question>()) yield return question;
+            var vistas = new HashSet<Question>();
+            var result = new List<Question>();
+            foreach (var question in q.Questions ?? new List<Question>())
+                if (vistas.Add(question)) result.Add(question);
             foreach (var g in q.Groups ?? new List<QuestionGroup>())
-                foreach (var question in g.Questions ?? new List<Question>()) yield return question;
+                foreach (var question in g.Questions ?? new List<Question>())
+                    if (vistas.Add(question)) result.Add(question);
+            return result;
+        }
+
+        private static void EnsureStructure(IReadOnlyList<string> errors)
+        {
+            if (errors.Count > 0) throw new ValidationFailedException(errors);
         }
 
         /// <summary>
@@ -209,10 +226,18 @@ namespace ChequeAR.Application.Services
         /// <paramref name="yaEnUso"/> son las variables que el cuestionario persistido ya tenía:
         /// esas pasan aunque estén inactivas, porque desactivar una variable no debe romper el
         /// guardado de un borrador que la venía usando.
+        ///
+        /// <paramref name="previas"/> son las preguntas persistidas, por linkId. Una pregunta que
+        /// ya existía con la misma variable conserva el snapshot con el que se armó, aunque el
+        /// Administrador haya editado la variable después: guardar no es una forma encubierta de
+        /// actualizar variables (el editor avisa la diferencia y el jefe decide quitar y volver
+        /// a agregar). Si se re-aplicara la variable vigente, renombrar una opción en el catálogo
+        /// dejaría sin efecto, en silencio, las condiciones que apuntan a ella.
         /// </summary>
-        private async Task BindVariablesAsync(Questionnaire target, HashSet<Guid> yaEnUso)
+        private async Task BindVariablesAsync(
+            Questionnaire target, HashSet<Guid> yaEnUso, IReadOnlyDictionary<string, Question> previas)
         {
-            var questions = AllQuestions(target).ToList();
+            var questions = AllQuestions(target);
             if (questions.Count == 0) return;
 
             var errors = new List<string>();
@@ -234,7 +259,37 @@ namespace ChequeAR.Application.Services
             if (errors.Count > 0) throw new ValidationFailedException(errors);
 
             foreach (var question in questions)
-                ClinicalVariableSnapshot.Apply(question, found[question.VariableId.Value]);
+            {
+                if (question.LinkId != null
+                    && previas.TryGetValue(question.LinkId, out var previa)
+                    && previa.VariableId == question.VariableId)
+                    KeepSnapshot(question, previa);
+                else
+                    ClinicalVariableSnapshot.Apply(question, found[question.VariableId.Value]);
+            }
+        }
+
+        /// <summary>Lo que define la variable, tal como quedó congelado en la pregunta persistida.</summary>
+        private static void KeepSnapshot(Question target, Question previa)
+        {
+            target.VariableRevision = previa.VariableRevision;
+            target.Type = previa.Type;
+            target.RepeatsAllowed = previa.RepeatsAllowed;
+            target.ValidationJson = previa.ValidationJson;
+            target.CodingJson = previa.CodingJson;
+            if (string.IsNullOrWhiteSpace(target.Text)) target.Text = previa.Text;
+            target.Options = (previa.Options ?? new List<AnswerOption>())
+                .OrderBy(o => o.OrderIndex)
+                .Select(o => new AnswerOption
+                {
+                    Value = o.Value,
+                    Display = o.Display,
+                    Code = o.Code,
+                    SnomedCode = o.SnomedCode,
+                    SnomedDisplay = o.SnomedDisplay,
+                    OrderIndex = o.OrderIndex
+                })
+                .ToList();
         }
 
         private static void AssignChildIds(Questionnaire q)
@@ -338,8 +393,13 @@ namespace ChequeAR.Application.Services
                 // Las variables que el cuestionario YA usaba se aceptan aunque estén dadas de
                 // baja: que el Administrador desactive una variable no debe romper el guardado
                 // de un borrador ajeno que la tenía desde antes. Lo que se bloquea es el uso nuevo.
-                var yaEnUso = new HashSet<Guid>(AllQuestions(q).Where(x => x.VariableId.HasValue).Select(x => x.VariableId.Value));
-                await BindVariablesAsync(replacement, yaEnUso);
+                var persistidas = AllQuestions(q);
+                var yaEnUso = new HashSet<Guid>(persistidas.Where(x => x.VariableId.HasValue).Select(x => x.VariableId.Value));
+                var previas = persistidas.Where(x => x.LinkId != null)
+                                         .GroupBy(x => x.LinkId)
+                                         .ToDictionary(g => g.Key, g => g.First());
+                await BindVariablesAsync(replacement, yaEnUso, previas);
+                EnsureStructure(QuestionnaireStructureRules.CheckForSave(replacement.Groups, AllQuestions(replacement)));
                 AssignChildIds(replacement);
                 await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
             }
@@ -353,42 +413,58 @@ namespace ChequeAR.Application.Services
         }
 
         /// <summary>
-        /// Congela una versión. El recurso se arma SIEMPRE desde la base.
-        ///
-        /// Antes aceptába también un JSON del cliente, con prioridad sobre lo construido:
-        /// tenía sentido cuando el editor mantenía su propia representación. Con una sola
-        /// superficie FHIR ningún cliente lo manda, y dejarlo abierto permitía congelar una
-        /// versión cuyo contenido no se corresponde con la entidad — es decir, mentirle a
-        /// quien después responda esa ficha.
+        /// Congela una versión. El recurso se arma SIEMPRE desde la base: nunca desde un JSON
+        /// del cliente, que podría no corresponderse con la entidad.
         /// </summary>
-        public async Task<Questionnaire> PublishAsync(Guid id, string userId, string changeNote = null)
+        /// <param name="expectedVersion">
+        /// ConcurrencyVersion que vio quien publica (If-Match). Si no coincide, alguien guardó
+        /// cambios en el medio y se rechaza: publicar congela lo que hay en la base, y no se
+        /// puede congelar algo que quien publica nunca vio.
+        /// </param>
+        public async Task<Questionnaire> PublishAsync(Guid id, string userId, string changeNote = null, int? expectedVersion = null)
         {
             _access.EnsureCan(Permissions.QuestionnaireWrite);
             var q = await _repo.GetAsync(id);
             if (q == null) throw new NotFoundException("El cuestionario no existe.");
             _guard.EnsureAllows(q.SpecialtyCode);
+            if (expectedVersion.HasValue && q.ConcurrencyVersion != expectedVersion.Value)
+                throw new ConcurrencyConflictException(expectedVersion.Value, q.ConcurrencyVersion);
             if (!q.CanPublish()) throw new BusinessRuleException("No hay nada para publicar: el cuestionario no tiene preguntas o no tiene cambios desde la última versión.");
+
+            // Un archivado sin cambios desde su última versión se reactiva tal cual: congelar
+            // otra versión idéntica sólo agregaría ruido al historial y al diff.
+            if (q.Status == QuestionnaireStatus.Retired && !q.HasPendingChanges && q.CurrentVersion() != null)
+            {
+                q.Status = QuestionnaireStatus.Active;
+                q.UpdatedAt = DateTime.UtcNow;
+                q.ConcurrencyVersion++;
+                await _repo.UpdateAsync(q);
+                _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$unarchive", userId));
+                return q;
+            }
+
+            var preguntas = AllQuestions(q);
 
             // Chequeo defensivo antes de congelar: una versión publicada tiene que ser
             // reproducible, y una pregunta sin variable no se puede explicar contra el catálogo.
-            // Es barato y evita dejar un FhirJson congelado que nadie puede auditar después.
-            var huerfanas = AllQuestions(q).Where(x => !x.VariableId.HasValue).Select(x => x.LinkId).ToList();
+            var huerfanas = preguntas.Where(x => !x.VariableId.HasValue).Select(x => x.LinkId).ToList();
             if (huerfanas.Count > 0)
                 throw new ValidationFailedException(huerfanas
                     .Select(l => "La pregunta '" + l + "' no proviene del catálogo de variables y no se puede publicar."));
 
+            EnsureStructure(QuestionnaireStructureRules.CheckForPublish(q.Groups, preguntas));
+
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
 
-            var fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber);
+            // Un único timestamp para el recurso congelado, la versión y el cuestionario: deja
+            // coherente el "última modificación" del listado con la fecha de publicación.
+            var now = DateTime.UtcNow;
+            var fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber, now);
 
             var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
             if (!validation.IsValid)
                 throw new ValidationFailedException(validation.Errors);
 
-            // Un único timestamp para la versión y para el cuestionario: no lo necesita
-            // HasPendingChanges (que es explícito), pero deja coherente el "última
-            // modificación" del listado con la fecha de publicación.
-            var now = DateTime.UtcNow;
             var version = new QuestionnaireVersion
             {
                 Id = Guid.NewGuid(),

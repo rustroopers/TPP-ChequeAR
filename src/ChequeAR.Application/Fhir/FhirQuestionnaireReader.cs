@@ -172,9 +172,11 @@ namespace ChequeAR.Application.Fhir
         {
             var tipo = TypeLiteral(item) ?? "string";
 
-            // R5: 'coding' cubre opción cerrada y abierta; las separa answerConstraint.
+            // R5: 'coding' cubre la opción única y la selección múltiple; la múltiple es la
+            // que repite. Las versiones congeladas antes de corregir el mapeo la declaraban
+            // con optionsOrString en lugar de repeats: significan lo mismo para el renderer.
             if (tipo == "coding")
-                return ConstraintLiteral(item) == "optionsOrString" ? "openChoice" : "choice";
+                return item.Repeats == true || ConstraintLiteral(item) == "optionsOrString" ? "openChoice" : "choice";
 
             // Legado R4 de las versiones congeladas antes de la feature 009.
             if (tipo == "choice") return "choice";

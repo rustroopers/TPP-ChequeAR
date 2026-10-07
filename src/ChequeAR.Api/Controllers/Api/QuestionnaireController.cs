@@ -136,9 +136,17 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpPost, Route("{id:guid}/$publish"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Publish(Guid id, [FromBody] PublishBody body)
         {
+            // Mismo contrato que el PUT: publicar congela lo que está en la base, así que hay
+            // que demostrar que se vio la última versión del registro.
+            var expectedVersion = ParseIfMatch(Request);
+            if (!expectedVersion.HasValue)
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
+
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            var q = await _service.PublishAsync(id, userId, body?.ChangeNote);
-            return Ok(ToFhir(q));
+            var q = await _service.PublishAsync(id, userId, body?.ChangeNote, expectedVersion);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(q));
+            response.Headers.ETag = ETagFor(q);
+            return ResponseMessage(response);
         }
 
         [HttpPost, Route("{id:guid}/$archive"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]

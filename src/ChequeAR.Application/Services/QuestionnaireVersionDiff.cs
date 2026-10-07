@@ -46,10 +46,18 @@ namespace ChequeAR.Application.Services
         public string TitleAfter { get; set; }
         public bool TitleChanged => !string.Equals(TitleBefore, TitleAfter, StringComparison.Ordinal);
 
+        public string DescriptionBefore { get; set; }
+        public string DescriptionAfter { get; set; }
+        public bool DescriptionChanged => !string.Equals(
+            Normalize(DescriptionBefore), Normalize(DescriptionAfter), StringComparison.Ordinal);
+
         public List<QuestionDiff> Questions { get; } = new List<QuestionDiff>();
 
         public int Count(QuestionChangeKind kind) => Questions.Count(q => q.Kind == kind);
-        public bool HasChanges => TitleChanged || Questions.Any(q => q.Kind != QuestionChangeKind.Unchanged);
+        public bool HasChanges => TitleChanged || DescriptionChanged
+                                  || Questions.Any(q => q.Kind != QuestionChangeKind.Unchanged);
+
+        private static string Normalize(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
     }
 
     /// <summary>
@@ -71,7 +79,13 @@ namespace ChequeAR.Application.Services
             before = before ?? new Questionnaire();
             after = after ?? new Questionnaire();
 
-            var diff = new QuestionnaireDiff { TitleBefore = before.Title, TitleAfter = after.Title };
+            var diff = new QuestionnaireDiff
+            {
+                TitleBefore = before.Title,
+                TitleAfter = after.Title,
+                DescriptionBefore = before.Description,
+                DescriptionAfter = after.Description
+            };
 
             var antes = Ordered(before);
             var despues = Ordered(after);
@@ -138,11 +152,15 @@ namespace ChequeAR.Application.Services
             Add(changes, "section", antes.Section, despues.Section);
             Add(changes, "type", QuestionTypeMap.ToUi(a.Type), QuestionTypeMap.ToUi(b.Type));
             Add(changes, "required", YesNo(a.Required), YesNo(b.Required));
+            Add(changes, "repeats", YesNo(a.RepeatsAllowed), YesNo(b.RepeatsAllowed));
 
             var va = QuestionMetadataReader.ReadValidation(a.ValidationJson) ?? new QuestionValidation();
             var vb = QuestionMetadataReader.ReadValidation(b.ValidationJson) ?? new QuestionValidation();
             Add(changes, "unit", va.Unit, vb.Unit);
             Add(changes, "range", Range(va.Min, va.Max), Range(vb.Min, vb.Max));
+            Add(changes, "maxLength", Number(va.MaxLength), Number(vb.MaxLength));
+            Add(changes, "pattern", va.Pattern, vb.Pattern);
+            Add(changes, "accept", va.Accept, vb.Accept);
 
             Add(changes, "options", Options(a), Options(b));
             Add(changes, "enableWhen", Condition(a.EnableWhenJson), Condition(b.EnableWhenJson));
@@ -162,6 +180,8 @@ namespace ChequeAR.Application.Services
 
         private static string YesNo(bool b) => b ? "Sí" : "No";
 
+        private static string Number(int? n) => n.HasValue ? n.Value.ToString(CultureInfo.InvariantCulture) : null;
+
         private static string Range(decimal? min, decimal? max)
         {
             if (!min.HasValue && !max.HasValue) return null;
@@ -170,14 +190,27 @@ namespace ChequeAR.Application.Services
             return lo + " – " + hi;
         }
 
+        /// <summary>
+        /// Texto Y código de cada opción. El código es lo que se guarda en las respuestas y
+        /// sobre lo que agrupan los reportes: un cambio de código con el mismo texto es un
+        /// cambio real aunque en pantalla se vea igual.
+        /// </summary>
         private static string Options(Question q)
         {
             var opts = (q.Options ?? new List<AnswerOption>())
                 .OrderBy(o => o.OrderIndex)
-                .Select(o => o.Display ?? o.Value ?? o.Code)
+                .Select(OptionLabel)
                 .Where(s => !string.IsNullOrWhiteSpace(s))
                 .ToList();
             return opts.Count == 0 ? null : string.Join(" · ", opts);
+        }
+
+        private static string OptionLabel(AnswerOption o)
+        {
+            var texto = o.Display ?? o.Value;
+            var codigo = o.SnomedCode ?? o.Code;
+            if (string.IsNullOrWhiteSpace(codigo) || codigo == texto) return texto ?? codigo;
+            return (texto ?? "") + " [" + codigo + "]";
         }
 
         private static string Condition(string json)

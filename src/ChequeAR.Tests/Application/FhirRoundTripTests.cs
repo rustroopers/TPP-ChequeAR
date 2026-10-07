@@ -428,6 +428,33 @@ namespace ChequeAR.Tests.Application
             };
         }
 
+        /// <summary>
+        /// Lo que manda el editor con una condición a medio armar: enableWhen sin answer[x]. El
+        /// parser por omisión (el del formatter de la API) lo acepta, y la condición llega
+        /// incompleta —sin valor— en vez de con un false o un 0 inventados.
+        /// </summary>
+        [Fact]
+        public void PayloadDelEditor_CondicionSinValor_LlegaIncompleta()
+        {
+            const string json = @"{
+                ""resourceType"": ""Questionnaire"", ""status"": ""draft"", ""title"": ""Ficha"",
+                ""item"": [
+                    { ""linkId"": ""fuma"", ""type"": ""boolean"" },
+                    { ""linkId"": ""cuanto"", ""type"": ""integer"",
+                      ""enableWhen"": [ { ""question"": ""fuma"", ""operator"": ""="" } ],
+                      ""enableBehavior"": ""all"" }
+                ]
+            }";
+
+            var recurso = new Hl7.Fhir.Serialization.FhirJsonParser().Parse<Hl7.Fhir.Model.Questionnaire>(json);
+            var dominio = FhirQuestionnaireParser.ToDomain(recurso);
+
+            var condicion = ChequeAR.Application.Services.QuestionMetadataReader.ReadCondition(
+                dominio.Questions.Single(x => x.LinkId == "cuanto").EnableWhenJson);
+            Assert.Equal("fuma", condicion.Question);
+            Assert.Null(condicion.Value);
+        }
+
         /// <summary>Dominio → recurso → dominio, pasando por la serialización real.</summary>
         private static ChequeAR.Domain.Entities.Questionnaire Ciclo(ChequeAR.Domain.Entities.Questionnaire q)
         {

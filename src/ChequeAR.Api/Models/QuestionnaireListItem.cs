@@ -16,6 +16,9 @@ namespace ChequeAR.Api.Models
         public string Author { get; set; }
         /// <summary>Publicado pero editado después: la versión viva no refleja los cambios.</summary>
         public bool HasUnpublishedChanges { get; set; }
+
+        /// <summary>Versión del registro; viaja en el modal de Publicar como If-Match.</summary>
+        public int ConcurrencyVersion { get; set; }
     }
 
     public class QuestionnaireListViewModel
@@ -145,7 +148,9 @@ namespace ChequeAR.Api.Models
         public int Version { get; set; }
         public string Date { get; set; }
         public string Author { get; set; }
-        public string Status { get; set; }
+
+        /// <summary>Es la versión que usan hoy los clínicos.</summary>
+        public bool IsCurrent { get; set; }
         public string ChangeNote { get; set; }
     }
 }

@@ -20,7 +20,11 @@
             code: String,
             codeDisplay: String,
             term: String,
-            groups: { type: Array, default: function () { return []; } }
+            groups: { type: Array, default: function () { return []; } },
+            // Declarado (como hasPendingChanges): sin esto Vue lo deja en $attrs y
+            // props.canEdit llega siempre undefined. Default true porque una prop Boolean
+            // ausente vale false, y el server siempre la manda.
+            canEdit: { type: Boolean, default: true }
         },
         setup: function (props) {
             // Estado de persistencia. Para un cuestionario nuevo el id del controller es
@@ -67,9 +71,7 @@
             // server ya no renderiza los botones Guardar/Publicar en ese caso (ver
             // Views/Questionnaires/Edit.cshtml); esto es la segunda barrera, para las
             // acciones que no dependen de esos botones (autosave, importar preguntas).
-            // props.canEdit ausente (props viejos, o alguien embebiendo el island a mano)
-            // se toma como "sí puede", igual que el resto de los flags booleanos de acá.
-            var canEdit = props.canEdit !== false;
+            var canEdit = props.canEdit;
             var readOnly = Vue.computed(function () { return isArchived.value || !canEdit; });
             // Versión del registro que este editor cargó. Viaja en If-Match y se refresca
             // con cada guardado propio. Si otra persona guarda, la suya avanza y la nuestra
@@ -121,9 +123,20 @@
             if (!initial.length) initial = [{ title: '', questions: [] }];
             var groups = Vue.ref(initial);
 
-            // Foto de la estructura tal como se cargó: es la BASE del merge de 3 vías cuando
-            // otra persona guarda en el medio. Se re-ancla después de un merge exitoso.
+            // BASE del merge de 3 vías cuando otra persona guarda en el medio: lo último que este
+            // editor sabe que está en el server. Arranca en lo cargado y se re-ancla en cada
+            // guardado propio exitoso y después de cada merge; si no, un cambio propio ya
+            // guardado se confundiría con uno pendiente (y, por ejemplo, una pregunta que yo
+            // agregué y guardé y la otra persona borró después reaparecería).
             var baseGroups = JSON.parse(JSON.stringify(props.groups || []));
+            // Lo mismo para la cabecera (título, especialidad, codificación del cuestionario).
+            var baseHeader = {
+                title: props.title || '',
+                specialty: props.specialtyCode || '',
+                code: props.code || null,
+                codeDisplay: props.codeDisplay || null,
+                term: props.term || null
+            };
 
             // Estado del merge de conflictos (ver beginMerge/finishMerge más abajo).
             var merging = Vue.ref(false);
@@ -266,7 +279,7 @@
                 if (conflict.value)   out.push('Hay un conflicto de edición sin resolver.');
                 if (dirty.value)      out.push('Hay cambios sin guardar. Guardá antes de publicar.');
                 if (isNew.value)      out.push('El cuestionario todavía no se guardó por primera vez.');
-                if (issues.value.length) out.push('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes.');
+                if (issues.value.length) out.push('Hay ' + issues.value.length + ' problema(s) en la estructura: ver el aviso de arriba.');
                 if (!allQuestionsFlat.value.length) out.push('No hay preguntas cargadas.');
                 return out;
             });
@@ -378,26 +391,39 @@
             // de arreglarse solas, porque tocar datos que la persona no editó en esta
             // sesión no es una decisión del editor.
             // Cualquier chequeo estructural nuevo se cuelga de esta lista.
+            // `condition: true` marca los problemas que se arreglan dejando la pregunta siempre
+            // visible (fixIssues); los demás piden otra acción.
             var issues = Vue.computed(function () {
                 var known = {};
-                allQuestions().forEach(function (q) { if (q.linkId) known[q.linkId] = true; });
-                var out = allQuestions()
-                    .filter(function (q) {
-                        return q.enableWhen && q.enableWhen.question && !known[q.enableWhen.question];
-                    })
-                    .map(function (q) {
-                        return { question: q, detail: '"' + q.text + '" depende de una pregunta que ya no existe: nunca se va a mostrar.' };
-                    });
+                allQuestions().forEach(function (q) { if (q.linkId) known[q.linkId] = q; });
+                var out = [];
+                allQuestions().forEach(function (q) {
+                    var ew = q.enableWhen;
+                    if (!ew || !ew.question) return;
+                    var origen = known[ew.question];
+                    var nombre = '"' + (q.text || q.linkId) + '"';
+                    if (!origen) {
+                        out.push({ question: q, condition: true, detail: nombre + ' depende de una pregunta que ya no existe: nunca se va a mostrar.' });
+                    } else if (sinValor(ew.value)) {
+                        out.push({ question: q, condition: true, detail: nombre + ' tiene una condición sin valor esperado: completala o quitala.' });
+                    } else if ((origen.type === 'choice' || origen.type === 'openChoice')
+                               && (origen.options || []).indexOf(ew.value) < 0) {
+                        out.push({ question: q, condition: true, detail: nombre + ' depende de la opción "' + ew.value + '", que ya no está entre las opciones de "' + (origen.text || origen.linkId) + '".' });
+                    }
+                });
 
                 // Sin variable el server rechaza el guardado ENTERO. Puede pasar al importar
-                // preguntas de un cuestionario anterior al catalogo: se lista cual es, en vez
-                // de que el guardado falle sin decir donde.
+                // preguntas de un cuestionario anterior al catálogo: se lista cuál es, en vez
+                // de que el guardado falle sin decir dónde.
                 allQuestions().forEach(function (q) {
                     if (!q.variableId) {
-                        out.push({ question: q, detail: '"' + (q.text || q.linkId) + '" no proviene de ninguna variable del catalogo: hay que reemplazarla o eliminarla.' });
+                        out.push({ question: q, condition: false, detail: '"' + (q.text || q.linkId) + '" no proviene de ninguna variable del catálogo: hay que reemplazarla o eliminarla.' });
                     }
                 });
                 return out;
+            });
+            var conditionIssues = Vue.computed(function () {
+                return issues.value.filter(function (i) { return i.condition; });
             });
 
             // Deriva: preguntas armadas con una revision anterior a la vigente de su variable.
@@ -414,8 +440,8 @@
 
             function fixIssues() {
                 dropConditions(
-                    issues.value.map(function (i) { return i.question; }),
-                    'la pregunta de la que dependían ya no existe');
+                    conditionIssues.value.map(function (i) { return i.question; }),
+                    'su condición no se podía cumplir');
             }
 
             // --- Reordenar por drag & drop (sin dependencias) -------------------------
@@ -558,19 +584,29 @@
                     .then(function () { varPickerLoading.value = false; });
             }
 
-            // Cuantas veces ya esta esta variable en el cuestionario. Solo se usa para sufijar
-            // el linkId: usar la misma dos veces es un caso real ("Peso al ingreso" / "Peso al
-            // alta") y lo que las distingue es ese linkId, que es la columna del reporte.
-            function usosDe(variableId) {
-                return allQuestions().filter(function (q) { return q.variableId === variableId; }).length;
+            // linkId = código de la variable + el primer sufijo libre. Usar la misma variable
+            // dos veces es un caso real ("Peso al ingreso" / "Peso al alta") y lo que las
+            // distingue es ese linkId, que es la columna del reporte. Se busca un sufijo LIBRE,
+            // no "cantidad de usos + 1": con peso-1 borrada y peso-2 en uso, contar daría
+            // peso-2 otra vez.
+            //
+            // Tampoco se reusa un linkId que sigue guardado en el server (la base del merge):
+            // el server conserva el snapshot de la variable para las preguntas que ya existían,
+            // así que quitar una pregunta y volver a agregarla antes de guardar no tomaría la
+            // definición nueva de la variable si conservara el mismo linkId.
+            function linkIdLibre(code) {
+                var usados = usedLinkIds();
+                Object.keys(indexQuestions(baseGroups)).forEach(function (l) { usados[l] = true; });
+                var n = 1;
+                while (usados[code + '-' + n]) n++;
+                return code + '-' + n;
             }
 
             function addQuestionFromVariable(v) {
                 var g = varPickerGroup;
                 if (!g) return;
-                var n = usosDe(v.id) + 1;
                 var q = {
-                    linkId: v.code + '-' + n,
+                    linkId: linkIdLibre(v.code),
                     // El enunciado arranca en el de la variable y es lo unico, junto con
                     // required y enableWhen, que el jefe puede cambiar por cuestionario.
                     text: v.defaultText || v.name,
@@ -804,9 +840,10 @@
             var SNOMED_SYSTEM = 'http://snomed.info/sct';
             var SPECIALTY_SYSTEM = 'https://chequear.garrahan/CodeSystem/specialty';
 
-            // Vocabulario de las islas -> vocabulario del estándar.
-            // OJO: R5 eliminó 'choice' y 'open-choice' (eran de R4). Ambos son 'coding', y
-            // lo que los distingue es answerConstraint.
+            // Vocabulario de las islas -> vocabulario del estándar. Mismo mapeo que
+            // FhirQuestionnaireBuilder: R5 no tiene 'choice' ni 'open-choice'; ambos son
+            // 'coding' sólo con opciones del catálogo (optionsOnly), y la selección múltiple
+            // ('openChoice') es la que repite.
             function fhirType(t) {
                 switch (t) {
                     case 'choice':
@@ -816,9 +853,7 @@
                 }
             }
             function answerConstraint(t) {
-                if (t === 'choice') return 'optionsOnly';
-                if (t === 'openChoice') return 'optionsOrString';
-                return null;
+                return (t === 'choice' || t === 'openChoice') ? 'optionsOnly' : null;
             }
             function esEntero(t) { return t === 'integer' || t === 'scale'; }
 
@@ -873,8 +908,18 @@
                 return out;
             }
 
+            function sinValor(v) { return v === undefined || v === null || v === ''; }
+
             // El answer[x] de la condición se tipa según la pregunta REFERENCIADA, no según
             // la que declara la condición.
+            //
+            // Una condición todavía sin valor viaja sin answer[x]: se conserva lo elegido hasta
+            // ahora sin inventar un false o un 0 que cambiaría su sentido. El servidor no deja
+            // publicarla así (ver QuestionnaireStructureRules).
+            //
+            // Para preguntas de opción viaja el texto de la opción, que es el valor con el que
+            // trabajan el editor y el renderer. El Coding real (system + código) lo resuelve el
+            // servidor al armar el recurso a partir de las opciones guardadas.
             function buildEnableWhen(q, porLinkId) {
                 if (!q.enableWhen || !q.enableWhen.question) return null;
 
@@ -883,12 +928,14 @@
                 var entrada = { question: q.enableWhen.question, operator: q.enableWhen.op || '=' };
                 var tipo = origen ? origen.type : 'string';
 
+                if (sinValor(valor)) return [entrada];
+
                 if (tipo === 'boolean') entrada.answerBoolean = (valor === true || valor === 'true');
-                else if (esEntero(tipo)) entrada.answerInteger = parseInt(valor, 10) || 0;
-                else if (tipo === 'decimal') entrada.answerDecimal = parseFloat(valor) || 0;
+                else if (esEntero(tipo) && !isNaN(parseInt(valor, 10))) entrada.answerInteger = parseInt(valor, 10);
+                else if (tipo === 'decimal' && !isNaN(parseFloat(valor))) entrada.answerDecimal = parseFloat(valor);
                 else if (tipo === 'choice' || tipo === 'openChoice')
                     entrada.answerCoding = { code: String(valor), display: String(valor) };
-                else entrada.answerString = valor == null ? null : String(valor);
+                else entrada.answerString = String(valor);
 
                 return [entrada];
             }
@@ -903,6 +950,7 @@
 
                 var constraint = answerConstraint(q.type);
                 if (constraint) item.answerConstraint = constraint;
+                if (q.type === 'openChoice') item.repeats = true;
 
                 // maxLength es campo NATIVO del item, no extensión.
                 if ((q.type === 'string' || q.type === 'text')
@@ -947,7 +995,9 @@
 
                 var recurso = {
                     resourceType: 'Questionnaire',
-                    status: 'active',
+                    // El estado lo decide el servidor (publicar, archivar); acá sólo se declara
+                    // el que tiene, para no mandar un recurso que dice ser algo que no es.
+                    status: isArchived.value ? 'retired' : (isPublished.value ? 'active' : 'draft'),
                     title: qTitle.value,
                     name: qTitle.value,
                     subjectType: ['Patient'],
@@ -1057,6 +1107,9 @@
                 // siguiente autosave la veía "sin cambios" (era el "no hay cambios para
                 // guardar" al modificar el código SNOMED). En error se restaura (más abajo).
                 var body = JSON.stringify(buildPayload());
+                // Lo que queda en el server si este guardado sale bien: la base del próximo merge.
+                var savedGroups = JSON.parse(JSON.stringify(groups.value));
+                var savedHeader = currentHeader();
                 dirty.value = false;
 
                 // Devuelve una promesa que resuelve en true/false: publicar necesita saber
@@ -1092,6 +1145,8 @@
                     // el segundo guardado seguido chocaría contra nuestro propio cambio.
                     var v = data && data.meta && parseInt(data.meta.versionId, 10);
                     if (typeof v === 'number' && !isNaN(v)) recordVersion.value = v;
+                    baseGroups = savedGroups;
+                    baseHeader = savedHeader;
                     lastSaved.value = new Date().toLocaleTimeString();
                     // dirty ya se apagó (optimista) antes del fetch; no se vuelve a tocar acá
                     // para no pisar una edición hecha mientras el guardado viajaba.
@@ -1136,10 +1191,70 @@
 
             // ── Merge de conflictos de edición (3 vías) ───────────────────────────────────
             // Cuando otra persona guardó mientras editábamos, en vez de obligar a descartar
-            // todo, se combinan los dos trabajos: base = lo que cargamos, "lo mío" = lo local,
-            // "lo de la otra persona" = la versión actual del server. Se auto-combina todo lo
-            // que sólo tocó una de las dos partes; sólo se pregunta donde ambos modificaron la
-            // MISMA pregunta (o uno la editó y el otro la borró). Descartar sigue disponible.
+            // todo, se combinan los dos trabajos: base = lo último que guardamos (o cargamos),
+            // "lo mío" = lo local, "lo de la otra persona" = la versión actual del server. Se
+            // auto-combina todo lo que sólo tocó una de las dos partes; sólo se pregunta donde
+            // ambos modificaron lo MISMO: una pregunta (o uno la editó y el otro la borró), el
+            // título, la especialidad o la codificación del cuestionario. Descartar sigue disponible.
+
+            // Cabecera del cuestionario en la forma que se compara: la local y la del server.
+            function currentHeader() {
+                return {
+                    title: qTitle.value || '',
+                    specialty: specialtyCode.value || '',
+                    code: questionnaireCoding.code || null,
+                    codeDisplay: questionnaireCoding.codeDisplay || null,
+                    term: (questionnaireCoding.term || '').trim() || null
+                };
+            }
+            function headerFrom(model) {
+                return {
+                    title: model.title || '',
+                    specialty: model.specialtyCode || '',
+                    code: model.code || null,
+                    codeDisplay: model.codeDisplay || null,
+                    term: model.term || null
+                };
+            }
+            // Campos de cabecera que se combinan por separado. La codificación va como unidad:
+            // código, display y término describen un mismo concepto.
+            var HEADER_FIELDS = [
+                { key: 'title', label: 'Título del cuestionario', value: function (h) { return h.title; } },
+                { key: 'specialty', label: 'Especialidad', value: function (h) { return h.specialty; } },
+                { key: 'coding', label: 'Codificación del cuestionario',
+                  value: function (h) { return JSON.stringify([h.code, h.codeDisplay, h.term]); } }
+            ];
+
+            function computeHeaderMerge(base, mine, theirs) {
+                return HEADER_FIELDS.map(function (f) {
+                    var nb = f.value(base), nm = f.value(mine), nt = f.value(theirs);
+                    var mineChanged = nm !== nb, theirsChanged = nt !== nb;
+                    var e = {
+                        key: 'header:' + f.key, header: f.key, text: f.label,
+                        needsChoice: false, choice: null, action: 'keep-theirs', auto: false, kind: null
+                    };
+                    if (mineChanged && !theirsChanged) { e.action = 'take-mine'; e.auto = true; }
+                    else if (!mineChanged && theirsChanged) { e.auto = true; }
+                    else if (mineChanged && theirsChanged && nm !== nt) { e.needsChoice = true; e.kind = 'edit-edit'; e.choice = 'mine'; }
+                    return e;
+                });
+            }
+
+            // Aplica a la cabecera local lo que resolvió el merge: donde ganó la otra persona,
+            // se toma su valor; donde gané yo, queda el local.
+            function applyHeaderMerge(theirs, plan) {
+                plan.forEach(function (e) {
+                    if (!e.header || resolveEntry(e) !== 'keep-theirs') return;
+                    if (e.header === 'title') qTitle.value = theirs.title;
+                    else if (e.header === 'specialty') specialtyCode.value = theirs.specialty;
+                    else if (e.header === 'coding') {
+                        questionnaireCoding.code = theirs.code || undefined;
+                        questionnaireCoding.codeDisplay = theirs.codeDisplay || undefined;
+                        questionnaireCoding.term = theirs.term || '';
+                    }
+                });
+            }
+
             function numOrNull(v) { return typeof v === 'number' && !isNaN(v) ? v : null; }
 
             // Foto canónica de una pregunta para comparar entre las 3 fuentes (ignora orden).
@@ -1173,12 +1288,12 @@
                 return map;
             }
 
-            function computeMerge(base, mine, theirs) {
+            function computeMerge(base, mine, theirs, baseH, mineH, theirsH) {
                 var b = indexQuestions(base), m = indexQuestions(mine), t = indexQuestions(theirs);
                 var keys = {};
                 [b, m, t].forEach(function (idx) { Object.keys(idx).forEach(function (k) { keys[k] = true; }); });
 
-                var plan = [];
+                var plan = computeHeaderMerge(baseH, mineH, theirsH);
                 Object.keys(keys).forEach(function (k) {
                     var bi = b[k], mi = m[k], ti = t[k];
                     var nb = normQ(bi && bi.q), nm = normQ(mi && mi.q), nt = normQ(ti && ti.q);
@@ -1247,6 +1362,7 @@
                 function removeQ(linkId) { var f = findQ(linkId); if (f) f.g.questions.splice(f.idx, 1); }
 
                 plan.forEach(function (e) {
+                    if (e.header) return;   // la cabecera la aplica applyHeaderMerge
                     var r = resolveEntry(e);
                     if (r === 'take-mine') upsert(e.mine, e.mineSection);
                     else if (r === 'delete') removeQ(e.key);
@@ -1260,7 +1376,8 @@
                 fetch('/Questionnaires/EditorModel/' + currentId.value, { credentials: 'same-origin' })
                     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                     .then(function (theirs) {
-                        var res = computeMerge(baseGroups, groups.value, theirs.groups || []);
+                        var res = computeMerge(baseGroups, groups.value, theirs.groups || [],
+                                               baseHeader, currentHeader(), headerFrom(theirs));
                         pendingTheirs = theirs;
                         mergePlanAll.value = res.plan;
                         mergeAutoCount.value = res.autoCount;
@@ -1276,10 +1393,14 @@
             function finishMerge(silent) {
                 if (!pendingTheirs) return;
                 var merged = buildMerged(pendingTheirs.groups || [], mergePlanAll.value);
-                var theirsVersion = pendingTheirs.concurrencyVersion;
+                var theirsHeader = headerFrom(pendingTheirs);
+                applyHeaderMerge(theirsHeader, mergePlanAll.value);
                 groups.value = merged;
-                baseGroups = JSON.parse(JSON.stringify(merged));   // la base ahora es lo combinado
-                recordVersion.value = theirsVersion;               // anclado a la versión del server
+                // La base pasa a ser lo que hay en el server (la versión de la otra persona):
+                // si el guardado de lo combinado vuelve a chocar, el próximo merge parte de ahí.
+                baseGroups = JSON.parse(JSON.stringify(pendingTheirs.groups || []));
+                baseHeader = theirsHeader;
+                recordVersion.value = pendingTheirs.concurrencyVersion;
                 merging.value = false; conflict.value = false;
                 pendingTheirs = null; mergePlanAll.value = []; mergeAutoCount.value = 0;
                 dirty.value = true;
@@ -1310,7 +1431,7 @@
                 // vuelve una pregunta que nadie va a poder ver, y ya no hay forma de
                 // corregir esa versión.
                 if (issues.value.length) {
-                    toast('Hay ' + issues.value.length + ' condición(es) que apuntan a preguntas inexistentes. Resuélvalas antes de publicar.', 'error');
+                    toast('Hay ' + issues.value.length + ' problema(s) en la estructura del cuestionario. Resolvelos antes de publicar.', 'error');
                     return;
                 }
                 // Publicar exige haber guardado antes: no queremos congelar en una versión
@@ -1328,10 +1449,22 @@
                 publishing.value = true;
                 fetch('/fhir/r5/Questionnaire/' + currentId.value + '/$publish', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token,
+                        // Se publica lo que está en la base: hay que demostrar que es lo que
+                        // este editor guardó por última vez, no algo que otra persona guardó después.
+                        'If-Match': 'W/"' + recordVersion.value + '"'
+                    },
                     body: '{}'
                 }).then(function (res) {
                     if (res.ok) return null;
+                    if (res.status === 409) {
+                        // Otra persona guardó después de nuestro último guardado: se combina como
+                        // en un guardado, y recién después se puede publicar.
+                        beginMerge();
+                        throw new Error('otra persona guardó cambios. Revisá la combinación y volvé a publicar.');
+                    }
                     // El API devuelve 422 con OperationOutcome cuando la publicación no es
                     // válida (una regla de negocio, o el perfil de conformidad).
                     return res.json().catch(function () { return null; }).then(function (body) {
@@ -1434,7 +1567,7 @@
                 conflict: conflict, reloadFromServer: reloadFromServer,
                 merging: merging, mergeAutoCount: mergeAutoCount, conflictEntries: conflictEntries,
                 confirmMerge: confirmMerge, cancelMerge: cancelMerge,
-                issues: issues, fixIssues: fixIssues,
+                issues: issues, conditionIssues: conditionIssues, fixIssues: fixIssues,
                 conditionSources: conditionSources, conditionSource: conditionSource,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
@@ -1470,7 +1603,7 @@
         <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-danger);"></i>\
         <div class="flex-fill">\
             <div class="cq-text-sm"><strong>Otra persona guardó cambios mientras usted editaba.</strong></div>\
-            <div class="cq-text-sm cq-text-muted">Sus cambios NO se guardaron, y los de la otra persona siguen intactos. No hay forma automática de combinar las dos versiones, así que debe elegir: anote lo suyo y vuelva a cargar, o abra el cuestionario en otra pestaña para comparar.</div>\
+            <div class="cq-text-sm cq-text-muted">Sus cambios NO se guardaron, y los de la otra persona siguen intactos. No se pudo traer su versión para combinarlas, así que debe elegir: anote lo suyo y vuelva a cargar, o abra el cuestionario en otra pestaña para comparar.</div>\
             <button class="btn btn-sm btn-danger mt-2" @click="reloadFromServer"><i class="bi bi-arrow-clockwise me-1"></i> Descartar lo mío y recargar</button>\
         </div>\
     </div>\
@@ -1570,11 +1703,11 @@
     <div class="d-flex align-items-start gap-2">\
         <i class="bi bi-exclamation-triangle-fill" style="color:var(--cq-warning);"></i>\
         <div class="flex-fill">\
-            <div class="cq-text-sm"><strong>Hay condiciones que apuntan a preguntas que ya no existen.</strong></div>\
+            <div class="cq-text-sm"><strong>Hay problemas en la estructura del cuestionario.</strong></div>\
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(i, ix) in issues" :key="ix">{{ i.detail }}</li>\
             </ul>\
-            <button class="btn btn-sm btn-outline-secondary-cq mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Dejarlas siempre visibles</button>\
+            <button v-if="conditionIssues.length" class="btn btn-sm btn-outline-secondary-cq mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Quitar las condiciones que no se pueden cumplir</button>\
         </div>\
     </div>\
 </div>\
@@ -1781,11 +1914,13 @@
                 <div class="col-8">\
                     <select v-if="conditionSource && conditionSource.type === \'boolean\'" class="form-select form-select-sm"\
                             :value="String(selected.question.enableWhen.value)" @change="onConditionValue($event.target.value)">\
+                        <option value="" disabled>Elegí…</option>\
                         <option value="true">Sí</option>\
                         <option value="false">No</option>\
                     </select>\
                     <select v-else-if="conditionSource && conditionSource.options && conditionSource.options.length" class="form-select form-select-sm"\
                             :value="selected.question.enableWhen.value" @change="onConditionValue($event.target.value)">\
+                        <option value="" disabled>Elegí…</option>\
                         <option v-for="opt in conditionSource.options" :key="opt" :value="opt">{{ opt }}</option>\
                     </select>\
                     <input v-else class="form-control form-control-sm" :value="selected.question.enableWhen.value"\

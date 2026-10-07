@@ -60,7 +60,8 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                QuestionType? tipo = string.IsNullOrWhiteSpace(type) ? (QuestionType?)null : QuestionTypeMap.FromUi(type);
+                // Un tipo desconocido en la URL se ignora: es un filtro, no un dato que se guarda.
+                QuestionType? tipo = QuestionTypeMap.TryFromUi(type, out var t) ? t : (QuestionType?)null;
                 var pagina = await _variables.ListAsync(q, tipo, active, (model.Page - 1) * PageSize, PageSize);
                 model.Total = pagina.Total;
                 foreach (var v in pagina.Items)
