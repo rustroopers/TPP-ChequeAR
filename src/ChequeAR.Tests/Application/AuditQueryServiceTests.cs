@@ -18,15 +18,25 @@ namespace ChequeAR.Tests.Application
 
         public AuditQueryServiceTests() { _sut = new AuditQueryService(_repo.Object); }
 
+        // La búsqueda filtra, cuenta y pagina en la base: el servicio arma los criterios,
+        // acota la página y devuelve lo que la base respondió.
         [Fact]
-        public async Task FiltraPorRecursoAfectado()
+        public async Task Buscar_PasaTodosLosFiltrosALaBase()
         {
-            Devuelve(Evento("Questionnaire/a"), Evento("Questionnaire/b"), Evento("Questionnaire/a"));
+            var t0 = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+            AuditSearchCriteria recibido = null;
+            _repo.Setup(r => r.SearchAsync(It.IsAny<AuditSearchCriteria>(), It.IsAny<int>(), It.IsAny<int>()))
+                 .Callback<AuditSearchCriteria, int, int>((c, s, t) => recibido = c)
+                 .ReturnsAsync(new AuditPage());
 
-            var pagina = await _sut.SearchAsync(entityRef: "Questionnaire/a");
+            await _sut.SearchAsync(agentUserId: "gomez", action: "U", entityRef: "Questionnaire/a",
+                fromUtc: t0, toUtc: t0.AddDays(1));
 
-            Assert.Equal(2, pagina.Total);
-            Assert.All(pagina.Items, e => Assert.Equal("Questionnaire/a", e.EntityRef));
+            Assert.Equal("gomez", recibido.AgentUserId);
+            Assert.Equal("U", recibido.Action);
+            Assert.Equal("Questionnaire/a", recibido.EntityRef);
+            Assert.Equal(t0, recibido.FromUtc);
+            Assert.Equal(t0.AddDays(1), recibido.ToUtc);
         }
 
         /// <summary>
@@ -34,32 +44,49 @@ namespace ChequeAR.Tests.Application
         /// última parece la única y el paginador desaparece.
         /// </summary>
         [Fact]
-        public async Task ElTotalEsDeLaBusquedaNoDeLaPagina()
+        public async Task ElTotalEsElQueInformaLaBase_NoElDeLaPagina()
         {
-            Devuelve(Enumerable.Range(0, 25).Select(i => Evento("Questionnaire/" + i)).ToArray());
+            _repo.Setup(r => r.SearchAsync(It.IsAny<AuditSearchCriteria>(), 20, 10))
+                 .ReturnsAsync(new AuditPage { Total = 12000, Items = new List<AuditEvent> { Evento("a") } });
 
-            var pagina = await _sut.SearchAsync(skip: 0, take: 10);
+            var pagina = await _sut.SearchAsync(skip: 20, take: 10);
 
-            Assert.Equal(25, pagina.Total);
-            Assert.Equal(10, pagina.Items.Count);
+            Assert.Equal(12000, pagina.Total);
+            Assert.Single(pagina.Items);
+        }
+
+        [Theory]
+        [InlineData(-5, 0, 0, 1)]
+        [InlineData(0, 1000000, 0, AuditQueryService.MaxPageSize)]
+        public async Task Buscar_AcotaDesplazamientoYTamanoDePagina(int skip, int take, int skipEsperado, int takeEsperado)
+        {
+            _repo.Setup(r => r.SearchAsync(It.IsAny<AuditSearchCriteria>(), It.IsAny<int>(), It.IsAny<int>()))
+                 .ReturnsAsync(new AuditPage());
+
+            await _sut.SearchAsync(skip: skip, take: take);
+
+            _repo.Verify(r => r.SearchAsync(It.IsAny<AuditSearchCriteria>(), skipEsperado, takeEsperado), Times.Once);
         }
 
         [Fact]
-        public async Task PaginaDesdeElDesplazamientoPedido()
+        public async Task Exportar_DevuelveTodosLosEventosDeLaBusqueda()
         {
-            Devuelve(Evento("r/0"), Evento("r/1"), Evento("r/2"), Evento("r/3"));
+            var eventos = new List<AuditEvent> { Evento("a"), Evento("b") };
+            _repo.Setup(r => r.SearchAsync(It.IsAny<AuditSearchCriteria>(), 0, AuditQueryService.MaxExportRows))
+                 .ReturnsAsync(new AuditPage { Total = 2, Items = eventos });
 
-            var pagina = await _sut.SearchAsync(skip: 2, take: 2);
-
-            Assert.Equal(new[] { "r/2", "r/3" }, pagina.Items.Select(e => e.EntityRef));
+            Assert.Equal(eventos, await _sut.ExportAsync(new AuditSearchCriteria()));
         }
 
+        // Un export de auditoría recortado que parece completo es peor que un error.
         [Fact]
-        public async Task SinFiltroDeRecurso_DevuelveTodo()
+        public async Task Exportar_SiSuperaElTope_SeRechazaEnVezDeRecortar()
         {
-            Devuelve(Evento("a"), Evento("b"));
+            _repo.Setup(r => r.SearchAsync(It.IsAny<AuditSearchCriteria>(), It.IsAny<int>(), It.IsAny<int>()))
+                 .ReturnsAsync(new AuditPage { Total = AuditQueryService.MaxExportRows + 1 });
 
-            Assert.Equal(2, (await _sut.SearchAsync()).Total);
+            await Assert.ThrowsAsync<ChequeAR.Application.Exceptions.BusinessRuleException>(
+                () => _sut.ExportAsync(new AuditSearchCriteria()));
         }
 
         [Fact]
@@ -81,40 +108,7 @@ namespace ChequeAR.Tests.Application
             _repo.Setup(r => r.GetAsync(e.Id)).ReturnsAsync(e);
 
             Assert.Equal(e.Id, (await _sut.GetAsync(e.Id)).Id);
-            _repo.Verify(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()), Times.Never);
-        }
-
-        /// <summary>
-        /// Con recurso, la búsqueda no pasa por la ventana global de MaxFilas: los eventos de
-        /// un recurso viejo tienen que aparecer aunque haya miles más recientes de otros.
-        /// </summary>
-        [Fact]
-        public async Task FiltroPorRecurso_ConsultaSoloEseRecurso_SinVentanaGlobal()
-        {
-            Devuelve(Evento("Questionnaire/a"));
-
-            await _sut.SearchAsync(entityRef: "Questionnaire/a");
-
-            _repo.Verify(r => r.ForEntityAsync("Questionnaire/a", false), Times.Once);
-            _repo.Verify(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()), Times.Never);
-        }
-
-        [Fact]
-        public async Task FiltroPorRecurso_AplicaTambienUsuarioAccionYFechas()
-        {
-            var t0 = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
-            var ok = EventoEn("Questionnaire/a", t0);
-            var otroUsuario = EventoEn("Questionnaire/a", t0); otroUsuario.AgentUserId = "dra.perez";
-            var otraAccion = EventoEn("Questionnaire/a", t0); otraAccion.Action = "C";
-            var fueraDeRango = EventoEn("Questionnaire/a", t0.AddDays(2));
-            Devuelve(ok, otroUsuario, otraAccion, fueraDeRango);
-
-            var pagina = await _sut.SearchAsync(agentUserId: "GOMEZ", action: "U", entityRef: "Questionnaire/a",
-                fromUtc: t0.AddHours(-1), toUtc: t0.AddDays(1));
-
-            Assert.Equal(new[] { ok.Id }, pagina.Items.Select(e => e.Id));
+            _repo.Verify(r => r.SearchAsync(It.IsAny<AuditSearchCriteria>(), It.IsAny<int>(), It.IsAny<int>()), Times.Never);
         }
 
         [Fact]
@@ -188,14 +182,11 @@ namespace ChequeAR.Tests.Application
         }
 
         /// <summary>
-        /// El doble devuelve el mismo conjunto por cualquier vía de consulta: el servicio es el
+        /// El doble devuelve el mismo conjunto para cualquier recurso: el servicio es el
         /// responsable de quedarse sólo con lo que corresponde.
         /// </summary>
         private void Devuelve(params AuditEvent[] eventos)
         {
-            _repo.Setup(r => r.SearchAsync(It.IsAny<string>(), It.IsAny<string>(),
-                                           It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<int>()))
-                 .ReturnsAsync((IReadOnlyList<AuditEvent>)eventos.ToList());
             _repo.Setup(r => r.ForEntityAsync(It.IsAny<string>(), It.IsAny<bool>()))
                  .ReturnsAsync((IReadOnlyList<AuditEvent>)eventos.ToList());
         }

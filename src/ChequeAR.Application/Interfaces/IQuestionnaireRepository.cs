@@ -35,6 +35,12 @@ namespace ChequeAR.Application.Interfaces
         /// <summary>Títulos por id, para resolver referencias sin traer el agregado completo.</summary>
         Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids);
 
+        /// <summary>
+        /// Ids de los cuestionarios cuyo título contiene el texto, sin distinguir mayúsculas.
+        /// Incluye los eliminados: la auditoría tiene que poder encontrarlos por nombre.
+        /// </summary>
+        Task<IReadOnlyList<Guid>> FindIdsByTitleAsync(string titleContains, int max);
+
         /// <summary>Códigos de especialidad realmente presentes en los cuestionarios (para poblar el filtro).</summary>
         Task<IReadOnlyList<string>> GetSpecialtyCodesAsync();
 

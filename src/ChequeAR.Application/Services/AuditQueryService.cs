@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 
@@ -11,48 +11,43 @@ namespace ChequeAR.Application.Services
     /// <summary>Consultas sobre el registro de auditoría.</summary>
     public class AuditQueryService
     {
+        /// <summary>Máximo de eventos por página, pida lo que pida el cliente.</summary>
+        public const int MaxPageSize = 500;
+
         /// <summary>
-        /// Tope de filas del listado GLOBAL (sin recurso): los eventos más recientes que se
-        /// traen para filtrar y paginar. Las búsquedas por recurso o por identificador no
-        /// tienen tope: van directo a la base.
+        /// Tope de la exportación. Por encima no se entrega un archivo recortado: se rechaza,
+        /// porque un export de auditoría incompleto que parece completo es peor que un error.
         /// </summary>
-        public const int MaxFilas = 5000;
+        public const int MaxExportRows = 50000;
 
         private readonly IAuditRepository _repo;
 
         public AuditQueryService(IAuditRepository repo) { _repo = repo; }
 
+        /// <summary>Una página de la búsqueda, con el total real de coincidencias.</summary>
+        public Task<AuditPage> SearchAsync(AuditSearchCriteria criteria, int skip = 0, int take = 50)
+            => _repo.SearchAsync(criteria ?? new AuditSearchCriteria(),
+                                 Math.Max(0, skip), Math.Min(MaxPageSize, Math.Max(1, take)));
+
         /// <param name="entityRef">Recurso afectado, ej. "Questionnaire/{id}".</param>
-        public async Task<AuditPage> SearchAsync(
+        public Task<AuditPage> SearchAsync(
             string agentUserId = null, string action = null, string entityRef = null,
             DateTime? fromUtc = null, DateTime? toUtc = null, int skip = 0, int take = 50)
-        {
-            IEnumerable<AuditEvent> filtrados;
-            if (!string.IsNullOrEmpty(entityRef))
+            => SearchAsync(new AuditSearchCriteria
             {
-                // Con recurso, la base devuelve SOLO sus eventos (sin la ventana de los últimos
-                // MaxFilas, que dejaba afuera a los recursos viejos) y el resto de los
-                // filtros se aplica sobre ese conjunto acotado, con la misma semántica que
-                // IAuditRepository.SearchAsync.
-                var delRecurso = await _repo.ForEntityAsync(entityRef, includeOperations: false)
-                                 ?? new List<AuditEvent>();
-                filtrados = delRecurso.Where(x => x.EntityRef == entityRef
-                                                  && Matches(x, agentUserId, action, fromUtc, toUtc));
-            }
-            else
-            {
-                filtrados = await _repo.SearchAsync(agentUserId, action, fromUtc, toUtc, MaxFilas)
-                            ?? new List<AuditEvent>();
-            }
+                AgentUserId = agentUserId, Action = action, EntityRef = entityRef,
+                FromUtc = fromUtc, ToUtc = toUtc
+            }, skip, take);
 
-            var lista = filtrados.ToList();
-            return new AuditPage
-            {
-                // El total es el de la búsqueda completa, no el de la página: con el de la
-                // página, la última parece la única y el paginador desaparece.
-                Total = lista.Count,
-                Items = lista.Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToList()
-            };
+        /// <summary>Todos los eventos de la búsqueda, para exportar. Falla si superan <see cref="MaxExportRows"/>.</summary>
+        public async Task<IReadOnlyList<AuditEvent>> ExportAsync(AuditSearchCriteria criteria)
+        {
+            var pagina = await _repo.SearchAsync(criteria ?? new AuditSearchCriteria(), 0, MaxExportRows);
+            if (pagina.Total > MaxExportRows)
+                throw new BusinessRuleException(
+                    "La búsqueda devuelve " + pagina.Total + " eventos y el máximo para exportar es " +
+                    MaxExportRows + ". Acotá el período o agregá filtros.");
+            return pagina.Items;
         }
 
         /// <summary>
@@ -75,19 +70,25 @@ namespace ChequeAR.Application.Services
         }
 
         public Task<AuditEvent> GetAsync(Guid id) => _repo.GetAsync(id);
+    }
 
-        private static bool Matches(AuditEvent e, string agentUserId, string action, DateTime? fromUtc, DateTime? toUtc)
-        {
-            if (!string.IsNullOrEmpty(agentUserId)
-                && (e.AgentUserId == null
-                    || e.AgentUserId.ToLower(CultureInfo.InvariantCulture)
-                        .IndexOf(agentUserId.ToLower(CultureInfo.InvariantCulture), StringComparison.Ordinal) < 0))
-                return false;
-            if (!string.IsNullOrEmpty(action) && e.Action != action) return false;
-            if (fromUtc.HasValue && e.Recorded < fromUtc.Value) return false;
-            if (toUtc.HasValue && e.Recorded >= toUtc.Value) return false;
-            return true;
-        }
+    /// <summary>Filtros de una búsqueda de auditoría. Lo que queda en null no filtra.</summary>
+    public class AuditSearchCriteria
+    {
+        /// <summary>Texto contenido en el usuario, sin distinguir mayúsculas.</summary>
+        public string AgentUserId { get; set; }
+        /// <summary>Código C/R/U/D/E.</summary>
+        public string Action { get; set; }
+        public DateTime? FromUtc { get; set; }
+        /// <summary>Cota superior exclusiva.</summary>
+        public DateTime? ToUtc { get; set; }
+        /// <summary>Recurso afectado exacto, ej. "Questionnaire/{id}".</summary>
+        public string EntityRef { get; set; }
+        /// <summary>
+        /// Eventos de estos cuestionarios, incluidas sus operaciones ($publish, $archive…).
+        /// Una lista vacía no es "sin filtro": es una búsqueda sin resultados.
+        /// </summary>
+        public IReadOnlyCollection<Guid> QuestionnaireIds { get; set; }
     }
 
     public class AuditPage

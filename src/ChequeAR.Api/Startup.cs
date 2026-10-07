@@ -1,6 +1,5 @@
 using System.Configuration;
 using System.Text;
-using ChequeAR.Api.Middleware;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Owin;
 using Microsoft.Owin.Security.Jwt;
@@ -33,8 +32,6 @@ namespace ChequeAR.Api
                     ClockSkew = System.TimeSpan.FromSeconds(30)
                 }
             });
-
-            app.Use<AuditMiddleware>();
         }
     }
 }
