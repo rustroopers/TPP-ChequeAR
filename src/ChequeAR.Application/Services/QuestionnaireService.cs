@@ -32,6 +32,9 @@ namespace ChequeAR.Application.Services
         private static readonly string[] SpecialtyRequiredError =
             { "El cuestionario debe tener una especialidad." };
 
+        private static readonly string[] TitleRequiredError =
+            { "El cuestionario debe tener un título." };
+
         private readonly IQuestionnaireRepository _repo;
         private readonly IQuestionnaireResponseRepository _responses;
         private readonly IFhirValidator _validator;
@@ -136,6 +139,25 @@ namespace ChequeAR.Application.Services
             return scope.IsUnrestricted ? codes : codes.Where(scope.Allows).ToList();
         }
 
+        /// <summary>
+        /// Cantidad de versiones publicadas de cada cuestionario, en una sola consulta. Los ids
+        /// salen de <see cref="SearchAsync"/>, que ya aplicó el scope: esto sólo los completa.
+        /// </summary>
+        public Task<IReadOnlyDictionary<Guid, int>> GetVersionCountsAsync(IEnumerable<Guid> ids)
+            => _repo.GetVersionCountsAsync(ids);
+
+        /// <summary>
+        /// Los resultados de una búsqueda con su estructura completa cargada, para serializarlos
+        /// como recursos FHIR sin una consulta por colección y por fila. Se vuelve a aplicar el
+        /// scope por si los ids no salieron de <see cref="SearchAsync"/>.
+        /// </summary>
+        public async Task<IReadOnlyList<Questionnaire>> GetManyWithStructureAsync(IReadOnlyList<Guid> ids)
+        {
+            var scope = _guard.Scope;
+            var rows = await _repo.GetManyWithStructureAsync(ids);
+            return scope.IsUnrestricted ? rows : rows.Where(q => scope.Allows(q.SpecialtyCode)).ToList();
+        }
+
         public Task<IReadOnlyDictionary<Guid, string>> GetTitlesAsync(IEnumerable<Guid> ids)
             => _repo.GetTitlesAsync(ids);
 
@@ -164,6 +186,9 @@ namespace ChequeAR.Application.Services
         public async Task<Questionnaire> CreateAsync(Questionnaire q, string userId)
         {
             _access.EnsureCan(Permissions.QuestionnaireWrite);
+            // Antes sólo lo exigía el perfil al publicar: un borrador sin título quedaba como una
+            // fila en blanco en el listado, imposible de reconocer.
+            if (string.IsNullOrWhiteSpace(q.Title)) throw new ValidationFailedException(TitleRequiredError);
             await EnsureSpecialtyUsableAsync(q.SpecialtyCode);
             // El editor guarda sólo el código (SpecialtyDisplay llega null): se completa acá
             // desde el catálogo para que el useContext del recurso FHIR (armado por
@@ -366,6 +391,11 @@ namespace ChequeAR.Application.Services
             // especialidad ajena.
             if (patch.SpecialtyCode != null && !string.Equals(patch.SpecialtyCode, q.SpecialtyCode, StringComparison.Ordinal))
                 await EnsureSpecialtyUsableAsync(patch.SpecialtyCode);
+
+            // Un título que llega pero vacío es un intento de borrarlo, no un "no lo toques":
+            // en Oracle '' es NULL, así que pasaba derecho y dejaba el cuestionario sin nombre.
+            if (patch.Title != null && string.IsNullOrWhiteSpace(patch.Title))
+                throw new ValidationFailedException(TitleRequiredError);
 
             q.Title = patch.Title ?? q.Title;
             q.Description = patch.Description ?? q.Description;

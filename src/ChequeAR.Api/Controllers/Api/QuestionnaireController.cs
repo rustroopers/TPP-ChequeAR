@@ -39,7 +39,16 @@ namespace ChequeAR.Api.Controllers.Api
                     FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count));
 
                 var total = await _service.CountAsync(st, titleContains, specialty);
-                var recursos = items.Select(q => (Hl7.Fhir.Model.Resource)ToFhir(q));
+
+                // Cada entrada del Bundle es el recurso completo. Armarlo desde lo que devuelve
+                // la búsqueda (sin colecciones cargadas) disparaba una carga diferida por
+                // colección y por fila: se trae la estructura de toda la página junta, y los
+                // números de versión en una sola consulta.
+                var ids = items.Select(q => q.Id).ToList();
+                var completos = await _service.GetManyWithStructureAsync(ids);
+                var versiones = await _service.GetVersionCountsAsync(ids);
+                var recursos = completos.Select(q => (Hl7.Fhir.Model.Resource)FhirQuestionnaireBuilder.ToResource(
+                    q, versiones.TryGetValue(q.Id, out var n) ? n : 0));
                 return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
             }
             catch (SpecialtyForbiddenException)

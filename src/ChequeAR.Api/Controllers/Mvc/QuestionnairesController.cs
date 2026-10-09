@@ -60,6 +60,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var st = QuestionnaireStatusMap.FromUi(status);
                 var items = await _svc.SearchAsync(st, q, specialty, (page - 1) * 20, 20);
                 model.Total = await _svc.CountAsync(st, q, specialty);
+                // Una consulta para toda la página: leer it.Versions cargaba las versiones
+                // (FhirJson incluido) de a una fila por vez.
+                var versiones = await _svc.GetVersionCountsAsync(items.Select(x => x.Id));
                 foreach (var it in items)
                 {
                     model.Items.Add(new QuestionnaireListItem
@@ -68,7 +71,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         SpecialtyCode = cat.CodeOrDefault(it.SpecialtyCode),
                         SpecialtyLabel = cat.Label(it.SpecialtyCode, it.SpecialtyDisplay),
                         SpecialtyColor = cat.Color(it.SpecialtyCode),
-                        Version = it.Versions?.Count ?? 0,
+                        Version = versiones.TryGetValue(it.Id, out var n) ? n : 0,
                         Status = QuestionnaireStatusMap.ToUi(it.Status),
                         UpdatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(it.UpdatedAt),
                         Author = it.CreatedBy,
@@ -244,13 +247,14 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var cat = await _specialties.GetAsync();
                 var candidatos = await _svc.GetImportCandidatesAsync(specialty, excludeId);
+                var versiones = await _svc.GetVersionCountsAsync(candidatos.Select(q => q.Id));
                 var payload = candidatos.Select(q => new
                 {
                     id = q.Id,
                     title = q.Title,
                     status = QuestionnaireStatusMap.ToUi(q.Status),
                     specialtyLabel = cat.Label(q.SpecialtyCode, q.SpecialtyDisplay),
-                    version = q.Versions?.Count ?? 0
+                    version = versiones.TryGetValue(q.Id, out var n) ? n : 0
                 }).ToList();
                 return Content(
                     JsonConvert.SerializeObject(payload,
@@ -273,9 +277,8 @@ namespace ChequeAR.Api.Controllers.Mvc
         // sección se juntan en una sección implícita para que sean editables igual.
         /// <summary>
         /// Trae de una sola vez las variables que usa el cuestionario, para que el editor pueda
-        /// mostrar el nombre de cada una y detectar las desactualizadas. Una consulta por
-        /// cuestionario y no una por pregunta: es el mismo criterio que el catálogo de
-        /// especialidades en este mismo controller.
+        /// mostrar el nombre de cada una y detectar las desactualizadas. Una sola consulta por
+        /// cuestionario, no una por variable.
         /// </summary>
         private async Task<IDictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>> VariablesDe(
             ChequeAR.Domain.Entities.Questionnaire q)
@@ -287,13 +290,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 .ToList();
             if (ids.Count == 0) return new Dictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>();
 
-            var encontradas = new Dictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>();
-            foreach (var id in ids)
-            {
-                var v = await _variables.GetAsync(id);
-                if (v != null) encontradas[id] = v;
-            }
-            return encontradas;
+            return (await _variables.GetManyAsync(ids)).ToDictionary(v => v.Id);
         }
 
         private static List<QuestionGroupView> BuildEditorGroups(
@@ -306,7 +303,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             foreach (var g in (q.Groups ?? new List<ChequeAR.Domain.Entities.QuestionGroup>()).OrderBy(g => g.OrderIndex))
             {
-                var view = new QuestionGroupView { Title = g.Title };
+                var view = new QuestionGroupView { LinkId = g.LinkId, Title = g.Title };
                 foreach (var qq in questions.Where(x => x.GroupId == g.Id).OrderBy(x => x.OrderIndex))
                     view.Questions.Add(ToQuestionView(qq, cat));
                 result.Add(view);
@@ -315,7 +312,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             var loose = questions.Where(x => !x.GroupId.HasValue).OrderBy(x => x.OrderIndex).ToList();
             if (loose.Count > 0)
             {
-                var view = new QuestionGroupView { Title = "Preguntas" };
+                // linkId fijo: la sección implícita tiene que ser la misma en las tres fotos
+                // que compara el merge del editor (base, la propia y la del server).
+                var view = new QuestionGroupView { LinkId = "sin-seccion", Title = "Preguntas" };
                 foreach (var qq in loose) view.Questions.Add(ToQuestionView(qq, cat));
                 result.Add(view);
             }

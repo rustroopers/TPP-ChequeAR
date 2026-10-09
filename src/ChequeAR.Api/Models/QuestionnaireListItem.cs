@@ -84,6 +84,12 @@ namespace ChequeAR.Api.Models
 
     public class QuestionGroupView
     {
+        /// <summary>
+        /// Identidad estable de la sección. El editor la conserva al guardar: sin ella, el
+        /// linkId salía de la posición ("seccion-N") y cambiaba al reordenar, y el merge de
+        /// conflictos no podía saber qué sección era cuál entre dos versiones.
+        /// </summary>
+        public string LinkId { get; set; }
         public string Title { get; set; }
         public List<QuestionView> Questions { get; set; } = new List<QuestionView>();
     }

@@ -72,6 +72,13 @@ namespace ChequeAR.Application.Services
             return _repo.GetAsync(id);
         }
 
+        /// <summary>Varias variables por id en una sola consulta. Las que no existen no vienen.</summary>
+        public Task<IReadOnlyList<ClinicalVariable>> GetManyAsync(IEnumerable<Guid> ids)
+        {
+            _access.EnsureCan(Permissions.QuestionnaireRead);
+            return _repo.GetManyAsync(ids);
+        }
+
         public async Task<ClinicalVariablePage> ListAsync(string search, QuestionType? type, bool? active, int skip, int take)
         {
             _access.EnsureCan(Permissions.QuestionnaireRead);

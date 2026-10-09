@@ -79,11 +79,34 @@
             var recordVersion = Vue.ref(props.concurrencyVersion || 0);
             var conflict = Vue.ref(false);
 
+            // Identidad estable de una sección. Antes el linkId salía de la posición al guardar
+            // ("seccion-N"): reordenar lo cambiaba, y el merge de conflictos no tenía cómo saber
+            // qué sección era cuál entre la versión propia y la de la otra persona. Una sección
+            // existente conserva el que le dio el server; una nueva recibe uno al crearse.
+            // `reservados` cubre los ya repartidos que todavía no están en el árbol.
+            function newSectionLinkId(reservados) {
+                var usados = {};
+                Object.keys(reservados || {}).forEach(function (l) { usados[l] = true; });
+                ((groups && groups.value) || []).forEach(function (g) {
+                    usados[g.linkId] = true;
+                    g.questions.forEach(function (q) { usados[q.linkId] = true; });
+                });
+                var id;
+                do { id = 'seccion-' + Math.random().toString(36).slice(2, 8); } while (usados[id]);
+                if (reservados) reservados[id] = true;
+                return id;
+            }
+
             // Estructura real del cuestionario, inyectada por el server en data-props.
             // Uno nuevo arranca con una sección vacía (no con datos de ejemplo: se
-            // guardaban como si fueran del usuario).
-            var initial = (props.groups || []).map(function (g) {
+            // guardaban como si fueran del usuario). El linkId se completa ANTES de copiar
+            // la base del merge, para que las dos fotos hablen de las mismas secciones.
+            var seedGroups = (props.groups || []).map(function (g) {
+                return Object.assign({}, g, { linkId: g.linkId || newSectionLinkId() });
+            });
+            var initial = seedGroups.map(function (g) {
                 return {
+                    linkId: g.linkId,
                     // Coerción a string: si el server manda una sección sin title,
                     // el template hace `!g.title.trim()` y sin default explota con
                     // TypeError; en Vue prod eso deja la isla en blanco sin errores.
@@ -120,7 +143,7 @@
                     })
                 };
             });
-            if (!initial.length) initial = [{ title: '', questions: [] }];
+            if (!initial.length) initial = [{ linkId: newSectionLinkId(), title: '', questions: [] }];
             var groups = Vue.ref(initial);
 
             // BASE del merge de 3 vías cuando otra persona guarda en el medio: lo último que este
@@ -128,7 +151,7 @@
             // guardado propio exitoso y después de cada merge; si no, un cambio propio ya
             // guardado se confundiría con uno pendiente (y, por ejemplo, una pregunta que yo
             // agregué y guardé y la otra persona borró después reaparecería).
-            var baseGroups = JSON.parse(JSON.stringify(props.groups || []));
+            var baseGroups = JSON.parse(JSON.stringify(seedGroups));
             // Lo mismo para la cabecera (título, especialidad, codificación del cuestionario).
             var baseHeader = {
                 title: props.title || '',
@@ -317,6 +340,28 @@
                 return found;
             });
 
+            // Operadores que el renderer sabe evaluar contra la pregunta de origen (mismo criterio
+            // que EnableWhenEvaluator.Compare y QuestionnaireStructureRules en el server): igual y
+            // distinto siempre; mayor y menor sólo contra números. Un "mayor que" sobre una opción
+            // o un booleano daba siempre falso y la pregunta no se mostraba nunca.
+            var OPERATORS = [
+                { op: '=',  label: 'es igual a',     numericOnly: false },
+                { op: '!=', label: 'es distinto de', numericOnly: false },
+                { op: '>',  label: 'es mayor que',   numericOnly: true },
+                { op: '<',  label: 'es menor que',   numericOnly: true }
+            ];
+            function esNumerica(q) { return !!q && ['integer', 'decimal', 'scale'].indexOf(q.type) >= 0; }
+            function operatorAllowed(op, origen) {
+                for (var i = 0; i < OPERATORS.length; i++) {
+                    if (OPERATORS[i].op === op) return !OPERATORS[i].numericOnly || esNumerica(origen);
+                }
+                return false;
+            }
+            var conditionOps = Vue.computed(function () {
+                var src = conditionSource.value;
+                return OPERATORS.filter(function (o) { return !o.numericOnly || esNumerica(src); });
+            });
+
             function onConditionQuestion(linkId) {
                 var q = selected.value.question;
                 if (!linkId) q.enableWhen = undefined;
@@ -406,6 +451,8 @@
                         out.push({ question: q, condition: true, detail: nombre + ' depende de una pregunta que ya no existe: nunca se va a mostrar.' });
                     } else if (sinValor(ew.value)) {
                         out.push({ question: q, condition: true, detail: nombre + ' tiene una condición sin valor esperado: completala o quitala.' });
+                    } else if (!operatorAllowed(ew.op || '=', origen)) {
+                        out.push({ question: q, condition: true, detail: nombre + ' compara con "' + (ew.op || '=') + '" contra "' + (origen.text || origen.linkId) + '", que no es numérica: sólo admite "es igual a" o "es distinto de".' });
                     } else if ((origen.type === 'choice' || origen.type === 'openChoice')
                                && (origen.options || []).indexOf(ew.value) < 0) {
                         out.push({ question: q, condition: true, detail: nombre + ' depende de la opción "' + ew.value + '", que ya no está entre las opciones de "' + (origen.text || origen.linkId) + '".' });
@@ -535,7 +582,7 @@
             }
 
             function addGroup() {
-                groups.value.push({ title: '', questions: [] });
+                groups.value.push({ linkId: newSectionLinkId(), title: '', questions: [] });
                 dirty.value = true;
             }
             // --- Selector de variables ---------------------------------------------
@@ -759,7 +806,8 @@
                                 if (q.linkId) remap[q.linkId] = nl;
                                 return hydrateImportedQuestion(q, nl);
                             });
-                            return { title: g.title || 'Sección importada', questions: questions };
+                            // linkId de sección nuevo: el del origen puede coincidir con uno de acá.
+                            return { linkId: newSectionLinkId(reservados), title: g.title || 'Sección importada', questions: questions };
                         });
                         // 2) Re-apuntar condiciones internas; descartar las que quedan colgadas.
                         var count = 0, dropped = 0;
@@ -1016,7 +1064,7 @@
                     subjectType: ['Patient'],
                     item: groups.value.map(function (g, gi) {
                         return {
-                            linkId: g.linkId || ('seccion-' + (gi + 1)),
+                            linkId: g.linkId || newSectionLinkId(),
                             text: g.title,
                             type: 'group',
                             item: g.questions.map(function (q) { return buildItem(q, porLinkId); })
@@ -1093,6 +1141,14 @@
                 // Con un conflicto sin resolver no se vuelve a intentar: reintentar sólo
                 // serviría para pisar a la otra persona en cuanto refresquemos la versión.
                 if (conflict.value) return Promise.resolve(false);
+                // El server rechaza un título vacío. Sin cortar acá, el autosave le pegaría cada
+                // dos segundos y mostraría un error por cada intento; queda sucio (y beforeunload
+                // avisa al salir) hasta que se cargue un título.
+                if (!(qTitle.value || '').trim()) {
+                    qTitleTouched.value = true;
+                    if (explicit) toast('El cuestionario necesita un título para poder guardarse.', 'error');
+                    return Promise.resolve(false);
+                }
                 var token = getToken();
                 if (!token) {
                     toast('No hay sesión: no se puede guardar (token ausente).', 'error');
@@ -1139,7 +1195,13 @@
                             throw err;
                         });
                     }
-                    if (!res.ok) { throw new Error('HTTP ' + res.status); }
+                    // Un 422 trae en el OperationOutcome qué regla falló (título, linkId repetido,
+                    // variable inactiva...): eso es lo que la persona necesita leer, no "HTTP 422".
+                    if (!res.ok) {
+                        return res.json().catch(function () { return null; }).then(function (body) {
+                            throw new Error(diagnostico(body, 'HTTP ' + res.status));
+                        });
+                    }
                     return res.status === 204 ? null : res.json().catch(function () { return null; });
                 }).then(function (data) {
                     // FHIR normaliza en "id" minúscula, así que ya no hace falta el fallback
@@ -1270,10 +1332,14 @@
 
             function numOrNull(v) { return typeof v === 'number' && !isNaN(v) ? v : null; }
 
-            // Foto canónica de una pregunta para comparar entre las 3 fuentes (ignora orden).
-            function normQ(q) {
+            // Foto canónica de una pregunta para comparar entre las 3 fuentes. Incluye la sección
+            // en la que está: mover una pregunta de sección es un cambio real, y antes el merge
+            // no lo veía (la pregunta volvía a donde la tenía la otra persona sin avisar). El
+            // orden dentro de la sección se compara aparte (ver orderEntry).
+            function normQ(q, section) {
                 if (!q) return null;
                 return JSON.stringify({
+                    section: section || null,
                     text: q.text || '',
                     type: q.type || 'string',
                     required: !!q.required,
@@ -1291,31 +1357,118 @@
                 });
             }
 
+            // linkId -> { q, section (linkId), sectionTitle, prev (linkId de la pregunta anterior
+            // en la misma sección, o null) }. `prev` es lo que permite ubicar una pregunta nueva o
+            // movida en el resultado sin depender de índices que la otra persona pudo correr.
             function indexQuestions(grps) {
                 var map = {};
                 (grps || []).forEach(function (g) {
+                    var prev = null;
                     (g.questions || []).forEach(function (q) {
-                        if (q && q.linkId) map[q.linkId] = { q: q, section: g.title || '' };
+                        if (!q || !q.linkId) return;
+                        map[q.linkId] = { q: q, section: g.linkId || null, sectionTitle: g.title || '', prev: prev };
+                        prev = q.linkId;
                     });
                 });
                 return map;
             }
 
-            function computeMerge(base, mine, theirs, baseH, mineH, theirsH) {
-                var b = indexQuestions(base), m = indexQuestions(mine), t = indexQuestions(theirs);
-                var keys = {};
-                [b, m, t].forEach(function (idx) { Object.keys(idx).forEach(function (k) { keys[k] = true; }); });
+            // linkId -> { title, prev (linkId de la sección anterior, o null) }.
+            function indexSections(grps) {
+                var map = {};
+                var prev = null;
+                (grps || []).forEach(function (g) {
+                    if (!g || !g.linkId) return;
+                    map[g.linkId] = { title: g.title || '', prev: prev };
+                    prev = g.linkId;
+                });
+                return map;
+            }
 
+            function unionKeys(a, b, c) {
+                var keys = {};
+                [a, b, c].forEach(function (idx) { Object.keys(idx).forEach(function (k) { keys[k] = true; }); });
+                return Object.keys(keys);
+            }
+
+            // Una entrada del plan en la que sólo cuenta quién cambió el valor respecto de la base.
+            // Es la misma regla que la cabecera: si cambió una sola parte, gana esa; si cambiaron
+            // las dos distinto, se pregunta.
+            function twoWayEntry(e, nb, nm, nt) {
+                var mineChanged = nm !== nb, theirsChanged = nt !== nb;
+                if (mineChanged && !theirsChanged) { e.action = 'take-mine'; e.auto = true; }
+                else if (!mineChanged && theirsChanged) { e.auto = true; }
+                else if (mineChanged && theirsChanged && nm !== nt) { e.needsChoice = true; e.kind = 'edit-edit'; e.choice = 'mine'; }
+                return e;
+            }
+
+            function newEntry(key, text) {
+                return { key: key, text: text, needsChoice: false, choice: null, action: 'keep-theirs', auto: false, kind: null };
+            }
+
+            // Orden relativo de los elementos que existen en las TRES fotos: agregar o quitar algo
+            // no cuenta como reordenar (eso ya lo resuelven las entradas de alta y baja).
+            function commonOrder(lista, comunes) {
+                return JSON.stringify(lista.filter(function (k) { return comunes[k]; }));
+            }
+
+            function sectionsOf(grps) { return (grps || []).map(function (g) { return g.linkId; }).filter(Boolean); }
+            function questionsOf(grps, sectionLinkId) {
+                for (var i = 0; i < (grps || []).length; i++) {
+                    if (grps[i].linkId === sectionLinkId) {
+                        return (grps[i].questions || []).map(function (q) { return q.linkId; }).filter(Boolean);
+                    }
+                }
+                return [];
+            }
+
+            // Plan de combinación. Además de cada pregunta y de la cabecera, compara las SECCIONES
+            // (título, alta y baja) y el ORDEN (de las secciones y de las preguntas dentro de cada
+            // una). Antes sólo comparaba preguntas y tomaba como esqueleto la versión de la otra
+            // persona, así que un cambio de nombre de sección, una pregunta movida a otra sección,
+            // una sección nueva vacía o un reordenamiento propios se perdían sin avisar.
+            function computeMerge(base, mine, theirs, baseH, mineH, theirsH) {
                 var plan = computeHeaderMerge(baseH, mineH, theirsH);
-                Object.keys(keys).forEach(function (k) {
+
+                // Secciones: título, alta y baja.
+                var bs = indexSections(base), ms = indexSections(mine), ts = indexSections(theirs);
+                unionKeys(bs, ms, ts).forEach(function (k) {
+                    var b = bs[k], m = ms[k], t = ts[k];
+                    var e = newEntry('section:' + k, 'Nombre de la sección "' + ((m || t || b).title || 'sin título') + '"');
+                    e.section = k;
+                    e.mineTitle = m ? m.title : null;
+                    if (m && t) {
+                        if (b) twoWayEntry(e, b.title, m.title, t.title);
+                    } else if (m && !t) {
+                        // La agregué yo: va. La borró la otra persona: se resuelve por sus
+                        // preguntas (si alguna mía sobrevive, la sección vuelve con ella).
+                        if (!b) { e.action = 'take-mine'; e.auto = true; } else e.action = 'noop';
+                    } else if (!m && t) {
+                        // La borré yo: se quita sólo si queda vacía. Si la otra persona le agregó o
+                        // editó preguntas que ganan, borrar la sección se las llevaría puestas.
+                        if (b) { e.action = 'delete-if-empty'; e.auto = true; }
+                    } else {
+                        e.action = 'noop';
+                    }
+                    plan.push(e);
+                });
+
+                // Orden de las secciones.
+                var comunesS = {};
+                Object.keys(bs).forEach(function (k) { if (ms[k] && ts[k]) comunesS[k] = true; });
+                var ordenS = twoWayEntry(newEntry('order:sections', 'Orden de las secciones'),
+                    commonOrder(sectionsOf(base), comunesS), commonOrder(sectionsOf(mine), comunesS), commonOrder(sectionsOf(theirs), comunesS));
+                ordenS.order = 'sections';
+                if (ordenS.auto || ordenS.needsChoice) plan.push(ordenS);
+
+                // Preguntas.
+                var b = indexQuestions(base), m = indexQuestions(mine), t = indexQuestions(theirs);
+                unionKeys(b, m, t).forEach(function (k) {
                     var bi = b[k], mi = m[k], ti = t[k];
-                    var nb = normQ(bi && bi.q), nm = normQ(mi && mi.q), nt = normQ(ti && ti.q);
+                    var nb = normQ(bi && bi.q, bi && bi.section), nm = normQ(mi && mi.q, mi && mi.section), nt = normQ(ti && ti.q, ti && ti.section);
                     var mineChanged = nm !== nb, theirsChanged = nt !== nb;
-                    var e = {
-                        key: k, text: (mi && mi.q.text) || (ti && ti.q.text) || k,
-                        mine: mi ? mi.q : null, mineSection: mi ? mi.section : null,
-                        needsChoice: false, choice: null, action: 'keep-theirs', auto: false, kind: null
-                    };
+                    var e = newEntry(k, (mi && mi.q.text) || (ti && ti.q.text) || k);
+                    e.mine = mi || null;
 
                     if (mi && ti) {
                         if (!mineChanged && theirsChanged) { e.action = 'keep-theirs'; e.auto = true; }
@@ -1333,6 +1486,18 @@
                     } else { e.action = 'noop'; }
                     plan.push(e);
                 });
+
+                // Orden de las preguntas dentro de cada sección que existe en las tres fotos.
+                Object.keys(comunesS).forEach(function (sec) {
+                    var qb = questionsOf(base, sec), qm = questionsOf(mine, sec), qt = questionsOf(theirs, sec);
+                    var comunes = {};
+                    qb.forEach(function (k) { if (qm.indexOf(k) >= 0 && qt.indexOf(k) >= 0) comunes[k] = true; });
+                    var e = twoWayEntry(newEntry('order:' + sec, 'Orden de las preguntas en "' + (ms[sec].title || 'sin título') + '"'),
+                        commonOrder(qb, comunes), commonOrder(qm, comunes), commonOrder(qt, comunes));
+                    e.order = sec;
+                    if (e.auto || e.needsChoice) plan.push(e);
+                });
+
                 return {
                     plan: plan,
                     conflicts: plan.filter(function (x) { return x.needsChoice; }),
@@ -1348,11 +1513,36 @@
                 return 'keep-theirs';
             }
 
-            // Esqueleto = la versión de la otra persona; encima se aplican sólo mis cambios que
-            // ganaron. Así el orden y las secciones siguen a la versión del server (predecible),
-            // y lo mío nuevo se agrega a su sección por título (o se crea si no existe).
-            function buildMerged(theirs, plan) {
+            // Esqueleto = la versión de la otra persona; encima se aplica lo mío que ganó, ubicado
+            // por identidad (linkId de sección y de pregunta) y no por título ni por índice.
+            function buildMerged(theirs, mine, plan) {
                 var merged = JSON.parse(JSON.stringify(theirs || []));
+                var mineSections = indexSections(mine);
+
+                function sectionIndex(linkId) {
+                    for (var i = 0; i < merged.length; i++) if (merged[i].linkId === linkId) return i;
+                    return -1;
+                }
+                // Inserta después de `prev` si está; si no hay anterior, al principio; si el
+                // anterior ya no existe, al final.
+                function insertAfter(list, item, prev, keyOf) {
+                    if (!prev) { list.unshift(item); return; }
+                    for (var i = 0; i < list.length; i++) {
+                        if (keyOf(list[i]) === prev) { list.splice(i + 1, 0, item); return; }
+                    }
+                    list.push(item);
+                }
+                function sectionKey(g) { return g.linkId; }
+                function questionKey(q) { return q.linkId; }
+                // La sección con ese linkId; si la otra persona la borró, se recrea con lo mío.
+                function ensureSection(linkId, title) {
+                    var i = sectionIndex(linkId);
+                    if (i >= 0) return merged[i];
+                    var g = { linkId: linkId, title: title || 'Nueva sección', questions: [] };
+                    var prev = mineSections[linkId] ? mineSections[linkId].prev : null;
+                    insertAfter(merged, g, prev, sectionKey);
+                    return g;
+                }
                 function findQ(linkId) {
                     for (var i = 0; i < merged.length; i++) {
                         var qs = merged[i].questions || [];
@@ -1360,28 +1550,55 @@
                     }
                     return null;
                 }
-                function sectionByTitle(title) {
-                    for (var i = 0; i < merged.length; i++) if ((merged[i].title || '') === (title || '')) return merged[i];
-                    var g = { title: title || 'Nueva sección', questions: [] };
-                    merged.push(g);
-                    return g;
-                }
-                function upsert(q, sectionTitle) {
-                    var clone = JSON.parse(JSON.stringify(q));
-                    var found = findQ(q.linkId);
-                    if (found) found.g.questions.splice(found.idx, 1, clone);
-                    else sectionByTitle(sectionTitle).questions.push(clone);
+                function upsert(loc) {
+                    var clone = JSON.parse(JSON.stringify(loc.q));
+                    var found = findQ(loc.q.linkId);
+                    // Misma sección: se reemplaza en su lugar, sin tocar el orden de la otra persona.
+                    if (found && found.g.linkId === loc.section) { found.g.questions.splice(found.idx, 1, clone); return; }
+                    if (found) found.g.questions.splice(found.idx, 1);
+                    insertAfter(ensureSection(loc.section, loc.sectionTitle).questions, clone, loc.prev, questionKey);
                 }
                 function removeQ(linkId) { var f = findQ(linkId); if (f) f.g.questions.splice(f.idx, 1); }
+                // Lo de `orden` primero, en ese orden; lo que no figura, después, como estaba.
+                function reorder(list, orden, keyOf) {
+                    var pos = {};
+                    orden.forEach(function (k, i) { pos[k] = i; });
+                    var dentro = list.filter(function (x) { return pos[keyOf(x)] !== undefined; })
+                                     .sort(function (a, b) { return pos[keyOf(a)] - pos[keyOf(b)]; });
+                    var fuera = list.filter(function (x) { return pos[keyOf(x)] === undefined; });
+                    return dentro.concat(fuera);
+                }
 
+                var porBorrar = [];
+                // 1) Secciones: nombres y altas propias.
                 plan.forEach(function (e) {
-                    if (e.header) return;   // la cabecera la aplica applyHeaderMerge
+                    if (!e.section) return;
                     var r = resolveEntry(e);
-                    if (r === 'take-mine') upsert(e.mine, e.mineSection);
+                    if (r === 'take-mine') ensureSection(e.section, e.mineTitle).title = e.mineTitle;
+                    else if (r === 'delete-if-empty') porBorrar.push(e.section);
+                });
+                // 2) Preguntas.
+                plan.forEach(function (e) {
+                    if (e.header || e.section || e.order) return;
+                    var r = resolveEntry(e);
+                    if (r === 'take-mine') upsert(e.mine);
                     else if (r === 'delete') removeQ(e.key);
                     // 'keep-theirs' / 'noop' -> ya está en el esqueleto
                 });
-                return merged;
+                // 3) Orden, donde ganó el mío.
+                plan.forEach(function (e) {
+                    if (!e.order || resolveEntry(e) !== 'take-mine') return;
+                    if (e.order === 'sections') {
+                        merged = reorder(merged, sectionsOf(mine), sectionKey);
+                    } else {
+                        var i = sectionIndex(e.order);
+                        if (i >= 0) merged[i].questions = reorder(merged[i].questions, questionsOf(mine, e.order), questionKey);
+                    }
+                });
+                // 4) Secciones que borré yo, sólo si quedaron vacías.
+                return merged.filter(function (g) {
+                    return porBorrar.indexOf(g.linkId) < 0 || (g.questions || []).length > 0;
+                });
             }
 
             // Trae la versión de la otra persona (mismo formato que props.groups) y arma el plan.
@@ -1405,7 +1622,7 @@
 
             function finishMerge(silent) {
                 if (!pendingTheirs) return;
-                var merged = buildMerged(pendingTheirs.groups || [], mergePlanAll.value);
+                var merged = buildMerged(pendingTheirs.groups || [], groups.value, mergePlanAll.value);
                 var theirsHeader = headerFrom(pendingTheirs);
                 applyHeaderMerge(theirsHeader, mergePlanAll.value);
                 groups.value = merged;
@@ -1581,7 +1798,7 @@
                 merging: merging, mergeAutoCount: mergeAutoCount, conflictEntries: conflictEntries,
                 confirmMerge: confirmMerge, cancelMerge: cancelMerge,
                 issues: issues, conditionIssues: conditionIssues, fixIssues: fixIssues,
-                conditionSources: conditionSources, conditionSource: conditionSource,
+                conditionSources: conditionSources, conditionSource: conditionSource, conditionOps: conditionOps,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
                 selectQuestion: selectQuestion, addGroup: addGroup,
@@ -1769,8 +1986,8 @@
         <div class="row g-3">\
             <div class="col-md-8">\
                 <label class="form-label cq-text-sm">Título del cuestionario <span style="color:var(--cq-danger);">*</span></label>\
-                <input v-model="qTitle" class="form-control" :class="{ \'is-invalid\': qTitleTouched && isNew && !qTitle.trim() }" placeholder="Ej: Cardio basal" required @blur="qTitleTouched = true" />\
-                <p v-if="qTitleTouched && isNew && !qTitle.trim()" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">Obligatorio: cargá un título para poder continuar.</p>\
+                <input v-model="qTitle" class="form-control" :class="{ \'is-invalid\': (qTitleTouched || !isNew) && !qTitle.trim() }" placeholder="Ej: Cardio basal" required @blur="qTitleTouched = true" />\
+                <p v-if="(qTitleTouched || !isNew) && !qTitle.trim()" class="cq-text-xs mt-1 mb-0" style="color:var(--cq-danger);">Obligatorio: sin título el cuestionario no se puede guardar.</p>\
             </div>\
             <div class="col-md-4">\
                 <label class="form-label cq-text-sm">Especialidad</label>\
@@ -1918,10 +2135,7 @@
             <div v-if="selected.question.enableWhen" class="row g-2">\
                 <div class="col-4">\
                     <select v-model="selected.question.enableWhen.op" class="form-select form-select-sm">\
-                        <option value="=">es igual a</option>\
-                        <option value="!=">es distinto de</option>\
-                        <option value="&gt;">es mayor que</option>\
-                        <option value="&lt;">es menor que</option>\
+                        <option v-for="o in conditionOps" :key="o.op" :value="o.op">{{ o.label }}</option>\
                     </select>\
                 </div>\
                 <div class="col-8">\

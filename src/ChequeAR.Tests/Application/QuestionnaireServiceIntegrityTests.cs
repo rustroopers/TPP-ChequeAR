@@ -92,6 +92,50 @@ namespace ChequeAR.Tests.Application
                 It.IsAny<ICollection<QuestionGroup>>(), It.IsAny<ICollection<Question>>()), Times.Never);
         }
 
+        // ── Título obligatorio ───────────────────────────────────────────────────────
+
+        // Antes sólo lo exigía el perfil al publicar: un borrador sin título quedaba como una
+        // fila en blanco en el listado.
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public async Task CreateAsync_SinTitulo_Falla(string titulo)
+        {
+            var q = new Questionnaire { Title = titulo, SpecialtyCode = "cardio" };
+
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => Sut().CreateAsync(q, "jefe"));
+
+            Assert.Contains(ex.Errors, e => e.Contains("título"));
+            _repo.Verify(r => r.AddAsync(It.IsAny<Questionnaire>()), Times.Never);
+        }
+
+        // En Oracle '' es NULL: un título vacío que llegaba en el PUT borraba el nombre.
+        [Theory]
+        [InlineData("")]
+        [InlineData("   ")]
+        public async Task UpdateAsync_TituloVacio_FallaYNoPisaElGuardado(string titulo)
+        {
+            var q = Persistido();
+
+            await Assert.ThrowsAsync<ValidationFailedException>(
+                () => Sut().UpdateAsync(q.Id, new Questionnaire { Title = titulo }, "jefe"));
+
+            Assert.Equal("Control", q.Title);
+            _repo.Verify(r => r.UpdateAsync(It.IsAny<Questionnaire>()), Times.Never);
+        }
+
+        // Un PUT que no trae título no lo borra: conserva el que tenía.
+        [Fact]
+        public async Task UpdateAsync_SinTitulo_ConservaElAnterior()
+        {
+            var q = Persistido();
+
+            await Sut().UpdateAsync(q.Id, new Questionnaire { Title = null }, "jefe");
+
+            Assert.Equal("Control", q.Title);
+        }
+
         // ── Snapshot de la variable ──────────────────────────────────────────────────
 
         // Guardar no actualiza en silencio la definición de una pregunta que ya existía: si el

@@ -12,6 +12,22 @@ namespace ChequeAR.Application.Interfaces
         Task<Questionnaire> GetAsync(Guid id);
         Task<IReadOnlyList<Questionnaire>> SearchAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take);
         Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode);
+
+        /// <summary>
+        /// Cantidad de versiones publicadas por cuestionario, en UNA consulta. Los listados la
+        /// necesitan por fila, y leer Questionnaire.Versions de cada resultado de SearchAsync
+        /// dispara una carga diferida por fila (y trae el FhirJson de cada versión).
+        /// </summary>
+        Task<IReadOnlyDictionary<Guid, int>> GetVersionCountsAsync(IEnumerable<Guid> ids);
+
+        /// <summary>
+        /// Los cuestionarios pedidos con secciones, preguntas y opciones ya cargadas, en el
+        /// orden de <paramref name="ids"/>. Para armar varios recursos FHIR completos (el
+        /// Bundle de búsqueda) sin una carga diferida por colección y por fila. No trae las
+        /// versiones: para el número está <see cref="GetVersionCountsAsync"/>.
+        /// </summary>
+        Task<IReadOnlyList<Questionnaire>> GetManyWithStructureAsync(IReadOnlyList<Guid> ids);
+
         Task AddAsync(Questionnaire q);
         Task UpdateAsync(Questionnaire q);
 
