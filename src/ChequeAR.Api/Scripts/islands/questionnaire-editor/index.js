@@ -594,9 +594,13 @@
             // el server conserva el snapshot de la variable para las preguntas que ya existían,
             // así que quitar una pregunta y volver a agregarla antes de guardar no tomaría la
             // definición nueva de la variable si conservara el mismo linkId.
-            function linkIdLibre(code) {
+            //
+            // `reservados` suma linkIds ya asignados que todavía no están en el árbol (los de
+            // una importación en curso, que se agregan todos juntos al final).
+            function linkIdLibre(code, reservados) {
                 var usados = usedLinkIds();
                 Object.keys(indexQuestions(baseGroups)).forEach(function (l) { usados[l] = true; });
+                Object.keys(reservados || {}).forEach(function (l) { usados[l] = true; });
                 var n = 1;
                 while (usados[code + '-' + n]) n++;
                 return code + '-' + n;
@@ -658,7 +662,10 @@
             // ── Importar preguntas de otro cuestionario de la misma especialidad ──────────
             // Se puede crear un cuestionario a partir de otro: se traen sus secciones/preguntas
             // y se agregan a la estructura actual, que después se edita libremente. Cada pregunta
-            // importada recibe un linkId NUEVO para no colisionar con las de acá, y sus
+            // importada conserva su variable (sin ella el server rechaza el guardado entero) y
+            // recibe un linkId NUEVO con la misma convención que al agregarla desde el catálogo
+            // (código de la variable + primer sufijo libre), para no colisionar con las de acá
+            // y seguir siendo la misma columna de reporte que en el original. Sus
             // condiciones internas se re-apuntan a esos linkId nuevos; una condición que apunte a
             // una pregunta que no vino en la importación se descarta (misma política de integridad
             // que dropConditions/enforceConditionOrder para el resto del editor).
@@ -695,10 +702,12 @@
                 return used;
             }
 
-            function freshLinkId(used) {
-                var id;
-                do { id = 'q_' + Math.random().toString(36).slice(2, 7); } while (used[id]);
-                used[id] = true;
+            // El linkId del origen ya es "código-de-variable-N": se le saca el sufijo para
+            // recuperar el código y se busca el primer N libre acá.
+            function importedLinkId(sourceLinkId, reservados) {
+                var code = (sourceLinkId || '').replace(/-\d+$/, '') || 'pregunta';
+                var id = linkIdLibre(code, reservados);
+                reservados[id] = true;
                 return id;
             }
 
@@ -725,7 +734,11 @@
                     code: q.code,
                     codeDisplay: q.codeDisplay,
                     term: q.term,
-                    options: q.options && q.options.length ? q.options.slice() : undefined
+                    options: q.options && q.options.length ? q.options.slice() : undefined,
+                    variableId: q.variableId,
+                    variableName: q.variableName,
+                    variableRevision: q.variableRevision,
+                    variableCurrentRevision: q.variableCurrentRevision
                 };
             }
 
@@ -737,12 +750,12 @@
                     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                     .then(function (src) {
                         var srcGroups = src.groups || [];
-                        var used = usedLinkIds();
+                        var reservados = {};
                         // 1) linkId nuevo por pregunta + mapa viejo -> nuevo.
                         var remap = {};
                         var newGroups = srcGroups.map(function (g) {
                             var questions = (g.questions || []).map(function (q) {
-                                var nl = freshLinkId(used);
+                                var nl = importedLinkId(q.linkId, reservados);
                                 if (q.linkId) remap[q.linkId] = nl;
                                 return hydrateImportedQuestion(q, nl);
                             });
