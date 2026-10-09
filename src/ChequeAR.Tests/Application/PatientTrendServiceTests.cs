@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -21,6 +22,30 @@ namespace ChequeAR.Tests.Application
         public PatientTrendServiceTests()
         {
             _sut = new PatientTrendService(_qRepo.Object, _trends.Object);
+        }
+
+        // --- Historia clínica completa ---------------------------------------------------
+
+        // La evolución es parte de la historia del paciente: se ve aunque el cuestionario sea
+        // de otra especialidad. El servicio no depende del scope de quien consulta; lo que sí
+        // se restringe por especialidad es COMPLETAR fichas, y eso vive en otro servicio.
+        [Fact]
+        public async Task LaEvolucion_NoDependeDeLaEspecialidadDeQuienConsulta()
+        {
+            var id = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire
+            {
+                Id = id, SpecialtyCode = "onco",
+                Questions = new List<Question> { new Question { LinkId = "peso", Text = "Peso", Type = QuestionType.Decimal } }
+            });
+            _trends.Setup(t => t.GetSeriesAsync("HC-1", id, It.IsAny<IEnumerable<string>>()))
+                .ReturnsAsync(new List<TrendSeriesDto>());
+
+            var parametros = await _sut.GetSelectableParametersAsync(id);
+            var series = await _sut.GetTrendAsync("HC-1", id, new[] { "peso" });
+
+            Assert.Equal("peso", Assert.Single(parametros.Parameters).LinkId);
+            Assert.Equal("peso", Assert.Single(series).LinkId);
         }
 
         // --- Selección de parámetros ---------------------------------------------------

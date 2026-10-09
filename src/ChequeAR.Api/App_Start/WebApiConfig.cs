@@ -13,10 +13,10 @@ namespace ChequeAR.Api.App_Start
             // mudo: no propaga a Application_Error, asi que no queda rastro en ningun lado.
             config.Services.Add(typeof(IExceptionLogger), new WebApiExceptionLogger());
 
-            // PermissionForbiddenException (IAccessGuard.EnsureCan) -> 403. Global, no por
-            // accion: a diferencia de SpecialtyForbiddenException, el permiso no tiene un
-            // significado distinto segun el endpoint (ver Filters/PermissionExceptionFilter).
-            config.Filters.Add(new ChequeAR.Api.Filters.PermissionExceptionFilter());
+            // Excepciones de Application -> respuesta HTTP, en un solo lugar (ver
+            // Filters/ApiExceptionFilter). Las acciones sólo capturan lo que para ellas
+            // significa otra cosa.
+            config.Filters.Add(new ChequeAR.Api.Filters.ApiExceptionFilter());
 
             config.MapHttpAttributeRoutes();
 

@@ -118,16 +118,8 @@
             var AUTOSAVE_DEBOUNCE_MS = 2500;
             var LOCK_WARNING_MS = 60000;
 
-            function token() {
-                var m = document.querySelector('meta[name="cq-token"]');
-                return m ? m.getAttribute('content') : null;
-            }
-            function authHeaders() {
-                var h = { 'Content-Type': 'application/json' };
-                var t = token();
-                if (t) h['Authorization'] = 'Bearer ' + t;
-                return h;
-            }
+            function token() { return window.ChequeARIslands.auth.token(); }
+            function authHeaders() { return window.ChequeARIslands.auth.headers(true); }
 
             function readOnly() {
                 return !sessionReady.value || !!lockedByOther.value || closedByOther.value;
@@ -356,7 +348,11 @@
                 var items = [];
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (q) {
-                        if (!isVisible(q)) return;
+                        // Oculta: se manda VACÍA, no se saltea. El servidor mezcla por linkId y
+                        // conserva lo que no le llega, así que una respuesta guardada antes de que
+                        // la pregunta se ocultara terminaba en la ficha finalizada. El valor sigue
+                        // en `answers`: si la condición vuelve a cumplirse, reaparece.
+                        if (!isVisible(q)) { items.push({ LinkId: q.linkId, QuestionType: q.type }); return; }
                         toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });

@@ -1,10 +1,8 @@
-﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
+using System;
 using System.Configuration;
 using System.IO;
-using System.Linq;
-using System.Web.Http.Dependencies;
+using System.Reflection;
+using System.Web.Http;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Reports;
 using ChequeAR.Application.Security;
@@ -16,33 +14,47 @@ using ChequeAR.Infrastructure.Oracle;
 using ChequeAR.Infrastructure.Repositories;
 using ChequeAR.Infrastructure.Storage;
 using Serilog;
+using SimpleInjector;
+using SimpleInjector.Integration.Web;
+using SimpleInjector.Integration.Web.Mvc;
+using SimpleInjector.Integration.WebApi;
+using SimpleInjector.Lifestyles;
 
 namespace ChequeAR.Api.App_Start
 {
-    /// Custom DI sin dependencias externas. Soporta MVC (System.Web.Mvc.IDependencyResolver)
-    /// y Web API (System.Web.Http.Dependencies.IDependencyResolver).
+    /// <summary>
+    /// Raíz de composición: el único lugar que conoce las implementaciones concretas.
     ///
-    /// Estrategia:
-    ///  - Singletons stateful (AuditDispatcher, JwtIssuer, RefreshTokenService) viven el ciclo de la app.
-    ///  - DbContext y repos son transient (uno por resolución; en Web API se libera con el scope).
+    /// Ciclos de vida:
+    ///  - Por request (scoped): el DbContext y los repositorios. Todos los repositorios de un
+    ///    mismo request comparten el contexto, que es la unidad de trabajo, y SimpleInjector lo
+    ///    libera al terminar. Antes cada repositorio tenía su propio contexto (sin transacciones
+    ///    posibles entre ellos) y ninguno se liberaba.
+    ///  - Singleton: lo que tiene estado de aplicación o es caro de construir (JwtIssuer, el
+    ///    validador FHIR, AuditDispatcher, el catálogo de especialidades). Los que necesitan base
+    ///    usan su PROPIO contexto por operación, nunca el del request: viven más que él.
+    ///  - Transient: el resto (servicios y clientes sin estado).
     ///
-    /// Reemplazable por SimpleInjector / Autofac sin tocar la lógica de los controllers (todos
-    /// declaran sus dependencias por constructor estándar).
+    /// MVC y Web API conviven en la app, así que el scope es híbrido: el de Web API cuando hay
+    /// uno activo (lo abre el dependency resolver de Web API por request) y, si no, el del
+    /// request web (MVC). Es la configuración documentada por SimpleInjector para este caso.
+    ///
+    /// Verify() corre al arrancar: un registro faltante o un ciclo de vida inconsistente (un
+    /// singleton que depende de algo por request) falla acá y no en medio de un request.
+    /// </summary>
     public static class ServiceComposition
     {
-        private static readonly Dictionary<Type, Func<object>> Factories = new Dictionary<Type, Func<object>>();
-        private static readonly object _lock = new object();
-
         private static AuditDispatcher _audit;
-        private static JwtIssuer _jwt;
-        private static SpecialtyCatalogService _specialties;
-        private static IFhirValidator _fhirValidator;
-        private static System.Net.Http.HttpClient _fhirHttp;
-        private static System.Net.Http.HttpClient _authHttp;
-        private static System.Net.Http.HttpClient _termHttp;
 
-        public static void Configure()
+        public static Container Container { get; private set; }
+
+        public static Container Configure(HttpConfiguration webApiConfig)
         {
+            var container = new Container();
+            container.Options.DefaultScopedLifestyle = Lifestyle.CreateHybrid(
+                defaultLifestyle: new AsyncScopedLifestyle(),
+                fallbackLifestyle: new WebRequestLifestyle());
+
             // ===== Config =====
             var jwtIssuer = ConfigurationManager.AppSettings["Jwt:Issuer"] ?? "https://chequear.garrahan";
             var jwtAudience = ConfigurationManager.AppSettings["Jwt:Audience"] ?? "chequear-api";
@@ -74,16 +86,146 @@ namespace ChequeAR.Api.App_Start
             var sqlConn = ConfigurationManager.ConnectionStrings["ChequeAR"]?.ConnectionString ?? "";
 
             // ===== Singletons =====
-            _jwt = new JwtIssuer(jwtIssuer, jwtAudience, jwtSecret, jwtTtlMinutes);
+            container.RegisterInstance(new JwtIssuer(jwtIssuer, jwtAudience, jwtSecret, jwtTtlMinutes));
+            container.RegisterInstance<IFhirValidator>(CreateFhirValidator());
 
-            // Instancia única, no transitoria: el validador lee y cachea la especificación
-            // FHIR completa (~10 MB de definiciones). Crear uno por request sería inviable.
-            // Mientras fue un sustituto que no hacía nada, ser transitorio no costaba nada.
-            //
-            // Los perfiles propios se copian a la salida de compilación, igual que la
-            // allowlist de vistas: la ubicación en runtime es bin/Fhir/Profiles.
-            var profilesPath = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory, "Fhir", "Profiles");
+            // Un HttpClient por integración, con su Timeout fijado una sola vez. Los clients
+            // NO mutan estas instancias (evita InvalidOperationException).
+            var fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            // El terminológico puede ser un server externo (más lento que el hospital local):
+            // le damos bastante más aire. En arranque en frío, la PRIMERA expansión de los ECL
+            // grandes de la config (<<404684003 "Clinical finding" entero, etc.) se pasaba de 8s
+            // hasta que Elasticsearch calienta sus cachés, y el autocomplete del editor moría en
+            // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
+            var termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(25) };
+
+            // Singleton con su propia factory de repositorio: pide un contexto nuevo por
+            // operación y lo libera. No puede usar el del request: vive toda la aplicación y
+            // persiste desde el timer, fuera de cualquier request.
+            _audit = new AuditDispatcher(
+                () => new AuditRepository(new ChequeARDbContext(), ownsContext: true), 1000,
+                (ex, message) => Log.Error(ex, "{AuditMessage}", message));
+            container.RegisterInstance(_audit);
+
+            // Mismo criterio: contexto propio por recarga. El catálogo cambia rarísimo, así que
+            // un TTL de minutos alcanza sin pegarle a la base en cada request.
+            container.RegisterInstance(new SpecialtyCatalogService(
+                () => new SpecialtyRepository(new ChequeARDbContext()), specialtiesCacheTtlMinutes));
+
+            // ===== Por request: unidad de trabajo =====
+            container.Register<ChequeARDbContext>(() => new ChequeARDbContext(), Lifestyle.Scoped);
+
+            container.Register<IQuestionnaireRepository, QuestionnaireRepository>(Lifestyle.Scoped);
+            container.Register<IQuestionnaireResponseRepository, QuestionnaireResponseRepository>(Lifestyle.Scoped);
+            container.Register<IUserRepository, UserRepository>(Lifestyle.Scoped);
+            container.Register<IRefreshTokenRepository, RefreshTokenRepository>(Lifestyle.Scoped);
+            container.Register<ISavedReportRepository, SavedReportRepository>(Lifestyle.Scoped);
+            container.Register<ISpecialtyRepository, SpecialtyRepository>(Lifestyle.Scoped);
+            container.Register<IClinicalVariableRepository, ClinicalVariableRepository>(Lifestyle.Scoped);
+            // No es dueño del contexto: el del request lo libera SimpleInjector.
+            container.Register<IAuditRepository>(
+                () => new AuditRepository(container.GetInstance<ChequeARDbContext>(), ownsContext: false), Lifestyle.Scoped);
+            container.Register<IAttachmentStore>(
+                () => new FileShareAttachmentStore(attachmentsRoot, container.GetInstance<ChequeARDbContext>()), Lifestyle.Scoped);
+
+            // ===== Integraciones externas =====
+            // Allowlist de vistas autorizadas, copiada a la salida (bin/Oracle/allowlist.yaml).
+            var allowlistPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Oracle", "allowlist.yaml");
+            var allowedViews = File.Exists(allowlistPath)
+                ? AllowlistLoader.Load(allowlistPath)
+                : null; // Sin archivo: comportamiento fallback (sólo VW_*).
+            // Sin conexion configurada no hay base del hospital que consultar. El mock de
+            // spec 008 es un contenedor Oracle, que no existe en App Service, asi que alla
+            // las vistas se sirven desde memoria respetando la misma allowlist.
+            if (string.IsNullOrWhiteSpace(oracleConn))
+            {
+                Log.Warning("Oracle:ConnectionString vacio: las vistas VW_* se sirven desde "
+                            + "MockOracleViewClient (datos de demostracion, no del hospital).");
+                container.Register<IOracleViewClient>(() => new MockOracleViewClient(allowedViews));
+            }
+            else
+            {
+                container.Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
+            }
+
+            // Sin servidor FHIR del hospital, se proyecta el mismo dataset que las vistas
+            // VW_* (ver MockHospitalFhirClient): una sola fuente, dos protocolos.
+            if (string.IsNullOrWhiteSpace(hospitalFhirUrl))
+            {
+                Log.Warning("HospitalFhir:BaseUrl vacio: se usa MockHospitalFhirClient sobre "
+                            + "el dataset de las vistas (datos de demostracion).");
+                container.Register<IHospitalFhirClient>(() => new MockHospitalFhirClient(container.GetInstance<IOracleViewClient>()));
+            }
+            else
+            {
+                container.Register<IHospitalFhirClient>(() => new HospitalFhirClient(fhirHttp, hospitalFhirUrl));
+            }
+
+            // Sin URL configurada no hay login del hospital que llamar: se autentica local,
+            // contra AppUser.PasswordHash (ver LocalCredentialAuthenticator/PasswordHasher).
+            // Cuando exista el servicio real del hospital, basta configurar la URL para que
+            // ese modo tome precedencia -- el hash local queda sin uso, no hace falta borrarlo.
+            if (string.IsNullOrWhiteSpace(hospitalAuthUrl))
+            {
+                Log.Warning("HospitalAuth:LoginUrl vacio: se usa autenticacion local contra "
+                            + "AppUser.PasswordHash (LocalCredentialAuthenticator).");
+                container.Register<ICredentialAuthenticator, LocalCredentialAuthenticator>();
+            }
+            else
+            {
+                container.Register<ICredentialAuthenticator>(() => new HospitalAuthClient(authHttp, hospitalAuthUrl));
+            }
+
+            container.Register<ITerminologyClient>(() => new TerminologyClient(termHttp, terminologyUrl, terminologyEcl, terminologyLang));
+            container.Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
+            // Evolución longitudinal de parámetros (spec 010): consulta dedicada contra
+            // vw_FlatResponses, misma conexión Oracle que los reportes.
+            container.Register<IPatientTrendRepository>(() => new PatientTrendRepository(sqlConn));
+
+            // ===== Usuario actual y autorización =====
+            // Adaptador ClaimsPrincipal -> ICurrentUser (Application no conoce System.Web).
+            container.Register<ICurrentUser, Auth.HttpCurrentUser>();
+            container.Register<ISpecialtyGuard>(() => new SpecialtyGuard(container.GetInstance<ICurrentUser>(), enforceSpecialtyScope));
+            // Eje rol (paralelo al de especialidad): RolePolicy es la matriz explícita, no
+            // depende del flag de despliegue de arriba.
+            container.Register<IAccessGuard, AccessGuard>();
+
+            // ===== Servicios de aplicación =====
+            container.Register<RefreshTokenService>(() => new RefreshTokenService(container.GetInstance<IRefreshTokenRepository>(), refreshTtlHours));
+            container.Register<IntegrationHealthService>(() => new IntegrationHealthService(
+                container.GetInstance<IHospitalFhirClient>(), container.GetInstance<IOracleViewClient>(), hospitalAuthUrl));
+            container.Register<QuestionnaireService>();
+            container.Register<QuestionnaireResponseService>();
+            container.Register<AuditQueryService>();
+            container.Register<AccessAuditService>();
+            container.Register<SavedReportService>();
+            container.Register<UserService>();
+            container.Register<ClinicalVariableService>();
+            container.Register<TerminologyService>();
+            container.Register<HomeDashboardService>();
+            container.Register<PrefillService>();
+            container.Register<QueryBuilder>();
+            container.Register<ReportExecutor>();
+            container.Register<PatientTrendService>();
+            container.Register<PatientService>();
+
+            // ===== Controllers =====
+            container.RegisterMvcControllers(Assembly.GetExecutingAssembly());
+            container.RegisterWebApiControllers(webApiConfig);
+
+            container.Verify();
+            Container = container;
+            return container;
+        }
+
+        /// <summary>
+        /// Instancia única: el validador lee y cachea la especificación FHIR completa (~10 MB de
+        /// definiciones). Los perfiles propios se copian a la salida: bin/Fhir/Profiles.
+        /// </summary>
+        private static IFhirValidator CreateFhirValidator()
+        {
+            var profilesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Fhir", "Profiles");
             // El arranque NO se puede caer por el validador: una excepción acá viaja como
             // HttpException desde Application_Start y deja TODA la aplicación en 500, con el
             // detalle sólo visible en el registro de eventos de Windows. Ya pasó una vez.
@@ -93,256 +235,28 @@ namespace ChequeAR.Api.App_Start
                 // Calentamiento: sin esto la primera publicación del día paga la carga de
                 // toda la especificación y parece que el sistema se colgó.
                 validador.Warmup();
-                _fhirValidator = validador;
+                return validador;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Degradado: sin especificación ni perfiles, las reglas del dominio se siguen
                 // aplicando con el conjunto de tipos por omisión.
-                _fhirValidator = new FhirValidatorService();
+                Log.Error(ex, "No se pudo cargar la especificación FHIR desde {Path}: validador en modo degradado.", profilesPath);
+                return new FhirValidatorService();
             }
-            // Un HttpClient singleton por integración, con su Timeout fijado una sola vez.
-            // Los clients NO mutan estas instancias (evita InvalidOperationException).
-            _fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            _authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-            // El terminológico puede ser un server externo (más lento que el hospital local):
-            // le damos bastante más aire. En arranque en frío, la PRIMERA expansión de los ECL
-            // grandes de la config (<<404684003 "Clinical finding" entero, etc.) se pasaba de 8s
-            // hasta que Elasticsearch calienta sus cachés, y el autocomplete del editor moría en
-            // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
-            _termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(25) };
-
-            // AuditDispatcher requiere repo; usamos una factory que crea su propio contexto.
-            _audit = new AuditDispatcher(NewAuditRepository(), 1000);
-
-            // Mismo criterio: singleton con su propia factory de repositorio (DbContext
-            // nuevo por recarga, descartado al terminar). El catálogo cambia rarísimo, así
-            // que un TTL de minutos alcanza sin pegarle a la base en cada request.
-            _specialties = new SpecialtyCatalogService(
-                () => new SpecialtyRepository(new ChequeARDbContext()), specialtiesCacheTtlMinutes);
-
-            // ===== Factories =====
-            Register<ChequeARDbContext>(() => new ChequeARDbContext());
-
-            Register<IQuestionnaireRepository>(() => new QuestionnaireRepository(Resolve<ChequeARDbContext>()));
-            Register<IQuestionnaireResponseRepository>(() => new QuestionnaireResponseRepository(Resolve<ChequeARDbContext>()));
-            Register<IAuditRepository>(() => new AuditRepository(Resolve<ChequeARDbContext>()));
-            Register<IUserRepository>(() => new UserRepository(Resolve<ChequeARDbContext>()));
-            Register<IRefreshTokenRepository>(() => new RefreshTokenRepository(Resolve<ChequeARDbContext>()));
-            Register<ISavedReportRepository>(() => new SavedReportRepository(Resolve<ChequeARDbContext>()));
-            Register<ISpecialtyRepository>(() => new SpecialtyRepository(Resolve<ChequeARDbContext>()));
-            Register<IClinicalVariableRepository>(() => new ClinicalVariableRepository(Resolve<ChequeARDbContext>()));
-
-            // Sin servidor FHIR del hospital, se proyecta el mismo dataset que las vistas
-            // VW_* (ver MockHospitalFhirClient): una sola fuente, dos protocolos.
-            if (string.IsNullOrWhiteSpace(hospitalFhirUrl))
-            {
-                Log.Warning("HospitalFhir:BaseUrl vacio: se usa MockHospitalFhirClient sobre "
-                            + "el dataset de las vistas (datos de demostracion).");
-                Register<IHospitalFhirClient>(() => new MockHospitalFhirClient(Resolve<IOracleViewClient>()));
-            }
-            else
-            {
-                Register<IHospitalFhirClient>(() => new HospitalFhirClient(_fhirHttp, hospitalFhirUrl));
-            }
-            // Sin URL configurada no hay login del hospital que llamar: se autentica local,
-            // contra AppUser.PasswordHash (ver LocalCredentialAuthenticator/PasswordHasher).
-            // Cuando exista el servicio real del hospital, basta configurar la URL para que
-            // ese modo tome precedencia -- el hash local queda sin uso, no hace falta borrarlo.
-            if (string.IsNullOrWhiteSpace(hospitalAuthUrl))
-            {
-                Log.Warning("HospitalAuth:LoginUrl vacio: se usa autenticacion local contra "
-                            + "AppUser.PasswordHash (LocalCredentialAuthenticator).");
-                Register<ICredentialAuthenticator>(() => new LocalCredentialAuthenticator(Resolve<IUserRepository>()));
-            }
-            else
-            {
-                Register<ICredentialAuthenticator>(() => new HospitalAuthClient(_authHttp, hospitalAuthUrl));
-            }
-            Register<ITerminologyClient>(() => new TerminologyClient(_termHttp, terminologyUrl, terminologyEcl, terminologyLang));
-
-            // Allowlist de vistas autorizadas. Se carga una sola vez al arrancar la app.
-            // El archivo se copia a la salida con CopyToOutputDirectory=PreserveNewest;
-            // la ubicación final en runtime es bin/Oracle/allowlist.yaml junto al ensamblado.
-            var allowlistPath = Path.Combine(
-                System.AppDomain.CurrentDomain.BaseDirectory, "Oracle", "allowlist.yaml");
-            var allowedViews = File.Exists(allowlistPath)
-                ? AllowlistLoader.Load(allowlistPath)
-                : null; // En tests sin archivo: comportamiento fallback (sólo VW_*).
-            // Sin conexion configurada no hay base del hospital que consultar. El mock de
-            // spec 008 es un contenedor Oracle, que no existe en App Service, asi que alla
-            // las vistas se sirven desde memoria respetando la misma allowlist.
-            if (string.IsNullOrWhiteSpace(oracleConn))
-            {
-                Log.Warning("Oracle:ConnectionString vacio: las vistas VW_* se sirven desde "
-                            + "MockOracleViewClient (datos de demostracion, no del hospital).");
-                Register<IOracleViewClient>(() => new MockOracleViewClient(allowedViews));
-            }
-            else
-            {
-                Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
-            }
-            Register<IFhirValidator>(() => _fhirValidator);
-            Register<IAttachmentStore>(() => new FileShareAttachmentStore(attachmentsRoot, Resolve<ChequeARDbContext>()));
-
-            Register<JwtIssuer>(() => _jwt);
-            Register<AuditDispatcher>(() => _audit);
-            Register<SpecialtyCatalogService>(() => _specialties);
-            Register<RefreshTokenService>(() => new RefreshTokenService(Resolve<IRefreshTokenRepository>(), refreshTtlHours));
-
-            // Adaptador de ClaimsPrincipal -> ICurrentUser (Application no conoce System.Web)
-            // y el guard que decide el scope. SpecialtyGuard.Scope se recalcula en cada
-            // acceso, así que no importa que ICurrentUser/ISpecialtyGuard no tengan scope
-            // por request en este DI.
-            Register<ICurrentUser>(() => new ChequeAR.Api.Auth.HttpCurrentUser());
-            Register<ISpecialtyGuard>(() => new SpecialtyGuard(Resolve<ICurrentUser>(), enforceSpecialtyScope));
-            // Eje rol (paralelo al de especialidad): RolePolicy es la matriz explícita, no
-            // depende del flag de despliegue de arriba -sacarle auditoría/usuarios a Jefe no
-            // es algo que se pueda "apagar" para volver al comportamiento anterior.
-            Register<IAccessGuard>(() => new AccessGuard(Resolve<ICurrentUser>()));
-
-            Register<QuestionnaireService>(() => new QuestionnaireService(
-                Resolve<IQuestionnaireRepository>(), Resolve<IQuestionnaireResponseRepository>(),
-                Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>(), Resolve<SpecialtyCatalogService>(),
-                Resolve<IAccessGuard>(), Resolve<IClinicalVariableRepository>()));
-            Register<QuestionnaireResponseService>(() => new QuestionnaireResponseService(
-                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
-                Resolve<IFhirValidator>(), _audit, Resolve<ISpecialtyGuard>(), Resolve<IAccessGuard>()));
-            Register<AuditQueryService>(() => new AuditQueryService(Resolve<IAuditRepository>()));
-            Register<SavedReportService>(() => new SavedReportService(Resolve<ISavedReportRepository>(), Resolve<AuditDispatcher>(), Resolve<ISpecialtyGuard>()));
-            Register<UserService>(() => new UserService(Resolve<IUserRepository>(), Resolve<SpecialtyCatalogService>()));
-            // Sin caché, a diferencia de SpecialtyCatalogService: el Administrador edita el
-            // catálogo en vivo y un alta recién hecha tiene que aparecer en el editor ya.
-            Register<ClinicalVariableService>(() => new ClinicalVariableService(
-                Resolve<IClinicalVariableRepository>(), _audit, Resolve<IAccessGuard>()));
-            Register<TerminologyService>(() => new TerminologyService(Resolve<ITerminologyClient>()));
-            Register<HomeDashboardService>(() => new HomeDashboardService(
-                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
-                Resolve<IUserRepository>(), Resolve<SpecialtyCatalogService>(),
-                Resolve<ISpecialtyGuard>()));
-            Register<PrefillService>(() => new PrefillService(Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>()));
-            Register<QueryBuilder>(() => new QueryBuilder());
-            Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
-            Register<ReportExecutor>(() => new ReportExecutor(
-                Resolve<IReportQueryRunner>(), Resolve<QueryBuilder>(), Resolve<IQuestionnaireRepository>(), Resolve<ISpecialtyGuard>()));
-
-            // Evolución longitudinal de parámetros (spec 010): consulta dedicada contra
-            // vw_FlatResponses (misma conexión Oracle que los reportes) + service que arma las
-            // series desde la definición del cuestionario.
-            Register<IPatientTrendRepository>(() => new PatientTrendRepository(sqlConn));
-            Register<PatientTrendService>(() => new PatientTrendService(
-                Resolve<IQuestionnaireRepository>(), Resolve<IPatientTrendRepository>()));
-
-            Register<IntegrationHealthService>(() => new IntegrationHealthService(
-                Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(), hospitalAuthUrl));
-            Register<PatientService>(() => new PatientService(
-                Resolve<IHospitalFhirClient>(), Resolve<IOracleViewClient>(),
-                Resolve<IQuestionnaireResponseRepository>(), Resolve<IQuestionnaireRepository>(),
-                Resolve<SpecialtyCatalogService>()));
-
-            // Controllers de Web API: SimpleInjector los registra automáticamente;
-            // nosotros declaramos los pocos que tenemos.
-            Register<Controllers.Api.QuestionnaireController>(() => new Controllers.Api.QuestionnaireController(
-                Resolve<QuestionnaireService>()));
-            Register<Controllers.Api.QuestionnaireResponseController>(() => new Controllers.Api.QuestionnaireResponseController(
-                Resolve<QuestionnaireResponseService>()));
-            Register<Controllers.Api.AuthController>(() => new Controllers.Api.AuthController(
-                Resolve<ICredentialAuthenticator>(), Resolve<JwtIssuer>(), Resolve<RefreshTokenService>(), Resolve<UserService>()));
-            Register<Controllers.Api.AuditEventController>(() => new Controllers.Api.AuditEventController(Resolve<AuditQueryService>()));
-            Register<Controllers.Api.AttachmentController>(() => new Controllers.Api.AttachmentController(Resolve<IAttachmentStore>()));
-            Register<Controllers.Api.ReportsController>(() => new Controllers.Api.ReportsController(Resolve<ReportExecutor>(), Resolve<AuditDispatcher>()));
-            Register<Controllers.Api.MetadataController>(() => new Controllers.Api.MetadataController());
-            Register<Controllers.Api.TerminologyController>(() => new Controllers.Api.TerminologyController(Resolve<ITerminologyClient>()));
-            Register<Controllers.Api.PatientController>(() => new Controllers.Api.PatientController(Resolve<PatientService>()));
-            Register<Controllers.Api.PatientTrendController>(() => new Controllers.Api.PatientTrendController(Resolve<PatientTrendService>()));
-            Register<Controllers.Api.EncounterController>(() => new Controllers.Api.EncounterController(Resolve<PatientService>()));
-            Register<Controllers.Api.UserController>(() => new Controllers.Api.UserController(Resolve<UserService>()));
-            Register<Controllers.Api.ClinicalVariableController>(() => new Controllers.Api.ClinicalVariableController(Resolve<ClinicalVariableService>()));
-            Register<Controllers.Api.IntegrationStatusController>(() => new Controllers.Api.IntegrationStatusController(Resolve<IntegrationHealthService>()));
-            Register<Controllers.Api.SavedReportController>(() => new Controllers.Api.SavedReportController(Resolve<SavedReportService>(), Resolve<QuestionnaireService>()));
-            Register<Controllers.Api.SpecialtyController>(() => new Controllers.Api.SpecialtyController(Resolve<SpecialtyCatalogService>(), Resolve<ISpecialtyGuard>()));
-
-            // Controllers MVC
-            Register<Controllers.Mvc.HomeController>(() => new Controllers.Mvc.HomeController(Resolve<HomeDashboardService>(), Resolve<SpecialtyCatalogService>()));
-            Register<Controllers.Mvc.AccountController>(() => new Controllers.Mvc.AccountController(
-                Resolve<ICredentialAuthenticator>(), Resolve<UserService>(), Resolve<SpecialtyCatalogService>()));
-            Register<Controllers.Mvc.QuestionnairesController>(() => new Controllers.Mvc.QuestionnairesController(
-                Resolve<QuestionnaireService>(), Resolve<SpecialtyCatalogService>(), Resolve<ClinicalVariableService>()));
-            Register<Controllers.Mvc.EncountersController>(() => new Controllers.Mvc.EncountersController(
-                Resolve<PatientService>(), Resolve<QuestionnaireResponseService>(), Resolve<QuestionnaireService>(), Resolve<AuditQueryService>(),
-                Resolve<SpecialtyCatalogService>()));
-            Register<Controllers.Mvc.ReportsController>(() => new Controllers.Mvc.ReportsController(
-                Resolve<SavedReportService>(), Resolve<ReportExecutor>(), Resolve<QuestionnaireService>()));
-            Register<Controllers.Mvc.AuditController>(() => new Controllers.Mvc.AuditController(
-                Resolve<AuditQueryService>(), Resolve<QuestionnaireService>()));
-            Register<Controllers.Mvc.UsersController>(() => new Controllers.Mvc.UsersController(Resolve<UserService>(), Resolve<SpecialtyCatalogService>()));
-            Register<Controllers.Mvc.VariablesController>(() => new Controllers.Mvc.VariablesController(Resolve<ClinicalVariableService>()));
-            Register<Controllers.Mvc.AdminController>(() => new Controllers.Mvc.AdminController());
-            Register<Controllers.Mvc.ErrorController>(() => new Controllers.Mvc.ErrorController());
         }
 
-        public static void Register<TService>(Func<object> factory)
+        /// <summary>Vacía la cola de auditoría y libera los singletons antes de que el proceso termine (Application_End).</summary>
+        public static void Shutdown()
         {
-            lock (_lock) { Factories[typeof(TService)] = factory; }
+            _audit?.Dispose();
+            Container?.Dispose();
         }
 
-        public static T Resolve<T>() => (T)Resolve(typeof(T));
+        public static System.Web.Mvc.IDependencyResolver MvcResolver(Container container)
+            => new SimpleInjectorDependencyResolver(container);
 
-        public static object Resolve(Type t)
-        {
-            Func<object> f;
-            lock (_lock) { Factories.TryGetValue(t, out f); }
-            return f != null ? f() : null;
-        }
-
-        public static System.Web.Mvc.IDependencyResolver MvcResolver { get; } = new MvcResolverImpl();
-        public static IDependencyResolver WebApiResolver { get; } = new WebApiResolverImpl();
-
-        private static IAuditRepository NewAuditRepository() => new AuditRepository(new ChequeARDbContext());
-
-        private class MvcResolverImpl : System.Web.Mvc.IDependencyResolver
-        {
-            public object GetService(Type serviceType) => ServiceComposition.Resolve(serviceType);
-            public IEnumerable<object> GetServices(Type serviceType)
-            {
-                var r = Resolve(serviceType);
-                return r != null ? new[] { r } : Enumerable.Empty<object>();
-            }
-        }
-
-        private class WebApiResolverImpl : IDependencyResolver
-        {
-            public object GetService(Type serviceType) => ServiceComposition.Resolve(serviceType);
-            public IEnumerable<object> GetServices(Type serviceType)
-            {
-                var r = Resolve(serviceType);
-                return r != null ? new[] { r } : Enumerable.Empty<object>();
-            }
-            public IDependencyScope BeginScope() => new Scope();
-            public void Dispose() { }
-
-            private class Scope : IDependencyScope
-            {
-                private readonly ConcurrentBag<IDisposable> _disposables = new ConcurrentBag<IDisposable>();
-                public object GetService(Type serviceType)
-                {
-                    var r = ServiceComposition.Resolve(serviceType);
-                    if (r is IDisposable d) _disposables.Add(d);
-                    return r;
-                }
-                public IEnumerable<object> GetServices(Type serviceType)
-                {
-                    var r = GetService(serviceType);
-                    return r != null ? new[] { r } : Enumerable.Empty<object>();
-                }
-                public void Dispose()
-                {
-                    foreach (var d in _disposables)
-                    {
-                        try { d.Dispose(); } catch { /* swallow */ }
-                    }
-                }
-            }
-        }
+        public static System.Web.Http.Dependencies.IDependencyResolver WebApiResolver(Container container)
+            => new SimpleInjectorWebApiDependencyResolver(container);
     }
 }

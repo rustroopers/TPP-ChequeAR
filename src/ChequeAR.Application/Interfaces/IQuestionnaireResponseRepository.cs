@@ -36,5 +36,11 @@ namespace ChequeAR.Application.Interfaces
         Task RetargetAsync(QuestionnaireResponse r, ICollection<string> keepLinkIds);
         /// <summary>¿Hay respuestas cargadas contra este cuestionario? Decide si se puede borrar.</summary>
         Task<bool> HasResponsesAsync(Guid questionnaireId);
+
+        /// <summary>
+        /// Cantidad de fichas que matchean los mismos filtros que <see cref="SearchAsync"/>, sin
+        /// paginar (un COUNT en la base, sin traerlas). Sin filtros, el total de fichas.
+        /// </summary>
+        Task<int> CountAsync(string patientHospitalId = null, Guid? questionnaireId = null, ResponseStatus? status = null, SpecialtyScope scope = null);
     }
 }

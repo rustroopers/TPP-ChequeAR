@@ -18,8 +18,8 @@
             <i class="bi bi-download me-1"></i> @Cq.T("common.export")
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="@Url.Action("Export", new { user = Model.UserFilter, act = Model.ActionFilter, resource = Model.ResourceFilter, from = Model.From, to = Model.To, format = "xlsx" })"><i class="bi bi-file-earmark-excel me-1"></i> Excel (.xlsx)</a></li>
-            <li><a class="dropdown-item" href="@Url.Action("Export", new { user = Model.UserFilter, act = Model.ActionFilter, resource = Model.ResourceFilter, from = Model.From, to = Model.To, format = "csv" })"><i class="bi bi-filetype-csv me-1"></i> CSV (.csv)</a></li>
+            <li><a class="dropdown-item" href="@Url.Action("Export", new { user = Model.UserFilter, act = Model.ActionFilter, questionnaire = Model.QuestionnaireFilter, from = Model.From, to = Model.To, format = "xlsx" })"><i class="bi bi-file-earmark-excel me-1"></i> Excel (.xlsx)</a></li>
+            <li><a class="dropdown-item" href="@Url.Action("Export", new { user = Model.UserFilter, act = Model.ActionFilter, questionnaire = Model.QuestionnaireFilter, from = Model.From, to = Model.To, format = "csv" })"><i class="bi bi-filetype-csv me-1"></i> CSV (.csv)</a></li>
         </ul>
     </div>
 </header>
@@ -38,11 +38,24 @@
                 <option value="E" selected="@(Model.ActionFilter == "E")">Exportaciones</option>
             </select>
         </div>
-        <div class="col-md-3"><label class="form-label cq-text-sm">Recurso</label><input type="text" class="form-control" name="resource" value="@Model.ResourceFilter" placeholder="Cuestionario…" /></div>
+        <div class="col-md-3"><label class="form-label cq-text-sm">Cuestionario</label>
+            <select class="form-select" name="questionnaire">
+                <option value="">Todos</option>
+                @foreach (var q in Model.Questionnaires)
+                {
+                    <option value="@q.Id" selected="@(Model.QuestionnaireFilter == q.Id)">@q.Title@(q.IsDeleted ? " (eliminado)" : "")</option>
+                }
+            </select>
+        </div>
         <div class="col-md-4"><label class="form-label cq-text-sm">Período</label>
             <cq-date-range name-from="from" name-to="to" value-from="@Model.From" value-to="@Model.To"></cq-date-range>
         </div>
     </div>
+}
+
+@if (!string.IsNullOrEmpty(ViewBag.ExportError as string))
+{
+    <div class="alert alert-warning" role="alert">@ViewBag.ExportError</div>
 }
 
 @if (Model.Entries.Count == 0)
@@ -59,7 +72,7 @@ else
 {
     <table class="cq-table">
         <thead>
-            <tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Cuestionario</th><th>IP</th><th></th></tr>
+            <tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Cuestionario</th><th></th></tr>
         </thead>
         <tbody>
             @foreach (var e in Model.Entries)
@@ -69,7 +82,6 @@ else
                     <td>@e.Username</td>
                     <td><span class="cq-badge @e.ActionBadge"><i class="bi @e.ActionIcon me-1"></i>@e.Action</span></td>
                     <td>@e.Resource</td>
-                    <td class="cq-text-sm cq-text-muted">@e.IP</td>
                     <td class="text-end"><a href="@Url.Action("Details", new { id = e.Id })" class="btn btn-sm btn-primary">Ver →</a></td>
                 </tr>
             }
@@ -81,9 +93,9 @@ else
         {
             <nav>
                 <ul class="pagination pagination-sm mb-0">
-                    <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { user = Model.UserFilter, act = Model.ActionFilter, resource = Model.ResourceFilter, from = Model.From, to = Model.To, page = Model.Page - 1 })">‹</a></li>
+                    <li class="page-item @(Model.Page <= 1 ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { user = Model.UserFilter, act = Model.ActionFilter, questionnaire = Model.QuestionnaireFilter, from = Model.From, to = Model.To, page = Model.Page - 1 })">‹</a></li>
                     <li class="page-item active"><span class="page-link">@Model.Page</span></li>
-                    <li class="page-item @(Model.Page >= totalPages ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { user = Model.UserFilter, act = Model.ActionFilter, resource = Model.ResourceFilter, from = Model.From, to = Model.To, page = Model.Page + 1 })">›</a></li>
+                    <li class="page-item @(Model.Page >= totalPages ? "disabled" : "")"><a class="page-link" href="@Url.Action("Index", new { user = Model.UserFilter, act = Model.ActionFilter, questionnaire = Model.QuestionnaireFilter, from = Model.From, to = Model.To, page = Model.Page + 1 })">›</a></li>
                 </ul>
             </nav>
         }

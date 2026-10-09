@@ -26,10 +26,11 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content(System.Net.HttpStatusCode.BadRequest, OperationOutcomes.Invalid(
                     "Falta el parámetro 'subject' con la historia clínica del paciente."));
 
-            var fichas = await _svc.GetEncountersAsync(subject, _count);
+            var fichas = await _svc.GetEncountersAsync(subject, FhirBundles.ClampCount(_count));
+            var total = await _svc.CountEncountersAsync(subject);
 
             var recursos = FhirPatientProjection.ToEncounters(fichas).Cast<Hl7.Fhir.Model.Resource>();
-            return Ok(FhirBundles.SearchSet(recursos, fichas.Count, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
         }
 
         private string FhirBaseUrl()

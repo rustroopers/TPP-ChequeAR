@@ -31,10 +31,12 @@ namespace ChequeAR.Api.Controllers.Api
         {
             ResponseStatus? st = null;
             if (Enum.TryParse(status, true, out ResponseStatus s)) st = s;
-            var items = await _service.SearchAsync(subject, questionnaire, st, _offset, _count);
+            var items = await _service.SearchAsync(subject, questionnaire, st,
+                FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count));
+            var total = await _service.CountAsync(subject, questionnaire, st);
 
             var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)ToFhir(r));
-            return Ok(FhirBundles.SearchSet(recursos, items.Count, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
@@ -119,15 +121,6 @@ namespace ChequeAR.Api.Controllers.Api
             {
                 return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(ex.Message));
             }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a la especialidad de ese cuestionario."));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, OperationOutcomes.Unprocessable(ex.Message));
-            }
         }
 
         // Toma la sesión de edición exclusiva. Sin esto, dos médicos podrían completar el
@@ -137,35 +130,20 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Lock(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
+            var r = await _service.AcquireLockAsync(id, userId);
+            // (el guard corre adentro del service, ANTES de tomar el lock: ver AcquireLockAsync)
+            // $lock también bumpea ConcurrencyVersion (es una escritura más, protegida
+            // por el mismo token que cualquier otra). El cliente tiene que enterarse acá
+            // y no sólo por el ETag -- si no, el primer guardado después de tomar el
+            // lock manda el If-Match viejo y choca con un 409 que no es un conflicto real.
+            var response = Request.CreateResponse(HttpStatusCode.OK, new
             {
-                var r = await _service.AcquireLockAsync(id, userId);
-                // (el guard corre adentro del service, ANTES de tomar el lock: ver AcquireLockAsync)
-                // $lock también bumpea ConcurrencyVersion (es una escritura más, protegida
-                // por el mismo token que cualquier otra). El cliente tiene que enterarse acá
-                // y no sólo por el ETag -- si no, el primer guardado después de tomar el
-                // lock manda el If-Match viejo y choca con un 409 que no es un conflicto real.
-                var response = Request.CreateResponse(HttpStatusCode.OK, new
-                {
-                    lockToken = r.LockToken,
-                    expiresAt = r.LockExpiresAt,
-                    concurrencyVersion = r.ConcurrencyVersion
-                });
-                response.Headers.ETag = ETagFor(r);
-                return ResponseMessage(response);
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
-            }
-            catch (LockConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
-            }
+                lockToken = r.LockToken,
+                expiresAt = r.LockExpiresAt,
+                concurrencyVersion = r.ConcurrencyVersion
+            });
+            response.Headers.ETag = ETagFor(r);
+            return ResponseMessage(response);
         }
 
         // Heartbeat: extiende el vencimiento sin escribir respuestas. Lo dispara el aviso
@@ -178,23 +156,8 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var r = await _service.RenewLockAsync(id, userId, token.Value);
-                return Ok(new { expiresAt = r.LockExpiresAt, concurrencyVersion = r.ConcurrencyVersion });
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
-            }
-            catch (LockConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
-            }
+            var r = await _service.RenewLockAsync(id, userId, token.Value);
+            return Ok(new { expiresAt = r.LockExpiresAt, concurrencyVersion = r.ConcurrencyVersion });
         }
 
         // Cierra la sesión de edición (fin de la llamada, o navegación fuera de la página).
@@ -210,14 +173,7 @@ namespace ChequeAR.Api.Controllers.Api
             if (!token.HasValue) return Ok();
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items);
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
-            }
+            await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items);
             return Ok();
         }
 
@@ -251,39 +207,15 @@ namespace ChequeAR.Api.Controllers.Api
             }
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var r = await _service.SaveProgressAsync(id, userId, lockToken.Value, expectedVersion, body?.Items);
-                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
-                response.Headers.ETag = ETagFor(r);
-                // El vencimiento del lock no tiene lugar nativo en FHIR (no es parte del
-                // recurso canónico): viaja en un header propio, igual que X-Lock-Token en el
-                // request. El cliente lo usa para reprogramar el aviso de "1 minuto".
-                if (r.LockExpiresAt.HasValue)
-                    response.Headers.Add("X-Lock-Expires-At", r.LockExpiresAt.Value.ToString("o"));
-                return ResponseMessage(response);
-            }
-            catch (ConcurrencyConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new
-                {
-                    error = ex.Message,
-                    expectedVersion = ex.ExpectedVersion,
-                    actualVersion = ex.ActualVersion
-                });
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
-            }
-            catch (LockConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
-            }
+            var r = await _service.SaveProgressAsync(id, userId, lockToken.Value, expectedVersion, body?.Items);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+            response.Headers.ETag = ETagFor(r);
+            // El vencimiento del lock no tiene lugar nativo en FHIR (no es parte del
+            // recurso canónico): viaja en un header propio, igual que X-Lock-Token en el
+            // request. El cliente lo usa para reprogramar el aviso de "1 minuto".
+            if (r.LockExpiresAt.HasValue)
+                response.Headers.Add("X-Lock-Expires-At", r.LockExpiresAt.Value.ToString("o"));
+            return ResponseMessage(response);
         }
 
         // El body (opcional) lleva el baseline de la sesión: las respuestas como estaban al
@@ -298,29 +230,10 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var r = await _service.FinalizeAsync(id, userId, lockToken.Value, body?.Items);
-                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
-                response.Headers.ETag = ETagFor(r);
-                return ResponseMessage(response);
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
-            }
-            catch (ValidationFailedException ex)
-            {
-                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
-            }
-            catch (LockConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
-            }
+            var r = await _service.FinalizeAsync(id, userId, lockToken.Value, body?.Items);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+            response.Headers.ETag = ETagFor(r);
+            return ResponseMessage(response);
         }
 
         // Descarta un borrador InProgress (el médico eligió "Empezar de nuevo" en vez de
@@ -331,25 +244,10 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Abandon(Guid id)
         {
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var r = await _service.AbandonAsync(id, userId);
-                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
-                response.Headers.ETag = ETagFor(r);
-                return ResponseMessage(response);
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
-            }
-            catch (LockConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
-            }
+            var r = await _service.AbandonAsync(id, userId);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+            response.Headers.ETag = ETagFor(r);
+            return ResponseMessage(response);
         }
 
         // Vista previa de "pasar a la versión vigente": qué se conserva / se agrega / se
@@ -365,10 +263,6 @@ namespace ChequeAR.Api.Controllers.Api
             {
                 return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
-            }
         }
 
         // Re-ancla la ficha a la versión vigente (descarta lo que la versión nueva eliminó).
@@ -381,29 +275,10 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var r = await _service.RetargetToCurrentVersionAsync(id, userId, lockToken.Value);
-                var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
-                response.Headers.ETag = ETagFor(r);
-                return ResponseMessage(response);
-            }
-            catch (SpecialtyForbiddenException)
-            {
-                return Content(HttpStatusCode.Forbidden, new { error = "No tenés acceso a la especialidad de ese cuestionario." });
-            }
-            catch (LockConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new { error = ex.Message, lockedBy = ex.LockedByUserId, expiresAt = ex.LockExpiresAt });
-            }
-            catch (ConcurrencyConflictException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new { error = ex.Message, expectedVersion = ex.ExpectedVersion, actualVersion = ex.ActualVersion });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Content((HttpStatusCode)422, new { error = ex.Message });
-            }
+            var r = await _service.RetargetToCurrentVersionAsync(id, userId, lockToken.Value);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+            response.Headers.ETag = ETagFor(r);
+            return ResponseMessage(response);
         }
 
         public class SaveProgressBody { public List<QuestionnaireResponseItem> Items { get; set; } }

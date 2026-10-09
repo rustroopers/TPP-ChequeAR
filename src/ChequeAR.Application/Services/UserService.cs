@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -103,21 +104,21 @@ namespace ChequeAR.Application.Services
 
             var user = await _repo.GetAsync(userId);
             if (user == null)
-                throw new InvalidOperationException("Usuario inexistente: " + userId);
+                throw new NotFoundException("Usuario inexistente: " + userId);
 
             var currentRole = RoleHierarchy.Principal(user.Roles?.Select(r => r.Role));
             if (string.Equals(currentRole, Role.Administrador, StringComparison.Ordinal)
                 && !string.Equals(role, Role.Administrador, StringComparison.Ordinal))
             {
                 if (actingUserId != null && string.Equals(actingUserId, userId, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("No podés quitarte a vos mismo el rol Administrador.");
+                    throw new BusinessRuleException("No podés quitarte a vos mismo el rol Administrador.");
 
                 var otherAdmins = await _repo.CountAsync(null, Role.Administrador, null, true);
                 // El propio `user` todavía cuenta como Administrador acá (no se escribió el
                 // cambio todavía), así que "otro" admin activo requiere que el conteo sea > 1
                 // salvo que este usuario esté inactivo (no cuenta como salvaguarda real).
                 if (otherAdmins <= 1 && user.IsActive)
-                    throw new InvalidOperationException("Debe existir al menos un Administrador activo en el sistema.");
+                    throw new BusinessRuleException("Debe existir al menos un Administrador activo en el sistema.");
             }
 
             await _repo.SyncFromHospitalAsync(userId, user.DisplayName, null, new List<string> { role }, null);

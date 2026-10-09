@@ -92,7 +92,9 @@ namespace ChequeAR.Application.Fhir
                 Text = item.Text,
                 Type = ToQuestionType(item),
                 Required = item.Required ?? false,
-                RepeatsAllowed = item.Repeats ?? false,
+                // En una selección múltiple el repeats es parte del TIPO (ver
+                // FhirQuestionnaireBuilder.RepeatsFor), no una decisión aparte de la variable.
+                RepeatsAllowed = (item.Repeats ?? false) && ToQuestionType(item) != QuestionType.OpenChoice,
                 OrderIndex = orderIndex,
                 ValidationJson = ToValidationJson(item),
                 EnableWhenJson = ToEnableWhenJson(item),
@@ -144,8 +146,12 @@ namespace ChequeAR.Application.Fhir
                 case "integer":
                     return HasItemControl(item, "slider") ? QuestionType.Scale : QuestionType.Integer;
 
+                // Selección múltiple = repeats. optionsOrString es lo que declaraban las
+                // versiones congeladas antes de corregir el mapeo, y significaba lo mismo.
                 case "coding":
-                    return constraint == "optionsOrString" ? QuestionType.OpenChoice : QuestionType.Choice;
+                    return item.Repeats == true || constraint == "optionsOrString"
+                        ? QuestionType.OpenChoice
+                        : QuestionType.Choice;
 
                 // Legado R4.
                 case "choice":      return QuestionType.Choice;

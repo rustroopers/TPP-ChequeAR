@@ -276,18 +276,160 @@ namespace ChequeAR.Tests.Application
         }
 
         /// <summary>
-        /// En R5 answerConstraint es lo ÚNICO que separa una opción cerrada de una abierta:
-        /// sin él, al releer la versión congelada una pregunta de opción abierta vuelve como
-        /// cerrada y el clínico pierde la posibilidad de escribir texto libre.
+        /// Ninguna pregunta de opción de ChequeAR acepta texto libre, así que ambas son
+        /// optionsOnly. Lo que distingue a OpenChoice —selección múltiple, con casillas en el
+        /// renderer— es repeats. optionsOrString significaría "una opción o texto libre", que
+        /// declararía en el recurso un comportamiento que la aplicación no tiene.
         /// </summary>
         [Theory]
-        [InlineData(QuestionType.Choice, "optionsOnly")]
-        [InlineData(QuestionType.OpenChoice, "optionsOrString")]
-        public void Build_PreguntasDeOpcion_LlevanAnswerConstraint(QuestionType type, string expected)
+        [InlineData(QuestionType.Choice, false)]
+        [InlineData(QuestionType.OpenChoice, true)]
+        public void Build_PreguntasDeOpcion_SonOptionsOnly_YLaMultipleRepite(QuestionType type, bool repite)
         {
             var q = WithQuestion(new Question { LinkId = "x", Type = type });
 
-            Assert.Equal(expected, (string)FirstItem(FhirQuestionnaireBuilder.Build(q, 1))["answerConstraint"]);
+            var item = FirstItem(FhirQuestionnaireBuilder.Build(q, 1));
+
+            Assert.Equal("optionsOnly", (string)item["answerConstraint"]);
+            Assert.Equal(repite, item["repeats"] != null && (bool)item["repeats"]);
+        }
+
+        // La versión congelada se relee con la misma semántica: coding + repeats es la múltiple.
+        [Theory]
+        [InlineData(QuestionType.Choice, "choice")]
+        [InlineData(QuestionType.OpenChoice, "openChoice")]
+        public void Build_PreguntasDeOpcion_VuelvenConSuTipoAlReleer(QuestionType type, string esperado)
+        {
+            var json = FhirQuestionnaireBuilder.Build(WithQuestion(new Question { LinkId = "x", Type = type }), 1);
+
+            Assert.Equal(esperado, FhirQuestionnaireReader.Read(json).Groups[0].Questions[0].Type);
+        }
+
+        /// <summary>
+        /// En FHIR una condición sobre una pregunta de opción se cumple comparando Coding
+        /// contra Coding. Si el answerCoding no lleva el mismo system y código que el
+        /// answerOption, un consumidor externo nunca habilita la pregunta dependiente.
+        /// </summary>
+        [Fact]
+        public void Build_EnableWhenSobreOpcion_UsaElCodingDeLaOpcion()
+        {
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "T" };
+            q.Questions.Add(new Question
+            {
+                Id = Guid.NewGuid(), LinkId = "fuma", Type = QuestionType.Choice, OrderIndex = 0,
+                Options =
+                {
+                    new AnswerOption { Code = "77176002", SnomedCode = "77176002", Display = "Fumador", SnomedDisplay = "Fumador", OrderIndex = 0 },
+                    new AnswerOption { Code = "8392000", SnomedCode = "8392000", Display = "No fumador", SnomedDisplay = "No fumador", OrderIndex = 1 }
+                }
+            });
+            q.Questions.Add(new Question
+            {
+                Id = Guid.NewGuid(), LinkId = "cuanto", Type = QuestionType.Integer, OrderIndex = 1,
+                // Internamente la condición se guarda con el texto de la opción.
+                EnableWhenJson = "{\"question\":\"fuma\",\"op\":\"=\",\"value\":\"Fumador\"}"
+            });
+
+            var items = (JArray)JObject.Parse(FhirQuestionnaireBuilder.Build(q, 1))["item"];
+            var opcion = items[0]["answerOption"][0]["valueCoding"];
+            var respuesta = items[1]["enableWhen"][0]["answerCoding"];
+
+            Assert.Equal("http://snomed.info/sct", (string)respuesta["system"]);
+            Assert.Equal((string)opcion["system"], (string)respuesta["system"]);
+            Assert.Equal((string)opcion["code"], (string)respuesta["code"]);
+        }
+
+        // Una condición a medio armar (se eligió la pregunta, todavía no el valor) no tiene un
+        // answer[x] válido: no se inventa un "false" ni un "0" que cambiaría su sentido.
+        [Fact]
+        public void Build_EnableWhenSinValor_NoSeEmite()
+        {
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "T" };
+            q.Questions.Add(new Question { Id = Guid.NewGuid(), LinkId = "fuma", Type = QuestionType.Boolean, OrderIndex = 0 });
+            q.Questions.Add(new Question
+            {
+                Id = Guid.NewGuid(), LinkId = "cuanto", Type = QuestionType.Integer, OrderIndex = 1,
+                EnableWhenJson = "{\"question\":\"fuma\",\"op\":\"=\",\"value\":\"\"}"
+            });
+
+            var items = (JArray)JObject.Parse(FhirQuestionnaireBuilder.Build(q, 1))["item"];
+
+            Assert.Null(items[1]["enableWhen"]);
+        }
+
+        // El recurso vivo dice el estado real: un borrador no es "active". Lo congelado sí.
+        [Theory]
+        [InlineData(QuestionnaireStatus.Draft, "draft")]
+        [InlineData(QuestionnaireStatus.Active, "active")]
+        [InlineData(QuestionnaireStatus.Retired, "retired")]
+        public void ToResource_DeclaraElEstadoReal(QuestionnaireStatus estado, string esperado)
+        {
+            var q = WithQuestion(new Question { LinkId = "x", Type = QuestionType.String });
+            q.Status = estado;
+
+            var recurso = FhirQuestionnaireBuilder.ToResource(q, 0);
+
+            Assert.Equal(esperado, recurso.StatusElement.ObjectValue as string);
+            Assert.Equal("active", (string)JObject.Parse(FhirQuestionnaireBuilder.Build(q, 1))["status"]);
+        }
+
+        // Dos lecturas del mismo registro devuelven la misma fecha: la de su última edición.
+        [Fact]
+        public void ToResource_FechaEsLaDeLaUltimaEdicion()
+        {
+            var q = WithQuestion(new Question { LinkId = "x", Type = QuestionType.String });
+            q.UpdatedAt = new DateTime(2026, 5, 4, 13, 20, 0, DateTimeKind.Utc);
+
+            Assert.Equal("2026-05-04T13:20:00Z", FhirQuestionnaireBuilder.ToResource(q, 0).Date);
+        }
+
+        // Invariante que-1 de R5: un group sin items vuelve inválido el recurso.
+        [Fact]
+        public void Build_SeccionVacia_NoSeEmite()
+        {
+            var vacia = Guid.NewGuid();
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "T" };
+            q.Groups.Add(new QuestionGroup { Id = vacia, LinkId = "vacia", Title = "Vacía" });
+            q.Questions.Add(new Question { Id = Guid.NewGuid(), LinkId = "x", Type = QuestionType.String });
+
+            var items = (JArray)JObject.Parse(FhirQuestionnaireBuilder.Build(q, 1))["item"];
+
+            Assert.Single(items);
+            Assert.Equal("x", (string)items[0]["linkId"]);
+        }
+
+        // Un valor con el tipo equivocado en el JSON guardado no tumba la publicación.
+        [Fact]
+        public void Build_ValidacionConTiposInesperados_NoTira()
+        {
+            var q = WithQuestion(new Question
+            {
+                LinkId = "x",
+                Type = QuestionType.Integer,
+                ValidationJson = "{\"min\":\"abc\",\"max\":{\"a\":1},\"maxLength\":\"mucho\"}"
+            });
+
+            var item = FirstItem(FhirQuestionnaireBuilder.Build(q, 1));
+
+            Assert.Null(item["extension"]);
+            Assert.Null(item["maxLength"]);
+        }
+
+        // En una pregunta entera, [1,5 – 9,7] admite de 2 a 9: no se redondea a ciegas.
+        [Fact]
+        public void Build_RangoConDecimalesEnPreguntaEntera_RespetaElRangoOriginal()
+        {
+            var q = WithQuestion(new Question
+            {
+                LinkId = "x",
+                Type = QuestionType.Integer,
+                ValidationJson = "{\"min\":1.5,\"max\":9.7}"
+            });
+
+            var extensiones = (JArray)FirstItem(FhirQuestionnaireBuilder.Build(q, 1))["extension"];
+
+            Assert.Contains(extensiones, e => ((string)e["url"]).EndsWith("minValue", StringComparison.Ordinal)&& (int)e["valueInteger"] == 2);
+            Assert.Contains(extensiones, e => ((string)e["url"]).EndsWith("maxValue", StringComparison.Ordinal)&& (int)e["valueInteger"] == 9);
         }
 
         [Fact]

@@ -37,5 +37,48 @@ namespace ChequeAR.Domain.Entities
         public DateTime? LockExpiresAt { get; set; }
 
         public virtual ICollection<QuestionnaireResponseItem> Items { get; set; } = new List<QuestionnaireResponseItem>();
+
+        // ── Lock de edición ───────────────────────────────────────────────────────────
+        // Las reglas viven acá y no en el servicio: son invariantes de la ficha. El servicio
+        // decide qué excepción lanzar cuando una regla no se cumple.
+
+        /// <summary>Nadie tiene el lock, o el que lo tenía lo dejó vencer.</summary>
+        public bool IsLockFree(DateTime now) =>
+            !LockToken.HasValue || !LockExpiresAt.HasValue || LockExpiresAt.Value < now;
+
+        /// <summary>
+        /// El usuario puede tomar (o retomar) el lock: está libre, o ya es suyo. Si lo tiene
+        /// OTRO usuario y sigue vigente, no: es el caso que evita que dos médicos completen
+        /// la misma ficha a la vez.
+        /// </summary>
+        public bool CanBeLockedBy(string userId, DateTime now) => IsLockFree(now) || LockedByUserId == userId;
+
+        /// <summary>
+        /// Quien escribe es dueño de la sesión de edición. El vencimiento no importa: si nadie
+        /// más tomó el lock después (el token sigue siendo el mismo), se acepta y se renueva
+        /// -- el TTL protege contra OTRO usuario pisando el trabajo, no castiga a este por
+        /// tardarse.
+        /// </summary>
+        public bool IsLockHeldBy(string userId, Guid lockToken) =>
+            LockToken.HasValue && LockToken.Value == lockToken && LockedByUserId == userId;
+
+        /// <summary>Nueva sesión de edición (token nuevo) para el usuario.</summary>
+        public void AcquireLock(string userId, DateTime now, TimeSpan ttl)
+        {
+            LockToken = Guid.NewGuid();
+            LockedByUserId = userId;
+            LockedAt = now;
+            LockExpiresAt = now.Add(ttl);
+        }
+
+        public void RenewLock(DateTime now, TimeSpan ttl) => LockExpiresAt = now.Add(ttl);
+
+        public void ReleaseLock()
+        {
+            LockToken = null;
+            LockedByUserId = null;
+            LockedAt = null;
+            LockExpiresAt = null;
+        }
     }
 }

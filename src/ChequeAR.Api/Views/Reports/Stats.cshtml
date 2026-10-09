@@ -42,7 +42,14 @@ else if (string.IsNullOrEmpty(Model.QueryJson))
 }
 else
 {
-    <div data-vue-island="report-stats" data-props='@Html.Raw("{\"autoQuery\":" + Model.QueryJson + ",\"reportName\":" + Newtonsoft.Json.JsonConvert.ToString(Model.ReportName ?? "") + "}")'>
+    @* Razor codifica el atributo: el nombre del reporte y los valores de los filtros los
+       escribe el usuario, y con comillas simples + Html.Raw un apóstrofo cerraba el atributo. *@
+    var statsProps = Newtonsoft.Json.JsonConvert.SerializeObject(new
+    {
+        autoQuery = new Newtonsoft.Json.Linq.JRaw(string.IsNullOrWhiteSpace(Model.QueryJson) ? "null" : Model.QueryJson),
+        reportName = Model.ReportName ?? ""
+    });
+    <div data-vue-island="report-stats" data-props="@statsProps">
         <div class="cq-card">
             <div class="cq-loading">
                 <div class="cq-spinner cq-spinner--lg"></div>

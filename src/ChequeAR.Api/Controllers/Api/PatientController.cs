@@ -28,7 +28,9 @@ namespace ChequeAR.Api.Controllers.Api
             var hits = await _svc.SearchAsync(texto);
 
             var recursos = FhirPatientProjection.ToPatients(hits).Cast<Hl7.Fhir.Model.Resource>();
-            return Ok(FhirBundles.SearchSet(recursos, hits.Count, FhirBaseUrl()));
+            // Con el tope alcanzado puede haber más coincidencias: el total no se conoce.
+            var total = hits.Count < PatientService.MaxSearchResults ? hits.Count : (int?)null;
+            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
         }
 
         [HttpGet, Route("{hospitalId}"), Authorize]

@@ -17,8 +17,24 @@ namespace ChequeAR.Application.Reports
 
         private static readonly HashSet<string> ValidOps = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "=","!=",">","<",">=","<=","in","between","exists","contains"
+            "=","!=",">","<",">=","<=","in","between","exists","contains","notcontains"
         };
+
+        // Vocales acentuadas que se igualan a la vocal simple al comparar texto. La Ñ queda
+        // afuera a propósito: en castellano es otra letra ("ano" no es "año").
+        private const string Acentuadas = "ÁÉÍÓÚÜÀÈÌÒÙ";
+        private const string SinAcento = "AEIOUUAEIOU";
+
+        /// <summary>
+        /// Máximo de fichas por página. Sin esto, un pageSize arbitrario en /query traía la
+        /// cohorte entera y salteaba el tope de la exportación.
+        /// </summary>
+        public const int MaxPageSize = 200;
+        public const int DefaultPageSize = 50;
+
+        /// <summary>Tamaño de página que se aplica para el pedido: el default si no vino, y nunca más que el máximo.</summary>
+        public static int EffectivePageSize(int requested)
+            => requested > 0 ? Math.Min(requested, MaxPageSize) : DefaultPageSize;
 
         private const string Projection =
             "v.\"ResponseId\", v.\"PatientHospitalId\", v.\"AuthoredAt\", v.\"QuestionnaireVersion\", " +
@@ -53,8 +69,9 @@ namespace ChequeAR.Application.Reports
                 // Se pagina por FICHA, no por fila: el resultado viene en formato largo (una
                 // fila por respuesta-pregunta), asi que un OFFSET plano cortaria una ficha al
                 // medio y el pivot devolveria una fila incompleta.
-                var take = q.PageSize > 0 ? q.PageSize : 50;
-                var skip = (q.Page > 0 ? q.Page - 1 : 0) * take;
+                var take = EffectivePageSize(q.PageSize);
+                // En long: una página absurda desbordaba el int y llegaba un OFFSET negativo.
+                var skip = (int)Math.Min(int.MaxValue, (long)(q.Page > 0 ? q.Page - 1 : 0) * take);
                 sql.AppendLine("  AND v.\"ResponseId\" IN (");
                 sql.AppendLine("    SELECT \"ResponseId\" FROM (");
                 sql.AppendLine("      SELECT DISTINCT p.\"ResponseId\", p.\"AuthoredAt\"");
@@ -96,15 +113,18 @@ namespace ChequeAR.Application.Reports
                 q.DateRange.To = tmp;
             }
 
+            // El rango son DÍAS de Argentina y AuthoredAt está en UTC: comparar sin convertir
+            // corre la ventana tres horas (las fichas de 21 a 24 hs caen en el día siguiente).
+            // "Hasta" es el comienzo del día siguiente, como cota exclusiva.
             if (q.DateRange?.From != null)
             {
                 sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" >= :DateFrom");
-                ps.Add(QueryParameter.Date("DateFrom", q.DateRange.From.Value));
+                ps.Add(QueryParameter.Date("DateFrom", ArgentinaClock.ToUtc(q.DateRange.From.Value.Date)));
             }
             if (q.DateRange?.To != null)
             {
-                sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" <= :DateTo");
-                ps.Add(QueryParameter.Date("DateTo", q.DateRange.To.Value));
+                sb.Append(" AND ").Append(Alias).Append(".\"AuthoredAt\" < :DateTo");
+                ps.Add(QueryParameter.Date("DateTo", ArgentinaClock.ToUtc(q.DateRange.To.Value.Date.AddDays(1))));
             }
 
             // Version del cuestionario con la que se completo la ficha. La vista ya expone la
@@ -156,7 +176,7 @@ namespace ChequeAR.Application.Reports
 
                 if (p.Group != null) { BuildNode(p.Group, schema, sql, ps); continue; }
 
-                if (!ValidOps.Contains(p.Op))
+                if (p.Op == null || !ValidOps.Contains(p.Op))
                     throw new ArgumentException("Operador inválido: " + p.Op);
 
                 // El tipo sale de la PREGUNTA, no del valor que mando el cliente. Tambien
@@ -164,14 +184,52 @@ namespace ChequeAR.Application.Reports
                 var col = schema.ColumnFor(p.LinkId);
                 var idx = ps.Count;
 
-                sql.Append("EXISTS (SELECT 1 FROM \"QuestionnaireResponseItem\" qri")
+                // Una condición negativa ("no sea", "no contenga", "no esté respondida") es la
+                // AUSENCIA de una respuesta que cumpla la positiva. Así una ficha donde la
+                // pregunta quedó vacía también cumple "no sea X"; comparando con != quedaba
+                // afuera, porque no tiene ninguna respuesta con la que comparar.
+                var negada = EsNegativa(p);
+                sql.Append(negada ? "NOT EXISTS" : "EXISTS")
+                   .Append(" (SELECT 1 FROM \"QuestionnaireResponseItem\" qri")
                    .Append(" WHERE qri.\"ResponseId\" = ").Append(Alias).Append(".\"ResponseId\"")
                    .Append(" AND qri.\"LinkId\" = :li").Append(idx);
                 ps.Add(QueryParameter.Text("li" + idx, p.LinkId));
 
-                sql.Append(" AND ").Append(Predicate(p, schema, col, idx, ps)).Append(')');
+                sql.Append(" AND ").Append(Predicate(Positiva(p), schema, col, idx, ps)).Append(')');
             }
             sql.Append(')');
+        }
+
+        /// <summary>"exists" con valor false es "no esté respondida"; el resto se reconoce por el operador.</summary>
+        private static bool EsNegativa(FilterPredicate p)
+        {
+            if (string.Equals(p.Op, "exists", StringComparison.OrdinalIgnoreCase))
+                return string.Equals(Convert.ToString(p.Value, CultureInfo.InvariantCulture), "false", StringComparison.OrdinalIgnoreCase);
+            return p.Op == "!=" || string.Equals(p.Op, "notcontains", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>La condición positiva cuya ausencia expresa una negativa; las demás quedan igual.</summary>
+        private static FilterPredicate Positiva(FilterPredicate p)
+        {
+            string op;
+            if (p.Op == "!=") op = "=";
+            else if (string.Equals(p.Op, "notcontains", StringComparison.OrdinalIgnoreCase)) op = "contains";
+            else return p;
+            return new FilterPredicate { LinkId = p.LinkId, Op = op, Value = p.Value };
+        }
+
+        /// <summary>
+        /// Texto listo para comparar sin distinguir mayúsculas ni tildes. Lo que escribe un
+        /// médico a mano no coincide letra por letra: "Infección", "infeccion" e "INFECCION"
+        /// tienen que ser el mismo texto para un filtro.
+        /// </summary>
+        private static string Plegado(string expr)
+            => "TRANSLATE(UPPER(" + expr + "), '" + Acentuadas + "', '" + SinAcento + "')";
+
+        private static bool EsTexto(ReportSchema schema, string linkId)
+        {
+            var tipo = schema.TypeOf(linkId);
+            return tipo == Domain.Enums.QuestionType.String || tipo == Domain.Enums.QuestionType.Text;
         }
 
         /// <summary>Condición sobre la columna tipada, según el operador.</summary>
@@ -184,8 +242,20 @@ namespace ChequeAR.Application.Reports
 
             if (string.Equals(p.Op, "contains", StringComparison.OrdinalIgnoreCase))
             {
-                ps.Add(QueryParameter.Text("p" + idx, "%" + Convert.ToString(p.Value, CultureInfo.InvariantCulture) + "%"));
-                return "UPPER(" + target + ") LIKE UPPER(:p" + idx + ")";
+                // '%' y '_' son comodines de LIKE: sin escaparlos, buscar "50%" o "a_b" matchea
+                // cualquier cosa en esa posición en vez del texto que la persona escribió.
+                var texto = Convert.ToString(p.Value, CultureInfo.InvariantCulture) ?? string.Empty;
+                texto = texto.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+                ps.Add(QueryParameter.Text("p" + idx, "%" + texto + "%"));
+                return Plegado(target) + " LIKE " + Plegado(":p" + idx) + " ESCAPE '\\'";
+            }
+
+            // "Sea exactamente" sobre texto libre: mismo plegado que "contenga" y sin los
+            // espacios de los bordes, que nadie ve ni escribe a propósito.
+            if (p.Op == "=" && EsTexto(schema, p.LinkId))
+            {
+                ps.Add(QueryParameter.Text("p" + idx, Convert.ToString(p.Value, CultureInfo.InvariantCulture) ?? string.Empty));
+                return Plegado("TRIM(" + target + ")") + " = " + Plegado("TRIM(:p" + idx + ")");
             }
 
             if (string.Equals(p.Op, "in", StringComparison.OrdinalIgnoreCase))

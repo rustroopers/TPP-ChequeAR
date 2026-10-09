@@ -20,25 +20,29 @@
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Rol / especialidad</dt><dd class="col-sm-9">@Model.Role · @Model.Specialty</dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Acción</dt>      <dd class="col-sm-9"><span class="cq-badge @Model.ActionBadge"><i class="bi @Model.ActionIcon me-1"></i>@Model.Action</span></dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Recurso</dt>      <dd class="col-sm-9">@Model.Resource</dd>
-        <dt class="col-sm-3 cq-text-sm cq-text-muted">IP</dt>          <dd class="col-sm-9">@Model.IP</dd>
-        <dt class="col-sm-3 cq-text-sm cq-text-muted">User-Agent</dt>  <dd class="col-sm-9 cq-text-sm">@Model.UserAgent</dd>
     </dl>
 </div>
 
 @if (Model.HasReportDetail)
 {
     <div class="cq-card mt-3" style="max-width:760px;">
-        <h2 class="cq-section-title">Reporte</h2>
+        <h2 class="cq-section-title">@Model.ReportHeading</h2>
         <dl class="row mb-0">
-            <dt class="col-sm-3 cq-text-sm cq-text-muted">Nombre</dt>       <dd class="col-sm-9">@Model.ReportName</dd>
+            @if (!string.IsNullOrWhiteSpace(Model.ReportName))
+            {
+                <dt class="col-sm-3 cq-text-sm cq-text-muted">Nombre</dt>   <dd class="col-sm-9">@Model.ReportName</dd>
+            }
             @if (!string.IsNullOrWhiteSpace(Model.ReportQuestionnaire))
             {
                 <dt class="col-sm-3 cq-text-sm cq-text-muted">Cuestionario</dt><dd class="col-sm-9">@Model.ReportQuestionnaire</dd>
             }
-            <dt class="col-sm-3 cq-text-sm cq-text-muted">Alcance</dt>      <dd class="col-sm-9">@Model.ReportScope</dd>
+            @if (!string.IsNullOrWhiteSpace(Model.ReportScope))
+            {
+                <dt class="col-sm-3 cq-text-sm cq-text-muted">Alcance</dt>  <dd class="col-sm-9">@Model.ReportScope</dd>
+            }
         </dl>
 
-        <h3 class="cq-text-sm fw-semibold mt-3 mb-1">Condiciones</h3>
+        <h3 class="cq-text-sm fw-semibold mt-3 mb-1">@Model.ConditionsHeading</h3>
         @if (Model.ReportConditions.Count > 0)
         {
             <ul class="cq-text-sm mb-0" style="padding-left:1.1rem;">
@@ -50,7 +54,7 @@
         }
         else
         {
-            <p class="cq-text-sm cq-text-muted mb-0">Sin filtros: incluye todas las fichas del cuestionario.</p>
+            <p class="cq-text-sm cq-text-muted mb-0">@Model.NoConditionsText</p>
         }
     </div>
 }

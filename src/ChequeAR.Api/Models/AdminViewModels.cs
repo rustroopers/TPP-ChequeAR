@@ -12,14 +12,16 @@ namespace ChequeAR.Api.Models
         public string ActionBadge { get; set; }   // clase css del badge (color)
         public string ActionIcon { get; set; }    // clase del ícono bootstrap
         public string Resource { get; set; }       // título del cuestionario o ref limpia
-        public string IP { get; set; }
     }
 
     public class AuditListViewModel
     {
         public string UserFilter { get; set; }
         public string ActionFilter { get; set; }
-        public string ResourceFilter { get; set; }
+        public Guid? QuestionnaireFilter { get; set; }
+        /// <summary>Opciones del filtro: todos los cuestionarios, eliminados incluidos.</summary>
+        public List<ChequeAR.Application.Dtos.QuestionnaireTitle> Questionnaires { get; set; }
+            = new List<ChequeAR.Application.Dtos.QuestionnaireTitle>();
         public string From { get; set; }
         public string To { get; set; }
         public List<AuditEntry> Entries { get; set; } = new List<AuditEntry>();
@@ -40,8 +42,6 @@ namespace ChequeAR.Api.Models
         public string ActionBadge { get; set; }
         public string ActionIcon { get; set; }
         public string Resource { get; set; }
-        public string IP { get; set; }
-        public string UserAgent { get; set; }
 
         // Diff de versiones (solo para publicaciones de un cuestionario).
         public bool HasVersionDiff { get; set; }
@@ -61,10 +61,14 @@ namespace ChequeAR.Api.Models
         public List<ChequeAR.Application.Services.ResponseSnapshotSection> ResponseSnapshot { get; set; }
             = new List<ChequeAR.Application.Services.ResponseSnapshotSection>();
 
-        // Foto de una consulta guardada (evento de reporte creado / modificado / eliminado).
+        // Foto de una consulta: reporte guardado (creado / modificado / eliminado), reporte
+        // exportado, evolución de un paciente o exportación de la auditoría.
         public bool HasReportDetail { get; set; }
-        public string ReportName { get; set; }
-        public string ReportScope { get; set; }              // etiqueta legible del alcance
+        public string ReportHeading { get; set; } = "Reporte";
+        public string ConditionsHeading { get; set; } = "Condiciones";
+        public string NoConditionsText { get; set; } = "Sin filtros: incluye todas las fichas del cuestionario.";
+        public string ReportName { get; set; }               // sólo reportes guardados
+        public string ReportScope { get; set; }              // etiqueta legible del alcance; sólo reportes guardados
         public string ReportQuestionnaire { get; set; }      // título del cuestionario base
         public List<string> ReportConditions { get; set; } = new List<string>();
     }

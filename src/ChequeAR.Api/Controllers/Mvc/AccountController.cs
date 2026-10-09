@@ -73,8 +73,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 return RedirectToAction("Index", "Home");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ModelState.AddModelError("", "No se pudo iniciar sesión. Intentá nuevamente.");
                 return View("Login");
             }

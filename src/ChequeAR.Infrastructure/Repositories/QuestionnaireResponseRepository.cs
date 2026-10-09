@@ -23,6 +23,20 @@ namespace ChequeAR.Infrastructure.Repositories
 
         public async Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take, SpecialtyScope scope = null)
         {
+            if (scope != null && !scope.IsUnrestricted && scope.IsEmpty) return new List<QuestionnaireResponse>();
+            return await Filtered(patientHospitalId, questionnaireId, status, scope)
+                .OrderByDescending(x => x.AuthoredAt).Skip(skip).Take(take).ToListAsync();
+        }
+
+        public async Task<int> CountAsync(string patientHospitalId = null, Guid? questionnaireId = null, ResponseStatus? status = null, SpecialtyScope scope = null)
+        {
+            if (scope != null && !scope.IsUnrestricted && scope.IsEmpty) return 0;
+            return await Filtered(patientHospitalId, questionnaireId, status, scope).CountAsync();
+        }
+
+        /// <summary>Los filtros de búsqueda, compartidos por SearchAsync y CountAsync para que nunca diverjan.</summary>
+        private IQueryable<QuestionnaireResponse> Filtered(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, SpecialtyScope scope)
+        {
             var q = _ctx.QuestionnaireResponses.AsQueryable();
             if (!string.IsNullOrEmpty(patientHospitalId)) q = q.Where(x => x.PatientHospitalId == patientHospitalId);
             if (questionnaireId.HasValue) q = q.Where(x => x.QuestionnaireId == questionnaireId.Value);
@@ -30,15 +44,13 @@ namespace ChequeAR.Infrastructure.Repositories
 
             if (scope != null && !scope.IsUnrestricted)
             {
-                if (scope.IsEmpty) return new List<QuestionnaireResponse>();
                 var codes = scope.Codes.ToList();
                 // Sin navegación a Questionnaire: subconsulta explícita. EF6 la traduce a
                 // WHERE "QuestionnaireId" IN (SELECT "Id" FROM "Questionnaire" WHERE
                 // "SpecialtyCode" IN (...)).
                 q = q.Where(x => _ctx.Questionnaires.Any(qq => qq.Id == x.QuestionnaireId && codes.Contains(qq.SpecialtyCode)));
             }
-
-            return await q.OrderByDescending(x => x.AuthoredAt).Skip(skip).Take(take).ToListAsync();
+            return q;
         }
 
         public async Task AddAsync(QuestionnaireResponse r)

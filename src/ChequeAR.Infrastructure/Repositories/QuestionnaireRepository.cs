@@ -1,4 +1,5 @@
 using System;
+using ChequeAR.Application.Dtos;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
@@ -52,6 +53,38 @@ namespace ChequeAR.Infrastructure.Repositories
 #pragma warning restore CA1304, CA1311
             if (!string.IsNullOrEmpty(specialtyCode)) q = q.Where(x => x.SpecialtyCode == specialtyCode);
             return q.CountAsync();
+        }
+
+        public async Task<IReadOnlyDictionary<Guid, int>> GetVersionCountsAsync(IEnumerable<Guid> ids)
+        {
+            var list = (ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+            var result = list.ToDictionary(id => id, id => 0);
+            if (list.Count == 0) return result;
+
+            var rows = await _ctx.QuestionnaireVersions
+                .Where(v => list.Contains(v.QuestionnaireId))
+                .GroupBy(v => v.QuestionnaireId)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .ToListAsync();
+            foreach (var r in rows) result[r.Id] = r.Count;
+            return result;
+        }
+
+        public async Task<IReadOnlyList<Questionnaire>> GetManyWithStructureAsync(IReadOnlyList<Guid> ids)
+        {
+            if (ids == null || ids.Count == 0) return new List<Questionnaire>();
+            var list = ids.Distinct().ToList();
+
+            // AsNoTracking: es una lectura para serializar, y así EF no mezcla estas
+            // instancias con las que SearchAsync ya dejó trackeadas (sin colecciones cargadas).
+            var rows = await _ctx.Questionnaires.AsNoTracking()
+                .Include(q => q.Groups)
+                .Include(q => q.Questions.Select(x => x.Options))
+                .Where(q => list.Contains(q.Id) && !q.IsDeleted)
+                .ToListAsync();
+
+            var porId = rows.ToDictionary(q => q.Id);
+            return ids.Where(porId.ContainsKey).Select(id => porId[id]).ToList();
         }
 
         public async Task AddAsync(Questionnaire q)
@@ -172,6 +205,12 @@ namespace ChequeAR.Infrastructure.Repositories
                 .FirstOrDefaultAsync(v => v.QuestionnaireId == questionnaireId && v.VersionNumber == versionNumber);
         }
 
+        public Task<QuestionnaireVersion> GetVersionByIdAsync(Guid questionnaireId, Guid versionId)
+        {
+            return _ctx.QuestionnaireVersions.AsNoTracking()
+                .FirstOrDefaultAsync(v => v.Id == versionId && v.QuestionnaireId == questionnaireId);
+        }
+
         public Task<string> GetSpecialtyCodeAsync(Guid questionnaireId)
         {
             return _ctx.Questionnaires
@@ -200,6 +239,14 @@ namespace ChequeAR.Infrastructure.Repositories
                 .Select(q => new { q.Id, q.Title })
                 .ToListAsync();
             return rows.ToDictionary(r => r.Id, r => r.Title);
+        }
+
+        public async Task<IReadOnlyList<QuestionnaireTitle>> ListTitlesAsync()
+        {
+            return await _ctx.Questionnaires
+                .OrderBy(q => q.Title).ThenBy(q => q.Id)
+                .Select(q => new QuestionnaireTitle { Id = q.Id, Title = q.Title, IsDeleted = q.IsDeleted })
+                .ToListAsync();
         }
     }
 }

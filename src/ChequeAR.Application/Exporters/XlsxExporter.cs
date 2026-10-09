@@ -133,7 +133,29 @@ namespace ChequeAR.Application.Exporters
         internal static string Escape(string s)
         {
             if (string.IsNullOrEmpty(s)) return string.Empty;
-            return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+            return SinCaracteresInvalidos(s).Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
+        /// <summary>
+        /// XML 1.0 no admite caracteres de control (salvo tab, LF y CR), ni siquiera
+        /// escapados: uno solo, pegado en un texto libre, alcanza para que Excel rechace el
+        /// archivo entero.
+        /// </summary>
+        private static string SinCaracteresInvalidos(string s)
+        {
+            StringBuilder sb = null;
+            for (int i = 0; i < s.Length; i++)
+            {
+                var c = s[i];
+                bool valido;
+                if (char.IsHighSurrogate(c)) valido = i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]);
+                else if (char.IsLowSurrogate(c)) valido = i > 0 && char.IsHighSurrogate(s[i - 1]);
+                else valido = System.Xml.XmlConvert.IsXmlChar(c);
+
+                if (valido) { sb?.Append(c); continue; }
+                if (sb == null) sb = new StringBuilder(s, 0, i, s.Length);
+            }
+            return sb == null ? s : sb.ToString();
         }
     }
 }

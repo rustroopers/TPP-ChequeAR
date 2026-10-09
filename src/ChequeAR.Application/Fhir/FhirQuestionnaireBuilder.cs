@@ -8,8 +8,6 @@ using ChequeAR.Domain.Enums;
 using Hl7.Fhir.Model;
 using Hl7.Fhir.Serialization;
 using Hl7.Fhir.Utility;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using DomainQuestionnaire = ChequeAR.Domain.Entities.Questionnaire;
 using FhirQuestionnaire = Hl7.Fhir.Model.Questionnaire;
 
@@ -18,8 +16,11 @@ namespace ChequeAR.Application.Fhir
     /// <summary>
     /// Traduce un Questionnaire de dominio al recurso FHIR R5.
     ///
-    /// Lo consumen dos caminos: la publicación, que congela el JSON en la versión, y la API,
-    /// que devuelve el recurso vivo. Por eso expone las dos formas — POCO y texto.
+    /// Lo consumen dos caminos con semántica distinta:
+    ///  - <see cref="Build"/>: la publicación, que congela el JSON en la versión. Lo congelado
+    ///    es por definición un recurso activo, fechado en el momento de publicar.
+    ///  - <see cref="ToResource"/>: la API, que devuelve el recurso vivo con su estado real
+    ///    (un borrador dice draft, un archivado dice retired) y la fecha de su última edición.
     ///
     /// La UI publica desde el listado (sin pasar por el editor), así que el recurso tiene que
     /// poder armarse enteramente desde la base.
@@ -38,11 +39,38 @@ namespace ChequeAR.Application.Fhir
         private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
         private const string ItemControlSystem = "http://hl7.org/fhir/questionnaire-item-control";
 
-        /// <summary>JSON del recurso, que es lo que se congela en cada versión publicada.</summary>
-        public static string Build(DomainQuestionnaire q, int versionNumber)
-            => new FhirJsonSerializer().SerializeToString(ToResource(q, versionNumber));
+        /// <summary>
+        /// JSON de la versión que se congela al publicar: siempre status = active y fechada
+        /// en <paramref name="publishedAt"/> (UTC; ahora si no se indica).
+        /// </summary>
+        public static string Build(DomainQuestionnaire q, int versionNumber, DateTime? publishedAt = null)
+        {
+            var resource = Compose(q, versionNumber, PublicationStatus.Active, publishedAt ?? DateTime.UtcNow);
+            return new FhirJsonSerializer().SerializeToString(resource);
+        }
 
+        /// <summary>
+        /// El recurso vivo: estado real del cuestionario y fecha de su última modificación, que
+        /// no cambia entre dos lecturas del mismo registro.
+        /// </summary>
         public static FhirQuestionnaire ToResource(DomainQuestionnaire q, int versionNumber)
+        {
+            if (q == null) throw new ArgumentNullException(nameof(q));
+            return Compose(q, versionNumber, StatusOf(q.Status), q.UpdatedAt);
+        }
+
+        public static PublicationStatus StatusOf(QuestionnaireStatus status)
+        {
+            switch (status)
+            {
+                case QuestionnaireStatus.Active: return PublicationStatus.Active;
+                case QuestionnaireStatus.Retired: return PublicationStatus.Retired;
+                default: return PublicationStatus.Draft;
+            }
+        }
+
+        private static FhirQuestionnaire Compose(
+            DomainQuestionnaire q, int versionNumber, PublicationStatus status, DateTime dateUtc)
         {
             if (q == null) throw new ArgumentNullException(nameof(q));
 
@@ -60,10 +88,10 @@ namespace ChequeAR.Application.Fhir
                 Url = BaseUrl + q.Id,
                 Version = versionNumber.ToString(CultureInfo.InvariantCulture),
                 Title = q.Title,
-                Name = q.Title,
-                Status = PublicationStatus.Active,
+                Status = status,
                 SubjectType = new ResourceType?[] { ResourceType.Patient },
-                Date = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+                Date = DateTime.SpecifyKind(dateUtc, DateTimeKind.Utc)
+                               .ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
                 Publisher = "Hospital Garrahan"
             };
 
@@ -92,14 +120,13 @@ namespace ChequeAR.Application.Fhir
         /// </summary>
         private static void AddQuestionnaireCoding(FhirQuestionnaire resource, DomainQuestionnaire q)
         {
-            var coding = TryParse(q.CodingJson);
+            var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
             if (coding == null) return;
 
-            var code = (string)coding["code"];
-            if (!string.IsNullOrWhiteSpace(code))
-                resource.Code.Add(new Coding((string)coding["system"], code, (string)coding["display"]));
+            if (!string.IsNullOrWhiteSpace(coding.Code))
+                resource.Code.Add(new Coding(coding.System, coding.Code, coding.Display));
 
-            ChequeARExtensions.SetQuestionnaireTerm(resource, (string)coding["term"]);
+            ChequeARExtensions.SetQuestionnaireTerm(resource, coding.AuthoredTerm);
         }
 
         private static UsageContext SpecialtyContext(DomainQuestionnaire q)
@@ -126,6 +153,10 @@ namespace ChequeAR.Application.Fhir
                     .OrderBy(x => x.OrderIndex)
                     .ToList();
                 foreach (var c in hijas) agrupadas.Add(c.Id);
+
+                // Invariante que-1 de R5: un item de tipo group tiene que tener items. Una
+                // sección vacía no aporta nada a quien responde y volvería inválido el recurso.
+                if (hijas.Count == 0) continue;
 
                 var grupo = new FhirQuestionnaire.ItemComponent
                 {
@@ -156,38 +187,37 @@ namespace ChequeAR.Application.Fhir
                 Required = question.Required
             };
 
-            // Sólo las preguntas de opción llevan answerConstraint. Es lo ÚNICO que distingue
-            // una opción cerrada de una abierta en R5, donde ambas son type = coding.
             var constraint = AnswerConstraintFor(question.Type);
             if (constraint.HasValue) item.AnswerConstraint = constraint.Value;
 
-            if (question.RepeatsAllowed) item.Repeats = true;
+            if (RepeatsFor(question)) item.Repeats = true;
 
             AddValidation(item, question);
             AddCoding(item, question);
             AddEnableWhen(item, question, byLinkId);
-            // Todo lo demas de la variable viaja denormalizado en campos nativos; la referencia
-            // en si no tiene lugar nativo y sin ella el parser la perderia en cada guardado.
+            // Todo lo demás de la variable viaja denormalizado en campos nativos; la referencia
+            // en sí no tiene lugar nativo y sin ella el parser la perdería en cada guardado.
             ChequeARExtensions.SetVariableId(item, question.VariableId);
 
             foreach (var o in (question.Options ?? new List<AnswerOption>()).OrderBy(x => x.OrderIndex))
-            {
-                // Con system cuando la opcion esta codificada. Hasta que las opciones las
-                // definio el catalogo iban siempre sin system -- un codigo suelto que nadie
-                // fuera de ChequeAR podia resolver-. Ahora que el Administrador elige el
-                // concepto, corresponde declararlo: Code y SnomedCode son el mismo valor
-                // (R5 admite un solo Coding por answerOption.value).
-                var codificada = !string.IsNullOrWhiteSpace(o.SnomedCode);
-                item.AnswerOption.Add(new FhirQuestionnaire.AnswerOptionComponent
-                {
-                    Value = new Coding(
-                        codificada ? TerminologyService.SnomedSystem : null,
-                        o.Code ?? o.Value ?? o.Display,
-                        o.SnomedDisplay ?? o.Display ?? o.Value)
-                });
-            }
+                item.AnswerOption.Add(new FhirQuestionnaire.AnswerOptionComponent { Value = OptionCoding(o) });
 
             return item;
+        }
+
+        /// <summary>
+        /// El Coding de una opción. Lleva system cuando la opción está codificada en SNOMED
+        /// (Code y SnomedCode son el mismo valor: R5 admite un solo Coding por
+        /// answerOption.value). Lo usan las opciones y las condiciones que apuntan a ellas,
+        /// que en FHIR tienen que coincidir coding contra coding.
+        /// </summary>
+        private static Coding OptionCoding(AnswerOption o)
+        {
+            var codificada = !string.IsNullOrWhiteSpace(o.SnomedCode);
+            return new Coding(
+                codificada ? TerminologyService.SnomedSystem : null,
+                o.Code ?? o.Value ?? o.Display,
+                o.SnomedDisplay ?? o.Display ?? o.Value);
         }
 
         /// <summary>
@@ -197,62 +227,98 @@ namespace ChequeAR.Application.Fhir
         /// </summary>
         private static void AddCoding(FhirQuestionnaire.ItemComponent item, Question question)
         {
-            var coding = TryParse(question.CodingJson);
+            var coding = QuestionMetadataReader.ReadCoding(question.CodingJson);
             if (coding == null) return;
 
-            var code = (string)coding["code"];
-            if (!string.IsNullOrWhiteSpace(code))
-                item.Code.Add(new Coding((string)coding["system"], code, (string)coding["display"]));
+            if (!string.IsNullOrWhiteSpace(coding.Code))
+                item.Code.Add(new Coding(coding.System, coding.Code, coding.Display));
 
-            ChequeARExtensions.SetQuestionTerm(item, (string)coding["term"]);
+            ChequeARExtensions.SetQuestionTerm(item, coding.AuthoredTerm);
         }
 
         /// <summary>
         /// Lógica condicional. El tipo del answer[x] corresponde a la pregunta REFERENCIADA:
         /// si la condición dice "cuando 'fuma' sea verdadero", el answer es un boolean porque
         /// 'fuma' es boolean, no por el tipo de la pregunta que se está condicionando.
+        ///
+        /// Una condición incompleta (sin valor) o con un valor que no corresponde al tipo de
+        /// la pregunta referenciada no se emite: no hay un answer[x] válido que declarar. La
+        /// publicación la rechaza antes (ver QuestionnaireStructureRules), así que esto sólo
+        /// afecta al recurso vivo de un borrador en edición.
         /// </summary>
         private static void AddEnableWhen(
             FhirQuestionnaire.ItemComponent item, Question question, IDictionary<string, Question> byLinkId)
         {
-            var condition = TryParse(question.EnableWhenJson);
+            var condition = QuestionMetadataReader.ReadCondition(question.EnableWhenJson);
             if (condition == null) return;
 
-            var sourceLinkId = (string)condition["question"];
-            if (string.IsNullOrWhiteSpace(sourceLinkId)) return;
-
-            Question source;
-            byLinkId.TryGetValue(sourceLinkId, out source);
+            byLinkId.TryGetValue(condition.Question, out var source);
+            var answer = ConditionAnswer(source, condition.Value);
+            if (answer == null) return;
 
             item.EnableWhen.Add(new FhirQuestionnaire.EnableWhenComponent
             {
-                Question = sourceLinkId,
-                Operator = ParseOperator((string)condition["op"]),
-                Answer = AnswerFor(source?.Type, condition["value"])
+                Question = condition.Question,
+                Operator = ParseOperator(condition.Op),
+                Answer = answer
             });
             // Con una sola condición el behavior es irrelevante, pero declararlo deja el
             // recurso listo para cuando se soporte más de una.
             item.EnableBehavior = FhirQuestionnaire.EnableWhenBehavior.All;
         }
 
-        private static DataType AnswerFor(QuestionType? sourceType, JToken value)
+        /// <summary>
+        /// El answer[x] de una condición sobre <paramref name="source"/>, o null si el valor
+        /// falta o no es representable con el tipo de esa pregunta.
+        ///
+        /// Para preguntas de opción, internamente la condición se expresa con el texto de la
+        /// opción (es lo que comparan el renderer y las respuestas guardadas), pero en el
+        /// recurso tiene que ir el MISMO Coding que el answerOption —system y código—: es lo
+        /// único que un consumidor externo puede comparar.
+        /// </summary>
+        public static DataType ConditionAnswer(Question source, object value)
         {
-            switch (sourceType)
+            if (value == null) return null;
+
+            switch (source?.Type)
             {
                 case QuestionType.Boolean:
-                    return new FhirBoolean((bool?)value ?? false);
+                    if (value is bool b) return new FhirBoolean(b);
+                    if (value is string s && bool.TryParse(s, out var parsed)) return new FhirBoolean(parsed);
+                    return null;
+
                 case QuestionType.Integer:
                 case QuestionType.Scale:
-                    return new Integer((int?)(long?)value ?? 0);
+                    var n = QuestionMetadataReader.AsDecimal(value);
+                    if (!n.HasValue || n.Value != decimal.Truncate(n.Value)
+                        || n.Value > int.MaxValue || n.Value < int.MinValue) return null;
+                    return new Integer((int)n.Value);
+
                 case QuestionType.Decimal:
-                    return new FhirDecimal((decimal?)value ?? 0m);
+                    var d = QuestionMetadataReader.AsDecimal(value);
+                    return d.HasValue ? new FhirDecimal(d.Value) : null;
+
                 case QuestionType.Choice:
                 case QuestionType.OpenChoice:
-                    var code = (string)value;
-                    return new Coding(null, code, code);
+                    var opcion = FindOption(source, Convert.ToString(value, CultureInfo.InvariantCulture));
+                    return opcion == null ? null : OptionCoding(opcion);
+
                 default:
-                    return new FhirString((string)value);
+                    var texto = Convert.ToString(value, CultureInfo.InvariantCulture);
+                    return string.IsNullOrEmpty(texto) ? null : new FhirString(texto);
             }
+        }
+
+        /// <summary>
+        /// La opción de <paramref name="source"/> a la que se refiere el valor de una condición.
+        /// Se compara contra el texto que muestran el editor y el renderer, y también contra el
+        /// código, por si la condición llegó de un recurso externo que la expresa así.
+        /// </summary>
+        public static AnswerOption FindOption(Question source, string value)
+        {
+            if (source?.Options == null || string.IsNullOrEmpty(value)) return null;
+            return source.Options.FirstOrDefault(o => (o.Display ?? o.Value) == value)
+                ?? source.Options.FirstOrDefault(o => o.Code == value || o.SnomedCode == value);
         }
 
         private static FhirQuestionnaire.QuestionnaireItemOperator ParseOperator(string op)
@@ -271,16 +337,14 @@ namespace ChequeAR.Application.Fhir
         {
             // Un ValidationJson ausente o corrupto se publica sin restricciones, pero el
             // marcador de escala se emite igual: hace al TIPO, no a la validación.
-            var v = TryParse(question.ValidationJson) ?? new JObject();
+            var v = QuestionMetadataReader.ReadValidation(question.ValidationJson) ?? new QuestionValidation();
             var esEntero = question.Type == QuestionType.Integer || question.Type == QuestionType.Scale;
 
-            var min = v["min"];
-            if (min != null && min.Type != JTokenType.Null)
-                item.Extension.Add(new Extension(MinValueUrl, Numeric(min, esEntero)));
+            var min = Bound(v.Min, esEntero, esMinimo: true);
+            if (min != null) item.Extension.Add(new Extension(MinValueUrl, min));
 
-            var max = v["max"];
-            if (max != null && max.Type != JTokenType.Null)
-                item.Extension.Add(new Extension(MaxValueUrl, Numeric(max, esEntero)));
+            var max = Bound(v.Max, esEntero, esMinimo: false);
+            if (max != null) item.Extension.Add(new Extension(MaxValueUrl, max));
 
             // FHIR no tiene tipo "escala": se publica como integer + itemControl slider. Sin
             // esto, al releer la versión congelada una escala vuelve como número común.
@@ -290,42 +354,38 @@ namespace ChequeAR.Application.Fhir
                     new CodeableConcept(ItemControlSystem, "slider")));
             }
 
-            var accept = (string)v["accept"];
-            if (!string.IsNullOrWhiteSpace(accept))
-                item.Extension.Add(new Extension(MimeTypeUrl, new Code(accept)));
+            if (!string.IsNullOrWhiteSpace(v.Accept))
+                item.Extension.Add(new Extension(MimeTypeUrl, new Code(v.Accept)));
 
-            var maxLength = v["maxLength"];
-            if (maxLength != null && maxLength.Type != JTokenType.Null)
-            {
-                var n = (long)maxLength;
-                if (n > 0) item.MaxLength = (int)n;
-            }
+            if (v.MaxLength.HasValue && v.MaxLength.Value > 0) item.MaxLength = v.MaxLength.Value;
 
-            var pattern = (string)v["pattern"];
-            if (!string.IsNullOrWhiteSpace(pattern))
-                item.Extension.Add(new Extension(RegexUrl, new FhirString(pattern)));
+            if (!string.IsNullOrWhiteSpace(v.Pattern))
+                item.Extension.Add(new Extension(RegexUrl, new FhirString(v.Pattern)));
 
-            var unit = (string)v["unit"];
-            if (!string.IsNullOrWhiteSpace(unit))
-                item.Extension.Add(new Extension(UnitUrl, new Coding("http://unitsofmeasure.org", unit, unit)));
+            if (!string.IsNullOrWhiteSpace(v.Unit))
+                item.Extension.Add(new Extension(UnitUrl, new Coding("http://unitsofmeasure.org", v.Unit, v.Unit)));
         }
 
-        // El tipo del value[x] tiene que acompañar al de la pregunta.
-        private static DataType Numeric(JToken value, bool esEntero)
-            => esEntero ? (DataType)new Integer((int)(long)value) : new FhirDecimal((decimal)value);
-
-        private static JObject TryParse(string json)
+        /// <summary>
+        /// El value[x] de minValue/maxValue tiene que ser del tipo de la pregunta. En una
+        /// pregunta entera, un límite con decimales se lleva al entero que respeta el rango
+        /// original (techo para el mínimo, piso para el máximo): [1,5 – 9,7] admite de 2 a 9.
+        /// Un límite que no entra en un entero de FHIR se omite.
+        /// </summary>
+        private static DataType Bound(decimal? value, bool esEntero, bool esMinimo)
         {
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            try { return JObject.Parse(json); }
-            catch (JsonException) { return null; }
+            if (!value.HasValue) return null;
+            if (!esEntero) return new FhirDecimal(value.Value);
+
+            var entero = esMinimo ? decimal.Ceiling(value.Value) : decimal.Floor(value.Value);
+            if (entero > int.MaxValue || entero < int.MinValue) return null;
+            return new Integer((int)entero);
         }
 
         /// <summary>
         /// ⚠️ R5 ELIMINÓ los tipos 'choice' y 'open-choice' de R4: ambos son 'coding', y lo
-        /// que los distingue es answerConstraint (ver AnswerConstraintFor). El builder
-        /// artesanal seguía emitiendo el vocabulario viejo mientras declaraba fhirVersion
-        /// 5.0.0, y nadie lo notó porque el validador era un sustituto que no validaba nada.
+        /// que los distingue es la combinación de answerConstraint y repeats (ver
+        /// <see cref="AnswerConstraintFor"/> y <see cref="RepeatsFor"/>).
         /// </summary>
         public static FhirQuestionnaire.QuestionnaireItemType FhirType(QuestionType type)
         {
@@ -348,17 +408,28 @@ namespace ChequeAR.Application.Fhir
         }
 
         /// <summary>
-        /// Lo único que separa una opción cerrada de una abierta en R5. Sin esto, al releer
-        /// la versión congelada una pregunta de opción abierta vuelve como cerrada.
+        /// Las dos preguntas de opción de ChequeAR sólo admiten opciones del catálogo: ninguna
+        /// acepta texto libre, así que ambas son optionsOnly. optionsOrString significaría
+        /// "una opción o texto libre", que no es lo que hace la aplicación. Las versiones
+        /// congeladas que lo declaran se leen igual como selección múltiple (ver
+        /// FhirQuestionnaireReader.ReadType).
         /// </summary>
         public static FhirQuestionnaire.QuestionnaireAnswerConstraint? AnswerConstraintFor(QuestionType type)
         {
             switch (type)
             {
-                case QuestionType.Choice:     return FhirQuestionnaire.QuestionnaireAnswerConstraint.OptionsOnly;
-                case QuestionType.OpenChoice: return FhirQuestionnaire.QuestionnaireAnswerConstraint.OptionsOrString;
+                case QuestionType.Choice:
+                case QuestionType.OpenChoice: return FhirQuestionnaire.QuestionnaireAnswerConstraint.OptionsOnly;
                 default: return null;
             }
         }
+
+        /// <summary>
+        /// OpenChoice es la selección MÚLTIPLE (el renderer muestra casillas y guarda una
+        /// respuesta por opción marcada): en FHIR eso es repeats = true. El resto de los tipos
+        /// repite sólo si la variable lo declara.
+        /// </summary>
+        public static bool RepeatsFor(Question question)
+            => question.Type == QuestionType.OpenChoice || question.RepeatsAllowed;
     }
 }

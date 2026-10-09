@@ -42,36 +42,34 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportListViewModel();
             try
             {
-                // Misma identidad que estampa SessionToken al emitir el bearer: sin login es
-                // "dev", con login el usuario real. Antes esta pantalla usaba "anonymous",
-                // así que nunca listaba los reportes que la API guardaba bajo "dev" —el
-                // listado salía siempre vacío aunque hubiera consultas guardadas.
-                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
-                    ? User.Identity.Name : "dev";
+                // Misma identidad que estampa SessionToken al emitir el bearer, que es con la
+                // que la API guarda los reportes: si difirieran, el listado saldría vacío.
+                var userId = User.Identity.Name;
                 // El scope de especialidad sale de ISpecialtyGuard adentro del servicio, no
                 // de acá: antes este controller mandaba `new string[0]`, así que un Jefe
                 // nunca veía los reportes que sus colegas de la misma especialidad
                 // compartieron con Scope="specialty" -- sólo los propios.
                 var saved = await _saved.ListForUserAsync(userId);
-                // El titulo del cuestionario base, no su GUID. Se cachea porque varios
-                // reportes guardados suelen apuntar al mismo cuestionario.
-                var titles = new Dictionary<Guid, string>();
+                // El titulo del cuestionario base, no su GUID. Una sola consulta liviana (id y
+                // titulo) en vez de cargar cada cuestionario entero, con todas sus preguntas.
+                var titles = (await _questionnaires.ListTitlesAsync())
+                    .Where(q => !q.IsDeleted)
+                    .ToDictionary(q => q.Id, q => q.Title);
                 foreach (var r in saved)
                 {
-                    if (!titles.ContainsKey(r.QuestionnaireId))
-                        titles[r.QuestionnaireId] = (await _questionnaires.GetAsync(r.QuestionnaireId))?.Title;
-
                     model.Items.Add(new SavedReportItem
                     {
                         Id = r.Id, Name = r.Name,
-                        QuestionnaireTitle = titles[r.QuestionnaireId] ?? "(cuestionario eliminado)",
+                        QuestionnaireTitle = titles.TryGetValue(r.QuestionnaireId, out var title)
+                            ? title : "(cuestionario eliminado)",
                         Author = r.CreatedBy,
                         LastUsedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(r.UpdatedAt)
                     });
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.Items.Clear();
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
@@ -109,9 +107,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportPreviewViewModel();
             try
             {
-                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
-                    ? User.Identity.Name : "dev";
-                var resultado = await _saved.GetForUserAsync(id, userId);
+                var resultado = await _saved.GetForUserAsync(id, User.Identity.Name);
                 if (resultado.Outcome != SavedReportOutcome.Ok) return HttpNotFound();
                 var saved = resultado.Report;
 
@@ -146,8 +142,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     model.Rows.Add(previewRow);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);
@@ -169,9 +166,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new ReportStatsViewModel { ReportId = id };
             try
             {
-                var userId = (User?.Identity != null && User.Identity.IsAuthenticated)
-                    ? User.Identity.Name : "dev";
-                var resultado = await _saved.GetForUserAsync(id, userId);
+                var resultado = await _saved.GetForUserAsync(id, User.Identity.Name);
                 if (resultado.Outcome != SavedReportOutcome.Ok) return HttpNotFound();
                 var saved = resultado.Report;
                 model.ReportName = saved.Name;
@@ -186,8 +181,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     NullValueHandling = NullValueHandling.Ignore
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
             return View(model);

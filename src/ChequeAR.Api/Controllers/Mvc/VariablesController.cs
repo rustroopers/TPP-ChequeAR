@@ -60,7 +60,8 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                QuestionType? tipo = string.IsNullOrWhiteSpace(type) ? (QuestionType?)null : QuestionTypeMap.FromUi(type);
+                // Un tipo desconocido en la URL se ignora: es un filtro, no un dato que se guarda.
+                QuestionType? tipo = QuestionTypeMap.TryFromUi(type, out var t) ? t : (QuestionType?)null;
                 var pagina = await _variables.ListAsync(q, tipo, active, (model.Page - 1) * PageSize, PageSize);
                 model.Total = pagina.Total;
                 foreach (var v in pagina.Items)
@@ -80,8 +81,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.Variables.Clear();
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
@@ -161,8 +163,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["ToastLevel"] = "error";
                 return RedirectToAction("Details", new { id = model.Id });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudieron guardar los cambios.";
                 TempData["ToastLevel"] = "error";
                 return RedirectToAction("Details", new { id = model.Id });
@@ -186,8 +189,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     : "Variable eliminada.";
                 TempData["ToastLevel"] = "success";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudo dar de baja la variable.";
                 TempData["ToastLevel"] = "error";
             }
@@ -203,8 +207,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "Variable reactivada.";
                 TempData["ToastLevel"] = "success";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudo reactivar la variable.";
                 TempData["ToastLevel"] = "error";
             }

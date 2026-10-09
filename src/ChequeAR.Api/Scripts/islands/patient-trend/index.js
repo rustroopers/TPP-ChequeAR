@@ -34,18 +34,10 @@
             var loadingSeries = Vue.ref(false);
             var error = Vue.ref(null);
 
-            function authHeaders() {
-                var h = { 'Content-Type': 'application/json' };
-                var m = document.querySelector('meta[name="cq-token"]');
-                if (m) h['Authorization'] = 'Bearer ' + m.getAttribute('content');
-                return h;
-            }
+            function authHeaders() { return window.ChequeARIslands.auth.headers(true); }
 
             function readJson(r) {
-                if (r.ok) return r.json();
-                return r.json().catch(function () { return null; }).then(function (b) {
-                    throw new Error((b && (b.Message || b.message)) || ('HTTP ' + r.status));
-                });
+                return window.ChequeARIslands.http.ensureOk(r).then(function (ok) { return ok.json(); });
             }
 
             function base() {

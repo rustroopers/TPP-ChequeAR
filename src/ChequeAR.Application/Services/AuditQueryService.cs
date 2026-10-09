@@ -2,51 +2,52 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Application.Services
 {
-    /// <summary>
-    /// Consultas sobre el registro de auditoría.
-    ///
-    /// Esta lógica vivía repartida en dos controllers, que traían 5000 filas y filtraban y
-    /// paginaban en memoria. Además de estar en la capa equivocada, ese código no tenía
-    /// ninguna prueba: no se puede probar filtrado y paginación sin instanciar la capa web.
-    /// </summary>
+    /// <summary>Consultas sobre el registro de auditoría.</summary>
     public class AuditQueryService
     {
+        /// <summary>Máximo de eventos por página, pida lo que pida el cliente.</summary>
+        public const int MaxPageSize = 500;
+
         /// <summary>
-        /// Tope de filas que se traen para filtrar. Es el comportamiento que ya existía, hecho
-        /// explícito: por encima de esto la auditoría necesita filtrado del lado de la base
-        /// (IAuditRepository con más parámetros), no un número más grande acá.
+        /// Tope de la exportación. Por encima no se entrega un archivo recortado: se rechaza,
+        /// porque un export de auditoría incompleto que parece completo es peor que un error.
         /// </summary>
-        public const int MaxFilas = 5000;
+        public const int MaxExportRows = 50000;
 
         private readonly IAuditRepository _repo;
 
         public AuditQueryService(IAuditRepository repo) { _repo = repo; }
 
+        /// <summary>Una página de la búsqueda, con el total real de coincidencias.</summary>
+        public Task<AuditPage> SearchAsync(AuditSearchCriteria criteria, int skip = 0, int take = 50)
+            => _repo.SearchAsync(criteria ?? new AuditSearchCriteria(),
+                                 Math.Max(0, skip), Math.Min(MaxPageSize, Math.Max(1, take)));
+
         /// <param name="entityRef">Recurso afectado, ej. "Questionnaire/{id}".</param>
-        public async Task<AuditPage> SearchAsync(
+        public Task<AuditPage> SearchAsync(
             string agentUserId = null, string action = null, string entityRef = null,
             DateTime? fromUtc = null, DateTime? toUtc = null, int skip = 0, int take = 50)
-        {
-            var todos = await _repo.SearchAsync(agentUserId, action, fromUtc, toUtc, MaxFilas);
-
-            IEnumerable<AuditEvent> filtrados = todos ?? new List<AuditEvent>();
-            if (!string.IsNullOrEmpty(entityRef))
-                filtrados = filtrados.Where(x => x.EntityRef == entityRef);
-
-            var lista = filtrados.ToList();
-
-            return new AuditPage
+            => SearchAsync(new AuditSearchCriteria
             {
-                // El total es el de la búsqueda completa, no el de la página: con el de la
-                // página, la última parece la única y el paginador desaparece.
-                Total = lista.Count,
-                Items = lista.Skip(Math.Max(0, skip)).Take(Math.Max(1, take)).ToList()
-            };
+                AgentUserId = agentUserId, Action = action, EntityRef = entityRef,
+                FromUtc = fromUtc, ToUtc = toUtc
+            }, skip, take);
+
+        /// <summary>Todos los eventos de la búsqueda, para exportar. Falla si superan <see cref="MaxExportRows"/>.</summary>
+        public async Task<IReadOnlyList<AuditEvent>> ExportAsync(AuditSearchCriteria criteria)
+        {
+            var pagina = await _repo.SearchAsync(criteria ?? new AuditSearchCriteria(), 0, MaxExportRows);
+            if (pagina.Total > MaxExportRows)
+                throw new BusinessRuleException(
+                    "La búsqueda devuelve " + pagina.Total + " eventos y el máximo para exportar es " +
+                    MaxExportRows + ". Acotá el período o agregá filtros.");
+            return pagina.Items;
         }
 
         /// <summary>
@@ -58,21 +59,36 @@ namespace ChequeAR.Application.Services
         public async Task<IReadOnlyList<AuditEvent>> ForResponseAsync(Guid responseId)
         {
             var prefix = "QuestionnaireResponse/" + responseId;
-            var todos = await _repo.SearchAsync(null, null, null, null, MaxFilas);
-            return (todos ?? new List<AuditEvent>())
+            var eventos = await _repo.ForEntityAsync(prefix, includeOperations: true);
+            // El repositorio ya filtra; se re-verifica acá porque esta regla (separador exacto)
+            // es la que define qué eventos son de la ficha, y no debe depender del proveedor SQL.
+            return (eventos ?? new List<AuditEvent>())
                 .Where(e => e.EntityRef == prefix
                             || (e.EntityRef != null && e.EntityRef.StartsWith(prefix + "$", StringComparison.Ordinal)))
                 .OrderByDescending(e => e.Recorded)
                 .ToList();
         }
 
-        public async Task<AuditEvent> GetAsync(Guid id)
-        {
-            // El repositorio no expone búsqueda por identificador; se filtra sobre la ventana
-            // amplia. Optimización futura: IAuditRepository.GetAsync(id).
-            var todos = await _repo.SearchAsync(null, null, null, null, MaxFilas);
-            return (todos ?? new List<AuditEvent>()).FirstOrDefault(e => e.Id == id);
-        }
+        public Task<AuditEvent> GetAsync(Guid id) => _repo.GetAsync(id);
+    }
+
+    /// <summary>Filtros de una búsqueda de auditoría. Lo que queda en null no filtra.</summary>
+    public class AuditSearchCriteria
+    {
+        /// <summary>Texto contenido en el usuario, sin distinguir mayúsculas.</summary>
+        public string AgentUserId { get; set; }
+        /// <summary>Código C/R/U/D/E.</summary>
+        public string Action { get; set; }
+        public DateTime? FromUtc { get; set; }
+        /// <summary>Cota superior exclusiva.</summary>
+        public DateTime? ToUtc { get; set; }
+        /// <summary>Recurso afectado exacto, ej. "Questionnaire/{id}".</summary>
+        public string EntityRef { get; set; }
+        /// <summary>
+        /// Todo lo que pasó con este cuestionario: sus eventos propios, incluidas las
+        /// operaciones ($publish, $archive…), y los reportes consultados o exportados sobre él.
+        /// </summary>
+        public Guid? QuestionnaireId { get; set; }
     }
 
     public class AuditPage

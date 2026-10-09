@@ -17,7 +17,19 @@ namespace ChequeAR.Api.Middleware
         public override void Log(ExceptionLoggerContext context)
         {
             var request = context?.Request;
-            Serilog.Log.Error(context?.Exception,
+            var ex = context?.Exception;
+
+            // Los loggers corren antes que los filtros, así que también llegan acá las reglas
+            // de negocio que ApiExceptionFilter convierte en 4xx: quedan registradas, pero no
+            // como error del sistema.
+            if (ChequeAR.Api.Filters.ApiExceptionFilter.IsClientError(ex))
+            {
+                Serilog.Log.Information("API {Method} {Path} rechazada: {Reason}",
+                    request?.Method?.Method, request?.RequestUri?.PathAndQuery, ex.Message);
+                return;
+            }
+
+            Serilog.Log.Error(ex,
                 "Excepcion no controlada en API {Method} {Path}",
                 request?.Method?.Method,
                 request?.RequestUri?.PathAndQuery);

@@ -11,7 +11,7 @@
 </header>
 
 <div id="rBuilder" data-vue-island="report-builder"
-     data-props='@Html.Raw("{\"reportId\":" + (ViewBag.ReportId != null ? "\"" + ViewBag.ReportId + "\"" : "null") + "}")'>
+     data-props="@(Newtonsoft.Json.JsonConvert.SerializeObject(new { reportId = ViewBag.ReportId == null ? null : (string)ViewBag.ReportId.ToString() }))">
     <div class="cq-card">
         <div class="cq-loading">
             <div class="cq-spinner cq-spinner--lg"></div>

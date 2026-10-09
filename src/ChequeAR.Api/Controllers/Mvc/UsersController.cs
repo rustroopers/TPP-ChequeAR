@@ -62,8 +62,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.Users.Clear();
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
@@ -108,8 +109,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 ViewBag.AvailableSpecialties = cat.Items.Where(s => s.IsActive).ToList();
                 return View(model);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new UserDetailViewModel { Username = username });
             }

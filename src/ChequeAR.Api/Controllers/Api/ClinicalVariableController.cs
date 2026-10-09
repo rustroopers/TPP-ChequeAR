@@ -39,7 +39,7 @@ namespace ChequeAR.Api.Controllers.Api
             [FromUri] bool includeInactive = false,
             [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
-            // type vacío = sin filtro. FromUi caería a String y filtraría de más.
+            // type vacío = sin filtro; un tipo desconocido es un 422 (QuestionTypeMap.FromUi).
             QuestionType? tipo = string.IsNullOrWhiteSpace(type) ? (QuestionType?)null : QuestionTypeMap.FromUi(type);
             var pagina = await _service.ListAsync(q, tipo, includeInactive ? (bool?)null : true, _offset, _count);
             return Ok(new
@@ -69,31 +69,17 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Create([FromBody] ClinicalVariableDto body)
         {
             if (body == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
-            try
-            {
-                var creada = await _service.CreateAsync(ClinicalVariableDtoMap.ToEntity(body), UserId);
-                return Content(HttpStatusCode.Created, ClinicalVariableDtoMap.ToDto(creada));
-            }
-            catch (ValidationFailedException ex)
-            {
-                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
-            }
+            var creada = await _service.CreateAsync(ClinicalVariableDtoMap.ToEntity(body), UserId);
+            return Content(HttpStatusCode.Created, ClinicalVariableDtoMap.ToDto(creada));
         }
 
         [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.VariableManage)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] ClinicalVariableDto body)
         {
             if (body == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
-            try
-            {
-                var actualizada = await _service.UpdateAsync(id, ClinicalVariableDtoMap.ToEntity(body), UserId);
-                if (actualizada == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
-                return Ok(ClinicalVariableDtoMap.ToDto(actualizada));
-            }
-            catch (ValidationFailedException ex)
-            {
-                return Content((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(ex.Errors));
-            }
+            var actualizada = await _service.UpdateAsync(id, ClinicalVariableDtoMap.ToEntity(body), UserId);
+            if (actualizada == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            return Ok(ClinicalVariableDtoMap.ToDto(actualizada));
         }
 
         [HttpPost, Route("{id:guid}/activate"), RequiresPermissionApi(Permissions.VariableManage)]

@@ -16,6 +16,9 @@ namespace ChequeAR.Api.Models
         public string Author { get; set; }
         /// <summary>Publicado pero editado después: la versión viva no refleja los cambios.</summary>
         public bool HasUnpublishedChanges { get; set; }
+
+        /// <summary>Versión del registro; viaja en el modal de Publicar como If-Match.</summary>
+        public int ConcurrencyVersion { get; set; }
     }
 
     public class QuestionnaireListViewModel
@@ -81,6 +84,12 @@ namespace ChequeAR.Api.Models
 
     public class QuestionGroupView
     {
+        /// <summary>
+        /// Identidad estable de la sección. El editor la conserva al guardar: sin ella, el
+        /// linkId salía de la posición ("seccion-N") y cambiaba al reordenar, y el merge de
+        /// conflictos no podía saber qué sección era cuál entre dos versiones.
+        /// </summary>
+        public string LinkId { get; set; }
         public string Title { get; set; }
         public List<QuestionView> Questions { get; set; } = new List<QuestionView>();
     }
@@ -145,7 +154,9 @@ namespace ChequeAR.Api.Models
         public int Version { get; set; }
         public string Date { get; set; }
         public string Author { get; set; }
-        public string Status { get; set; }
+
+        /// <summary>Es la versión que usan hoy los clínicos.</summary>
+        public bool IsCurrent { get; set; }
         public string ChangeNote { get; set; }
     }
 }

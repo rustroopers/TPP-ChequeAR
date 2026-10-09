@@ -5,7 +5,7 @@ namespace ChequeAR.Application.Services
 {
     public static class AuditEventBuilder
     {
-        public static AuditEvent For(string action, string entityRef, string userId, string ip = null, string outcome = "0", string category = "rest")
+        public static AuditEvent For(string action, string entityRef, string userId, string outcome = "0", string category = "rest")
         {
             var actionCode = MapActionCode(action);
             return new AuditEvent
@@ -15,7 +15,6 @@ namespace ChequeAR.Application.Services
                 Action = actionCode,
                 Outcome = outcome,
                 AgentUserId = userId,
-                AgentIp = ip,
                 EntityRef = entityRef,
                 EntityType = entityRef != null && entityRef.Contains("/") ? entityRef.Split('/')[0] : null,
                 Category = category,

@@ -110,7 +110,9 @@ namespace ChequeAR.Application.Services
             {
                 Questionnaires = await _questionnaires.CountAsync(null, null, null),
                 Users = await _users.CountAsync(null, null, null, true),
-                Encounters = (await _responses.SearchAsync(null, null, null, 0, 1000)).Count,
+                // COUNT en la base: antes se traían hasta 1000 fichas completas para contarlas,
+                // y pasado ese número el indicador quedaba clavado en 1000.
+                Encounters = await _responses.CountAsync(),
                 Specialties = (await _questionnaires.GetSpecialtyCodesAsync()).Count
             };
         }

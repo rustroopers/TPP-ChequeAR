@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -102,7 +103,7 @@ namespace ChequeAR.Tests.Application
             repo.Setup(r => r.GetAsync("fantasma")).ReturnsAsync((User)null);
             var sut = Sut(repo);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => sut.SetRoleAsync("fantasma", Role.Medico));
+            await Assert.ThrowsAsync<NotFoundException>(() => sut.SetRoleAsync("fantasma", Role.Medico));
         }
 
         [Fact]
@@ -125,7 +126,7 @@ namespace ChequeAR.Tests.Application
             repo.Setup(r => r.GetAsync("admin1")).ReturnsAsync(UserWithRole("admin1", Role.Administrador));
             var sut = Sut(repo);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => sut.SetRoleAsync("admin1", Role.Jefe, actingUserId: "admin1"));
 
             repo.Verify(r => r.SyncFromHospitalAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
@@ -141,7 +142,7 @@ namespace ChequeAR.Tests.Application
             var sut = Sut(repo);
 
             // otro usuario (no el propio admin) intenta degradarlo, pero es el único admin.
-            await Assert.ThrowsAsync<InvalidOperationException>(
+            await Assert.ThrowsAsync<BusinessRuleException>(
                 () => sut.SetRoleAsync("admin1", Role.Jefe, actingUserId: "otro.admin"));
         }
 

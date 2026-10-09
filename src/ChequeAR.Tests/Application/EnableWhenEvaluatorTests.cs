@@ -1,80 +1,230 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Validation;
+using ChequeAR.Domain.Entities;
 using Xunit;
 
 namespace ChequeAR.Tests.Application
 {
     /// <summary>
-    /// Evaluación de reglas enableWhen: decide si una pregunta se muestra según la respuesta
-    /// de otra. Cubre cada operador y los bordes (regla nula, pregunta sin responder, operador
-    /// no soportado, comparación por fallback de string).
+    /// Visibilidad (enableWhen) y completitud del lado del servidor. Cada caso replica un
+    /// comportamiento del renderer: si divergieran, el servidor rechazaría fichas que la
+    /// pantalla mostró completas (o aceptaría las que mostró incompletas).
     /// </summary>
     public class EnableWhenEvaluatorTests
     {
-        private static Dictionary<string, object> Answers(string linkId, object value)
-            => new Dictionary<string, object> { { linkId, value } };
-
-        [Fact]
-        public void ReglaNula_SiempreHabilita()
-        {
-            Assert.True(EnableWhenEvaluator.IsEnabled(null, new Dictionary<string, object>()));
-        }
-
-        [Fact]
-        public void PreguntaSinResponder_NoHabilita()
-        {
-            var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "exists" };
-            Assert.False(EnableWhenEvaluator.IsEnabled(rule, new Dictionary<string, object>()));
-        }
-
-        [Fact]
-        public void Exists_ConValorPresente_Habilita()
-        {
-            var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "exists" };
-            Assert.True(EnableWhenEvaluator.IsEnabled(rule, Answers("q1", "cualquier cosa")));
-        }
-
-        [Fact]
-        public void Exists_ConValorNulo_NoHabilita()
-        {
-            var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "exists" };
-            Assert.False(EnableWhenEvaluator.IsEnabled(rule, Answers("q1", null)));
-        }
+        // ---- Compare: compareAnswer del renderer ----
 
         [Theory]
-        [InlineData("=", 5, 5, true)]
-        [InlineData("=", 5, 6, false)]
-        [InlineData("!=", 5, 6, true)]
-        [InlineData("!=", 5, 5, false)]
-        [InlineData(">", 6, 5, true)]
-        [InlineData(">", 5, 5, false)]
-        [InlineData("<", 4, 5, true)]
-        [InlineData("<", 5, 5, false)]
-        [InlineData(">=", 5, 5, true)]
-        [InlineData(">=", 4, 5, false)]
-        [InlineData("<=", 5, 5, true)]
-        [InlineData("<=", 6, 5, false)]
-        public void Operadores_ComparanCorrectamente(string op, int actual, int expected, bool enabled)
+        [InlineData("=", 5L, 5L, true)]
+        [InlineData("=", 5L, 6L, false)]
+        [InlineData("!=", 5L, 6L, true)]
+        [InlineData("!=", 5L, 5L, false)]
+        [InlineData(">", 6L, 5L, true)]
+        [InlineData(">", 5L, 5L, false)]
+        [InlineData("<", 4L, 5L, true)]
+        [InlineData("<", 5L, 5L, false)]
+        public void Operadores_ComparanCorrectamente(string op, long actual, long expected, bool visible)
         {
-            var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = op, Answer = expected };
-            Assert.Equal(enabled, EnableWhenEvaluator.IsEnabled(rule, Answers("q1", actual)));
+            Assert.Equal(visible, EnableWhenEvaluator.Compare(op, actual, expected));
         }
 
         [Fact]
-        public void OperadorNoSoportado_Lanza()
+        public void Igual_NumeroEsperadoContraTextoConComaDecimal()
         {
-            var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = "~=", Answer = 1 };
-            Assert.Throws<NotSupportedException>(() => EnableWhenEvaluator.IsEnabled(rule, Answers("q1", 1)));
+            // Los inputs de texto devuelven "5,5" contra un valor esperado tipado.
+            Assert.True(EnableWhenEvaluator.Compare("=", "5,5", 5.5m));
         }
 
         [Fact]
-        public void Comparar_CaeAStringCuandoLosValoresNoSonComparables()
+        public void SinRespuesta_IgualYComparacionesNoSeCumplen_DistintoSi()
         {
-            // Dos object planos no implementan IComparable: la comparación cae a string.Compare
-            // de sus ToString() ("System.Object" == "System.Object") -> 0, así que ">=" habilita.
-            var rule = new EnableWhenRule { QuestionLinkId = "q1", Operator = ">=", Answer = new object() };
-            Assert.True(EnableWhenEvaluator.IsEnabled(rule, Answers("q1", new object())));
+            Assert.False(EnableWhenEvaluator.Compare("=", null, 5L));
+            Assert.False(EnableWhenEvaluator.Compare(">", null, 5L));
+            Assert.False(EnableWhenEvaluator.Compare("<", null, 5L));
+            Assert.True(EnableWhenEvaluator.Compare("!=", null, 5L));
         }
+
+        [Fact]
+        public void OperadorDesconocido_NoOcultaLaPregunta()
+        {
+            Assert.True(EnableWhenEvaluator.Compare("exists", null, null));
+        }
+
+        [Fact]
+        public void Booleano_ComparaPorValor()
+        {
+            Assert.True(EnableWhenEvaluator.Compare("=", true, true));
+            Assert.False(EnableWhenEvaluator.Compare("=", false, true));
+        }
+
+        [Fact]
+        public void Texto_ComparacionExacta()
+        {
+            Assert.True(EnableWhenEvaluator.Compare("=", "Sí", "Sí"));
+            Assert.False(EnableWhenEvaluator.Compare("=", "sí", "Sí"));
+        }
+
+        // ---- MissingRequired ----
+
+        [Fact]
+        public void ObligatoriaVisibleSinResponder_Falta()
+        {
+            var s = Estructura(Pregunta("edad", required: true));
+
+            var faltan = EnableWhenEvaluator.MissingRequired(s, new List<QuestionnaireResponseItem>());
+
+            Assert.Equal(new[] { "edad" }, faltan.Select(q => q.LinkId));
+        }
+
+        [Fact]
+        public void ObligatoriaRespondida_NoFalta()
+        {
+            var s = Estructura(Pregunta("edad", required: true));
+
+            Assert.Empty(EnableWhenEvaluator.MissingRequired(s, new[] { new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 7 } }));
+        }
+
+        [Fact]
+        public void ItemSinValor_CuentaComoSinResponder()
+        {
+            // El renderer manda un item con sólo LinkId para las preguntas vacías.
+            var s = Estructura(Pregunta("obs", required: true));
+
+            Assert.Single(EnableWhenEvaluator.MissingRequired(s, new[] { new QuestionnaireResponseItem { LinkId = "obs" } }));
+        }
+
+        [Fact]
+        public void BooleanoEnFalso_CuentaComoRespondido()
+        {
+            var s = Estructura(Pregunta("fiebre", required: true, type: "boolean"));
+
+            Assert.Empty(EnableWhenEvaluator.MissingRequired(s, new[] { new QuestionnaireResponseItem { LinkId = "fiebre", ValueBoolean = false } }));
+        }
+
+        [Fact]
+        public void AdjuntoSubido_CuentaComoRespondido()
+        {
+            var s = Estructura(Pregunta("estudio", required: true, type: "attachment"));
+
+            Assert.Empty(EnableWhenEvaluator.MissingRequired(s, new[] { new QuestionnaireResponseItem { LinkId = "estudio", AttachmentId = Guid.NewGuid() } }));
+        }
+
+        [Fact]
+        public void ObligatoriaOculta_NoSeExige()
+        {
+            var s = Estructura(
+                Pregunta("fiebre", type: "boolean"),
+                Pregunta("temp", required: true, cond: new RenderableCondition { Question = "fiebre", Op = "=", Value = true }));
+
+            var items = new[] { new QuestionnaireResponseItem { LinkId = "fiebre", ValueBoolean = false } };
+
+            Assert.Empty(EnableWhenEvaluator.MissingRequired(s, items));
+        }
+
+        [Fact]
+        public void ObligatoriaQueSeVuelveVisible_SeExige()
+        {
+            var s = Estructura(
+                Pregunta("fiebre", type: "boolean"),
+                Pregunta("temp", required: true, cond: new RenderableCondition { Question = "fiebre", Op = "=", Value = true }));
+
+            var items = new[] { new QuestionnaireResponseItem { LinkId = "fiebre", ValueBoolean = true } };
+
+            Assert.Equal(new[] { "temp" }, EnableWhenEvaluator.MissingRequired(s, items).Select(q => q.LinkId));
+        }
+
+        [Fact]
+        public void OrigenMultiple_AlcanzaConUnaOpcionQueCumpla()
+        {
+            var s = Estructura(
+                Pregunta("sintomas", type: "openChoice"),
+                Pregunta("detalle", required: true, cond: new RenderableCondition { Question = "sintomas", Op = "=", Value = "Tos" }));
+
+            var items = new[]
+            {
+                new QuestionnaireResponseItem { LinkId = "sintomas", ValueCode = "Fiebre" },
+                new QuestionnaireResponseItem { LinkId = "sintomas", ValueCode = "Tos" }
+            };
+
+            Assert.Single(EnableWhenEvaluator.MissingRequired(s, items));
+        }
+
+        [Fact]
+        public void OrigenMultipleSinMarcar_NiSiquieraDistintoLaHaceVisible()
+        {
+            // En el navegador es un array vacío: [].some(...) es false también para '!='.
+            var s = Estructura(
+                Pregunta("sintomas", type: "openChoice"),
+                Pregunta("detalle", required: true, cond: new RenderableCondition { Question = "sintomas", Op = "!=", Value = "Ninguno" }));
+
+            Assert.Empty(EnableWhenEvaluator.MissingRequired(s, new List<QuestionnaireResponseItem>()));
+        }
+
+        // ---- ClearHiddenAnswers ----
+
+        [Fact]
+        public void ClearHiddenAnswers_VaciaLaRespuestaDeUnaPreguntaQueQuedoOculta()
+        {
+            var s = Estructura(
+                Pregunta("fc", type: "integer"),
+                Pregunta("ta", type: "integer", cond: new RenderableCondition { Question = "fc", Op = ">", Value = 5L }));
+            var ta = new QuestionnaireResponseItem { LinkId = "ta", ValueInteger = 23 };
+            var items = new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "fc", ValueInteger = 0 }, ta };
+
+            var vaciadas = EnableWhenEvaluator.ClearHiddenAnswers(s, items);
+
+            Assert.Equal(new[] { "ta" }, vaciadas);
+            Assert.Null(ta.ValueInteger);
+            Assert.Equal(0, items[0].ValueInteger);
+        }
+
+        [Fact]
+        public void ClearHiddenAnswers_NoTocaLasVisibles()
+        {
+            var s = Estructura(
+                Pregunta("fc", type: "integer"),
+                Pregunta("ta", type: "integer", cond: new RenderableCondition { Question = "fc", Op = ">", Value = 5L }));
+            var ta = new QuestionnaireResponseItem { LinkId = "ta", ValueInteger = 23 };
+
+            var vaciadas = EnableWhenEvaluator.ClearHiddenAnswers(s,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "fc", ValueInteger = 80 }, ta });
+
+            Assert.Empty(vaciadas);
+            Assert.Equal(23, ta.ValueInteger);
+        }
+
+        [Fact]
+        public void ClearHiddenAnswers_VaciaTodosLosValoresYElAdjunto()
+        {
+            var s = Estructura(
+                Pregunta("fiebre", type: "boolean"),
+                Pregunta("estudio", type: "attachment", cond: new RenderableCondition { Question = "fiebre", Op = "=", Value = true }));
+            var estudio = new QuestionnaireResponseItem { LinkId = "estudio", AttachmentId = Guid.NewGuid(), ValueString = "rx.pdf" };
+
+            EnableWhenEvaluator.ClearHiddenAnswers(s,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "fiebre", ValueBoolean = false }, estudio });
+
+            Assert.Null(estudio.AttachmentId);
+            Assert.Null(estudio.ValueString);
+        }
+
+        [Fact]
+        public void SinEstructura_NoSeValida()
+        {
+            Assert.Empty(EnableWhenEvaluator.MissingRequired(null, new List<QuestionnaireResponseItem>()));
+        }
+
+        private static RenderableQuestionnaire Estructura(params RenderableQuestion[] preguntas)
+        {
+            var s = new RenderableQuestionnaire();
+            s.Groups.Add(new RenderableGroup { LinkId = "g1", Title = "General", Questions = preguntas.ToList() });
+            return s;
+        }
+
+        private static RenderableQuestion Pregunta(string linkId, bool required = false, string type = "string", RenderableCondition cond = null)
+            => new RenderableQuestion { LinkId = linkId, Text = linkId, Type = type, Required = required, EnableWhen = cond };
     }
 }

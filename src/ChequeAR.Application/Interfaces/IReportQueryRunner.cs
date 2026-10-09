@@ -11,7 +11,12 @@ namespace ChequeAR.Application.Interfaces
     /// </summary>
     public interface IReportQueryRunner
     {
-        Task<QueryRunResult> RunAsync(BuiltQuery query, bool paginate);
+        /// <param name="maxResponses">
+        /// Tope de fichas a materializar. Si la cohorte lo supera, el adaptador devuelve sólo
+        /// el total y NO lee las filas: cargarlas para después rechazarlas es justo el costo
+        /// que el tope quiere evitar. Null = sin tope.
+        /// </param>
+        Task<QueryRunResult> RunAsync(BuiltQuery query, int? maxResponses);
     }
 
     public class QueryRunResult

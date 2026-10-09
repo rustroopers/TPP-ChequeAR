@@ -44,7 +44,7 @@ namespace ChequeAR.Tests.Application
                 () => sut.ExecuteAsync(new ReportQuery { QuestionnaireId = id }));
 
             // Nunca debería haber llegado a ejecutar la consulta.
-            _runner.Verify(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<bool>()), Times.Never);
+            _runner.Verify(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>()), Times.Never);
         }
 
         [Fact]
@@ -74,14 +74,70 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(Minimal(id, "cardio"));
-            _runner.Setup(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<bool>()))
+            _runner.Setup(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>()))
                 .ReturnsAsync(new QueryRunResult { Rows = new List<Dictionary<string, object>>(), TotalResponses = 0 });
             var sut = Sut(TestHelpers.GuardFor("cardio"));
 
             var result = await sut.ExecuteAsync(new ReportQuery { QuestionnaireId = id });
 
             Assert.NotNull(result);
-            _runner.Verify(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<bool>()), Times.Once);
+            _runner.Verify(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ExecuteAllAsync_PideAlAdaptadorQueNoLeaMasQueElTope_YRechazaSiSeSupera()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(Minimal(id, "cardio"));
+            _runner.Setup(r => r.RunAsync(It.IsAny<BuiltQuery>(), ReportExecutor.MaxSyncRows))
+                .ReturnsAsync(new QueryRunResult { TotalResponses = ReportExecutor.MaxSyncRows + 1 });
+            var sut = Sut(TestHelpers.GuardFor("cardio"));
+
+            await Assert.ThrowsAsync<BusinessRuleException>(
+                () => sut.ExecuteAllAsync(new ReportQuery { QuestionnaireId = id }));
+        }
+
+        [Fact]
+        public async Task CuestionarioInexistente_LanzaNotFound()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync((Questionnaire)null);
+
+            await Assert.ThrowsAsync<NotFoundException>(
+                () => Sut(TestHelpers.UnrestrictedGuard()).ExecuteAsync(new ReportQuery { QuestionnaireId = id }));
+        }
+
+        [Fact]
+        public async Task FiltroMalArmado_LanzaValidacion_YNoEjecuta()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(Minimal(id, "cardio"));
+            var query = new ReportQuery
+            {
+                QuestionnaireId = id,
+                Filters = new FilterNode
+                {
+                    Predicates = new List<FilterPredicate> { new FilterPredicate { LinkId = "no-existe", Op = "=", Value = "x" } }
+                }
+            };
+
+            await Assert.ThrowsAsync<ValidationFailedException>(
+                () => Sut(TestHelpers.UnrestrictedGuard()).ExecuteAsync(query));
+            _runner.Verify(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_Paginado_NoMandaTope()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(Minimal(id, "cardio"));
+            _runner.Setup(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>()))
+                .ReturnsAsync(new QueryRunResult());
+            var sut = Sut(TestHelpers.GuardFor("cardio"));
+
+            await sut.ExecuteAsync(new ReportQuery { QuestionnaireId = id });
+
+            _runner.Verify(r => r.RunAsync(It.IsAny<BuiltQuery>(), null), Times.Once);
         }
 
         [Fact]
@@ -89,7 +145,7 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(Minimal(id, "onco"));
-            _runner.Setup(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<bool>()))
+            _runner.Setup(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>()))
                 .ReturnsAsync(new QueryRunResult { Rows = new List<Dictionary<string, object>>(), TotalResponses = 0 });
             var sut = Sut(TestHelpers.UnrestrictedGuard());
 

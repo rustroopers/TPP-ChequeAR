@@ -67,8 +67,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
 
@@ -91,8 +92,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     });
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 model.Results.Clear();
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
             }
@@ -137,7 +139,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
                 ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
 
-                var current = CurrentVersion(q);
+                var current = q?.CurrentVersion();
                 if (current == null)
                 {
                     ViewBag.Version = 0;
@@ -152,7 +154,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // quedaría fuera de sincronía con lo que efectivamente se persiste/valida. La
                 // versión nueva rige para fichas nuevas. Sin borrador previo, se usa la vigente.
                 var draft = await GetResumeDraftAsync(patientId, questionnaireId);
-                var version = ResolveResumeVersion(q, draft) ?? current;
+                var version = (draft == null ? null : q?.FindVersion(draft.QuestionnaireVersionId)) ?? current;
                 // El botón "Detalle" (historial de la ficha) sólo tiene sentido si ya hay una
                 // ficha con eventos: una carga nueva todavía no generó ninguno.
                 ViewBag.ExistingResponseId = draft?.Id;
@@ -185,8 +187,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                         NullValueHandling = NullValueHandling.Ignore
                     });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.PatientName = "HC " + patientId;
                 ViewBag.QuestionnaireTitle = null;
                 ViewBag.Version = 0;
@@ -195,15 +198,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View();
         }
 
-        /// <summary>
-        /// Número de la versión a la que quedó anclada una respuesta. 0 si no se puede
-        /// resolver (fichas viejas, previas al anclaje, que guardaron Guid.Empty).
-        /// </summary>
-        private static int PinnedVersionNumber(ChequeAR.Domain.Entities.Questionnaire q, Guid versionId)
-        {
-            if (q?.Versions == null || versionId == Guid.Empty) return 0;
-            return q.Versions.FirstOrDefault(v => v.Id == versionId)?.VersionNumber ?? 0;
-        }
 
         /// <summary>
         /// La ficha InProgress más reciente para este paciente+cuestionario, o null si no hay
@@ -218,36 +212,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var drafts = await _responses.SearchAsync(patientId, questionnaireId, ResponseStatus.InProgress, 0, 1);
                 return drafts.FirstOrDefault();
             }
-            catch
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 return null;   // sin base no se puede resumir: el llamador cae a la versión vigente
             }
         }
 
-        /// <summary>
-        /// Versión a la que hay que anclar el editor al reabrir un borrador: la que se congeló
-        /// cuando se inició. Devuelve null cuando no hay borrador o es anterior al anclaje de
-        /// versión (VersionId vacío); en ambos casos el llamador cae a la versión vigente.
-        /// </summary>
-        private static ChequeAR.Domain.Entities.QuestionnaireVersion ResolveResumeVersion(
-            ChequeAR.Domain.Entities.Questionnaire q, ChequeAR.Domain.Entities.QuestionnaireResponse draft)
-        {
-            if (q?.Versions == null || q.Versions.Count == 0) return null;
-            if (draft == null || draft.QuestionnaireVersionId == Guid.Empty) return null;
-            return q.Versions.FirstOrDefault(v => v.Id == draft.QuestionnaireVersionId);
-        }
 
-        /// <summary>Versión viva del cuestionario, o null si nunca se publicó.</summary>
-        private static ChequeAR.Domain.Entities.QuestionnaireVersion CurrentVersion(ChequeAR.Domain.Entities.Questionnaire q)
-        {
-            if (q?.Versions == null || q.Versions.Count == 0) return null;
-            if (q.CurrentVersionId.HasValue)
-            {
-                var current = q.Versions.FirstOrDefault(v => v.Id == q.CurrentVersionId.Value);
-                if (current != null) return current;
-            }
-            return q.Versions.OrderByDescending(v => v.VersionNumber).First();
-        }
 
         // R6 — Read-only
         public async Task<ActionResult> View(Guid id)
@@ -273,9 +245,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                     QuestionnaireTitle = q?.Title,
                     // La versión con la que se completó ESTA ficha, no la que esté vigente
                     // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
-                    QuestionnaireVersion = PinnedVersionNumber(q, qr.QuestionnaireVersionId),
+                    QuestionnaireVersion = q?.FindVersion(qr.QuestionnaireVersionId)?.VersionNumber ?? 0,
                     Author = qr.AuthorUserId,
-                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.LastSavedAt)
+                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.LastSavedAt),
+                    IsDiscarded = qr.Status == ResponseStatus.EnteredInError
                 };
 
                 // Un linkId puede repetirse (opción múltiple: un item por opción marcada),
@@ -302,7 +275,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                             group.Questions.Add(new AnsweredQuestion
                             {
                                 Text = question.Text,
-                                Answer = FormatAnswers(items),
+                                Answer = ResponseAnswerFormatter.Format(items),
                                 Prefilled = items != null && items.Any(i => i.WasPrefilled),
                                 AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
@@ -323,7 +296,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         answered.Questions.Add(new AnsweredQuestion
                         {
                             Text = entry.Value,
-                            Answer = FormatAnswers(items),
+                            Answer = ResponseAnswerFormatter.Format(items),
                             Prefilled = items != null && items.Any(i => i.WasPrefilled),
                             AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
@@ -336,8 +309,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 return HttpNotFound();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return base.View(new EncounterReadonlyViewModel { EncounterId = id });
             }
@@ -366,24 +340,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             return result;
         }
 
-        private static string FormatAnswers(List<ChequeAR.Domain.Entities.QuestionnaireResponseItem> items)
-        {
-            if (items == null || items.Count == 0) return "—";
-            var values = items.Select(FormatAnswer).Where(v => v != "—").ToList();
-            return values.Count > 0 ? string.Join(", ", values) : "—";
-        }
-
-        private static string FormatAnswer(ChequeAR.Domain.Entities.QuestionnaireResponseItem item)
-        {
-            if (item == null) return "—";
-            if (item.ValueBoolean.HasValue) return item.ValueBoolean.Value ? "Sí" : "No";
-            if (item.ValueInteger.HasValue) return item.ValueInteger.Value.ToString();
-            if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value.ToString();
-            if (item.ValueDate.HasValue) return item.ValueDate.Value.ToString("yyyy-MM-dd");
-            if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
-            if (!string.IsNullOrEmpty(item.ValueCode)) return item.ValueCode;
-            return "—";
-        }
 
         // Historial de UNA ficha ("Detalle"): quién y cuándo tocó qué, reconstruido de los
         // eventos de auditoría de esa respuesta. Es la vista por-ficha de Auditoría.
@@ -410,7 +366,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Patient = new PatientSearchItem { HC = qr.PatientHospitalId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = p?.SpecialtyCode ?? SpecialtyDefaults.Code, SpecialtyLabel = p?.SpecialtyLabel ?? SpecialtyDefaults.Name },
                     QuestionnaireId = qr.QuestionnaireId,
                     QuestionnaireTitle = q?.Title,
-                    QuestionnaireVersion = PinnedVersionNumber(q, qr.QuestionnaireVersionId),
+                    QuestionnaireVersion = q?.FindVersion(qr.QuestionnaireVersionId)?.VersionNumber ?? 0,
                     Status = qr.Status.ToString().ToLowerInvariant()
                 };
 
@@ -459,8 +415,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 return HttpNotFound();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 return View(new EncounterHistoryViewModel { EncounterId = id });
             }
@@ -469,7 +426,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // R7 — Timeline
         public async Task<ActionResult> Timeline(string patientId, Guid? cuestionario = null, string especialidad = null, string autor = null, string estado = null, string from = null, string to = null)
         {
-            NormalizeDateRange(ref from, ref to);
+            ChequeAR.Api.Helpers.ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             ViewBag.Title = "Historial del paciente";
             ViewBag.PageId = "encounters";
             ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
@@ -492,23 +449,15 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // El historial de UN paciente está intrínsecamente acotado (no crece sin
                 // límite como el log global de auditoría), así que se trae completo y se
                 // filtra en memoria en vez de empujar el filtro al repositorio.
-                // Nota de alcance: Timeline queda fuera del enforcement por especialidad
-                // (decisión de la feature 011) — muestra el historial completo del paciente
-                // sin importar la especialidad de cada cuestionario. Se resuelve vía
-                // GetAsync directo al repo (no _questionnaires.GetAsync, que sí filtra) para
-                // no romper el historial clínico por un cuestionario de otra especialidad.
+                // Muestra el historial completo sin importar la especialidad de cada
+                // cuestionario (decisión de la feature 011): ver GetForPatientHistoryAsync.
                 var encs = await _patients.GetEncountersAsync(patientId, 500);
                 var titleCache = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
                 var all = new List<EncounterTimelineItem>();
                 foreach (var e in encs)
                 {
                     if (!titleCache.ContainsKey(e.QuestionnaireId))
-                    {
-                        ChequeAR.Domain.Entities.Questionnaire qq = null;
-                        try { qq = await _questionnaires.GetAsync(e.QuestionnaireId); }
-                        catch (SpecialtyForbiddenException) { /* fuera de scope: se muestra igual, ver nota arriba */ }
-                        titleCache[e.QuestionnaireId] = qq;
-                    }
+                        titleCache[e.QuestionnaireId] = await _questionnaires.GetForPatientHistoryAsync(e.QuestionnaireId);
                     var q = titleCache[e.QuestionnaireId];
                     all.Add(new EncounterTimelineItem
                     {
@@ -516,7 +465,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Date = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(e.AuthoredAt),
                         QuestionnaireId = e.QuestionnaireId,
                         QuestionnaireTitle = q?.Title ?? e.QuestionnaireId.ToString(),
-                        QuestionnaireVersion = PinnedVersionNumber(q, e.QuestionnaireVersionId),
+                        QuestionnaireVersion = q?.FindVersion(e.QuestionnaireVersionId)?.VersionNumber ?? 0,
                         SpecialtyCode = cat.CodeOrDefault(q?.SpecialtyCode),
                         SpecialtyLabel = cat.Label(q?.SpecialtyCode, q?.SpecialtyDisplay),
                         SpecialtyColor = cat.Color(q?.SpecialtyCode),
@@ -539,8 +488,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Distinct().OrderBy(a => a).ToList();
                 model.HasAnyEncounters = all.Count > 0;
 
-                var fromUtc = ParseArgDateToUtc(from, endOfDay: false);
-                var toUtc = ParseArgDateToUtc(to, endOfDay: true);
+                var fromUtc = ChequeAR.Api.Helpers.ArgentinaTime.ParseFilterDateToUtc(from, endOfDay: false);
+                var toUtc = ChequeAR.Api.Helpers.ArgentinaTime.ParseFilterDateToUtc(to, endOfDay: true);
 
                 var status = model.StatusFilter;
                 model.Entries.AddRange(all.Where(x =>
@@ -553,8 +502,9 @@ namespace ChequeAR.Api.Controllers.Mvc
 
                 return View(model);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 model.Patient = new PatientSearchItem { HC = patientId };
                 return View(model);
@@ -583,19 +533,23 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // El selector ofrece SOLO los cuestionarios que el paciente completó al menos una
                 // vez: son los únicos que pueden producir una serie. Un cuestionario con fichas
                 // en progreso, pero ninguna finalizada, no aporta datos y no tiene sentido ofrecerlo.
+                // Una ficha enmendada es una finalizada y corregida: cuenta, igual que en la vista.
                 var encs = await _patients.GetEncountersAsync(patientId, 500);
-                var completed = encs.Where(e => e.Status == ResponseStatus.Completed).ToList();
+                var completed = encs
+                    .Where(e => e.Status == ResponseStatus.Completed || e.Status == ResponseStatus.Amended)
+                    .ToList();
                 model.HasAnyCompleted = completed.Count > 0;
 
-                var titleCache = new Dictionary<Guid, string>();
-                foreach (var qId in completed.Select(e => e.QuestionnaireId).Distinct())
-                {
-                    if (!titleCache.ContainsKey(qId))
-                        titleCache[qId] = (await _questionnaires.GetAsync(qId))?.Title ?? qId.ToString();
-                }
+                // Sólo los títulos, en una consulta: cargar cada cuestionario entero para
+                // rotular un selector era una ida a la base (con todas sus preguntas) por opción.
+                var titles = await _questionnaires.GetTitlesAsync(completed.Select(e => e.QuestionnaireId));
                 model.AvailableQuestionnaires = completed
                     .GroupBy(e => e.QuestionnaireId)
-                    .Select(g => new TimelineFilterOption { Value = g.Key.ToString(), Label = titleCache[g.Key] })
+                    .Select(g => new TimelineFilterOption
+                    {
+                        Value = g.Key.ToString(),
+                        Label = titles.TryGetValue(g.Key, out var title) ? title : g.Key.ToString()
+                    })
                     .OrderBy(x => x.Label).ToList();
 
                 // Si el cuestionario elegido no está entre los que el paciente completó, se ignora
@@ -604,22 +558,15 @@ namespace ChequeAR.Api.Controllers.Mvc
                     !model.AvailableQuestionnaires.Any(o => o.Value == questionnaireId.Value.ToString()))
                     model.SelectedQuestionnaireId = null;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
                 model.Patient = model.Patient ?? new PatientSearchItem { HC = patientId };
             }
             return View(model);
         }
 
-        /// <summary>Fecha "yyyy-MM-dd" (local ARG) a límite UTC. endOfDay=true toma el día siguiente (cota superior exclusiva).</summary>
-        private static DateTime? ParseArgDateToUtc(string date, bool endOfDay)
-        {
-            if (!DateTime.TryParseExact((date ?? string.Empty).Trim(), "yyyy-MM-dd",
-                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
-                return null;
-            return ChequeAR.Api.Helpers.ArgentinaTime.ToUtc(endOfDay ? d.Date.AddDays(1) : d.Date);
-        }
 
         /// <summary>Normaliza el filtro de estado a "pendiente"/"finalizada"; cualquier otra cosa = sin filtro.</summary>
         private static string NormalizeStatus(string estado)
@@ -636,19 +583,5 @@ namespace ChequeAR.Api.Controllers.Mvc
             return true;
         }
 
-        /// <summary>
-        /// Si "desde" quedó después de "hasta" (rango invertido, tipeado a mano en la URL o
-        /// pegado sin pasar por el date-range picker), se intercambian acá. Nunca debe llegar a
-        /// filtrarse con un rango negativo.
-        /// </summary>
-        private static void NormalizeDateRange(ref string from, ref string to)
-        {
-            var fd = ParseArgDateToUtc(from, endOfDay: false);
-            var td = ParseArgDateToUtc(to, endOfDay: false);
-            if (fd.HasValue && td.HasValue && fd.Value > td.Value)
-            {
-                var tmp = from; from = to; to = tmp;
-            }
-        }
     }
 }

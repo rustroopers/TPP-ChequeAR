@@ -11,10 +11,8 @@
 (function (window) {
     'use strict';
 
-    function getToken() {
-        var meta = document.querySelector('meta[name="cq-token"]');
-        return meta ? meta.getAttribute('content') : null;
-    }
+    // bootstrap.js se carga antes que este archivo en todas las vistas que lo usan.
+    function getToken() { return window.ChequeARIslands.auth.token(); }
 
     // El tiempo de espera de un 429 viaja en el diagnostics del OperationOutcome: el estándar
     // no tiene un campo para eso.

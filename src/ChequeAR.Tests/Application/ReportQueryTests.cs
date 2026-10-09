@@ -257,6 +257,26 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(25, built.Parameters.Single(p => p.Name == "Take").Value);
         }
 
+        [Fact]
+        public void PageSize_SeAcotaAlMaximo()
+        {
+            var q = Query();
+            q.PageSize = 1000000;
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.Equal(QueryBuilder.MaxPageSize, built.Parameters.Single(p => p.Name == "Take").Value);
+        }
+
+        [Fact]
+        public void PaginaAbsurda_NoDesbordaElOffset()
+        {
+            var q = Query();
+            q.Page = int.MaxValue; q.PageSize = 50;
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.True((int)built.Parameters.Single(p => p.Name == "Skip").Value >= 0);
+        }
+
         // La exportacion no pagina: un archivo cortado en la primera pagina seria peor que
         // un error, porque nadie lo notaria.
         [Fact]
@@ -286,8 +306,134 @@ namespace ChequeAR.Tests.Application
 
             var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
 
-            Assert.Equal(temprano, built.Parameters.Single(p => p.Name == "DateFrom").Value);
-            Assert.Equal(tarde, built.Parameters.Single(p => p.Name == "DateTo").Value);
+            Assert.Equal(new DateTime(2026, 1, 1, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(new DateTime(2026, 6, 2, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
+        }
+
+        // El rango son días de Argentina contra una columna en UTC. La isla manda
+        // T00:00:00 / T23:59:59 sin zona; lo que cuenta es el día.
+        [Fact]
+        public void RangoDeFechas_SeInterpretaComoDiasDeArgentina()
+        {
+            var q = Query();
+            q.DateRange = new DateRange
+            {
+                From = new DateTime(2026, 8, 10, 0, 0, 0),
+                To = new DateTime(2026, 8, 10, 23, 59, 59)
+            };
+
+            var built = new QueryBuilder().Build(q, ReportSchemaTests.SchemaCon(("a", QuestionType.String)));
+
+            Assert.Contains("\"AuthoredAt\" >= :DateFrom", built.Sql);
+            Assert.Contains("\"AuthoredAt\" < :DateTo", built.Sql);
+            Assert.Equal(new DateTime(2026, 8, 10, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateFrom").Value);
+            Assert.Equal(new DateTime(2026, 8, 11, 3, 0, 0), built.Parameters.Single(p => p.Name == "DateTo").Value);
+        }
+
+        // Una condición negativa es la AUSENCIA de una respuesta que cumpla la positiva: así
+        // también la cumple la ficha donde la pregunta quedó sin responder.
+        [Theory]
+        [InlineData("!=", "A", "qri.\"ValueCode\" = :p1")]
+        [InlineData("exists", false, "qri.\"ValueCode\" IS NOT NULL")]
+        [InlineData("exists", "false", "qri.\"ValueCode\" IS NOT NULL")]
+        public void CondicionNegativa_EsLaAusenciaDeLaPositiva(string op, object valor, string positiva)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("dx", QuestionType.Choice));
+
+            var built = new QueryBuilder().Build(Query(Un("dx", op, valor)), schema);
+
+            Assert.Contains("NOT EXISTS (SELECT 1 FROM \"QuestionnaireResponseItem\" qri", built.Sql);
+            Assert.Contains(positiva, built.Sql);
+            Assert.DoesNotContain("!=", built.Sql);
+        }
+
+        [Theory]
+        [InlineData("=", "A")]
+        [InlineData("exists", null)]
+        [InlineData("exists", true)]
+        public void CondicionPositiva_NoSeNiega(string op, object valor)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("dx", QuestionType.Choice));
+
+            var built = new QueryBuilder().Build(Query(Un("dx", op, valor)), schema);
+
+            Assert.DoesNotContain("NOT EXISTS", built.Sql);
+        }
+
+        [Fact]
+        public void NoContenga_NiegaElContiene()
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.String));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", "notcontains", "fiebre")), schema);
+
+            Assert.Contains("NOT EXISTS", built.Sql);
+            Assert.Contains(" LIKE ", built.Sql);
+            Assert.Contains(built.Parameters, p => Equals(p.Value, "%fiebre%"));
+        }
+
+        // Texto libre: "Infección", "infeccion" e "INFECCION " son lo mismo para un filtro.
+        [Theory]
+        [InlineData("=")]
+        [InlineData("contains")]
+        public void Texto_SeComparaSinMayusculasNiTildes(string op)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.Text));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", op, "infección")), schema);
+
+            Assert.Contains("TRANSLATE(UPPER(", built.Sql);
+            Assert.Contains("'ÁÉÍÓÚÜÀÈÌÒÙ', 'AEIOUUAEIOU'", built.Sql);
+        }
+
+        [Fact]
+        public void Texto_SeaExactamente_IgnoraLosEspaciosDeLosBordes()
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.String));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", "=", "dolor")), schema);
+
+            Assert.Contains("TRIM(qri.\"ValueString\")", built.Sql);
+            Assert.Contains("TRIM(:p1)", built.Sql);
+        }
+
+        // El plegado es sólo para texto libre: un código de opción se compara tal cual.
+        [Fact]
+        public void Opcion_SeComparaTalCual()
+        {
+            var schema = ReportSchemaTests.SchemaCon(("dx", QuestionType.Choice));
+
+            var built = new QueryBuilder().Build(Query(Un("dx", "=", "A")), schema);
+
+            Assert.Contains("qri.\"ValueCode\" = :p1", built.Sql);
+            Assert.DoesNotContain("TRANSLATE", built.Sql);
+        }
+
+        // Es el tamaño que la API le informa al cliente: tiene que ser el que se aplicó.
+        [Theory]
+        [InlineData(0, QueryBuilder.DefaultPageSize)]
+        [InlineData(-5, QueryBuilder.DefaultPageSize)]
+        [InlineData(25, 25)]
+        [InlineData(9999, QueryBuilder.MaxPageSize)]
+        public void EffectivePageSize_AcotaElPedido(int pedido, int esperado)
+        {
+            Assert.Equal(esperado, QueryBuilder.EffectivePageSize(pedido));
+        }
+
+        // '%' y '_' son comodines de LIKE: buscar "50%" tiene que buscar ese texto, no "50" + lo que sea.
+        [Theory]
+        [InlineData("50%", "%50\\%%")]
+        [InlineData("a_b", "%a\\_b%")]
+        [InlineData("c\\d", "%c\\\\d%")]
+        [InlineData("dolor", "%dolor%")]
+        public void Contains_EscapaLosComodinesDeLike(string buscado, string esperado)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("nota", QuestionType.String));
+
+            var built = new QueryBuilder().Build(Query(Un("nota", "contains", buscado)), schema);
+
+            Assert.Contains("ESCAPE '\\'", built.Sql);
+            Assert.Contains(built.Parameters, p => Equals(p.Value, esperado));
         }
     }
 }

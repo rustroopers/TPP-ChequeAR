@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 
@@ -15,6 +16,12 @@ namespace ChequeAR.Application.Services
     /// cuestionario (qué se PUEDE graficar), independiente de si hay datos cargados; las series
     /// salen de las fichas finalizadas del paciente (qué TIENE datos). El spec pide distinguir
     /// explícitamente ambas cosas, por eso viven en dos consultas distintas.
+    ///
+    /// SIN filtro de especialidad, a propósito: la evolución es parte de la historia clínica
+    /// del paciente, y un paciente se atiende en varias áreas. Un médico puede VER todo lo de
+    /// su paciente aunque el cuestionario sea de otra especialidad; lo que no puede es
+    /// completar fichas ajenas, y eso lo controla QuestionnaireResponseService. Mismo criterio
+    /// que QuestionnaireService.GetForPatientHistoryAsync (feature 011).
     /// </summary>
     public class PatientTrendService
     {

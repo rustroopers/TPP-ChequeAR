@@ -86,6 +86,8 @@
     <PackageReference Include="Owin" Version="1.0" />
     <PackageReference Include="WebGrease" Version="1.6.0" />
     <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="SimpleInjector.Integration.Web.Mvc" Version="5.5.0" />
+    <PackageReference Include="SimpleInjector.Integration.WebApi" Version="5.5.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
     <!--
@@ -111,13 +113,13 @@
     <Compile Include="Auth\SessionToken.cs" />
     <Compile Include="Auth\RequiresPermissionAttribute.cs" />
     <Compile Include="Auth\RequiresPermissionApiAttribute.cs" />
-    <Compile Include="Filters\PermissionExceptionFilter.cs" />
+    <Compile Include="Filters\ApiExceptionFilter.cs" />
     <Compile Include="Filters\MvcPermissionExceptionFilter.cs" />
     <Compile Include="Helpers\ArgentinaTime.cs" />
     <Compile Include="Helpers\Asset.cs" />
     <Compile Include="Helpers\AuditPresentation.cs" />
     <Compile Include="Helpers\CqLocalizer.cs" />
-    <Compile Include="Middleware\AuditMiddleware.cs" />
+    <Compile Include="Helpers\HandledErrors.cs" />
     <Compile Include="Middleware\WebApiExceptionLogger.cs" />
     <Compile Include="Controllers\Mvc\HomeController.cs" />
     <Compile Include="Controllers\Mvc\AccountController.cs" />
