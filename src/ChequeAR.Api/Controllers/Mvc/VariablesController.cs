@@ -40,11 +40,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Variables";
             ViewBag.PageId = "variables";
-            ViewBag.Breadcrumbs = new List<Tuple<string, string>>
-            {
-                Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                Tuple.Create("Variables", (string)null)
-            };
 
             var model = new VariableListViewModel
             {
@@ -96,12 +91,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = id.HasValue ? "Editar variable" : "Nueva variable";
             ViewBag.PageId = "variables";
-            ViewBag.Breadcrumbs = new List<Tuple<string, string>>
-            {
-                Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                Tuple.Create("Variables", Url.Action("Index")),
-                Tuple.Create(id.HasValue ? "Editar" : "Nueva", (string)null)
-            };
 
             ClinicalVariableDto dto;
             if (id.HasValue)

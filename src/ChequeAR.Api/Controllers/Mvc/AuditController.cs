@@ -36,11 +36,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             ViewBag.Title = "Auditoría";
             ViewBag.PageId = "audit";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Auditoría", (string)null)
-            };
             const int pageSize = 50;
             var model = new AuditListViewModel
             {
@@ -158,12 +153,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Evento #" + id;
             ViewBag.PageId = "audit";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Auditoría", Url.Action("Index")),
-                System.Tuple.Create("#" + id.ToString().Substring(0, 8), (string)null)
-            };
             try
             {
                 var e = await _audit.GetAsync(id);

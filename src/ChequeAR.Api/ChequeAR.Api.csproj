@@ -174,12 +174,10 @@
     <Content Include="Views\Shared\_Navbar.cshtml" />
     <Content Include="Views\Shared\_Sidebar.cshtml" />
     <Content Include="Views\Shared\_Toasts.cshtml" />
-    <Content Include="Views\Shared\_Breadcrumbs.cshtml" />
     <Content Include="Views\Shared\_ProgressBar.cshtml" />
     <Content Include="Views\Shared\_DataError.cshtml" />
     <Content Include="Views\Error\Index.cshtml" />
     <Content Include="Content\theme\chequear-theme.css" />
-    <Content Include="Content\img\logo-violeta-garrahan.png" />
     <Content Include="Content\img\favicon-512.png" />
     <Content Include="Content\i18n\es-AR.json" />
     <Content Include="Views\Account\Login.cshtml" />

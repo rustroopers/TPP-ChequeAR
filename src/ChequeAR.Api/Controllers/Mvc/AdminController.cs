@@ -16,11 +16,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "CapabilityStatement";
             ViewBag.PageId = "capability";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("CapabilityStatement", (string)null)
-            };
             // Proyecta el mismo catalogo que sirve GET /fhir/r5/metadata.
             return View(new CapabilityStatementViewModel
             {

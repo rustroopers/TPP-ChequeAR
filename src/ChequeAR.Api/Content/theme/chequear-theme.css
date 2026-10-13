@@ -208,18 +208,6 @@ h3, .h3 { font-size: 16px; line-height: 24px; font-weight: 600; color: var(--cq-
   overflow-x: clip;
 }
 
-.cq-breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--cq-neutral-500);
-  margin-bottom: 16px;
-}
-.cq-breadcrumbs a { color: var(--cq-neutral-500); text-decoration: none; }
-.cq-breadcrumbs a:hover { color: var(--cq-primary-400); }
-.cq-breadcrumbs .sep { opacity: 0.5; }
-
 /* ===== Cards ===== */
 .cq-card {
   background: #fff;

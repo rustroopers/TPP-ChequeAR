@@ -40,11 +40,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Pacientes";
             ViewBag.PageId = "encounters";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", (string)null)
-            };
 
             var model = new PatientSearchViewModel { Query = q, HasSearched = !string.IsNullOrWhiteSpace(q) };
 
@@ -116,12 +111,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.PageId = "encounters";
             ViewBag.PatientId = patientId;
             ViewBag.QuestionnaireId = questionnaireId;
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Index")),
-                System.Tuple.Create("Carga de ficha", (string)null)
-            };
 
             try
             {
@@ -226,12 +215,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Ficha";
             ViewBag.PageId = "encounters";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Index")),
-                System.Tuple.Create("Ficha", (string)null)
-            };
             try
             {
                 var qr = await _responses.GetAsync(id);
@@ -347,12 +330,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Detalle de la ficha";
             ViewBag.PageId = "encounters";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Search")),
-                System.Tuple.Create("Detalle de la ficha", (string)null)
-            };
             try
             {
                 var qr = await _responses.GetAsync(id);
@@ -429,12 +406,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ChequeAR.Api.Helpers.ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             ViewBag.Title = "Historial del paciente";
             ViewBag.PageId = "encounters";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Index")),
-                System.Tuple.Create("Historial", (string)null)
-            };
             var model = new PatientTimelineViewModel
             {
                 QuestionnaireFilter = cuestionario, SpecialtyFilter = especialidad, AuthorFilter = autor,
@@ -516,13 +487,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Evolución de parámetros";
             ViewBag.PageId = "encounters";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Pacientes", Url.Action("Search")),
-                System.Tuple.Create("Historial", Url.Action("Timeline", new { patientId })),
-                System.Tuple.Create("Evolución", (string)null)
-            };
 
             var model = new PatientTrendViewModel { SelectedQuestionnaireId = questionnaireId };
             try

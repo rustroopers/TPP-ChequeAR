@@ -27,11 +27,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Usuarios";
             ViewBag.PageId = "users";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Usuarios", (string)null)
-            };
             var model = new UserListViewModel();
             try
             {
@@ -75,12 +70,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Editar usuario";
             ViewBag.PageId = "users";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Usuarios", Url.Action("Index")),
-                System.Tuple.Create(username, (string)null)
-            };
             try
             {
                 var u = await _users.GetAsync(username);

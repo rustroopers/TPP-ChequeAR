@@ -23,10 +23,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Inicio";
             ViewBag.PageId = "home";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", (string)null)
-            };
 
             var name = User != null && User.Identity != null && User.Identity.IsAuthenticated
                 ? User.Identity.Name
