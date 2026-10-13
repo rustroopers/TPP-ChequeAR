@@ -1,6 +1,6 @@
 # Quickstart: Evolución longitudinal de parámetros por paciente
 
-Guía manual para validar la feature una vez implementada, sin depender todavía de tests automatizados end-to-end (el proyecto valida este tipo de flujos a mano contra Oracle real, mismo enfoque que se usó para `specs/009-completado-asincronico-cuestionarios`, ver su sección "Testing hecho").
+Guía manual para validar la feature una vez implementada, sin depender todavía de tests automatizados end-to-end (el proyecto valida este tipo de flujos a mano contra Oracle real, mismo enfoque que se usó para `specs/013-completado-asincronico-cuestionarios`, ver su sección "Testing hecho").
 
 ## Prerrequisitos
 

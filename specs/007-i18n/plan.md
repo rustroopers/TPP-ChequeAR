@@ -2,6 +2,9 @@
 
 **Branch**: `007-i18n` | **Date**: 2026-06-10 | **Spec**: ./spec.md
 
+> **Descartada (2026-10-13):** la app queda solo en es-AR. Este plan describe un diseño que ya no existe en el código
+> (no hay `CultureMiddleware`, selector de idioma ni `en.json`). Ver `spec.md`.
+
 ## Summary
 
 Implementar i18n end-to-end usando `.resx` de ASP.NET para Razor + JSON simples para las islas Vue. Resolución de cultura por cookie `chequear_lang` con fallback a `Accept-Language` y default `es-AR`. Modelo de dominio extendido con `LocalizedText` para textos de cuestionarios.
