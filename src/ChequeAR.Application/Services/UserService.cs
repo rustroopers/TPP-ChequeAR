@@ -32,6 +32,21 @@ namespace ChequeAR.Application.Services
 
         public Task<User> GetAsync(string id) => _repo.GetAsync(id);
 
+        /// <summary>Usuario tipeado en un login fallido, solo si existe (a veces pegan la contraseña ahí).</summary>
+        public async Task<string> LoggableUserNameAsync(string typed)
+        {
+            var t = (typed ?? string.Empty).Trim();
+            if (t.Length == 0 || t.Length > 64) return "(inexistente)";
+            try
+            {
+                return await _repo.GetAsync(t) != null ? t : "(inexistente)";
+            }
+            catch (Exception)
+            {
+                return "(no verificado)";
+            }
+        }
+
         public async Task<UserPage> ListAsync(
             string searchTerm = null, string role = null, string specialty = null,
             bool? active = null, int skip = 0, int take = 50)
@@ -82,14 +97,19 @@ namespace ChequeAR.Application.Services
 
             await _repo.SyncFromHospitalAsync(info.Id, info.DisplayName, null, normalizedRoles, sanitizedSpecialties);
 
+            var stamp = await _repo.EnsureSecurityStampAsync(info.Id);
+
             return new UserInfo
             {
                 Id = info.Id,
                 DisplayName = info.DisplayName,
                 Roles = normalizedRoles ?? info.Roles,
-                Specialties = sanitizedSpecialties?.ToList() ?? info.Specialties
+                Specialties = sanitizedSpecialties?.ToList() ?? info.Specialties,
+                SecurityStamp = stamp
             };
         }
+
+        public Task RotateSecurityStampAsync(string userId) => _repo.RotateSecurityStampAsync(userId);
 
         /// <summary>
         /// Cambia el rol único y global de un usuario (ABM de /Users). No permite dejar el

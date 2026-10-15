@@ -13,16 +13,25 @@ namespace ChequeAR.Application.Services
     {
         private readonly string _issuer;
         private readonly string _audience;
-        private readonly string _signingSecret;
+        private readonly byte[] _signingKey;
         private readonly int _accessTtlMinutes;
 
         public JwtIssuer(string issuer, string audience, string signingSecret, int accessTtlMinutes)
+            : this(issuer, audience, Encoding.UTF8.GetBytes(signingSecret ?? string.Empty), accessTtlMinutes)
+        {
+        }
+
+        /// <summary>Clave ya en bytes (ver JwtSettings).</summary>
+        public JwtIssuer(string issuer, string audience, byte[] signingKey, int accessTtlMinutes)
         {
             _issuer = issuer;
             _audience = audience;
-            _signingSecret = signingSecret;
+            _signingKey = signingKey;
             _accessTtlMinutes = accessTtlMinutes;
         }
+
+        /// <summary>Claim con User.SecurityStamp.</summary>
+        public const string SecurityStampClaim = "sstamp";
 
         public string IssueAccessToken(UserInfo user)
         {
@@ -43,8 +52,10 @@ namespace ChequeAR.Application.Services
                 claims.Add(new Claim(ClaimTypes.Role, r));
             foreach (var s in user.Specialties ?? new List<string>())
                 claims.Add(new Claim("specialty", s));
+            if (!string.IsNullOrEmpty(user.SecurityStamp))
+                claims.Add(new Claim(SecurityStampClaim, user.SecurityStamp));
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_signingSecret));
+            var key = new SymmetricSecurityKey(_signingKey);
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(
