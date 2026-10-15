@@ -35,6 +35,13 @@ namespace ChequeAR.Application.Services
         public bool HasUnpublishedChanges { get; set; }
     }
 
+    /// <summary>La versión vigente de una variable, con su definición.</summary>
+    public class PublishedVariable
+    {
+        public int VersionNumber { get; set; }
+        public VariableDefinition Definition { get; set; }
+    }
+
     /// <summary>Dónde se usa una variable.</summary>
     public class VariableUsage
     {
@@ -112,6 +119,19 @@ namespace ChequeAR.Application.Services
                     ? new VariablePublication { CurrentVersion = current.VersionNumber, HasUnpublishedChanges = current.SourceRevision != v.Revision }
                     : new VariablePublication { CurrentVersion = 0, HasUnpublishedChanges = true };
             });
+        }
+
+        /// <summary>Definición y número de la versión vigente de cada variable publicada, en una consulta.</summary>
+        public async Task<IReadOnlyDictionary<Guid, PublishedVariable>> GetCurrentDefinitionsAsync(IEnumerable<ClinicalVariable> variables)
+        {
+            _access.EnsureCan(Permissions.QuestionnaireRead);
+            var list = (variables ?? Enumerable.Empty<ClinicalVariable>()).Where(v => v?.CurrentVersionId != null).ToList();
+            var versions = (await _repo.GetVersionsAsync(list.Select(v => v.Id))).ToDictionary(x => x.Id);
+            var result = new Dictionary<Guid, PublishedVariable>();
+            foreach (var v in list)
+                if (versions.TryGetValue(v.CurrentVersionId.Value, out var version))
+                    result[v.Id] = new PublishedVariable { VersionNumber = version.VersionNumber, Definition = VariableDefinition.Parse(version.DefinitionJson) };
+            return result;
         }
 
         public Task<IReadOnlyList<ClinicalVariableVersion>> ListVersionsAsync(Guid variableId)

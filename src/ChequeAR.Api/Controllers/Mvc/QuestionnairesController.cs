@@ -269,7 +269,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         /// mostrar el nombre de cada una y detectar las desactualizadas. Una sola consulta por
         /// cuestionario, no una por variable.
         /// </summary>
-        private async Task<IDictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>> VariablesDe(
+        private async Task<IDictionary<Guid, VariableInfo>> VariablesDe(
             ChequeAR.Domain.Entities.Questionnaire q)
         {
             var ids = (q.Questions ?? new List<ChequeAR.Domain.Entities.Question>())
@@ -277,18 +277,27 @@ namespace ChequeAR.Api.Controllers.Mvc
                 .Select(x => x.VariableId.Value)
                 .Distinct()
                 .ToList();
-            if (ids.Count == 0) return new Dictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>();
+            if (ids.Count == 0) return new Dictionary<Guid, VariableInfo>();
 
-            return (await _variables.GetManyAsync(ids)).ToDictionary(v => v.Id);
+            var variables = await _variables.GetManyAsync(ids);
+            var estado = await _variables.GetPublicationAsync(variables);
+            return variables.ToDictionary(v => v.Id, v => new VariableInfo { Name = v.Name, CurrentVersion = estado[v.Id].CurrentVersion });
+        }
+
+        /// <summary>Lo que el editor necesita de la variable de cada pregunta.</summary>
+        private sealed class VariableInfo
+        {
+            public string Name { get; set; }
+            public int CurrentVersion { get; set; }
         }
 
         private static List<QuestionGroupView> BuildEditorGroups(
             ChequeAR.Domain.Entities.Questionnaire q,
-            IDictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable> variables = null)
+            IDictionary<Guid, VariableInfo> variables = null)
         {
             var result = new List<QuestionGroupView>();
             var questions = q.Questions ?? new List<ChequeAR.Domain.Entities.Question>();
-            var cat = variables ?? new Dictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable>();
+            var cat = variables ?? new Dictionary<Guid, VariableInfo>();
 
             foreach (var g in (q.Groups ?? new List<ChequeAR.Domain.Entities.QuestionGroup>()).OrderBy(g => g.OrderIndex))
             {
@@ -312,7 +321,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         private static QuestionView ToQuestionView(
             ChequeAR.Domain.Entities.Question qq,
-            IDictionary<Guid, ChequeAR.Domain.Entities.ClinicalVariable> variables = null)
+            IDictionary<Guid, VariableInfo> variables = null)
         {
             var view = new QuestionView
             {
@@ -363,12 +372,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 view.VariableId = qq.VariableId.Value.ToString();
                 view.VariableRevision = qq.VariableRevision;
-                ChequeAR.Domain.Entities.ClinicalVariable v = null;
+                VariableInfo v = null;
                 if (variables != null) variables.TryGetValue(qq.VariableId.Value, out v);
                 // Si la variable ya no está en el catálogo, la pregunta sigue mostrándose con
                 // su snapshot: lo que se perdió es poder nombrar el origen, no el contenido.
                 view.VariableName = v != null ? v.Name : null;
-                view.VariableCurrentRevision = v != null ? v.Revision : qq.VariableRevision;
+                view.VariableCurrentRevision = v != null ? v.CurrentVersion : qq.VariableRevision;
             }
             return view;
         }

@@ -54,6 +54,7 @@
             isActive: Boolean,
             sortOrder: Number,
             revision: Number,
+            currentVersion: Number,
             options: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
@@ -171,6 +172,7 @@
                     snomedDisplay: (coding.codeDisplay || '').trim(),
                     term: (coding.term || '').trim(),
                     sortOrder: Number(model.sortOrder) || 0,
+                    revision: props.revision || 0,
                     options: tieneOpciones.value ? model.options.map(function (o) {
                         return {
                             display: o.display.trim(),
@@ -193,7 +195,8 @@
             Vue.onBeforeUnmount(function () { snomed.cancel(); clearTimeout(verifyDebounce); });
 
             return {
-                esNueva: esNueva, types: TYPES, model: model, coding: coding, snomed: snomed,
+                esNueva: esNueva, publicada: (props.currentVersion || 0) > 0,
+                types: TYPES, model: model, coding: coding, snomed: snomed,
                 codeVerifying: codeVerifying, codeVerification: codeVerification,
                 esNumerico: esNumerico, tieneOpciones: tieneOpciones,
                 tieneMaxLength: tieneMaxLength, esAdjunto: esAdjunto,
@@ -213,7 +216,7 @@
             '        </div>',
             '        <div class="col-md-5">',
             '          <label class="form-label cq-text-sm">Código</label>',
-            '          <input v-model="model.code" @input="codeTocado = true" class="form-control" placeholder="peso" />',
+            '          <input v-model="model.code" @input="codeTocado = true" class="form-control" placeholder="peso" :disabled="publicada" :title="publicada ? \'Fijo en una variable publicada\' : null" />',
             '        </div>',
             '        <div class="col-12">',
             '          <label class="form-label cq-text-sm">Enunciado por defecto</label>',
@@ -231,13 +234,13 @@
             '      <div class="row g-2">',
             '        <div class="col-md-6">',
             '          <label class="form-label cq-text-sm">Tipo</label>',
-            '          <select v-model="model.type" class="form-select">',
+            '          <select v-model="model.type" class="form-select" :disabled="publicada" :title="publicada ? \'Fijo en una variable publicada\' : null">',
             '            <option v-for="t in types" :key="t.code" :value="t.code">{{ t.label }}</option>',
             '          </select>',
             '        </div>',
             '        <div class="col-md-6 d-flex align-items-end">',
             '          <div class="form-check">',
-            '            <input class="form-check-input" type="checkbox" id="chkRepeats" v-model="model.repeatsAllowed" />',
+            '            <input class="form-check-input" type="checkbox" id="chkRepeats" v-model="model.repeatsAllowed" :disabled="publicada" />',
             '            <label class="form-check-label cq-text-sm" for="chkRepeats">Admite varias respuestas</label>',
             '          </div>',
             '        </div>',

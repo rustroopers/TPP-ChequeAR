@@ -58,6 +58,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // Un tipo desconocido en la URL se ignora: es un filtro, no un dato que se guarda.
                 QuestionType? tipo = QuestionTypeMap.TryFromUi(type, out var t) ? t : (QuestionType?)null;
                 var pagina = await _variables.ListAsync(q, tipo, active, (model.Page - 1) * PageSize, PageSize);
+                var estado = await _variables.GetPublicationAsync(pagina.Items);
                 model.Total = pagina.Total;
                 foreach (var v in pagina.Items)
                 {
@@ -72,7 +73,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                         SnomedCode = v.SnomedCode,
                         SnomedDisplay = v.SnomedDisplay,
                         IsActive = v.IsActive,
-                        CreatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.CreatedAt)
+                        CreatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.CreatedAt),
+                        CurrentVersion = estado[v.Id].CurrentVersion,
+                        HasUnpublishedChanges = estado[v.Id].CurrentVersion > 0 && estado[v.Id].HasUnpublishedChanges
                     });
                 }
             }
@@ -97,7 +100,8 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var v = await _variables.GetAsync(id.Value);
                 if (v == null) return HttpNotFound();
-                dto = ClinicalVariableDtoMap.ToDto(v);
+                var estado = await _variables.GetPublicationAsync(new[] { v });
+                dto = ClinicalVariableDtoMap.ToDto(v, estado[v.Id]);
             }
             else
             {
@@ -108,7 +112,64 @@ namespace ChequeAR.Api.Controllers.Mvc
             // Se serializa en el controller y no en la vista, como hace
             // QuestionnairesController.Edit con los props del editor.
             ViewBag.VariableProps = JsonConvert.SerializeObject(dto, CamelCase);
-            return View(new VariableFormViewModel { Id = id });
+            return View(await FormModelAsync(id, dto));
+        }
+
+        private async Task<VariableFormViewModel> FormModelAsync(Guid? id, ClinicalVariableDto dto)
+        {
+            var model = new VariableFormViewModel
+            {
+                Id = id,
+                Revision = dto.Revision,
+                CurrentVersion = dto.CurrentVersion,
+                HasUnpublishedChanges = dto.CurrentVersion > 0 && dto.HasUnpublishedChanges
+            };
+            if (!id.HasValue) return model;
+            foreach (var x in await _variables.ListVersionsAsync(id.Value))
+            {
+                model.Versions.Add(new VariableVersionItem
+                {
+                    Version = x.VersionNumber,
+                    Date = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(x.PublishedAt),
+                    Author = x.PublishedBy,
+                    ChangeNote = x.ChangeNote,
+                    IsCurrent = x.VersionNumber == dto.CurrentVersion
+                });
+            }
+            return model;
+        }
+
+        [HttpPost, ValidateAntiForgeryToken]
+        public async Task<ActionResult> Publish(Guid id, string changeNote, int? revision)
+        {
+            try
+            {
+                var antes = await _variables.GetAsync(id);
+                if (antes == null) return HttpNotFound();
+                var vigente = (await _variables.GetPublicationAsync(new[] { antes }))[id].CurrentVersion;
+                var version = await _variables.PublishAsync(id, User.Identity.Name, changeNote, revision);
+                TempData["Toast"] = version.VersionNumber == vigente
+                    ? "No hay cambios para publicar."
+                    : "Variable publicada (v" + version.VersionNumber + ").";
+                TempData["ToastLevel"] = "success";
+            }
+            catch (ValidationFailedException ex)
+            {
+                TempData["Toast"] = string.Join(" ", ex.Errors);
+                TempData["ToastLevel"] = "error";
+            }
+            catch (ConcurrencyConflictException ex)
+            {
+                TempData["Toast"] = ex.Message;
+                TempData["ToastLevel"] = "error";
+            }
+            catch (Exception ex)
+            {
+                Helpers.HandledErrors.Log(this, ex);
+                TempData["Toast"] = "No se pudo publicar la variable.";
+                TempData["ToastLevel"] = "error";
+            }
+            return RedirectToAction("Details", new { id });
         }
 
         [HttpPost, ValidateAntiForgeryToken]
@@ -128,7 +189,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var entidad = ClinicalVariableDtoMap.ToEntity(dto);
                 if (model.Id.HasValue)
                 {
-                    var actualizada = await _variables.UpdateAsync(model.Id.Value, entidad, User.Identity.Name);
+                    var actualizada = await _variables.UpdateAsync(model.Id.Value, entidad, User.Identity.Name, dto.Revision);
                     if (actualizada == null) return HttpNotFound();
                     TempData["Toast"] = "Variable actualizada.";
                     TempData["ToastLevel"] = "success";
@@ -147,6 +208,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["ToastLevel"] = "error";
                 return await RedisplayAsync(model, dto);
             }
+            catch (ConcurrencyConflictException ex)
+            {
+                // Se recarga lo guardado: reenviar la revisión vieja pisaría al otro.
+                TempData["Toast"] = ex.Message;
+                TempData["ToastLevel"] = "error";
+                return RedirectToAction("Details", new { id = model.Id });
+            }
             catch (JsonException)
             {
                 TempData["Toast"] = "No se pudieron leer los datos del formulario.";
@@ -164,7 +232,10 @@ namespace ChequeAR.Api.Controllers.Mvc
             return RedirectToAction("Index");
         }
 
-        /// <summary>Re-muestra lo enviado; id, estado y revisión no vienen en el payload.</summary>
+        /// <summary>
+        /// Re-muestra lo enviado. La revisión es la que tenía el formulario, no la guardada: si
+        /// otro guardó en el medio, el próximo envío tiene que chocar en vez de pisarlo.
+        /// </summary>
         private async Task<ActionResult> RedisplayAsync(VariableFormViewModel model, ClinicalVariableDto enviado)
         {
             if (enviado == null) return RedirectToAction("Details", new { id = model.Id });
@@ -173,11 +244,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var guardada = await _variables.GetAsync(model.Id.Value);
                 if (guardada == null) return HttpNotFound();
-                var original = ClinicalVariableDtoMap.ToDto(guardada);
+                var estado = await _variables.GetPublicationAsync(new[] { guardada });
+                var original = ClinicalVariableDtoMap.ToDto(guardada, estado[guardada.Id]);
                 enviado.Id = original.Id;
                 enviado.IsActive = original.IsActive;
-                enviado.Revision = original.Revision;
                 enviado.UpdatedAt = original.UpdatedAt;
+                enviado.CurrentVersion = original.CurrentVersion;
+                enviado.HasUnpublishedChanges = original.HasUnpublishedChanges;
             }
             else
             {
@@ -188,7 +261,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Title = model.Id.HasValue ? "Editar variable" : "Nueva variable";
             ViewBag.PageId = "variables";
             ViewBag.VariableProps = JsonConvert.SerializeObject(enviado, CamelCase);
-            return View("Details", new VariableFormViewModel { Id = model.Id });
+            return View("Details", await FormModelAsync(model.Id, enviado));
         }
 
         /// <summary>

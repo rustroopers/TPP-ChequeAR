@@ -74,7 +74,7 @@ else
         <thead>
             <tr>
                 <th>Nombre</th><th>Código</th><th>Tipo</th><th>Unidad</th>
-                <th>Rango</th><th>SNOMED CT</th><th>Estado</th>
+                <th>Rango</th><th>SNOMED CT</th><th>Versión</th><th>Estado</th>
                 <th>Creada <i class="bi bi-arrow-down" aria-hidden="true"></i></th>
                 <th class="text-end">@Cq.T("table.col.actions")</th>
             </tr>
@@ -99,9 +99,12 @@ else
                             <span class="cq-text-xs cq-text-muted">@v.SnomedDisplay</span>
                         }
                     </td>
+                    <td class="cq-text-sm">@(v.CurrentVersion > 0 ? "v" + v.CurrentVersion : "—")</td>
                     <td>
-                        @if (v.IsActive) { <span class="cq-badge cq-badge--published">Activa</span> }
+                        @if (v.CurrentVersion == 0) { <span class="cq-badge cq-badge--draft">Sin publicar</span> }
+                        else if (v.IsActive) { <span class="cq-badge cq-badge--published">Activa</span> }
                         else { <span class="cq-badge cq-badge--archived">De baja</span> }
+                        @if (v.HasUnpublishedChanges) { <span class="cq-badge cq-badge--info d-block mt-1">cambios sin publicar</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@v.CreatedAt</td>
                     <td class="text-end">
