@@ -23,9 +23,11 @@ namespace ChequeAR.Api.Controllers.Mvc
         private readonly QuestionnaireService _questionnaires;
         private readonly AuditQueryService _audit;
         private readonly SpecialtyCatalogService _specialties;
+        private readonly AccessAuditService _accessAudit;
 
-        public EncountersController(PatientService patients, QuestionnaireResponseService responses, QuestionnaireService questionnaires, AuditQueryService audit, SpecialtyCatalogService specialties)
+        public EncountersController(PatientService patients, QuestionnaireResponseService responses, QuestionnaireService questionnaires, AuditQueryService audit, SpecialtyCatalogService specialties, AccessAuditService accessAudit)
         {
+            _accessAudit = accessAudit;
             _patients = patients;
             _responses = responses;
             _questionnaires = questionnaires;
@@ -219,6 +221,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var qr = await _responses.GetAsync(id);
                 if (qr == null) return HttpNotFound();
+                await _accessAudit.ResponseRead(qr);
                 var q = await _questionnaires.GetAsync(qr.QuestionnaireId);
                 var p = await _patients.GetAsync(qr.PatientHospitalId);
                 var model = new EncounterReadonlyViewModel
@@ -334,6 +337,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var qr = await _responses.GetAsync(id);
                 if (qr == null) return HttpNotFound();
+                await _accessAudit.ResponseRead(qr);
                 var q = await _questionnaires.GetAsync(qr.QuestionnaireId);
                 var p = await _patients.GetAsync(qr.PatientHospitalId);
 
@@ -420,8 +424,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // El historial de UN paciente está intrínsecamente acotado (no crece sin
                 // límite como el log global de auditoría), así que se trae completo y se
                 // filtra en memoria en vez de empujar el filtro al repositorio.
-                // Muestra el historial completo sin importar la especialidad de cada
-                // cuestionario (decisión de la feature 011): ver GetForPatientHistoryAsync.
+                // PatientService filtra por las especialidades del usuario.
                 var encs = await _patients.GetEncountersAsync(patientId, 500);
                 var titleCache = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
                 var all = new List<EncounterTimelineItem>();

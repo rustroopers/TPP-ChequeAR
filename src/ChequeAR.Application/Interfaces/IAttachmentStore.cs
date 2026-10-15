@@ -6,7 +6,8 @@ namespace ChequeAR.Application.Interfaces
 {
     public interface IAttachmentStore
     {
-        Task<Attachment> StoreAsync(Stream content, string originalFileName, string contentType, string uploadedBy);
+        /// <param name="contentType">Tipo verificado por contenido (ver AttachmentService).</param>
+        Task<Attachment> StoreAsync(Stream content, string originalFileName, string contentType, string extension, string uploadedBy);
         Task<Attachment> GetAsync(System.Guid attachmentId);
         Task<Stream> OpenReadAsync(System.Guid attachmentId);
     }

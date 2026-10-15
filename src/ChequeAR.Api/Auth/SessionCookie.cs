@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Web;
 using System.Web.Security;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
 
@@ -24,6 +25,7 @@ namespace ChequeAR.Api.Auth
             public string DisplayName { get; set; }
             public List<string> Roles { get; set; }
             public List<string> Specialties { get; set; }
+            public string Stamp { get; set; }
         }
 
         public static void Issue(HttpContextBase context, UserInfo user, bool persistent)
@@ -38,7 +40,8 @@ namespace ChequeAR.Api.Auth
             {
                 DisplayName = user.DisplayName,
                 Roles = new List<string> { RoleHierarchy.Principal(user.Roles) },
-                Specialties = user.Specialties ?? new List<string>()
+                Specialties = user.Specialties ?? new List<string>(),
+                Stamp = user.SecurityStamp
             });
 
             var timeout = FormsAuthentication.Timeout;
@@ -97,6 +100,8 @@ namespace ChequeAR.Api.Auth
             };
             claims.AddRange(RoleHierarchy.Expand(principal).Select(r => new Claim(ClaimTypes.Role, r)));
             claims.AddRange((payload.Specialties ?? new List<string>()).Select(s => new Claim("specialty", s)));
+            if (!string.IsNullOrEmpty(payload.Stamp))
+                claims.Add(new Claim(JwtIssuer.SecurityStampClaim, payload.Stamp));
 
             return new ClaimsPrincipal(new ClaimsIdentity(claims, "Forms", ClaimTypes.Name, ClaimTypes.Role));
         }
@@ -110,7 +115,8 @@ namespace ChequeAR.Api.Auth
                 Id = CurrentUser.Id(principal) ?? principal.Identity.Name,
                 DisplayName = principal.FindFirst("name")?.Value ?? principal.Identity.Name,
                 Roles = CurrentUser.Roles(principal).ToList(),
-                Specialties = CurrentUser.Specialties(principal).ToList()
+                Specialties = CurrentUser.Specialties(principal).ToList(),
+                SecurityStamp = principal.FindFirst(JwtIssuer.SecurityStampClaim)?.Value
             };
         }
 

@@ -234,6 +234,21 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Sí", (string)opciones[0]["valueCoding"]["display"]);
         }
 
+        [Fact]
+        public void Build_OpcionSnomed_MuestraLaEtiquetaYGuardaElTerminoAparte()
+        {
+            var json = FhirQuestionnaireBuilder.Build(WithQuestion(new Question
+            {
+                LinkId = "sev", Type = QuestionType.Choice,
+                Options = { new AnswerOption { Value = "moderada", Display = "Moderada", Code = "6736007", SnomedCode = "6736007", SnomedDisplay = "Moderate", OrderIndex = 0 } }
+            }), 1);
+
+            var coding = FirstItem(json)["answerOption"][0]["valueCoding"];
+            Assert.Equal("Moderada", (string)coding["display"]);
+            Assert.Equal("Moderate", (string)coding["extension"][0]["valueString"]);
+            Assert.Equal(new[] { "Moderada" }, FhirQuestionnaireReader.Read(json).Groups[0].Questions[0].Options);
+        }
+
         // Un JSON corrupto en la base no debe impedir publicar: se ignora esa parte.
         [Fact]
         public void Build_CorruptJson_IsIgnored_AndStillPublishes()

@@ -35,6 +35,7 @@ namespace ChequeAR.Tests.Application
         private readonly InMemoryResponseRepository _repo = new InMemoryResponseRepository();
         private readonly Mock<IQuestionnaireRepository> _qRepo = new Mock<IQuestionnaireRepository>();
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
+        private readonly Mock<IAttachmentStore> _attachments = new Mock<IAttachmentStore>();
         private readonly Guid _questionnaireId = Guid.NewGuid();
         private readonly QuestionnaireResponseService _sut;
 
@@ -47,7 +48,7 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
             _sut = new QuestionnaireResponseService(
-                _repo, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess());
+                _repo, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object);
         }
 
         // Ficha nueva desde cero: no hay borrador previo, se crea vacía y se va llenando
@@ -197,7 +198,7 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public async Task Attachment_SurvivesLaterSessions()
         {
-            var attachmentId = Guid.NewGuid();
+            var attachmentId = Subido("medico-a");
             var created = await NewResponseAsync("medico-a");
             var sessionA = await _sut.AcquireLockAsync(created.Id, "medico-a");
             await _sut.SaveProgressAsync(created.Id, "medico-a", sessionA.LockToken.Value, null,
@@ -208,6 +209,44 @@ namespace ChequeAR.Tests.Application
             var saved = await _sut.SaveProgressAsync(created.Id, "medico-a", sessionB.LockToken.Value, null, Items(Decimal("peso", 32.5m)));
 
             Assert.Equal(attachmentId, saved.Items.Single(i => i.LinkId == "estudio").AttachmentId);
+        }
+
+        private Guid Subido(string uploadedBy)
+        {
+            var id = Guid.NewGuid();
+            _attachments.Setup(a => a.GetAsync(id)).ReturnsAsync(new Attachment { Id = id, UploadedBy = uploadedBy });
+            return id;
+        }
+
+        [Fact]
+        public async Task Attachment_DeOtroUsuario_NoSePuedeVincular()
+        {
+            var ajeno = Subido("medico-onco");
+            var created = await NewResponseAsync("medico-a");
+            var session = await _sut.AcquireLockAsync(created.Id, "medico-a");
+
+            await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.SaveProgressAsync(created.Id, "medico-a", session.LockToken.Value, null,
+                Items(new QuestionnaireResponseItem { LinkId = "estudio", AttachmentId = ajeno })));
+            await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.SaveProgressAsync(created.Id, "medico-a", session.LockToken.Value, null,
+                Items(new QuestionnaireResponseItem { LinkId = "estudio", AttachmentId = Guid.NewGuid() })));   // inexistente
+            Assert.DoesNotContain((await _repo.GetAsync(created.Id)).Items, i => i.AttachmentId.HasValue);
+        }
+
+        [Fact]
+        public async Task Attachment_QueYaEstabaEnLaFicha_OtroMedicoLoConserva()
+        {
+            var deA = Subido("medico-a");
+            var created = await NewResponseAsync("medico-a");
+            var sessionA = await _sut.AcquireLockAsync(created.Id, "medico-a");
+            await _sut.SaveProgressAsync(created.Id, "medico-a", sessionA.LockToken.Value, null,
+                Items(new QuestionnaireResponseItem { LinkId = "estudio", AttachmentId = deA }));
+            await _sut.ReleaseLockAsync(created.Id, "medico-a", sessionA.LockToken.Value);
+
+            var sessionB = await _sut.AcquireLockAsync(created.Id, "medico-b");
+            var saved = await _sut.SaveProgressAsync(created.Id, "medico-b", sessionB.LockToken.Value, null,
+                Items(new QuestionnaireResponseItem { LinkId = "estudio", AttachmentId = deA }));
+
+            Assert.Equal(deA, saved.Items.Single(i => i.LinkId == "estudio").AttachmentId);
         }
 
         // Una ficha finalizada queda cerrada: no se puede volver a bloquear, guardar ni
@@ -337,6 +376,11 @@ namespace ChequeAR.Tests.Application
                 r.Items = r.Items.Where(i => keepLinkIds.Contains(i.LinkId)).ToList();
                 return Task.CompletedTask;
             }
+
+            public Task<IReadOnlyList<Guid>> FindQuestionnaireIdsByAttachmentAsync(Guid attachmentId)
+                => Task.FromResult<IReadOnlyList<Guid>>(_store.Values
+                    .Where(r => (r.Items ?? new List<QuestionnaireResponseItem>()).Any(i => i.AttachmentId == attachmentId))
+                    .Select(r => r.QuestionnaireId).Distinct().ToList());
 
             public Task<bool> HasResponsesAsync(Guid questionnaireId)
                 => Task.FromResult(_store.Values.Any(r => r.QuestionnaireId == questionnaireId));

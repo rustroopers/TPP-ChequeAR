@@ -34,6 +34,8 @@ namespace ChequeAR.Application.Interfaces
         /// existe en la versión nueva (<paramref name="keepLinkIds"/> = los que se conservan).
         /// </summary>
         Task RetargetAsync(QuestionnaireResponse r, ICollection<string> keepLinkIds);
+        /// <summary>Cuestionarios de las fichas que referencian el adjunto.</summary>
+        Task<IReadOnlyList<Guid>> FindQuestionnaireIdsByAttachmentAsync(Guid attachmentId);
         /// <summary>¿Hay respuestas cargadas contra este cuestionario? Decide si se puede borrar.</summary>
         Task<bool> HasResponsesAsync(Guid questionnaireId);
 

@@ -1,5 +1,9 @@
-﻿using System.Configuration;
+﻿using System;
+using System.Configuration;
 using System.Security.Claims;
+using System.Security.Principal;
+using System.Threading.Tasks;
+using System.Web;
 using System.Web.Helpers;
 using System.Web.Http;
 using System.Web.Mvc;
@@ -38,23 +42,44 @@ namespace ChequeAR.Api
             // asi que en vez de fabricar un identityprovider falso se declara cual es el claim
             // que identifica al usuario.
             AntiForgeryConfig.UniqueClaimTypeIdentifier = ClaimTypes.NameIdentifier;
+            // X-Frame-Options ya lo pone Web.config; duplicado, el navegador lo ignora.
+            AntiForgeryConfig.SuppressXFrameOptionsHeader = true;
+            MvcHandler.DisableMvcResponseHeader = true;
 
             FilterConfig.RegisterGlobalFilters(GlobalFilters.Filters);
             RouteConfig.RegisterRoutes(RouteTable.Routes);
         }
 
+        public override void Init()
+        {
+            base.Init();
+            var helper = new EventHandlerTaskAsyncHelper(RestoreSessionAsync);
+            AddOnPostAuthenticateRequestAsync(helper.BeginEventHandler, helper.EndEventHandler);
+        }
+
         /// El FormsAuthenticationModule arma un principal con el nombre y nada mas:
         /// UserData (donde viajan los roles) lo ignora. Sin esto User.IsInRole(...) da
         /// false para todo el mundo y el JWT de las islas saldria sin permisos.
-        protected void Application_PostAuthenticateRequest()
+        /// Además revalida la sesión contra la base (SessionValidator).
+        private async Task RestoreSessionAsync(object sender, EventArgs e)
         {
-            var identity = Context.User?.Identity as FormsIdentity;
+            var context = ((HttpApplication)sender).Context;
+            var identity = context.User?.Identity as FormsIdentity;
             if (identity == null || !identity.IsAuthenticated) return;
 
             var principal = SessionCookie.ToPrincipal(identity.Ticket);
             if (principal == null) return;
 
-            Context.User = principal;
+            if (!await SessionRevalidation.IsStillValidAsync(principal.Identity as ClaimsIdentity))
+            {
+                FormsAuthentication.SignOut();
+                var anonymous = new GenericPrincipal(new GenericIdentity(string.Empty), Array.Empty<string>());
+                context.User = anonymous;
+                System.Threading.Thread.CurrentPrincipal = anonymous;
+                return;
+            }
+
+            context.User = principal;
             System.Threading.Thread.CurrentPrincipal = principal;
         }
 
@@ -63,6 +88,15 @@ namespace ChequeAR.Api
         /// "sesion vencida" de una respuesta valida. En las rutas de API el 401 pasa tal cual.
         protected void Application_EndRequest()
         {
+            HardenCookies(Context);
+
+            // Datos de pacientes y el JWT del meta: que no queden en la caché del navegador.
+            if (Context.Request.IsAuthenticated)
+            {
+                Context.Response.Cache.SetCacheability(HttpCacheability.NoCache);
+                Context.Response.Cache.SetNoStore();
+            }
+
             if (Context.Response.StatusCode != 401) return;
 
             var path = Context.Request.AppRelativeCurrentExecutionFilePath ?? string.Empty;
@@ -74,6 +108,22 @@ namespace ChequeAR.Api
             }
         }
 
+        /// SameSite=Lax y Secure. net471 no tiene HttpCookie.SameSite, así que va al final del
+        /// Path, que se escribe tal cual en Set-Cookie.
+        private static void HardenCookies(HttpContext context)
+        {
+            var cookies = context.Response.Cookies;
+            for (var i = 0; i < cookies.Count; i++)
+            {
+                var cookie = cookies[i];
+                if (cookie == null) continue;
+                if (context.Request.IsSecureConnection) cookie.Secure = true;
+                var path = cookie.Path ?? "/";
+                if (path.IndexOf("SameSite", StringComparison.OrdinalIgnoreCase) < 0)
+                    cookie.Path = path + "; SameSite=Lax";
+            }
+        }
+
         protected void Application_Error()
         {
             var ex = Server.GetLastError();
@@ -81,7 +131,7 @@ namespace ChequeAR.Api
 
             var request = Context?.Request;
             Log.Error(ex, "Excepcion no controlada en {Method} {Path}",
-                request?.HttpMethod, request?.Path);
+                request?.HttpMethod, Helpers.LogSanitizer.Path(request?.Path));
         }
 
         protected void Application_End()

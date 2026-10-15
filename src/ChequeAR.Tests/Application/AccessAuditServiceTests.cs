@@ -29,6 +29,9 @@ namespace ChequeAR.Tests.Application
             repo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
                 .Callback<IEnumerable<AuditEvent>>(lote => _eventos.AddRange(lote))
                 .Returns(Task.CompletedTask);
+            repo.Setup(r => r.AddAsync(It.IsAny<AuditEvent>()))
+                .Callback<AuditEvent>(e => _eventos.Add(e))
+                .Returns(Task.CompletedTask);
             _dispatcher = new AuditDispatcher(repo.Object, flushIntervalMs: 600000);
 
             var usuario = new Mock<ICurrentUser>();
@@ -37,6 +40,67 @@ namespace ChequeAR.Tests.Application
         }
 
         public void Dispose() => _dispatcher.Dispose();
+
+        // --- Lectura de fichas ------------------------------------------------------------
+
+        [Fact]
+        public async Task ResponseRead_FichaFinalizada_SeRegistraEnElActo()
+        {
+            var id = Guid.NewGuid();
+            await _sut.ResponseRead(new QuestionnaireResponse { Id = id, Status = ChequeAR.Domain.Enums.ResponseStatus.Completed });
+
+            // Sin FlushAsync: se persiste en el acto, no espera a la cola.
+            var evt = Assert.Single(_eventos);
+            Assert.Equal("R", evt.Action);
+            Assert.Equal("dr.gomez", evt.AgentUserId);
+            Assert.Equal("QuestionnaireResponse/" + id, evt.EntityRef);
+        }
+
+        [Fact]
+        public async Task ResponseRead_BorradorQueEditaLaMismaPersona_NoSeRegistra()
+        {
+            await _sut.ResponseRead(new QuestionnaireResponse
+            {
+                Id = Guid.NewGuid(), Status = ChequeAR.Domain.Enums.ResponseStatus.InProgress, LockedByUserId = "dr.gomez"
+            });
+
+            await _dispatcher.FlushAsync();
+            Assert.Empty(_eventos);
+        }
+
+        [Fact]
+        public async Task ResponseRead_BorradorQueEditaOtraPersona_SeRegistra()
+        {
+            await _sut.ResponseRead(new QuestionnaireResponse
+            {
+                Id = Guid.NewGuid(), Status = ChequeAR.Domain.Enums.ResponseStatus.InProgress, LockedByUserId = "dra.perez"
+            });
+
+            Assert.Single(_eventos);
+        }
+
+        [Fact]
+        public async Task ResponseRead_BorradorPropioSinLock_NoSeRegistra()
+        {
+            await _sut.ResponseRead(new QuestionnaireResponse
+            {
+                Id = Guid.NewGuid(), Status = ChequeAR.Domain.Enums.ResponseStatus.InProgress, AuthorUserId = "dr.gomez"
+            });
+
+            await _dispatcher.FlushAsync();
+            Assert.Empty(_eventos);
+        }
+
+        [Fact]
+        public async Task ResponseRead_FichaFinalizadaPropia_SeRegistra()
+        {
+            await _sut.ResponseRead(new QuestionnaireResponse
+            {
+                Id = Guid.NewGuid(), Status = ChequeAR.Domain.Enums.ResponseStatus.Completed, AuthorUserId = "dr.gomez"
+            });
+
+            Assert.Single(_eventos);
+        }
 
         private async Task<AuditEvent> UnicoEventoAsync()
         {

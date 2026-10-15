@@ -71,6 +71,11 @@ namespace ChequeAR.Application.Security
             {
                 return false;
             }
+            catch (ArgumentException)
+            {
+                // salt de menos de 8 bytes: Rfc2898DeriveBytes tira ArgumentException
+                return false;
+            }
             return FixedTimeEquals(actual, expected);
         }
 

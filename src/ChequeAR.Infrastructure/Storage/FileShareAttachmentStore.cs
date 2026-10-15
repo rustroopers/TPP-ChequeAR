@@ -21,44 +21,55 @@ namespace ChequeAR.Infrastructure.Storage
             if (!Directory.Exists(_root)) Directory.CreateDirectory(_root);
         }
 
-        public async Task<Attachment> StoreAsync(Stream content, string originalFileName, string contentType, string uploadedBy)
+        public async Task<Attachment> StoreAsync(Stream content, string originalFileName, string contentType, string extension, string uploadedBy)
         {
             var id = Guid.NewGuid();
-            var subdir = Path.Combine(_root, DateTime.UtcNow.ToString("yyyy", CultureInfo.InvariantCulture), DateTime.UtcNow.ToString("MM", CultureInfo.InvariantCulture));
-            Directory.CreateDirectory(subdir);
+            var now = DateTime.UtcNow;
+            // relativa, para que sobreviva a un cambio de Attachments:Root
+            var relativeDir = Path.Combine(now.ToString("yyyy", CultureInfo.InvariantCulture), now.ToString("MM", CultureInfo.InvariantCulture));
+            var relativePath = Path.Combine(relativeDir, id.ToString("D") + extension);
+            var fullPath = Path.Combine(_root, relativePath);
+            Directory.CreateDirectory(Path.Combine(_root, relativeDir));
 
-            var safeName = id.ToString() + Path.GetExtension(originalFileName ?? string.Empty);
-            var fullPath = Path.Combine(subdir, safeName);
-
+            // temporal hasta que el INSERT funcione, para no dejar archivos huérfanos
+            var tempPath = fullPath + ".tmp";
             string hash;
             long size;
-            using (var sha = SHA256.Create())
-            using (var fs = File.Create(fullPath))
+            try
             {
-                await content.CopyToAsync(fs);
-                fs.Position = 0;
-                hash = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
-                size = fs.Length;
+                using (var sha = SHA256.Create())
+                using (var fs = File.Create(tempPath))
+                {
+                    await content.CopyToAsync(fs);
+                    fs.Position = 0;
+                    hash = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
+                    size = fs.Length;
+                }
+
+                var attachment = new Attachment
+                {
+                    Id = id,
+                    OriginalFileName = originalFileName,
+                    ContentType = contentType,
+                    SizeBytes = size,
+                    StoragePath = relativePath,
+                    UploadedBy = uploadedBy,
+                    UploadedAt = now,
+                    Hash = hash
+                };
+
+                // Sin esto no había forma de resolver de vuelta path/content-type a partir del id:
+                // el archivo quedaba en disco pero "huérfano" para cualquier request posterior.
+                _ctx.Attachments.Add(attachment);
+                await _ctx.SaveChangesAsync();
+
+                File.Move(tempPath, fullPath);
+                return attachment;
             }
-
-            var attachment = new Attachment
+            finally
             {
-                Id = id,
-                OriginalFileName = originalFileName,
-                ContentType = contentType,
-                SizeBytes = size,
-                StoragePath = fullPath,
-                UploadedBy = uploadedBy,
-                UploadedAt = DateTime.UtcNow,
-                Hash = hash
-            };
-
-            // Sin esto no había forma de resolver de vuelta path/content-type a partir del id:
-            // el archivo quedaba en disco pero "huérfano" para cualquier request posterior.
-            _ctx.Attachments.Add(attachment);
-            await _ctx.SaveChangesAsync();
-
-            return attachment;
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
         }
 
         public Task<Attachment> GetAsync(Guid attachmentId) => _ctx.Attachments.FindAsync(attachmentId);
@@ -66,8 +77,12 @@ namespace ChequeAR.Infrastructure.Storage
         public async Task<Stream> OpenReadAsync(Guid attachmentId)
         {
             var attachment = await _ctx.Attachments.FindAsync(attachmentId);
-            if (attachment == null || !File.Exists(attachment.StoragePath)) return null;
-            return File.OpenRead(attachment.StoragePath);
+            if (attachment == null) return null;
+            // los adjuntos viejos guardaron la ruta absoluta
+            var path = Path.IsPathRooted(attachment.StoragePath)
+                ? attachment.StoragePath
+                : Path.Combine(_root, attachment.StoragePath);
+            return File.Exists(path) ? File.OpenRead(path) : null;
         }
     }
 }

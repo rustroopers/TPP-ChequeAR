@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Web.Http.Filters;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
+using ChequeAR.Application.Services;
 
 namespace ChequeAR.Api.Filters
 {
@@ -27,6 +28,29 @@ namespace ChequeAR.Api.Filters
         {
             var response = ToResponse(context.Request, context.Exception);
             if (response != null) context.Response = response;
+        }
+
+        /// <summary>El 409 de lock necesita ir a la base para mostrar el nombre en vez del id.</summary>
+        public override async System.Threading.Tasks.Task OnExceptionAsync(HttpActionExecutedContext context,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            if (context.Exception is LockConflictException l)
+            {
+                var name = l.LockedByUserId;
+                try
+                {
+                    var users = context.Request.GetDependencyScope()?.GetService(typeof(UserService)) as UserService;
+                    var user = users == null || string.IsNullOrEmpty(l.LockedByUserId) ? null : await users.GetAsync(l.LockedByUserId);
+                    if (!string.IsNullOrWhiteSpace(user?.DisplayName)) name = user.DisplayName;
+                }
+                catch (Exception)
+                {
+                }
+                context.Response = context.Request.CreateResponse(HttpStatusCode.Conflict,
+                    new { error = l.Message, lockedBy = name, expiresAt = l.LockExpiresAt });
+                return;
+            }
+            OnException(context);
         }
 
         /// <summary>

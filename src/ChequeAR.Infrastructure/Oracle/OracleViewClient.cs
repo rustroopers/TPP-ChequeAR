@@ -82,22 +82,26 @@ namespace ChequeAR.Infrastructure.Oracle
 
             // UPPER(col) LIKE UPPER(:term) en cada columna, unidas por OR. El
             // patron va como bind: el usuario nunca inyecta SQL, solo texto.
+            // Los comodines que escribe el usuario se buscan literales.
             var sql = new StringBuilder("SELECT * FROM ").Append(safeView).Append(" WHERE ");
             for (int i = 0; i < safeColumns.Count; i++)
             {
                 if (i > 0) sql.Append(" OR ");
-                sql.Append("UPPER(").Append(safeColumns[i]).Append(") LIKE UPPER(:term)");
+                sql.Append("UPPER(").Append(safeColumns[i]).Append(") LIKE UPPER(:term) ESCAPE '\\'");
             }
             sql.Append(" FETCH FIRST :maxRows ROWS ONLY");
 
             var binds = new[]
             {
-                new OracleParameter("term", "%" + term.Trim() + "%"),
+                new OracleParameter("term", "%" + EscapeLike(term.Trim()) + "%"),
                 new OracleParameter("maxRows", maxRows)
             };
 
             return await ExecuteAsync(sql.ToString(), binds).ConfigureAwait(false);
         }
+
+        internal static string EscapeLike(string term)
+            => term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
         private async Task<IReadOnlyList<IDictionary<string, object>>> ExecuteAsync(
             string sql, IReadOnlyList<OracleParameter> binds)

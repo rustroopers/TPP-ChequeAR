@@ -93,6 +93,7 @@ namespace ChequeAR.Infrastructure.EF
             // Formato "algo$iteraciones$salt$hash" en base64 (~95 chars hoy); holgura para
             // subir iteraciones o cambiar de algoritmo sin migrar el esquema de nuevo.
             modelBuilder.Entity<User>().Property(x => x.PasswordHash).HasMaxLength(256);
+            modelBuilder.Entity<User>().Property(x => x.SecurityStamp).HasMaxLength(64);
             modelBuilder.Entity<UserRole>().HasKey(x => new { x.UserId, x.Role });
             modelBuilder.Entity<UserRole>().Property(x => x.UserId).HasMaxLength(128);
             modelBuilder.Entity<UserRole>().Property(x => x.Role).HasMaxLength(32);

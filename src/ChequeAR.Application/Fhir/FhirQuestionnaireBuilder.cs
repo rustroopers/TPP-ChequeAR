@@ -210,14 +210,18 @@ namespace ChequeAR.Application.Fhir
         /// (Code y SnomedCode son el mismo valor: R5 admite un solo Coding por
         /// answerOption.value). Lo usan las opciones y las condiciones que apuntan a ellas,
         /// que en FHIR tienen que coincidir coding contra coding.
+        /// El display es la etiqueta de la opción; el término SNOMED va en una extensión.
         /// </summary>
         private static Coding OptionCoding(AnswerOption o)
         {
             var codificada = !string.IsNullOrWhiteSpace(o.SnomedCode);
-            return new Coding(
+            var coding = new Coding(
                 codificada ? TerminologyService.SnomedSystem : null,
                 o.Code ?? o.Value ?? o.Display,
-                o.SnomedDisplay ?? o.Display ?? o.Value);
+                o.Display ?? o.SnomedDisplay ?? o.Value);
+            if (codificada && !string.IsNullOrWhiteSpace(o.SnomedDisplay) && o.SnomedDisplay != coding.Display)
+                ChequeARExtensions.SetString(coding, ChequeARExtensions.OptionSnomedDisplayUrl, o.SnomedDisplay);
+            return coding;
         }
 
         /// <summary>
@@ -318,7 +322,9 @@ namespace ChequeAR.Application.Fhir
         {
             if (source?.Options == null || string.IsNullOrEmpty(value)) return null;
             return source.Options.FirstOrDefault(o => (o.Display ?? o.Value) == value)
-                ?? source.Options.FirstOrDefault(o => o.Code == value || o.SnomedCode == value);
+                ?? source.Options.FirstOrDefault(o => o.Code == value || o.SnomedCode == value)
+                // condiciones guardadas con el término SNOMED
+                ?? source.Options.FirstOrDefault(o => o.SnomedDisplay == value);
         }
 
         private static FhirQuestionnaire.QuestionnaireItemOperator ParseOperator(string op)

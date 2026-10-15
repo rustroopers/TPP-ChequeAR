@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Application.Services
@@ -16,6 +17,8 @@ namespace ChequeAR.Application.Services
     /// los pacientes de las respuestas ya cargadas en ChequeAR
     /// (QuestionnaireResponse + Patient "contained" en el FhirJson). Son datos
     /// reales de la base propia, no de demostración.
+    ///
+    /// Las fichas se filtran por las especialidades de quien consulta (ISpecialtyGuard).
     public class PatientService
     {
         private const string PatientView = "VW_PACIENTE";
@@ -28,9 +31,11 @@ namespace ChequeAR.Application.Services
         private readonly IQuestionnaireResponseRepository _qrRepo;
         private readonly IQuestionnaireRepository _qRepo;
         private readonly SpecialtyCatalogService _specialties;
+        private readonly ISpecialtyGuard _guard;
 
-        public PatientService(IHospitalFhirClient fhir, IOracleViewClient oracle, IQuestionnaireResponseRepository qrRepo, IQuestionnaireRepository qRepo, SpecialtyCatalogService specialties)
+        public PatientService(IHospitalFhirClient fhir, IOracleViewClient oracle, IQuestionnaireResponseRepository qrRepo, IQuestionnaireRepository qRepo, SpecialtyCatalogService specialties, ISpecialtyGuard guard)
         {
+            _guard = guard;
             _fhir = fhir;
             _oracle = oracle;
             _qrRepo = qrRepo;
@@ -44,9 +49,13 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public const int MaxSearchResults = 50;
 
+        // con una sola letra coincide cualquier paciente
+        public const int MinSearchLength = 2;
+
         public async Task<IReadOnlyList<PatientSearchHit>> SearchAsync(string query)
         {
-            if (string.IsNullOrWhiteSpace(query)) return new List<PatientSearchHit>();
+            if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < MinSearchLength)
+                return new List<PatientSearchHit>();
 
             try
             {
@@ -71,18 +80,18 @@ namespace ChequeAR.Application.Services
             }
             catch { /* hospital no disponible */ }
 
-            var responses = await _qrRepo.SearchAsync(hospitalId, null, null, 0, 50);
+            var responses = await _qrRepo.SearchAsync(hospitalId, null, null, 0, 50, _guard.Scope);
             if (responses.Count == 0) return null;
             return await BuildHitAsync(hospitalId, responses);
         }
 
         public async Task<IReadOnlyList<QuestionnaireResponse>> GetEncountersAsync(string hospitalId, int take = 50)
         {
-            return await _qrRepo.SearchAsync(hospitalId, null, null, 0, take);
+            return await _qrRepo.SearchAsync(hospitalId, null, null, 0, take, _guard.Scope);
         }
 
-        /// <summary>Total de fichas del paciente, sin el tope de <see cref="GetEncountersAsync"/>.</summary>
-        public Task<int> CountEncountersAsync(string hospitalId) => _qrRepo.CountAsync(hospitalId);
+        /// <summary>Total de fichas del paciente visibles para quien consulta, sin el tope de <see cref="GetEncountersAsync"/>.</summary>
+        public Task<int> CountEncountersAsync(string hospitalId) => _qrRepo.CountAsync(hospitalId, scope: _guard.Scope);
 
         // ---- Modo degradado: pacientes derivados de las respuestas propias ----
 
@@ -91,7 +100,7 @@ namespace ChequeAR.Application.Services
 
         private async Task<IReadOnlyList<PatientSearchHit>> SearchFromResponsesAsync(string query)
         {
-            var responses = await _qrRepo.SearchAsync(null, null, null, 0, DegradedScan);
+            var responses = await _qrRepo.SearchAsync(null, null, null, 0, DegradedScan, _guard.Scope);
             var q = query.Trim().ToLowerInvariant();
 
             // Se filtra ANTES de armar cada resultado: el nombre sale del recurso FHIR que ya

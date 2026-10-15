@@ -143,6 +143,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Specialties = codes
                 });
 
+                SessionRevalidation.Invalidate(existing.Id);
+
                 TempData["Toast"] = "Cambios guardados.";
                 TempData["ToastLevel"] = "success";
             }

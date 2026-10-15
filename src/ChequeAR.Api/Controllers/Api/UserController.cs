@@ -41,7 +41,8 @@ namespace ChequeAR.Api.Controllers.Api
             [FromUri] string q = null, [FromUri] string role = null, [FromUri] string specialty = null,
             [FromUri] bool? active = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
-            var pagina = await _users.ListAsync(q, role, specialty, active, _offset, _count);
+            var take = System.Math.Min(System.Math.Max(_count, 1), 100);
+            var pagina = await _users.ListAsync(q, role, specialty, active, System.Math.Max(_offset, 0), take);
             return Ok(new { total = pagina.Total, results = pagina.Items.Select(ToDto) });
         }
 
@@ -53,18 +54,27 @@ namespace ChequeAR.Api.Controllers.Api
             return Ok(ToDto(u));
         }
 
-        [HttpPut, Route("{id}"), RequiresPermissionApi(Permissions.UserManage)]
-        public async Task<IHttpActionResult> Upsert(string id, [FromBody] User user)
+        /// <summary>Campos editables; no se enlaza a User para evitar asignación masiva.</summary>
+        public class UserUpsertRequest
         {
-            if (user == null) return BadRequest("body required");
-            user.Id = id;
-            // PasswordHash NUNCA se toca desde este endpoint: ni para leerlo (ver ToDto) ni
-            // para escribirlo -- si el body lo trae (el modelo lo expone por ser la misma
-            // entidad de dominio), se ignora explícitamente. UserRepository.UpsertAsync
-            // también lo preserva por su cuenta; esto es cinturón y tirantes.
-            user.PasswordHash = null;
-            user.PasswordUpdatedAt = null;
-            await _users.UpsertAsync(user);
+            public string DisplayName { get; set; }
+            public string Email { get; set; }
+            public bool IsActive { get; set; }
+        }
+
+        [HttpPut, Route("{id}"), RequiresPermissionApi(Permissions.UserManage)]
+        public async Task<IHttpActionResult> Upsert(string id, [FromBody] UserUpsertRequest body)
+        {
+            if (body == null) return BadRequest("body required");
+            await _users.UpsertAsync(new User
+            {
+                Id = id,
+                DisplayName = body.DisplayName,
+                Email = body.Email,
+                IsActive = body.IsActive,
+                LastSyncAt = System.DateTime.UtcNow
+            });
+            SessionRevalidation.Invalidate(id);
             return StatusCode(HttpStatusCode.NoContent);
         }
     }
