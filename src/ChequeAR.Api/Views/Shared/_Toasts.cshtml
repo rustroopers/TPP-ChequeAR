@@ -31,12 +31,15 @@
 @if (TempData["Toast"] != null)
 {
     @* Toasts de acciones POST+redirect (publicar/archivar): sin esto el resultado
-       —incluido el error— nunca llegaba a la pantalla. *@
+       —incluido el error— nunca llegaba a la pantalla.
+       El mensaje va en data-* y no dentro del <script>: puede traer texto del usuario. *@
+    <span id="cq-pending-toast" hidden
+          data-message="@(TempData["Toast"] as string)"
+          data-level="@((TempData["ToastLevel"] as string) ?? "info")"></span>
     <script>
         (function () {
-            var msg = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject((string)(TempData["Toast"] as string)));
-            var level = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject((string)((TempData["ToastLevel"] as string) ?? "info")));
-            window.cqToast(msg, level);
+            var el = document.getElementById("cq-pending-toast");
+            if (el) window.cqToast(el.getAttribute("data-message"), el.getAttribute("data-level"));
         })();
     </script>
 }

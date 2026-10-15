@@ -56,9 +56,6 @@ namespace ChequeAR.Api.App_Start
                 fallbackLifestyle: new WebRequestLifestyle());
 
             // ===== Config =====
-            var jwtIssuer = ConfigurationManager.AppSettings["Jwt:Issuer"] ?? "https://chequear.garrahan";
-            var jwtAudience = ConfigurationManager.AppSettings["Jwt:Audience"] ?? "chequear-api";
-            var jwtSecret = ConfigurationManager.AppSettings["Jwt:SigningSecret"] ?? "dev-secret-please-rotate-dev-secret-please-rotate";
             var jwtTtlMinutes = int.Parse(ConfigurationManager.AppSettings["Jwt:AccessTtlMinutes"] ?? "60");
             var refreshTtlHours = int.Parse(ConfigurationManager.AppSettings["Jwt:RefreshTtlHours"] ?? "8");
             var specialtiesCacheTtlMinutes = int.Parse(ConfigurationManager.AppSettings["Specialties:CacheTtlMinutes"] ?? "10");
@@ -80,13 +77,26 @@ namespace ChequeAR.Api.App_Start
             var terminologyUrl = ConfigurationManager.AppSettings["Terminology:BaseUrl"] ?? "";
             var terminologyEcl = ConfigurationManager.AppSettings["Terminology:Ecl"] ?? "";
             var terminologyLang = ConfigurationManager.AppSettings["Terminology:DisplayLanguage"] ?? "es";
+            // Snowstorm Lite propio en OCI (infra/snowstorm-lite/): exige una key compartida y
+            // sirve TLS con cert autofirmado, que se valida por huella SHA-256 (pinning). Ambos
+            // vacíos = server sin auth (Snowstorm local en Docker). Van en App Settings, no acá.
+            var terminologyApiKey = ConfigurationManager.AppSettings["Terminology:ApiKey"] ?? "";
+            var terminologyCertSha256 = ConfigurationManager.AppSettings["Terminology:CertSha256"] ?? "";
             var oracleConn = ConfigurationManager.AppSettings["Oracle:ConnectionString"] ?? "";
             var attachmentsRoot = Environment.ExpandEnvironmentVariables(
                 ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments");
             var sqlConn = ConfigurationManager.ConnectionStrings["ChequeAR"]?.ConnectionString ?? "";
 
             // ===== Singletons =====
-            container.RegisterInstance(new JwtIssuer(jwtIssuer, jwtAudience, jwtSecret, jwtTtlMinutes));
+            container.RegisterInstance(new JwtIssuer(JwtSettings.Issuer, JwtSettings.Audience, JwtSettings.SigningKey, jwtTtlMinutes));
+            // Singleton: abre un contexto propio por consulta.
+            container.RegisterInstance(new SessionValidator(async userId =>
+            {
+                using (var ctx = new ChequeARDbContext())
+                {
+                    return await new UserRepository(ctx).GetAsync(userId).ConfigureAwait(false);
+                }
+            }, TimeSpan.FromSeconds(60), (ex, message) => Log.Warning(ex, "{SessionMessage}", message)));
             container.RegisterInstance<IFhirValidator>(CreateFhirValidator());
 
             // Un HttpClient por integración, con su Timeout fijado una sola vez. Los clients
@@ -98,7 +108,7 @@ namespace ChequeAR.Api.App_Start
             // grandes de la config (<<404684003 "Clinical finding" entero, etc.) se pasaba de 8s
             // hasta que Elasticsearch calienta sus cachés, y el autocomplete del editor moría en
             // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
-            var termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(25) };
+            var termHttp = TerminologyHttp.Create(TimeSpan.FromSeconds(25), terminologyCertSha256);
 
             // Singleton con su propia factory de repositorio: pide un contexto nuevo por
             // operación y lo libera. No puede usar el del request: vive toda la aplicación y
@@ -170,14 +180,14 @@ namespace ChequeAR.Api.App_Start
             {
                 Log.Warning("HospitalAuth:LoginUrl vacio: se usa autenticacion local contra "
                             + "AppUser.PasswordHash (LocalCredentialAuthenticator).");
-                container.Register<ICredentialAuthenticator, LocalCredentialAuthenticator>();
+                container.Register<ICredentialAuthenticator>(() => new LocalCredentialAuthenticator(container.GetInstance<IUserRepository>()));
             }
             else
             {
                 container.Register<ICredentialAuthenticator>(() => new HospitalAuthClient(authHttp, hospitalAuthUrl));
             }
 
-            container.Register<ITerminologyClient>(() => new TerminologyClient(termHttp, terminologyUrl, terminologyEcl, terminologyLang));
+            container.Register<ITerminologyClient>(() => new TerminologyClient(termHttp, terminologyUrl, terminologyEcl, terminologyLang, terminologyApiKey));
             container.Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
             // Evolución longitudinal de parámetros (spec 010): consulta dedicada contra
             // vw_FlatResponses, misma conexión Oracle que los reportes.
@@ -209,6 +219,7 @@ namespace ChequeAR.Api.App_Start
             container.Register<ReportExecutor>();
             container.Register<PatientTrendService>();
             container.Register<PatientService>();
+            container.Register<AttachmentService>();
 
             // ===== Controllers =====
             container.RegisterMvcControllers(Assembly.GetExecutingAssembly());

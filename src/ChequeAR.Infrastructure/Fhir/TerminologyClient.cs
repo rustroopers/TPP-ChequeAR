@@ -35,9 +35,14 @@ namespace ChequeAR.Infrastructure.Fhir
         private readonly string _baseUrl;
         private readonly string _ecl;
         private readonly string _displayLanguage;
+        private readonly string _apiKey;
 
-        public TerminologyClient(HttpClient http, string baseUrl, string ecl = null, string displayLanguage = "es")
+        // Header que valida el reverse proxy (nginx) delante del Snowstorm Lite propio.
+        public const string ApiKeyHeader = "X-ChequeAR-Key";
+
+        public TerminologyClient(HttpClient http, string baseUrl, string ecl = null, string displayLanguage = "es", string apiKey = null)
         {
+            _apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
             // No mutar Timeout/headers del HttpClient: puede ser compartido (ver
             // ServiceComposition). Todo lo por-request va en el HttpRequestMessage.
             _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
@@ -81,6 +86,7 @@ namespace ChequeAR.Infrastructure.Fhir
             var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/fhir+json"));
             req.Headers.TryAddWithoutValidation("User-Agent", BrowserUserAgent);
+            if (_apiKey != null) req.Headers.TryAddWithoutValidation(ApiKeyHeader, _apiKey);
 
             using (var res = await _http.SendAsync(req))
             {

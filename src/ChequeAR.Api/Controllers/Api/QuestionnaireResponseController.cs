@@ -20,14 +20,16 @@ namespace ChequeAR.Api.Controllers.Api
     public class QuestionnaireResponseController : ApiController
     {
         private readonly QuestionnaireResponseService _service;
+        private readonly AccessAuditService _accessAudit;
 
-        public QuestionnaireResponseController(QuestionnaireResponseService service)
+        public QuestionnaireResponseController(QuestionnaireResponseService service, AccessAuditService accessAudit)
         {
             _service = service;
+            _accessAudit = accessAudit;
         }
 
         [HttpGet, Route(""), Authorize]
-        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] Guid? questionnaire = null, [FromUri] string status = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
+        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] Guid? questionnaire = null, [FromUri] string status = null, [FromUri] int _count = 50, [FromUri] int _offset = 0, [FromUri] string _summary = null)
         {
             ResponseStatus? st = null;
             if (Enum.TryParse(status, true, out ResponseStatus s)) st = s;
@@ -35,8 +37,20 @@ namespace ChequeAR.Api.Controllers.Api
                 FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count));
             var total = await _service.CountAsync(subject, questionnaire, st);
 
-            var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)ToFhir(r));
+            // Con _summary=true no viajan respuestas y no se audita; sin él, cada ficha cuenta como lectura.
+            var resumen = string.Equals(_summary, "true", StringComparison.OrdinalIgnoreCase);
+            if (!resumen)
+                foreach (var r in items) await _accessAudit.ResponseRead(r);
+
+            var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)(resumen ? Summary(ToFhir(r)) : ToFhir(r)));
             return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+        }
+
+        private static Hl7.Fhir.Model.QuestionnaireResponse Summary(Hl7.Fhir.Model.QuestionnaireResponse resource)
+        {
+            resource.Item.Clear();
+            resource.Meta.Tag.Add(new Hl7.Fhir.Model.Coding("http://terminology.hl7.org/CodeSystem/v3-ObservationValue", "SUBSETTED"));
+            return resource;
         }
 
         [HttpGet, Route("{id:guid}"), Authorize]
@@ -52,6 +66,7 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             }
             if (r == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            await _accessAudit.ResponseRead(r);
 
             var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
             response.Headers.ETag = ETagFor(r);
@@ -112,15 +127,8 @@ namespace ChequeAR.Api.Controllers.Api
             if (r == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            try
-            {
-                var created = await _service.CreateAsync(r, userId);
-                return Content(HttpStatusCode.Created, ToFhir(created));
-            }
-            catch (ArgumentException ex)
-            {
-                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(ex.Message));
-            }
+            var created = await _service.CreateAsync(r, userId);
+            return Content(HttpStatusCode.Created, ToFhir(created));
         }
 
         // Toma la sesión de edición exclusiva. Sin esto, dos médicos podrían completar el

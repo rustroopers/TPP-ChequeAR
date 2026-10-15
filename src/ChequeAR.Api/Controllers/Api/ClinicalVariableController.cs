@@ -41,7 +41,8 @@ namespace ChequeAR.Api.Controllers.Api
         {
             // type vacío = sin filtro; un tipo desconocido es un 422 (QuestionTypeMap.FromUi).
             QuestionType? tipo = string.IsNullOrWhiteSpace(type) ? (QuestionType?)null : QuestionTypeMap.FromUi(type);
-            var pagina = await _service.ListAsync(q, tipo, includeInactive ? (bool?)null : true, _offset, _count);
+            var pagina = await _service.ListAsync(q, tipo, includeInactive ? (bool?)null : true,
+                System.Math.Max(_offset, 0), System.Math.Min(System.Math.Max(_count, 1), 100));
             return Ok(new
             {
                 total = pagina.Total,

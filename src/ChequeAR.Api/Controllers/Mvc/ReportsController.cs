@@ -34,11 +34,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Reportes";
             ViewBag.PageId = "reports";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Reportes", (string)null)
-            };
             var model = new ReportListViewModel();
             try
             {
@@ -82,12 +77,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Title = id.HasValue ? "Editar reporte" : "Nuevo reporte";
             ViewBag.PageId = "reports";
             ViewBag.ReportId = id;
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Reportes", Url.Action("Index")),
-                System.Tuple.Create("Reporte", (string)null)
-            };
             return View();
         }
 
@@ -97,12 +86,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Title = "Preview";
             ViewBag.PageId = "reports";
             ViewBag.ReportId = id;
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Reportes", Url.Action("Index")),
-                System.Tuple.Create("Preview", (string)null)
-            };
 
             var model = new ReportPreviewViewModel();
             try
@@ -156,12 +139,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Title = "Estadísticas";
             ViewBag.PageId = "reports";
             ViewBag.ReportId = id;
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Reportes", Url.Action("Index")),
-                System.Tuple.Create("Estadísticas", (string)null)
-            };
 
             var model = new ReportStatsViewModel { ReportId = id };
             try

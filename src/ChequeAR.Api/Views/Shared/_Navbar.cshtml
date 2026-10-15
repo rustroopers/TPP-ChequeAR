@@ -23,7 +23,14 @@
                 {
                     <li><a class="dropdown-item" href="@Url.Action("Profile", "Account")"><i class="bi bi-person"></i> @Cq.T("navbar.profile")</a></li>
                     <li><hr class="dropdown-divider" /></li>
-                    <li><a class="dropdown-item text-danger" href="@Url.Action("Logout", "Account")"><i class="bi bi-box-arrow-right"></i> @Cq.T("navbar.logout")</a></li>
+                    <li>
+                        @* Antes de salir se borran los pacientes recientes del usuario. *@
+                        <form method="post" action="@Url.Action("Logout", "Account")" class="m-0"
+                              onsubmit="try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf('cq-recent-patients') === 0) localStorage.removeItem(k); }); } catch (e) { }">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="dropdown-item text-danger"><i class="bi bi-box-arrow-right"></i> @Cq.T("navbar.logout")</button>
+                        </form>
+                    </li>
                 }
                 else
                 {

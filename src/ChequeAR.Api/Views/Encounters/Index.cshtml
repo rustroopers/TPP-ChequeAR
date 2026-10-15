@@ -195,8 +195,10 @@ else
     // Persistimos en localStorage los últimos pacientes que el usuario abrió
     // (por Cargar ficha o Historial). Al entrar a Buscar paciente sin haber
     // buscado, mostramos esa lista en vez del empty state genérico "Buscá por…".
-    var RECENT_KEY = "cq-recent-patients";
+    // Una lista por usuario: las PC del hospital son compartidas. El logout las borra.
+    var RECENT_KEY = "cq-recent-patients:" + @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(User.Identity.Name ?? "", new Newtonsoft.Json.JsonSerializerSettings { StringEscapeHandling = Newtonsoft.Json.StringEscapeHandling.EscapeHtml }));
     var RECENT_MAX = 5;
+    try { localStorage.removeItem("cq-recent-patients"); } catch (e) { /* sin storage */ }
 
     function loadRecents() {
         try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); }
@@ -402,7 +404,7 @@ else
         draftIdByQid = {};
         var meta = document.querySelector('meta[name="cq-token"]');
         if (!meta) return;
-        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200", {
+        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200&_summary=true", {
             headers: { "Authorization": "Bearer " + meta.getAttribute("content") }
         }).then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
             if (!bundle) return;

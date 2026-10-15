@@ -39,7 +39,7 @@ namespace ChequeAR.Api.Controllers.Api
 
             try
             {
-                var json = await _terminology.ExpandSnomedAsync(filter.Trim(), count);
+                var json = await _terminology.ExpandSnomedAsync(filter.Trim(), System.Math.Min(System.Math.Max(count, 1), 50));
                 var results = new List<object>();
                 var contains = JObject.Parse(json)["expansion"]?["contains"] as JArray;
                 foreach (var c in contains ?? new JArray())

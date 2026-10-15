@@ -116,7 +116,10 @@ namespace ChequeAR.Application.Fhir
                     Display = coding.Display ?? coding.Code,
                     Value = coding.Display ?? coding.Code,
                     SnomedCode = esSnomed ? coding.Code : null,
-                    SnomedDisplay = esSnomed ? coding.Display : null,
+                    // sin la extensión, el display es el término
+                    SnomedDisplay = esSnomed
+                        ? ChequeARExtensions.GetString(coding, ChequeARExtensions.OptionSnomedDisplayUrl) ?? coding.Display
+                        : null,
                     OrderIndex = ordenOpcion++
                 });
             }

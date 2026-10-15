@@ -16,22 +16,19 @@ namespace ChequeAR.Application.Services
     /// cuestionario (qué se PUEDE graficar), independiente de si hay datos cargados; las series
     /// salen de las fichas finalizadas del paciente (qué TIENE datos). El spec pide distinguir
     /// explícitamente ambas cosas, por eso viven en dos consultas distintas.
-    ///
-    /// SIN filtro de especialidad, a propósito: la evolución es parte de la historia clínica
-    /// del paciente, y un paciente se atiende en varias áreas. Un médico puede VER todo lo de
-    /// su paciente aunque el cuestionario sea de otra especialidad; lo que no puede es
-    /// completar fichas ajenas, y eso lo controla QuestionnaireResponseService. Mismo criterio
-    /// que QuestionnaireService.GetForPatientHistoryAsync (feature 011).
     /// </summary>
     public class PatientTrendService
     {
         private readonly IQuestionnaireRepository _questionnaires;
         private readonly IPatientTrendRepository _trends;
+        private readonly ISpecialtyGuard _guard;
 
-        public PatientTrendService(IQuestionnaireRepository questionnaires, IPatientTrendRepository trends)
+        public PatientTrendService(IQuestionnaireRepository questionnaires, IPatientTrendRepository trends,
+            ISpecialtyGuard guard)
         {
             _questionnaires = questionnaires;
             _trends = trends;
+            _guard = guard;
         }
 
         /// <summary>
@@ -43,6 +40,8 @@ namespace ChequeAR.Application.Services
         {
             var q = await _questionnaires.GetAsync(questionnaireId);
             if (q == null) return null;
+            // IQuestionnaireRepository no aplica el guard (mismo chequeo que ReportExecutor)
+            _guard.EnsureAllows(q.SpecialtyCode);
 
             var parameters = GraphableQuestions(q).ToList();
 
@@ -71,6 +70,7 @@ namespace ChequeAR.Application.Services
 
             var q = await _questionnaires.GetAsync(questionnaireId);
             if (q == null) return new List<TrendSeriesDto>();
+            _guard.EnsureAllows(q.SpecialtyCode);
 
             // Metadata de las preguntas graficables, indexada por linkId. Solo se atienden los
             // linkId pedidos que efectivamente son graficables en este cuestionario.

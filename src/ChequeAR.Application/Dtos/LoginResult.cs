@@ -16,5 +16,9 @@ namespace ChequeAR.Application.Dtos
         public string DisplayName { get; set; }
         public List<string> Roles { get; set; }
         public List<string> Specialties { get; set; }
+
+        /// <summary>Ver User.SecurityStamp.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string SecurityStamp { get; set; }
     }
 }

@@ -399,6 +399,7 @@ namespace ChequeAR.Tests.Application
 
             Assert.Equal("255604002", opcion.SnomedCode);
             Assert.Equal("Mild", opcion.SnomedDisplay);
+            Assert.Equal("Leve", opcion.Display);
         }
 
         /// <summary>

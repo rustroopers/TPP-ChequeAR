@@ -2,7 +2,12 @@
 
 **Feature Branch**: `007-i18n`
 **Created**: 2026-06-10
-**Status**: Draft
+**Status**: Descartada (2026-10-13): ChequeAR queda solo en es-AR
+
+> **Decisión 2026-10-13:** la app queda **solo en es-AR**. No se implementa el inglés ni el selector de idioma.
+> Lo que se había implementado parcialmente (selector, `en.json`, `CultureMiddleware`) se revirtió en los commits
+> 502c450 y 9937242. Hoy se conserva solo el helper `Cq.T` con `Content/i18n/es-AR.json`. Esta spec queda como
+> registro histórico y sus tareas no se van a ejecutar.
 
 ## Contexto
 

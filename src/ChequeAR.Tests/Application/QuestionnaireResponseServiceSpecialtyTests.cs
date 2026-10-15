@@ -19,7 +19,7 @@ namespace ChequeAR.Tests.Application
 
         private QuestionnaireResponseService Sut(ChequeAR.Application.Security.ISpecialtyGuard guard, ChequeAR.Application.Security.IAccessGuard access = null)
             => new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), guard,
-                access ?? TestHelpers.UnrestrictedAccess());
+                access ?? TestHelpers.UnrestrictedAccess(), Mock.Of<IAttachmentStore>());
 
         [Fact]
         public async Task GetAsync_CuestionarioFueraDeScope_Forbidden()

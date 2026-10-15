@@ -39,8 +39,20 @@ namespace ChequeAR.Api.Controllers.Api
             if (req == null || string.IsNullOrWhiteSpace(req.Username))
                 return BadRequest("username required");
 
+            var ip = ((HttpRequestMessage)Request).GetOwinContext()?.Request?.RemoteIpAddress;
+            if (Auth.LoginThrottle.IsBlocked(ip))
+            {
+                Serilog.Log.Warning("Login (API) rechazado por exceso de intentos desde {Ip}", ip);
+                return StatusCode((HttpStatusCode)429);
+            }
+
             var user = await _auth.LoginAsync(req.Username, req.Password);
-            if (user == null) return StatusCode(HttpStatusCode.Unauthorized);
+            if (user == null)
+            {
+                Auth.LoginThrottle.RegisterFailure(ip);
+                Serilog.Log.Warning("Login (API) fallido para {User} desde {Ip}", await _users.LoggableUserNameAsync(req.Username), ip);
+                return StatusCode(HttpStatusCode.Unauthorized);
+            }
 
             // El espejo se actualiza ANTES de emitir el token: si el sync falla, no se
             // emite un access token con permisos que la base no respalda. Devuelve el
@@ -49,7 +61,6 @@ namespace ChequeAR.Api.Controllers.Api
 
             var access = _jwt.IssueAccessToken(user);
             var ua = Request.Headers.UserAgent?.ToString();
-            var ip = ((HttpRequestMessage)Request).GetOwinContext()?.Request?.RemoteIpAddress;
             var refresh = await _refresh.IssueAsync(user.Id, ua, ip);
 
             return Ok(new LoginResult
@@ -90,7 +101,8 @@ namespace ChequeAR.Api.Controllers.Api
                 Id = u.Id,
                 DisplayName = u.DisplayName ?? u.Id,
                 Roles = (u.Roles ?? new List<ChequeAR.Domain.Entities.UserRole>()).Select(r => r.Role).ToList(),
-                Specialties = (u.Specialties ?? new List<ChequeAR.Domain.Entities.UserSpecialty>()).Select(s => s.SpecialtyCode).ToList()
+                Specialties = (u.Specialties ?? new List<ChequeAR.Domain.Entities.UserSpecialty>()).Select(s => s.SpecialtyCode).ToList(),
+                SecurityStamp = u.SecurityStamp
             };
             var access = _jwt.IssueAccessToken(user);
             return Ok(new LoginResult { AccessToken = access, ExpiresIn = _jwt.AccessTtlSeconds, User = user });

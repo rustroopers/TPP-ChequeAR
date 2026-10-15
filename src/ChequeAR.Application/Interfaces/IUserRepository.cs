@@ -27,6 +27,22 @@ namespace ChequeAR.Application.Interfaces
         Task SyncFromHospitalAsync(string userId, string displayName, string email,
             IReadOnlyList<string> roles, IReadOnlyList<string> specialties);
 
+        /// <summary>Devuelve el sello de seguridad del usuario, generándolo si todavía no tiene uno.</summary>
+        Task<string> EnsureSecurityStampAsync(string userId);
+
+        /// <summary>Nuevo sello y revocación de los refresh tokens: cierra todas las sesiones.</summary>
+        Task RotateSecurityStampAsync(string userId);
+
+        /// <summary>Ver LoginLockoutPolicy.</summary>
+        Task SetLoginStateAsync(string userId, int failedLoginCount, System.DateTime? lockoutUntil);
+
+        /// <summary>Incremento atómico en la base; devuelve el total.</summary>
+        Task<int> IncrementFailedLoginAsync(string userId);
+
+        Task SetLockoutUntilAsync(string userId, System.DateTime lockoutUntil);
+
+        Task SetPasswordHashAsync(string userId, string passwordHash);
+
         Task<IReadOnlyList<User>> ListAsync(string searchTerm, string roleFilter, string specialtyFilter, bool? active, int skip, int take);
         Task<int> CountAsync(string searchTerm, string roleFilter, string specialtyFilter, bool? active);
     }

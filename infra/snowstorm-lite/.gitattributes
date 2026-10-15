@@ -1,0 +1,2 @@
+# Se ejecuta en la VM Linux: con CRLF setup.sh y la config de nginx no andan.
+* text eol=lf

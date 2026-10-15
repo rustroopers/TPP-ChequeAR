@@ -13,6 +13,10 @@ namespace ChequeAR.Api.App_Start
             // mudo: no propaga a Application_Error, asi que no queda rastro en ningun lado.
             config.Services.Add(typeof(IExceptionLogger), new WebApiExceptionLogger());
 
+            // Sólo Bearer: aceptar la cookie de sesión dejaría la API expuesta a CSRF.
+            config.SuppressDefaultHostAuthentication();
+            config.Filters.Add(new HostAuthenticationFilter("Bearer"));
+
             // Excepciones de Application -> respuesta HTTP, en un solo lugar (ver
             // Filters/ApiExceptionFilter). Las acciones sólo capturan lo que para ellas
             // significa otra cosa.
@@ -45,6 +49,9 @@ namespace ChequeAR.Api.App_Start
             var jsonFormatter = config.Formatters.JsonFormatter;
             jsonFormatter.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
             config.Formatters.Remove(config.Formatters.XmlFormatter);
+            // Ningún endpoint recibe formularios.
+            foreach (var f in System.Linq.Enumerable.ToList(System.Linq.Enumerable.OfType<System.Net.Http.Formatting.FormUrlEncodedMediaTypeFormatter>(config.Formatters)))
+                config.Formatters.Remove(f);
         }
     }
 }

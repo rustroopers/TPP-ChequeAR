@@ -36,11 +36,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Cuestionarios";
             ViewBag.PageId = "questionnaires";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Cuestionarios", (string)null)
-            };
 
             if (page < 1) page = 1;
             var model = new QuestionnaireListViewModel
@@ -109,12 +104,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Editor de cuestionario";
             ViewBag.PageId = "questionnaires";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Cuestionarios", Url.Action("Index")),
-                System.Tuple.Create(id.HasValue ? "Editar" : "Nuevo", (string)null)
-            };
             var editorId = id ?? Guid.NewGuid();
             var isNew = !id.HasValue;
             var title = "";
@@ -391,12 +380,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Vista previa";
             ViewBag.PageId = "questionnaires";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Cuestionarios", Url.Action("Index")),
-                System.Tuple.Create("Vista previa", (string)null)
-            };
 
             try
             {
@@ -453,12 +436,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Title = "Historial de versiones";
             ViewBag.PageId = "questionnaires";
             ViewBag.QuestionnaireId = id;
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Cuestionarios", Url.Action("Index")),
-                System.Tuple.Create("Historial", (string)null)
-            };
             try
             {
                 var q = await _svc.GetAsync(id);
@@ -498,13 +475,6 @@ namespace ChequeAR.Api.Controllers.Mvc
         {
             ViewBag.Title = "Comparar versiones";
             ViewBag.PageId = "questionnaires";
-            ViewBag.Breadcrumbs = new List<System.Tuple<string, string>>
-            {
-                System.Tuple.Create("Inicio", Url.Action("Index", "Home")),
-                System.Tuple.Create("Cuestionarios", Url.Action("Index")),
-                System.Tuple.Create("Historial", Url.Action("History", new { id })),
-                System.Tuple.Create("Comparar", (string)null)
-            };
 
             try
             {

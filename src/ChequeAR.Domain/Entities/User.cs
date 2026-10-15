@@ -22,6 +22,17 @@ namespace ChequeAR.Domain.Entities
         public string PasswordHash { get; set; }
         public DateTime? PasswordUpdatedAt { get; set; }
 
+        /// <summary>
+        /// Se compara con el de la cookie y el JWT; rotarlo cierra todas las sesiones. Null hasta
+        /// el primer login.
+        /// </summary>
+        public string SecurityStamp { get; set; }
+
+        public int FailedLoginCount { get; set; }
+
+        /// <summary>UTC.</summary>
+        public DateTime? LockoutUntil { get; set; }
+
         public virtual ICollection<UserRole> Roles { get; set; } = new List<UserRole>();
         public virtual ICollection<UserSpecialty> Specialties { get; set; } = new List<UserSpecialty>();
     }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -12,9 +13,9 @@ namespace ChequeAR.Application.Security
     /// (ver ServiceComposition) -- reemplaza a MockHospitalAuthClient, que aceptaba
     /// cualquier contraseña.
     ///
-    /// Fail-closed UNIFORME: usuario inexistente, inactivo, sin hash, o password incorrecta
-    /// devuelven exactamente lo mismo (null), sin distinguir la causa -ni en el valor de
-    /// retorno ni en el tiempo de respuesta: se corre un PBKDF2 "dummy" en los caminos
+    /// Fail-closed UNIFORME: usuario inexistente, inactivo, sin hash, bloqueado o password
+    /// incorrecta devuelven exactamente lo mismo (null), sin distinguir la causa -ni en el valor
+    /// de retorno ni en el tiempo de respuesta: se corre un PBKDF2 "dummy" en los caminos
     /// negativos para que no se pueda enumerar qué usuarios existen midiendo latencia.
     /// </summary>
     public class LocalCredentialAuthenticator : ICredentialAuthenticator
@@ -24,10 +25,17 @@ namespace ChequeAR.Application.Security
         private static readonly string DummyHash = PasswordHasher.Hash(System.Guid.NewGuid().ToString("N"));
 
         private readonly IUserRepository _users;
+        private readonly Func<DateTime> _utcNow;
 
         public LocalCredentialAuthenticator(IUserRepository users)
+            : this(users, () => DateTime.UtcNow)
+        {
+        }
+
+        public LocalCredentialAuthenticator(IUserRepository users, Func<DateTime> utcNow)
         {
             _users = users;
+            _utcNow = utcNow ?? (() => DateTime.UtcNow);
         }
 
         public async Task<UserInfo> LoginAsync(string username, string password)
@@ -45,7 +53,29 @@ namespace ChequeAR.Application.Security
                 return null;
             }
 
-            if (!PasswordHasher.Verify(password, user.PasswordHash)) return null;
+            var now = _utcNow();
+            if (LoginLockoutPolicy.IsLockedOut(user.LockoutUntil, now))
+            {
+                // no se verifica la contraseña ni se extiende el bloqueo
+                PasswordHasher.Verify(password, DummyHash);
+                return null;
+            }
+
+            if (!PasswordHasher.Verify(password, user.PasswordHash))
+            {
+                // el total viene de la base: con intentos concurrentes solo bloquea el que llega al umbral
+                var total = await _users.IncrementFailedLoginAsync(user.Id);
+                var (_, until) = LoginLockoutPolicy.AfterFailure(total - 1, now);
+                if (until.HasValue) await _users.SetLockoutUntilAsync(user.Id, until.Value);
+                return null;
+            }
+
+            if (user.FailedLoginCount != 0 || user.LockoutUntil.HasValue)
+                await _users.SetLoginStateAsync(user.Id, 0, null);
+
+            // único momento en que se tiene la contraseña en claro
+            if (PasswordHasher.NeedsRehash(user.PasswordHash))
+                await _users.SetPasswordHashAsync(user.Id, PasswordHasher.Hash(password));
 
             return new UserInfo
             {

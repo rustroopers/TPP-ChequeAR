@@ -14,7 +14,7 @@ namespace ChequeAR.Api.Helpers
         {
             var route = controller?.ControllerContext?.RouteData?.Values;
             Serilog.Log.Error(ex, "Error manejado en {Controller}.{Action} ({Path})",
-                route?["controller"], route?["action"], controller?.Request?.RawUrl);
+                route?["controller"], route?["action"], LogSanitizer.Path(controller?.Request?.Path));
         }
     }
 }

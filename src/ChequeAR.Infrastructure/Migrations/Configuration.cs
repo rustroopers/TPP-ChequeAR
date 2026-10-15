@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity.Migrations;
 using System.Diagnostics;
@@ -171,60 +172,44 @@ namespace ChequeAR.Infrastructure.Migrations
         /// fail-closed de SpecialtyGuard) -- 13 usuarios en total. Corre en dev y en cloud
         /// por igual (ver DemoUsersEnabled).
         ///
-        /// AddOrUpdate sobre clave compuesta NO borra filas que ya no estén acá: si alguien
-        /// agrega una especialidad a mano para probar, el próximo arranque no se la pisa.
+        /// Solo inserta los que faltan, con su rol y especialidades: lo que se cambió desde el
+        /// ABM no se pisa.
         /// </summary>
         private static void SeedDemoUsers(ChequeARDbContext context)
         {
             var now = DateTime.UtcNow;
-            context.Users.AddOrUpdate(u => u.Id,
-                new User { Id = "admin.demo", DisplayName = "Admin Demo", IsActive = true, LastSyncAt = now },
-                new User { Id = "jefe.general", DisplayName = "Jefe General", IsActive = true, LastSyncAt = now },
-                new User { Id = "jefe.cardio", DisplayName = "Jefe Cardiología", IsActive = true, LastSyncAt = now },
-                new User { Id = "jefe.neumo", DisplayName = "Jefe Neumonología", IsActive = true, LastSyncAt = now },
-                new User { Id = "jefe.onco", DisplayName = "Jefe Oncología", IsActive = true, LastSyncAt = now },
-                new User { Id = "jefe.reuma", DisplayName = "Jefe Reumatología", IsActive = true, LastSyncAt = now },
-                new User { Id = "med.general", DisplayName = "Médico General", IsActive = true, LastSyncAt = now },
-                new User { Id = "med.cardio", DisplayName = "Médico Cardiología", IsActive = true, LastSyncAt = now },
-                new User { Id = "med.neumo", DisplayName = "Médico Neumonología", IsActive = true, LastSyncAt = now },
-                new User { Id = "med.onco", DisplayName = "Médico Oncología", IsActive = true, LastSyncAt = now },
-                new User { Id = "med.reuma", DisplayName = "Médico Reumatología", IsActive = true, LastSyncAt = now },
-                new User { Id = "med.multi", DisplayName = "Médico Multi", IsActive = true, LastSyncAt = now },
-                new User { Id = "med.huerfano", DisplayName = "Médico Huérfano", IsActive = true, LastSyncAt = now });
-            context.SaveChanges();
+            var demo = new[]
+            {
+                // (id, nombre, rol, especialidades)
+                Tuple.Create("admin.demo", "Admin Demo", Role.Administrador, Array.Empty<string>()),     // ve todo sin especialidades
+                Tuple.Create("jefe.general", "Jefe General", Role.Jefe, new[] { "general" }),
+                Tuple.Create("jefe.cardio", "Jefe Cardiología", Role.Jefe, new[] { "cardio" }),
+                Tuple.Create("jefe.neumo", "Jefe Neumonología", Role.Jefe, new[] { "neumo" }),
+                Tuple.Create("jefe.onco", "Jefe Oncología", Role.Jefe, new[] { "onco" }),
+                Tuple.Create("jefe.reuma", "Jefe Reumatología", Role.Jefe, new[] { "reuma" }),
+                Tuple.Create("med.general", "Médico General", Role.Medico, new[] { "general" }),
+                Tuple.Create("med.cardio", "Médico Cardiología", Role.Medico, new[] { "cardio" }),
+                Tuple.Create("med.neumo", "Médico Neumonología", Role.Medico, new[] { "neumo" }),
+                Tuple.Create("med.onco", "Médico Oncología", Role.Medico, new[] { "onco" }),
+                Tuple.Create("med.reuma", "Médico Reumatología", Role.Medico, new[] { "reuma" }),
+                Tuple.Create("med.multi", "Médico Multi", Role.Medico, new[] { "cardio", "neumo" }),
+                Tuple.Create("med.huerfano", "Médico Huérfano", Role.Medico, Array.Empty<string>())      // fail-closed: no ve nada
+            };
 
-            context.UserRoles.AddOrUpdate(r => new { r.UserId, r.Role },
-                new UserRole { UserId = "admin.demo", Role = Role.Administrador },
-                new UserRole { UserId = "jefe.general", Role = Role.Jefe },
-                new UserRole { UserId = "jefe.cardio", Role = Role.Jefe },
-                new UserRole { UserId = "jefe.neumo", Role = Role.Jefe },
-                new UserRole { UserId = "jefe.onco", Role = Role.Jefe },
-                new UserRole { UserId = "jefe.reuma", Role = Role.Jefe },
-                new UserRole { UserId = "med.general", Role = Role.Medico },
-                new UserRole { UserId = "med.cardio", Role = Role.Medico },
-                new UserRole { UserId = "med.neumo", Role = Role.Medico },
-                new UserRole { UserId = "med.onco", Role = Role.Medico },
-                new UserRole { UserId = "med.reuma", Role = Role.Medico },
-                new UserRole { UserId = "med.multi", Role = Role.Medico },
-                new UserRole { UserId = "med.huerfano", Role = Role.Medico });
+            var ids = demo.Select(d => d.Item1).ToList();
+            var existentes = new HashSet<string>(
+                context.Users.Where(u => ids.Contains(u.Id)).Select(u => u.Id).ToList(),
+                StringComparer.OrdinalIgnoreCase);
 
-            context.UserSpecialties.AddOrUpdate(s => new { s.UserId, s.SpecialtyCode },
-                // admin.demo: sin especialidades -- verifica que Administrador ve todo igual.
-                new UserSpecialty { UserId = "jefe.general", SpecialtyCode = "general" },
-                new UserSpecialty { UserId = "jefe.cardio", SpecialtyCode = "cardio" },
-                new UserSpecialty { UserId = "jefe.neumo", SpecialtyCode = "neumo" },
-                new UserSpecialty { UserId = "jefe.onco", SpecialtyCode = "onco" },
-                new UserSpecialty { UserId = "jefe.reuma", SpecialtyCode = "reuma" },
-                new UserSpecialty { UserId = "med.general", SpecialtyCode = "general" },
-                new UserSpecialty { UserId = "med.cardio", SpecialtyCode = "cardio" },
-                new UserSpecialty { UserId = "med.neumo", SpecialtyCode = "neumo" },
-                new UserSpecialty { UserId = "med.onco", SpecialtyCode = "onco" },
-                new UserSpecialty { UserId = "med.reuma", SpecialtyCode = "reuma" },
-                new UserSpecialty { UserId = "med.multi", SpecialtyCode = "cardio" },
-                new UserSpecialty { UserId = "med.multi", SpecialtyCode = "neumo" }
-                // med.huerfano: sin especialidades -- fail-closed, no ve nada.
-                );
-            context.SaveChanges();
+            var nuevos = demo.Where(d => !existentes.Contains(d.Item1)).ToList();
+            foreach (var d in nuevos)
+            {
+                context.Users.Add(new User { Id = d.Item1, DisplayName = d.Item2, IsActive = true, LastSyncAt = now });
+                context.UserRoles.Add(new UserRole { UserId = d.Item1, Role = d.Item3 });
+                foreach (var code in d.Item4)
+                    context.UserSpecialties.Add(new UserSpecialty { UserId = d.Item1, SpecialtyCode = code });
+            }
+            if (nuevos.Count > 0) context.SaveChanges();
 
             SeedDemoPasswords(context);
         }
