@@ -25,14 +25,14 @@ namespace ChequeAR.Api.Middleware
             if (ChequeAR.Api.Filters.ApiExceptionFilter.IsClientError(ex))
             {
                 Serilog.Log.Information("API {Method} {Path} rechazada: {Reason}",
-                    request?.Method?.Method, request?.RequestUri?.PathAndQuery, ex.Message);
+                    request?.Method?.Method, Helpers.LogSanitizer.Path(request?.RequestUri), ex.Message);
                 return;
             }
 
             Serilog.Log.Error(ex,
                 "Excepcion no controlada en API {Method} {Path}",
                 request?.Method?.Method,
-                request?.RequestUri?.PathAndQuery);
+                Helpers.LogSanitizer.Path(request?.RequestUri));
         }
     }
 }
