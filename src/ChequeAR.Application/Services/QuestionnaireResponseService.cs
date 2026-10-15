@@ -27,6 +27,7 @@ namespace ChequeAR.Application.Services
         private readonly AuditDispatcher _audit;
         private readonly ISpecialtyGuard _guard;
         private readonly IAccessGuard _access;
+        private readonly IAttachmentStore _attachments;
 
         public QuestionnaireResponseService(
             IQuestionnaireResponseRepository repo,
@@ -34,7 +35,8 @@ namespace ChequeAR.Application.Services
             IFhirValidator validator,
             AuditDispatcher audit,
             ISpecialtyGuard guard,
-            IAccessGuard access)
+            IAccessGuard access,
+            IAttachmentStore attachments)
         {
             _repo = repo;
             _qRepo = qRepo;
@@ -42,6 +44,28 @@ namespace ChequeAR.Application.Services
             _audit = audit;
             _guard = guard;
             _access = access;
+            _attachments = attachments;
+        }
+
+        /// <summary>
+        /// Solo adjuntos subidos por quien guarda o que ya estaban en la ficha: la descarga se
+        /// autoriza por las fichas que referencian el adjunto.
+        /// </summary>
+        private async Task EnsureAttachmentsOwnedAsync(
+            IEnumerable<QuestionnaireResponseItem> incoming, IEnumerable<QuestionnaireResponseItem> existing, string userId)
+        {
+            var yaEstaban = new HashSet<Guid>((existing ?? Enumerable.Empty<QuestionnaireResponseItem>())
+                .Where(i => i.AttachmentId.HasValue).Select(i => i.AttachmentId.Value));
+            var nuevos = (incoming ?? Enumerable.Empty<QuestionnaireResponseItem>())
+                .Where(i => i.AttachmentId.HasValue && !yaEstaban.Contains(i.AttachmentId.Value))
+                .Select(i => i.AttachmentId.Value).Distinct();
+
+            foreach (var id in nuevos)
+            {
+                var meta = await _attachments.GetAsync(id);
+                if (meta == null || !string.Equals(meta.UploadedBy, userId, StringComparison.OrdinalIgnoreCase))
+                    throw new ValidationFailedException(new List<string> { "Uno de los adjuntos no está disponible. Volvé a adjuntar el archivo." });
+            }
         }
 
         // ── Lecturas ──────────────────────────────────────────────────────────────────
@@ -123,7 +147,7 @@ namespace ChequeAR.Application.Services
         {
             _access.EnsureCan(Permissions.EncounterWrite);
             if (string.IsNullOrEmpty(r.PatientHospitalId))
-                throw new ArgumentException("Falta el paciente de la ficha (PatientHospitalId).");
+                throw new ValidationFailedException(new List<string> { "Falta el paciente de la ficha (PatientHospitalId)." });
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
             if (q == null) throw new BusinessRuleException("El cuestionario de la ficha no existe.");
@@ -138,6 +162,8 @@ namespace ChequeAR.Application.Services
             if (pinned == null)
                 throw new BusinessRuleException("El cuestionario no tiene ninguna versión publicada para responder.");
             r.QuestionnaireVersionId = pinned.Id;
+
+            await EnsureAttachmentsOwnedAsync(r.Items, null, userId);
 
             r.Id = Guid.NewGuid();
             r.AuthoredAt = DateTime.UtcNow;
@@ -426,7 +452,8 @@ namespace ChequeAR.Application.Services
 
             var evt = AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$retarget", userId);
             if (dropped.Count > 0) evt.FhirJson = JsonConvert.SerializeObject(dropped);
-            _audit.Enqueue(evt);
+            // Se persiste en el acto: es el único registro de las respuestas descartadas.
+            await _audit.PersistImmediatelyAsync(evt);
             return r;
         }
 
@@ -544,6 +571,7 @@ namespace ChequeAR.Application.Services
                 throw new ConcurrencyConflictException(expectedVersion.Value, r.ConcurrencyVersion);
 
             var incoming = (items ?? new List<QuestionnaireResponseItem>()).ToList();
+            await EnsureAttachmentsOwnedAsync(incoming, r.Items, userId);
             var touchedLinkIds = new HashSet<string>(incoming.Select(i => i.LinkId));
             foreach (var item in incoming)
             {

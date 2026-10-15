@@ -18,6 +18,14 @@ namespace ChequeAR.Infrastructure.Repositories
         private readonly ChequeARDbContext _ctx;
         public QuestionnaireResponseRepository(ChequeARDbContext ctx) { _ctx = ctx; }
 
+        public async Task<IReadOnlyList<Guid>> FindQuestionnaireIdsByAttachmentAsync(Guid attachmentId)
+        {
+            return await (from i in _ctx.QuestionnaireResponseItems
+                          join r in _ctx.QuestionnaireResponses on i.ResponseId equals r.Id
+                          where i.AttachmentId == attachmentId
+                          select r.QuestionnaireId).Distinct().ToListAsync();
+        }
+
         public Task<QuestionnaireResponse> GetAsync(Guid id) =>
             _ctx.QuestionnaireResponses.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id);
 
