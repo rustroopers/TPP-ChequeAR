@@ -61,6 +61,12 @@ namespace ChequeAR.Application.Fhir
         /// </summary>
         public const string QuestionVariableIdUrl = Base + "question-variable-id";
 
+        /// <summary>
+        /// Término SNOMED de una opción ("Moderate"). El display del Coding lleva la etiqueta que
+        /// ve el médico ("Moderada").
+        /// </summary>
+        public const string OptionSnomedDisplayUrl = Base + "option-snomed-display";
+
         // ---- Acceso genérico ----
 
         public static void SetString(IExtendable target, string url, string value)
