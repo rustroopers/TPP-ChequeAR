@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ChequeAR.Application.Dtos;
+using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
 
 namespace ChequeAR.Application.Services
@@ -14,6 +17,7 @@ namespace ChequeAR.Application.Services
     /// nada y por eso no dejaba rastro.
     ///
     /// Ver un reporte en pantalla NO se registra: sólo cuando los datos salen del sistema.
+    /// Excepción: la lectura de una ficha (<see cref="ResponseRead"/>).
     ///
     /// Cada exportación lleva la consulta completa (FR-009: QUÉ se exportó, no sólo que hubo
     /// una exportación) en el mismo formato que la foto de un reporte guardado, para que el
@@ -56,6 +60,22 @@ namespace ChequeAR.Application.Services
                 LinkIds = (linkIds ?? Enumerable.Empty<string>()).ToList()
             });
             _audit.Enqueue(evt);
+        }
+
+        /// <summary>
+        /// Se persiste en el acto, no por la cola. No cuenta la relectura del borrador por quien
+        /// lo está editando (lock o autor).
+        /// </summary>
+        public Task ResponseRead(QuestionnaireResponse response)
+        {
+            if (response == null) return Task.CompletedTask;
+            var editing = response.Status == ResponseStatus.InProgress
+                          && (string.Equals(response.LockedByUserId, _user.Id, StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(response.AuthorUserId, _user.Id, StringComparison.OrdinalIgnoreCase));
+            if (editing) return Task.CompletedTask;
+
+            var evt = AuditEventBuilder.For("read", "QuestionnaireResponse/" + response.Id, _user.Id);
+            return _audit.PersistImmediatelyAsync(evt);
         }
 
         /// <summary>Exportación del propio registro de auditoría, con los filtros aplicados.</summary>
