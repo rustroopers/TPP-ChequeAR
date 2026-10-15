@@ -178,7 +178,8 @@ namespace ChequeAR.Application.Services
         private static JObject TryParse(string json)
         {
             if (string.IsNullOrWhiteSpace(json)) return null;
-            try { return JObject.Parse(json); }
+            // Sin convertir fechas: una condición "2024-05-01" tiene que volver tal cual al editor.
+            try { return JsonConvert.DeserializeObject<JObject>(json, new JsonSerializerSettings { DateParseHandling = DateParseHandling.None }); }
             catch (JsonException) { return null; }
         }
     }

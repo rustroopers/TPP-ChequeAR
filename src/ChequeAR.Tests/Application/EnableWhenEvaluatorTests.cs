@@ -153,14 +153,81 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
-        public void OrigenMultipleSinMarcar_NiSiquieraDistintoLaHaceVisible()
+        public void OrigenMultipleSinMarcar_DistintoSeCumple()
         {
-            // En el navegador es un array vacío: [].some(...) es false también para '!='.
+            // Igual que una pregunta de respuesta única sin responder: ninguna respuesta es igual.
             var s = Estructura(
                 Pregunta("sintomas", type: "openChoice"),
                 Pregunta("detalle", required: true, cond: new RenderableCondition { Question = "sintomas", Op = "!=", Value = "Ninguno" }));
 
-            Assert.Empty(EnableWhenEvaluator.MissingRequired(s, new List<QuestionnaireResponseItem>()));
+            Assert.Single(EnableWhenEvaluator.MissingRequired(s, new List<QuestionnaireResponseItem>()));
+        }
+
+        [Fact]
+        public void OrigenMultiple_DistintoNoSeCumpleSiAlgunaEsIgual()
+        {
+            var s = Estructura(
+                Pregunta("sintomas", type: "openChoice"),
+                Pregunta("detalle", required: true, cond: new RenderableCondition { Question = "sintomas", Op = "!=", Value = "Tos" }));
+            var items = new[]
+            {
+                new QuestionnaireResponseItem { LinkId = "sintomas", ValueCode = "Fiebre" },
+                new QuestionnaireResponseItem { LinkId = "sintomas", ValueCode = "Tos" }
+            };
+
+            Assert.Empty(EnableWhenEvaluator.MissingRequired(s, items));
+        }
+
+        [Fact]
+        public void OrigenFecha_ComparaComoElRenderer()
+        {
+            var s = Estructura(
+                Pregunta("inicio", type: "date"),
+                Pregunta("detalle", type: "string", cond: new RenderableCondition { Question = "inicio", Op = "=", Value = "2024-05-01" }));
+            var detalle = new QuestionnaireResponseItem { LinkId = "detalle", ValueString = "x" };
+            var items = new List<QuestionnaireResponseItem>
+            {
+                new QuestionnaireResponseItem { LinkId = "inicio", ValueDate = new DateTime(2024, 5, 1) }, detalle
+            };
+
+            Assert.Empty(EnableWhenEvaluator.ClearHiddenAnswers(s, items));
+            Assert.Equal("x", detalle.ValueString);
+        }
+
+        [Fact]
+        public void Cadena_SiLaOrigenQuedaOculta_LaDependienteTambien()
+        {
+            var s = Estructura(
+                Pregunta("a", type: "boolean"),
+                Pregunta("b", type: "boolean", cond: new RenderableCondition { Question = "a", Op = "=", Value = true }),
+                Pregunta("c", type: "string", cond: new RenderableCondition { Question = "b", Op = "=", Value = true }));
+            var b = new QuestionnaireResponseItem { LinkId = "b", ValueBoolean = true };
+            var c = new QuestionnaireResponseItem { LinkId = "c", ValueString = "x" };
+
+            var vaciadas = EnableWhenEvaluator.ClearHiddenAnswers(s, new List<QuestionnaireResponseItem>
+            {
+                new QuestionnaireResponseItem { LinkId = "a", ValueBoolean = false }, b, c
+            });
+
+            Assert.Equal(new[] { "b", "c" }, vaciadas.OrderBy(x => x));
+            Assert.Null(c.ValueString);
+        }
+
+        [Fact]
+        public void Cadena_ObligatoriaConOrigenOcultaYDistinto_SeExige()
+        {
+            // c se ve cuando b no es "x"; con b oculta, b no tiene respuesta y c aparece.
+            var s = Estructura(
+                Pregunta("a", type: "boolean"),
+                Pregunta("b", type: "string", cond: new RenderableCondition { Question = "a", Op = "=", Value = true }),
+                Pregunta("c", required: true, cond: new RenderableCondition { Question = "b", Op = "!=", Value = "x" }));
+            var items = new[]
+            {
+                new QuestionnaireResponseItem { LinkId = "a", ValueBoolean = false },
+                new QuestionnaireResponseItem { LinkId = "b", ValueString = "x" }
+            };
+
+            Assert.Equal(new[] { "c" }, EnableWhenEvaluator.MissingRequired(s, items).Select(q => q.LinkId));
         }
 
         // ---- ClearHiddenAnswers ----

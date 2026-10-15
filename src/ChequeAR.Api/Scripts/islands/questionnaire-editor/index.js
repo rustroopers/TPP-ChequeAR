@@ -2151,6 +2151,7 @@
                         <option v-for="opt in conditionSource.options" :key="opt" :value="opt">{{ opt }}</option>\
                     </select>\
                     <input v-else class="form-control form-control-sm" :value="selected.question.enableWhen.value"\
+                           :type="conditionSource && conditionSource.type === \'date\' ? \'date\' : (conditionSource && conditionSource.type === \'dateTime\' ? \'datetime-local\' : \'text\')"\
                            @input="onConditionValue($event.target.value)" placeholder="valor esperado" />\
                 </div>\
             </div>\

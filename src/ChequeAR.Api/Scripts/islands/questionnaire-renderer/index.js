@@ -154,51 +154,15 @@
             }
 
 
-            // --- Evaluación de condiciones (enableWhen) ---------------------------------
-            // La condición referencia otra pregunta y un valor esperado. Los dos lados
-            // pueden no tener la misma forma que un === estricto necesita, y cada
-            // desajuste dejaba la pregunta dependiente invisible para siempre:
-            //  - la respuesta de una opción múltiple es un array, no un valor suelto;
-            //  - los inputs de texto devuelven strings ("5") contra un valor esperado que
-            //    el recurso FHIR guarda tipado (answerInteger -> 5).
-            // Por eso la comparación se normaliza acá en vez de en cada operador.
-
-            /// Un valor del formulario contra el valor esperado de la condición.
-            function sameAnswer(actual, expected) {
-                if (actual === expected) return true;
-                if (typeof expected === 'number') {
-                    var n = parseNumeric(actual);
-                    return !isNaN(n) && n === expected;
-                }
-                return false;
-            }
-
-            function compareAnswer(op, actual, expected) {
-                switch (op) {
-                    case '=':  return sameAnswer(actual, expected);
-                    case '!=': return !sameAnswer(actual, expected);
-                    // Comparaciones numéricas: si todavía no hay respuesta, la condición no
-                    // se cumple (y la pregunta queda oculta) en vez de comparar contra NaN.
-                    case '>':  return actual !== undefined && actual !== '' && parseNumeric(actual) > Number(expected);
-                    case '<':  return actual !== undefined && actual !== '' && parseNumeric(actual) < Number(expected);
-                    default:   return true;
-                }
-            }
+            // --- Evaluación de condiciones (enableWhen): ver enable-when.js -------------
+            var EnableWhen = window.ChequeAREnableWhen;
+            var questionsByLinkId = {};
+            questionnaire.value.groups.forEach(function (g) {
+                g.questions.forEach(function (q) { if (!questionsByLinkId[q.linkId]) questionsByLinkId[q.linkId] = q; });
+            });
 
             function isVisible(q) {
-                if (!q.enableWhen) return true;
-                var actual = answers[q.enableWhen.question];
-                var expected = q.enableWhen.value;
-
-                // FHIR R5: cuando la pregunta origen admite varias respuestas, la condición
-                // se cumple si ALGUNA de ellas la satisface. Un array sin nada marcado no
-                // satisface ninguna condición: equivale a no haber respondido.
-                if (Array.isArray(actual)) {
-                    return actual.some(function (one) {
-                        return compareAnswer(q.enableWhen.op, one, expected);
-                    });
-                }
-                return compareAnswer(q.enableWhen.op, actual, expected);
+                return EnableWhen.isVisible(q, questionsByLinkId, answers);
             }
 
             // Adjuntos que fallaron al subir, por linkId. Van aparte de `errors` porque
@@ -206,15 +170,9 @@
             // el submit borraba el error y finalizaba la ficha sin el archivo.
             var uploadErrors = Vue.reactive({});
 
-            // En es-AR el separador decimal es la coma. El input de decimales es de texto
-            // justamente para que la coma llegue hasta acá (un input[type=number] la
-            // descarta y entrega '', sin forma de saber qué se había tipeado).
-            function parseNumeric(value) {
-                if (value === undefined || value === null) return NaN;
-                var raw = String(value).trim().replace(',', '.');
-                if (raw === '') return NaN;
-                return Number(raw);
-            }
+            // El input de decimales es de texto para que la coma de es-AR llegue hasta acá
+            // (un input[type=number] la descarta y entrega '', sin forma de saber qué se tipeó).
+            var parseNumeric = EnableWhen.parseNumeric;
 
             function validate(q, value) {
                 if (!isVisible(q)) { delete errors[q.linkId]; return; }
@@ -256,10 +214,10 @@
                 if (readOnly()) return;
                 answers[q.linkId] = value;
                 validate(q, value);
-                // re-validar campos dependientes
+                // Las condiciones pueden encadenarse: se revalidan todas las condicionales.
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (qq) {
-                        if (qq.enableWhen && qq.enableWhen.question === q.linkId) validate(qq, answers[qq.linkId]);
+                        if (qq.enableWhen && qq !== q) validate(qq, answers[qq.linkId]);
                     });
                 });
                 triggerAutosave();
@@ -745,9 +703,7 @@
             }
             // Misma noción de "vacío" que validate(): una opción múltiple sin nada tildado
             // llega como [], que no es '' ni null pero tampoco es una respuesta.
-            function isEmptyAnswer(v) {
-                return v === undefined || v === '' || v === null || (Array.isArray(v) && v.length === 0);
-            }
+            var isEmptyAnswer = EnableWhen.isEmpty;
             function answeredCount() {
                 var n = 0;
                 questionnaire.value.groups.forEach(function (g) {

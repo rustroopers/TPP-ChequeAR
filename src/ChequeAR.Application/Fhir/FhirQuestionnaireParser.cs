@@ -207,6 +207,8 @@ namespace ChequeAR.Application.Fhir
                 case FhirDecimal d: o["value"] = d.Value ?? 0m; break;
                 case Coding c: o["value"] = c.Display ?? c.Code; break;
                 case FhirString s: o["value"] = s.Value; break;
+                case Date fecha: o["value"] = fecha.Value; break;
+                case FhirDateTime momento: o["value"] = FhirQuestionnaireReader.LocalDateTime(momento.Value); break;
                 default: o["value"] = null; break;
             }
             return JsonConvert.SerializeObject(o, Formatting.None);

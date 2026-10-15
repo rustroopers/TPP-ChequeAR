@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Hl7.Fhir.Model;
 using Hl7.Fhir.Serialization;
@@ -206,6 +207,10 @@ namespace ChequeAR.Application.Fhir
                 var source = questions.FirstOrDefault(x => x.LinkId == q.EnableWhen.Question);
                 var option = source?.FindOption(expected);
                 if (option != null) q.EnableWhen.Value = option.Code;
+                // Versiones con la condición numérica guardada como texto: se compara como número.
+                else if (source != null && (source.Type == "integer" || source.Type == "decimal" || source.Type == "scale")
+                         && decimal.TryParse(expected.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
+                    q.EnableWhen.Value = n;
             }
         }
 
@@ -259,6 +264,21 @@ namespace ChequeAR.Application.Fhir
             return false;
         }
 
+        private static readonly TimeSpan Argentina = TimeSpan.FromHours(-3);
+
+        /// <summary>
+        /// Fecha y hora de una condición como la entrega datetime-local: en hora de Argentina,
+        /// sin segundos ni zona. Lo que no tiene hora vuelve igual.
+        /// </summary>
+        public static string LocalDateTime(string value)
+        {
+            if (value == null || value.Length <= 16 || value[10] != 'T') return value;
+            var conZona = value.EndsWith("Z") || value.LastIndexOf('+') > 10 || value.LastIndexOf('-') > 10;
+            if (conZona && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
+                return dto.ToOffset(Argentina).ToString("yyyy-MM-dd'T'HH:mm", CultureInfo.InvariantCulture);
+            return value.Substring(0, 16);
+        }
+
         private static decimal? Numeric(DataType value)
         {
             if (value is Integer i) return i.Value;
@@ -275,6 +295,8 @@ namespace ChequeAR.Application.Fhir
                 case FhirDecimal d: return d.Value ?? 0m;
                 case Coding c: return c.Code ?? c.Display;
                 case FhirString s: return s.Value;
+                case Date fecha: return fecha.Value;
+                case FhirDateTime momento: return LocalDateTime(momento.Value);
                 default: return null;
             }
         }

@@ -2,6 +2,7 @@ using System;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -232,6 +233,56 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(2, opciones.Count);
             Assert.Equal("si", (string)opciones[0]["valueCoding"]["code"]);
             Assert.Equal("Sí", (string)opciones[0]["valueCoding"]["display"]);
+        }
+
+        [Theory]
+        [InlineData(QuestionType.Date, "2024-05-01", "answerDate", "2024-05-01", "2024-05-01")]
+        [InlineData(QuestionType.Date, "01/05/2024", "answerDate", "2024-05-01", "2024-05-01")]
+        [InlineData(QuestionType.DateTime, "2024-05-01T10:30", "answerDateTime", "2024-05-01T10:30:00-03:00", "2024-05-01T10:30")]
+        public void Build_CondicionSobreFecha_UsaElTipoDeFecha(QuestionType tipo, string valor, string campo, string emitido, string leido)
+        {
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "Test" };
+            q.Questions.Add(new Question { LinkId = "inicio", Type = tipo, OrderIndex = 0 });
+            q.Questions.Add(new Question
+            {
+                LinkId = "detalle", Type = QuestionType.String, OrderIndex = 1,
+                EnableWhenJson = "{\"question\":\"inicio\",\"op\":\"=\",\"value\":\"" + valor + "\"}"
+            });
+
+            var json = FhirQuestionnaireBuilder.Build(q, 1);
+
+            var condicion = JsonConvert.DeserializeObject<JObject>(json, new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })["item"][1]["enableWhen"][0];
+            Assert.Equal(emitido, (string)condicion[campo]);
+            Assert.Equal(leido, FhirQuestionnaireReader.Read(json).Groups[0].Questions[1].EnableWhen.Value);
+        }
+
+        [Fact]
+        public void Reader_CondicionNumericaGuardadaComoTexto_SeComparaComoNumero()
+        {
+            var json = new JObject
+            {
+                ["resourceType"] = "Questionnaire",
+                ["status"] = "active",
+                ["item"] = new JArray(
+                    new JObject { ["linkId"] = "n", ["type"] = "integer" },
+                    new JObject
+                    {
+                        ["linkId"] = "x", ["type"] = "string",
+                        ["enableWhen"] = new JArray(new JObject { ["question"] = "n", ["operator"] = "=", ["answerString"] = "5" })
+                    })
+            }.ToString();
+
+            Assert.Equal(5m, FhirQuestionnaireReader.Read(json).Groups[0].Questions[1].EnableWhen.Value);
+        }
+
+        [Theory]
+        [InlineData("2024-05-01T13:30:00Z", "2024-05-01T10:30")]
+        [InlineData("2024-05-01T10:30:00-03:00", "2024-05-01T10:30")]
+        [InlineData("2024-05-01T10:30-03:00", "2024-05-01T10:30")]
+        [InlineData("2024-05-01", "2024-05-01")]
+        public void LocalDateTime_LlevaAHoraArgentina(string valor, string esperado)
+        {
+            Assert.Equal(esperado, FhirQuestionnaireReader.LocalDateTime(valor));
         }
 
         [Fact]
