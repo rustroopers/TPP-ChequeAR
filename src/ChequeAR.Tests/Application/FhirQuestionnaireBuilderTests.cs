@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -254,6 +255,32 @@ namespace ChequeAR.Tests.Application
             var condicion = JsonConvert.DeserializeObject<JObject>(json, new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })["item"][1]["enableWhen"][0];
             Assert.Equal(emitido, (string)condicion[campo]);
             Assert.Equal(leido, FhirQuestionnaireReader.Read(json).Groups[0].Questions[1].EnableWhen.Value);
+        }
+
+        [Fact]
+        public void VersionDeLaVariable_IdaYVuelta()
+        {
+            var q = WithQuestion(new Question
+            {
+                LinkId = "peso", Type = QuestionType.Decimal, VariableId = Guid.NewGuid(),
+                VariableVersionId = Guid.NewGuid(), VariableRevision = 3
+            });
+
+            var json = FhirQuestionnaireBuilder.Build(q, 1);
+
+            Assert.Equal(3, (int)FirstItem(json)["extension"].First(e => (string)e["url"] == ChequeARExtensions.QuestionVariableVersionUrl)["valueInteger"]);
+            Assert.Equal(3, FhirQuestionnaireReader.ReadDomain(json).Questions.Single().VariableRevision);
+        }
+
+        [Fact]
+        public void PreguntaSinVersion_NoEmiteLaExtension()
+        {
+            var json = FhirQuestionnaireBuilder.Build(WithQuestion(new Question
+            {
+                LinkId = "peso", Type = QuestionType.Decimal, VariableId = Guid.NewGuid(), VariableRevision = 0
+            }), 1);
+
+            Assert.DoesNotContain(ChequeARExtensions.QuestionVariableVersionUrl, json);
         }
 
         [Fact]

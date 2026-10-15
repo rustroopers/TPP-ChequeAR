@@ -36,7 +36,7 @@ namespace ChequeAR.Tests.Application
             var v = Peso();
             var q = new Question { LinkId = "peso-1" };
 
-            ClinicalVariableSnapshot.Apply(q, v);
+            TestHelpers.ApplySnapshot(q, v);
 
             Assert.Equal(QuestionType.Decimal, q.Type);
             Assert.Equal(v.Id, q.VariableId);
@@ -58,7 +58,7 @@ namespace ChequeAR.Tests.Application
             var v = Peso();
             var q = new Question();
 
-            ClinicalVariableSnapshot.Apply(q, v);
+            TestHelpers.ApplySnapshot(q, v);
             v.Revision = 99;   // el admin editó la variable después
 
             Assert.Equal(3, q.VariableRevision);
@@ -76,7 +76,7 @@ namespace ChequeAR.Tests.Application
                 EnableWhenJson = "{\"question\":\"prematuro\",\"op\":\"=\",\"value\":true}"
             };
 
-            ClinicalVariableSnapshot.Apply(q, Peso());
+            TestHelpers.ApplySnapshot(q, Peso());
 
             Assert.Equal("Peso al nacer", q.Text);
             Assert.True(q.Required);
@@ -90,7 +90,7 @@ namespace ChequeAR.Tests.Application
         {
             var q = new Question { Text = "   " };
 
-            ClinicalVariableSnapshot.Apply(q, Peso());
+            TestHelpers.ApplySnapshot(q, Peso());
 
             Assert.Equal("Peso corporal", q.Text);
         }
@@ -108,7 +108,7 @@ namespace ChequeAR.Tests.Application
                 CodingJson = "{\"code\":\"000\"}"
             };
 
-            ClinicalVariableSnapshot.Apply(q, Peso());
+            TestHelpers.ApplySnapshot(q, Peso());
 
             Assert.Equal(QuestionType.Decimal, q.Type);
             Assert.Equal("kg", QuestionMetadataReader.ReadValidation(q.ValidationJson).Unit);
@@ -125,7 +125,7 @@ namespace ChequeAR.Tests.Application
             v.Options.Add(new VariableOption { Display = "Severa", Value = "severa", Code = "24484000", SnomedCode = "24484000", SnomedDisplay = "Severe", OrderIndex = 1 });
             var q = new Question();
 
-            ClinicalVariableSnapshot.Apply(q, v);
+            TestHelpers.ApplySnapshot(q, v);
 
             Assert.Equal(2, q.Options.Count);
             var leve = q.Options.First();

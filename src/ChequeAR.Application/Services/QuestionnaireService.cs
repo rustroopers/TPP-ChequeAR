@@ -259,12 +259,16 @@ namespace ChequeAR.Application.Services
         /// esas pasan aunque estén inactivas, porque desactivar una variable no debe romper el
         /// guardado de un borrador que la venía usando.
         ///
-        /// <paramref name="previas"/> son las preguntas persistidas, por linkId. Una pregunta que
-        /// ya existía con la misma variable conserva el snapshot con el que se armó, aunque el
-        /// Administrador haya editado la variable después: guardar no es una forma encubierta de
-        /// actualizar variables (el editor avisa la diferencia y el jefe decide quitar y volver
-        /// a agregar). Si se re-aplicara la variable vigente, renombrar una opción en el catálogo
-        /// dejaría sin efecto, en silencio, las condiciones que apuntan a ella.
+        /// <paramref name="previas"/> son las preguntas persistidas, por linkId. Cada pregunta
+        /// trae en VariableRevision la versión de la variable que pide quien guarda (0 si no pide
+        /// ninguna):
+        ///  - una que ya existía, con la misma variable y sin pedir otra versión, conserva el
+        ///    snapshot con el que se armó: guardar no es una forma encubierta de actualizar
+        ///    variables, y re-aplicar la vigente dejaría sin efecto, en silencio, las condiciones
+        ///    que apuntan a una opción renombrada;
+        ///  - si pide una versión (el botón "Actualizar" del editor, o el import, que conserva la
+        ///    del origen), se aplica esa;
+        ///  - una nueva sin pedido toma la vigente.
         /// </summary>
         private async Task BindVariablesAsync(
             Questionnaire target, HashSet<Guid> yaEnUso, IReadOnlyDictionary<string, Question> previas)
@@ -290,20 +294,39 @@ namespace ChequeAR.Application.Services
 
             if (errors.Count > 0) throw new ValidationFailedException(errors);
 
+            var versions = (await _variables.GetVersionsAsync(ids))
+                .ToDictionary(x => Tuple.Create(x.VariableId, x.VersionNumber));
+            var vigente = found.Values.ToDictionary(v => v.Id, v =>
+                versions.Values.FirstOrDefault(x => x.Id == v.CurrentVersionId)?.VersionNumber ?? 0);
+
             foreach (var question in questions)
             {
+                var pedida = question.VariableRevision;
                 if (question.LinkId != null
                     && previas.TryGetValue(question.LinkId, out var previa)
-                    && previa.VariableId == question.VariableId)
+                    && previa.VariableId == question.VariableId
+                    && (pedida <= 0 || pedida == previa.VariableRevision))
+                {
                     KeepSnapshot(question, previa);
+                    continue;
+                }
+
+                var variable = found[question.VariableId.Value];
+                var numero = pedida > 0 ? pedida : vigente[variable.Id];
+                if (numero == 0)
+                    errors.Add("La variable '" + variable.Name + "' no tiene ninguna versión publicada.");
+                else if (!versions.TryGetValue(Tuple.Create(variable.Id, numero), out var version))
+                    errors.Add("La variable '" + variable.Name + "' no tiene una versión " + numero + ".");
                 else
-                    ClinicalVariableSnapshot.Apply(question, found[question.VariableId.Value]);
+                    ClinicalVariableSnapshot.Apply(question, VariableDefinition.Parse(version.DefinitionJson), version);
             }
+            if (errors.Count > 0) throw new ValidationFailedException(errors);
         }
 
         /// <summary>Lo que define la variable, tal como quedó congelado en la pregunta persistida.</summary>
         private static void KeepSnapshot(Question target, Question previa)
         {
+            target.VariableVersionId = previa.VariableVersionId;
             target.VariableRevision = previa.VariableRevision;
             target.Type = previa.Type;
             target.RepeatsAllowed = previa.RepeatsAllowed;
@@ -489,6 +512,12 @@ namespace ChequeAR.Application.Services
                 throw new ValidationFailedException(huerfanas
                     .Select(l => "La pregunta '" + l + "' no proviene del catálogo de variables y no se puede publicar."));
 
+            // Armadas antes del versionado con una definición que ya no está publicada.
+            var sinVersion = preguntas.Where(x => !x.VariableVersionId.HasValue).ToList();
+            if (sinVersion.Count > 0)
+                throw new ValidationFailedException(sinVersion.Select(x =>
+                    "La pregunta \"" + (x.Text ?? x.LinkId) + "\" usa una definición anterior de su variable: actualizala desde el editor antes de publicar."));
+
             EnsureStructure(QuestionnaireStructureRules.CheckForPublish(q.Groups, preguntas));
 
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
@@ -590,6 +619,7 @@ namespace ChequeAR.Application.Services
                 // Se copia la revisión del origen y NO la vigente: el clon nace igual a lo que
                 // se clonó. Si la variable cambió en el medio, el editor lo avisa en los dos.
                 VariableId = source.VariableId,
+                VariableVersionId = source.VariableVersionId,
                 VariableRevision = source.VariableRevision
             };
             foreach (var opt in (source.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex))
