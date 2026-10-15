@@ -21,31 +21,31 @@ namespace ChequeAR.Tests.Application
 
         public PatientTrendServiceTests()
         {
-            _sut = new PatientTrendService(_qRepo.Object, _trends.Object);
+            _sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.UnrestrictedGuard());
         }
 
-        // --- Historia clínica completa ---------------------------------------------------
+        // --- Scope de especialidad -----------------------------------------------------
 
-        // La evolución es parte de la historia del paciente: se ve aunque el cuestionario sea
-        // de otra especialidad. El servicio no depende del scope de quien consulta; lo que sí
-        // se restringe por especialidad es COMPLETAR fichas, y eso vive en otro servicio.
         [Fact]
-        public async Task LaEvolucion_NoDependeDeLaEspecialidadDeQuienConsulta()
+        public async Task GetSelectableParameters_CuestionarioFueraDeScope_Lanza()
         {
             var id = Guid.NewGuid();
-            _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire
-            {
-                Id = id, SpecialtyCode = "onco",
-                Questions = new List<Question> { new Question { LinkId = "peso", Text = "Peso", Type = QuestionType.Decimal } }
-            });
-            _trends.Setup(t => t.GetSeriesAsync("HC-1", id, It.IsAny<IEnumerable<string>>()))
-                .ReturnsAsync(new List<TrendSeriesDto>());
+            _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "onco" });
+            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"));
 
-            var parametros = await _sut.GetSelectableParametersAsync(id);
-            var series = await _sut.GetTrendAsync("HC-1", id, new[] { "peso" });
+            await Assert.ThrowsAsync<SpecialtyForbiddenException>(() => sut.GetSelectableParametersAsync(id));
+        }
 
-            Assert.Equal("peso", Assert.Single(parametros.Parameters).LinkId);
-            Assert.Equal("peso", Assert.Single(series).LinkId);
+        [Fact]
+        public async Task GetTrend_CuestionarioFueraDeScope_Lanza_YNoConsultaLasSeries()
+        {
+            var id = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "onco" });
+            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"));
+
+            await Assert.ThrowsAsync<SpecialtyForbiddenException>(() => sut.GetTrendAsync("HC-1", id, new[] { "peso" }));
+
+            _trends.Verify(t => t.GetSeriesAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IEnumerable<string>>()), Times.Never);
         }
 
         // --- Selección de parámetros ---------------------------------------------------

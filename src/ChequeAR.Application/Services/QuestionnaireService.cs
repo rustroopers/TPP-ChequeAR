@@ -80,12 +80,14 @@ namespace ChequeAR.Application.Services
         }
 
         /// <summary>
-        /// Lectura SIN filtro de especialidad, a propósito: el historial de un paciente muestra
-        /// todas sus fichas, también las de cuestionarios de otra especialidad (decisión de la
-        /// feature 011, para no fragmentar la historia clínica). Sólo para rotular el historial
-        /// (título, especialidad, versión); editar o responder pasa por <see cref="GetAsync"/>.
+        /// Para rotular el historial de un paciente. Null si el cuestionario está fuera del scope
+        /// (en lugar de lanzar como <see cref="GetAsync"/>).
         /// </summary>
-        public Task<Questionnaire> GetForPatientHistoryAsync(Guid id) => _repo.GetAsync(id);
+        public async Task<Questionnaire> GetForPatientHistoryAsync(Guid id)
+        {
+            var q = await _repo.GetAsync(id);
+            return q != null && _guard.Scope.Allows(q.SpecialtyCode) ? q : null;
+        }
 
         public async Task<IReadOnlyList<Questionnaire>> SearchAsync(
             QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)

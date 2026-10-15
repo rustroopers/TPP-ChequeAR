@@ -38,7 +38,7 @@ namespace ChequeAR.Tests.Application
                           Ficha("PAC-3", "Gómez, Juan")
                       });
             _sut = new PatientService(Mock.Of<IHospitalFhirClient>(), _oracle.Object, _responses.Object,
-                _questionnaires.Object, TestHelpers.CatalogWith());
+                _questionnaires.Object, TestHelpers.CatalogWith(), TestHelpers.UnrestrictedGuard());
         }
 
         [Fact]
