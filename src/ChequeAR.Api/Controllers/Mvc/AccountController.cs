@@ -44,15 +44,26 @@ namespace ChequeAR.Api.Controllers.Mvc
                 return View("Login");
             }
 
+            var ip = Request.UserHostAddress;
+            if (LoginThrottle.IsBlocked(ip))
+            {
+                Serilog.Log.Warning("Login rechazado por exceso de intentos desde {Ip}", ip);
+                Response.StatusCode = 429;
+                ModelState.AddModelError("", "Demasiados intentos de inicio de sesión. Esperá unos minutos y volvé a probar.");
+                return View("Login");
+            }
+
             try
             {
                 var info = await _auth.LoginAsync(username, password);
                 if (info == null)
                 {
                     // Mismo mensaje para usuario inexistente, inactivo, sin contraseña
-                    // configurada o contraseña incorrecta: no hay que darle a quien intenta
-                    // loguearse una pista de cuál de esas cuatro cosas pasó.
-                    ModelState.AddModelError("", "Usuario o contraseña inválidos.");
+                    // configurada, bloqueado o contraseña incorrecta: no hay que darle a quien
+                    // intenta loguearse una pista de cuál de esas cosas pasó.
+                    LoginThrottle.RegisterFailure(ip);
+                    Serilog.Log.Warning("Login fallido para {User} desde {Ip}", await _users.LoggableUserNameAsync(username), ip);
+                    ModelState.AddModelError("", "Usuario o contraseña inválidos. Después de varios intentos fallidos el acceso se bloquea por unos minutos.");
                     return View("Login");
                 }
 
@@ -67,7 +78,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // justo lo que necesita SessionToken para firmar el bearer de las islas.
                 SessionCookie.Issue(HttpContext, info, remember);
 
-                if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+                // Un POST a Logout sin sesión deja ReturnUrl=/Account/Logout, que por GET da 404.
+                if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl)
+                    && !returnUrl.StartsWith("/Account/", StringComparison.OrdinalIgnoreCase))
                 {
                     return Redirect(returnUrl);
                 }
@@ -134,9 +147,34 @@ namespace ChequeAR.Api.Controllers.Mvc
             return RedirectToAction("Profile");
         }
 
-        [Authorize]
-        public ActionResult Logout()
+        /// <summary>Renueva el JWT de las islas. GET: otro origen puede dispararlo pero no leer la respuesta.</summary>
+        [Authorize, HttpGet]
+        [OutputCache(NoStore = true, Duration = 0, Location = System.Web.UI.OutputCacheLocation.None)]
+        public ActionResult Token()
         {
+            var token = SessionToken.IssueFor(User);
+            if (string.IsNullOrEmpty(token)) return new HttpStatusCodeResult(401);
+            return Json(new { token }, JsonRequestBehavior.AllowGet);
+        }
+
+        /// <summary>Rota el sello de seguridad: invalida las copias de la cookie y los JWT emitidos.</summary>
+        [Authorize, HttpPost, ValidateAntiForgeryToken]
+        public async Task<ActionResult> Logout()
+        {
+            var id = CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal);
+            try
+            {
+                if (!string.IsNullOrEmpty(id))
+                {
+                    await _users.RotateSecurityStampAsync(id);
+                    SessionRevalidation.Invalidate(id);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Sin base la cookie se borra igual.
+                Helpers.HandledErrors.Log(this, ex);
+            }
             FormsAuthentication.SignOut();
             return RedirectToAction("Login");
         }
