@@ -105,7 +105,7 @@ namespace ChequeAR.Application.Fhir
         private static DateTime? ParseDate(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return null;
-            var conZona = raw.Length > 10 && (raw.EndsWith("Z") || raw.LastIndexOf('+') > 10 || raw.LastIndexOf('-') > 10);
+            var conZona = raw.Length > 10 && (raw.EndsWith("Z", StringComparison.Ordinal) || raw.LastIndexOf('+') > 10 || raw.LastIndexOf('-') > 10);
             if (conZona && DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
                 return dto.ToOffset(TimeSpan.FromHours(-3)).DateTime;
             return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)

@@ -274,7 +274,7 @@ namespace ChequeAR.Application.Fhir
         public static string LocalDateTime(string value)
         {
             if (value == null || value.Length <= 16 || value[10] != 'T') return value;
-            var conZona = value.EndsWith("Z") || value.LastIndexOf('+') > 10 || value.LastIndexOf('-') > 10;
+            var conZona = value.EndsWith("Z", StringComparison.Ordinal) || value.LastIndexOf('+') > 10 || value.LastIndexOf('-') > 10;
             if (conZona && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
                 return dto.ToOffset(Argentina).ToString("yyyy-MM-dd'T'HH:mm", CultureInfo.InvariantCulture);
             return value.Substring(0, 16);

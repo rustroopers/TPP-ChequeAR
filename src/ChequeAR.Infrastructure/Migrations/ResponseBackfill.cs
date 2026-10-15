@@ -86,7 +86,7 @@ namespace ChequeAR.Infrastructure.Migrations
             return migradas;
         }
 
-        private class Versions
+        private sealed class Versions
         {
             private Dictionary<Guid, RenderableQuestionnaire> _byId;
             private RenderableQuestionnaire _current;

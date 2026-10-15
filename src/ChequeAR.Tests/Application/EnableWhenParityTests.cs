@@ -22,10 +22,10 @@ namespace ChequeAR.Tests.Application
 
         public class Caso
         {
-            public string Nombre;
-            public List<RenderableQuestion> Preguntas = new List<RenderableQuestion>();
+            public string Nombre { get; set; }
+            public List<RenderableQuestion> Preguntas { get; set; } = new List<RenderableQuestion>();
             // Respuestas como las tiene el renderer: texto en los inputs, array en la múltiple.
-            public Dictionary<string, object> Respuestas = new Dictionary<string, object>();
+            public Dictionary<string, object> Respuestas { get; set; } = new Dictionary<string, object>();
             public override string ToString() => Nombre;
         }
 
@@ -70,7 +70,7 @@ namespace ChequeAR.Tests.Application
 
             var multiple = new[] { P("m", "openChoice"), P("x", "string", "m", "=", "a"), P("y", "string", "m", "!=", "a"), P("z", "string", "m", "!=", "c") };
             yield return new object[] { C("múltiple sin tocar", R(), multiple) };
-            yield return new object[] { C("múltiple destildada", R("m", new string[0]), multiple) };
+            yield return new object[] { C("múltiple destildada", R("m", Array.Empty<string>()), multiple) };
             yield return new object[] { C("múltiple con a y b", R("m", new[] { "a", "b" }), multiple) };
             yield return new object[] { C("múltiple con b", R("m", new[] { "b" }), multiple) };
 

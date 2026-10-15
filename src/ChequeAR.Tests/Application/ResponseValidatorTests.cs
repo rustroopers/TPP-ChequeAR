@@ -101,7 +101,7 @@ namespace ChequeAR.Tests.Application
             s.Groups.Add(new RenderableGroup { Questions = { new RenderableQuestion { LinkId = "x", Type = "string", Pattern = patron } } });
             var errores = ResponseValidator.Validate(s, new[] { new QuestionnaireResponseItem { LinkId = "x", ValueString = valor } }, true);
 
-            if (patron.StartsWith("(?i)")) Assert.Empty(errores);
+            if (patron.StartsWith("(?i)", StringComparison.Ordinal)) Assert.Empty(errores);
             else Assert.Single(errores);
         }
 
