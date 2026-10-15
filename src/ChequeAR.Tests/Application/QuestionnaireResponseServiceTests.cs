@@ -566,6 +566,47 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("subject.display"));
         }
 
+        // El renderer no manda el paciente: lo pone el servidor con lo que dice el hospital.
+        [Fact]
+        public async Task CreateAsync_EmbebeElPacienteDelHospital()
+        {
+            var questionnaireId = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+            var hospital = new Mock<IPatientDemographicsSource>();
+            hospital.Setup(h => h.TryGetAsync("458821")).ReturnsAsync(new PatientDemographicsDto
+            {
+                FullName = "Gómez, Martina", Gender = "female", BirthDate = new DateTime(2016, 3, 12)
+            });
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
+                TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object, hospital.Object);
+
+            var parsed = FhirQuestionnaireResponseParser.ToDomain(new Hl7.Fhir.Model.QuestionnaireResponse
+            {
+                Questionnaire = "https://chequear.garrahan/Questionnaire/" + questionnaireId,
+                Subject = new Hl7.Fhir.Model.ResourceReference { Identifier = new Hl7.Fhir.Model.Identifier("x", "458821") }
+            });
+            var created = await sut.CreateAsync(parsed, "u");
+
+            var fhir = JObject.Parse(created.FhirJson);
+            Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("contained[0].name[0].text"));
+            Assert.Equal("female", (string)fhir.SelectToken("contained[0].gender"));
+        }
+
+        [Fact]
+        public async Task CreateAsync_HospitalCaido_NoInventaPaciente()
+        {
+            var questionnaireId = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+            var hospital = new Mock<IPatientDemographicsSource>();
+            hospital.Setup(h => h.TryGetAsync(It.IsAny<string>())).ReturnsAsync((PatientDemographicsDto)null);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
+                TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object, hospital.Object);
+
+            var created = await sut.CreateAsync(new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "458821" }, "u");
+
+            Assert.Null(JObject.Parse(created.FhirJson)["contained"]);
+        }
+
         // Sin datos de paciente NO se inventa un Patient contenido. El recurso escribe la HC
         // en subject.display cuando no hay nombre; si al regenerarlo se leyera ese display
         // como nombre, finalizar terminaba fabricando un paciente llamado "PAC-000001".

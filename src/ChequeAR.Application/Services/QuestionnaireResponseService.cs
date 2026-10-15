@@ -27,6 +27,7 @@ namespace ChequeAR.Application.Services
         private readonly ISpecialtyGuard _guard;
         private readonly IAccessGuard _access;
         private readonly IAttachmentStore _attachments;
+        private readonly IPatientDemographicsSource _demographics;
 
         public QuestionnaireResponseService(
             IQuestionnaireResponseRepository repo,
@@ -35,8 +36,10 @@ namespace ChequeAR.Application.Services
             AuditDispatcher audit,
             ISpecialtyGuard guard,
             IAccessGuard access,
-            IAttachmentStore attachments)
+            IAttachmentStore attachments,
+            IPatientDemographicsSource demographics = null)
         {
+            _demographics = demographics;
             _repo = repo;
             _qRepo = qRepo;
             _validator = validator;
@@ -194,14 +197,26 @@ namespace ChequeAR.Application.Services
             OptionCodes.Normalize(structure, r.Items);
             ResponseValidator.NormalizeColumns(structure, r.Items);
             EnsureValid(structure, r.Items, complete: false);
-            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
-                r, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, structure, await PatientAsync(r));
 
             await _repo.AddAsync(r);
             // "Respuesta iniciada": marca única de que se abrió la ficha. Lo que se completa
             // después se audita por sesión (al guardar avance o finalizar), no acá.
             _audit.Enqueue(AuditEventBuilder.For("create", "QuestionnaireResponse/" + r.Id, userId));
             return r;
+        }
+
+        /// <summary>
+        /// El paciente embebido en la ficha: el que ya tenía o, si no, el del hospital. Cuando el
+        /// hospital no responde, ese Patient es lo único que dice de quién es la ficha (modo
+        /// degradado de PatientService). Al finalizar se vuelve a pedir, por si la ficha se
+        /// creó con el hospital caído.
+        /// </summary>
+        private async Task<PatientDemographicsDto> PatientAsync(QuestionnaireResponse r)
+        {
+            var embebido = FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson);
+            if (embebido != null || _demographics == null) return embebido;
+            return await _demographics.TryGetAsync(r.PatientHospitalId);
         }
 
         /// <param name="lockToken">
@@ -244,7 +259,7 @@ namespace ChequeAR.Application.Services
                     .Concat(invalid));
             }
 
-            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, structure, await PatientAsync(r));
 
             var validation = _validator.Validate(r.FhirJson);
             if (!validation.IsValid)
