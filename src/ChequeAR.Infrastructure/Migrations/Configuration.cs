@@ -46,6 +46,23 @@ namespace ChequeAR.Infrastructure.Migrations
             SeedSpecialties(context);
             SeedClinicalVariables(context);
             if (DemoUsersEnabled()) SeedDemoUsers(context);
+            BackfillOptionCodes(context);
+        }
+
+        private static void BackfillOptionCodes(ChequeARDbContext context)
+        {
+            // Lo sembrado hasta acá se guarda antes: el backfill descarta lo pendiente si una ficha falla.
+            context.SaveChanges();
+            try
+            {
+                var fichas = OptionCodeBackfill.Run(context);
+                if (fichas > 0) Trace.TraceInformation("Respuestas de opción pasadas a código en " + fichas + " fichas.");
+            }
+            catch (Exception ex)
+            {
+                // No frena el arranque: el servicio normaliza cada ficha al volver a guardarla.
+                Trace.TraceError("No se pudieron pasar a código las respuestas de opción: " + ex);
+            }
         }
 
         /// <summary>

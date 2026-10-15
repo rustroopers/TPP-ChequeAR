@@ -66,7 +66,7 @@ namespace ChequeAR.Application.Reports
         {
             var raw = await RunRawAsync(q, paginate);
             var wide = ReportPivot.ToWide(
-                new ReportResult { Rows = raw.Rows, Total = raw.Rows.Count }, raw.Schema.Columns);
+                new ReportResult { Rows = raw.Rows, Total = raw.Rows.Count }, raw.Schema.Columns, raw.Schema.LabelFor);
             // El total de la cohorte, no el de la página traída.
             wide.Total = raw.TotalResponses;
             return wide;

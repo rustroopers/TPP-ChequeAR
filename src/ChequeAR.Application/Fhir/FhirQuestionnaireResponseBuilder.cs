@@ -5,6 +5,8 @@ using System.Linq;
 using ChequeAR.Domain.Enums;
 using Hl7.Fhir.Model;
 using Hl7.Fhir.Serialization;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using DomainResponse = ChequeAR.Domain.Entities.QuestionnaireResponse;
 using DomainResponseItem = ChequeAR.Domain.Entities.QuestionnaireResponseItem;
 using FhirResponse = Hl7.Fhir.Model.QuestionnaireResponse;
@@ -56,6 +58,42 @@ namespace ChequeAR.Application.Fhir
         }
 
         /// <summary>
+        /// Rescata los datos del paciente del recurso que ya venía guardado, para no
+        /// perderlos al regenerarlo. Null si no había ninguno.
+        /// </summary>
+        public static PatientDemographicsDto ContainedPatient(string existingFhirJson)
+        {
+            // Sólo se acepta un Patient "contained" de verdad. NO vale FhirPatientReader,
+            // que cae a subject.display como nombre: como ahí escribimos la HC cuando no
+            // hay nombre, regenerar el recurso al finalizar terminaba inventando un
+            // paciente llamado "PAC-000001".
+            if (string.IsNullOrWhiteSpace(existingFhirJson)) return null;
+            try
+            {
+                var contained = JObject.Parse(existingFhirJson)["contained"] as JArray;
+                foreach (var c in contained ?? new JArray())
+                {
+                    if ((string)c["resourceType"] != "Patient") continue;
+                    var name = (string)c.SelectToken("name[0].text");
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+
+                    DateTime? birth = null;
+                    var raw = (string)c["birthDate"];
+                    if (!string.IsNullOrWhiteSpace(raw) && DateTime.TryParse(raw, out var parsed)) birth = parsed;
+
+                    return new PatientDemographicsDto
+                    {
+                        FullName = name,
+                        Gender = (string)c["gender"],
+                        BirthDate = birth
+                    };
+                }
+            }
+            catch (JsonException) { /* recurso ilegible: sin datos de paciente */ }
+            return null;
+        }
+
+        /// <summary>
         /// Paciente embebido. No es decorativo: cuando el hospital no responde, este Patient
         /// contenido es la ÚNICA forma de saber de quién es la ficha — lo lee PatientService
         /// en modo degradado.
@@ -83,11 +121,11 @@ namespace ChequeAR.Application.Fhir
         {
             // Los textos vienen de la VERSIÓN ANCLADA, no de la entidad viva: si alguien
             // renombró una pregunta después, la ficha conserva lo que el médico leyó.
-            var textByLinkId = (pinnedVersion?.Groups ?? new List<RenderableGroup>())
+            var questionByLinkId = (pinnedVersion?.Groups ?? new List<RenderableGroup>())
                 .SelectMany(g => g.Questions)
                 .Where(x => !string.IsNullOrWhiteSpace(x.LinkId))
                 .GroupBy(x => x.LinkId)
-                .ToDictionary(g => g.Key, g => g.First().Text);
+                .ToDictionary(g => g.Key, g => g.First());
 
             var items = new List<FhirResponse.ItemComponent>();
 
@@ -99,10 +137,10 @@ namespace ChequeAR.Application.Fhir
             {
                 var item = new FhirResponse.ItemComponent { LinkId = grupo.Key };
 
-                if (textByLinkId.TryGetValue(grupo.Key, out var text) && !string.IsNullOrWhiteSpace(text))
-                    item.Text = text;
+                questionByLinkId.TryGetValue(grupo.Key, out var question);
+                if (!string.IsNullOrWhiteSpace(question?.Text)) item.Text = question.Text;
 
-                foreach (var valor in grupo.Select(Answer).Where(a => a != null))
+                foreach (var valor in grupo.Select(i => Answer(i, question)).Where(a => a != null))
                     item.Answer.Add(new FhirResponse.AnswerComponent { Value = valor });
 
                 // Una pregunta sin responder se serializa SIN answer, no con uno vacío.
@@ -111,7 +149,7 @@ namespace ChequeAR.Application.Fhir
             return items;
         }
 
-        private static DataType Answer(DomainResponseItem item)
+        private static DataType Answer(DomainResponseItem item, RenderableQuestion question)
         {
             // El adjunto se guarda por referencia: el archivo ya está subido.
             if (item.AttachmentId.HasValue)
@@ -128,7 +166,13 @@ namespace ChequeAR.Application.Fhir
             if (item.ValueDate.HasValue)
                 return new FhirDateTime(item.ValueDate.Value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
             if (!string.IsNullOrEmpty(item.ValueCode))
-                return new Coding(null, item.ValueCode, item.ValueCode);
+            {
+                // Mismo Coding que el answerOption: es lo único que un consumidor puede comparar.
+                var option = question?.FindOption(item.ValueCode);
+                return option != null
+                    ? new Coding(option.System, option.Code, option.Display)
+                    : new Coding(null, item.ValueCode, item.ValueCode);
+            }
             if (!string.IsNullOrEmpty(item.ValueString)) return new FhirString(item.ValueString);
             return null;   // sin responder
         }

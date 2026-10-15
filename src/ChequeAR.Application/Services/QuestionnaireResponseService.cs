@@ -11,7 +11,6 @@ using ChequeAR.Application.Validation;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace ChequeAR.Application.Services
 {
@@ -191,8 +190,10 @@ namespace ChequeAR.Application.Services
             // Se preservan los datos del paciente que venían embebidos: cuando el hospital
             // no responde, ese Patient "contained" es la única forma de saber de quién es
             // la ficha (lo lee PatientService en modo degradado).
+            var structure = FhirQuestionnaireReader.Read(pinned.FhirJson);
+            OptionCodes.Normalize(structure, r.Items);
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
-                r, FhirQuestionnaireReader.Read(pinned.FhirJson), DemographicsFrom(r.FhirJson));
+                r, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
 
             await _repo.AddAsync(r);
             // "Respuesta iniciada": marca única de que se abrió la ficha. Lo que se completa
@@ -200,43 +201,6 @@ namespace ChequeAR.Application.Services
             _audit.Enqueue(AuditEventBuilder.For("create", "QuestionnaireResponse/" + r.Id, userId));
             return r;
         }
-
-        /// <summary>
-        /// Rescata los datos del paciente del recurso que ya venía guardado, para no
-        /// perderlos al regenerarlo. Null si no había ninguno.
-        /// </summary>
-        private static PatientDemographicsDto DemographicsFrom(string existingFhirJson)
-        {
-            // Sólo se acepta un Patient "contained" de verdad. NO vale FhirPatientReader,
-            // que cae a subject.display como nombre: como ahí escribimos la HC cuando no
-            // hay nombre, regenerar el recurso al finalizar terminaba inventando un
-            // paciente llamado "PAC-000001".
-            if (string.IsNullOrWhiteSpace(existingFhirJson)) return null;
-            try
-            {
-                var contained = JObject.Parse(existingFhirJson)["contained"] as JArray;
-                foreach (var c in contained ?? new JArray())
-                {
-                    if ((string)c["resourceType"] != "Patient") continue;
-                    var name = (string)c.SelectToken("name[0].text");
-                    if (string.IsNullOrWhiteSpace(name)) continue;
-
-                    DateTime? birth = null;
-                    var raw = (string)c["birthDate"];
-                    if (!string.IsNullOrWhiteSpace(raw) && DateTime.TryParse(raw, out var parsed)) birth = parsed;
-
-                    return new PatientDemographicsDto
-                    {
-                        FullName = name,
-                        Gender = (string)c["gender"],
-                        BirthDate = birth
-                    };
-                }
-            }
-            catch (JsonException) { /* recurso ilegible: sin datos de paciente */ }
-            return null;
-        }
-
 
         /// <param name="lockToken">
         /// Token de la sesión de edición que se cierra con esta finalización. Exigirlo
@@ -256,6 +220,7 @@ namespace ChequeAR.Application.Services
             // crear dice "in-progress" y quedaría contradiciendo el estado final.
             r.Status = ResponseStatus.Completed;
             var structure = await PinnedStructureAsync(r);
+            OptionCodes.Normalize(structure, r.Items);
 
             // Una respuesta cargada cuando la pregunta estaba visible no puede quedar en la ficha
             // finalizada si la condición dejó de cumplirse (FHIR: un ítem deshabilitado no tiene
@@ -273,7 +238,7 @@ namespace ChequeAR.Application.Services
                     "Falta responder la pregunta obligatoria \"" + (string.IsNullOrWhiteSpace(q.Text) ? q.LinkId : q.Text) + "\"."));
             }
 
-            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, structure, DemographicsFrom(r.FhirJson));
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(r, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
 
             var validation = _validator.Validate(r.FhirJson);
             if (!validation.IsValid)
@@ -336,7 +301,7 @@ namespace ChequeAR.Application.Services
 
             r.Status = ResponseStatus.EnteredInError;
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
-                r, await PinnedStructureAsync(r), DemographicsFrom(r.FhirJson));
+                r, await PinnedStructureAsync(r), FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
 
             r.ReleaseLock();
             r.LastSavedAt = now;
@@ -370,9 +335,10 @@ namespace ChequeAR.Application.Services
                 return preview;
             }
 
-            var pinnedTexts = FlattenTexts(FhirQuestionnaireReader.Read(pinned.FhirJson));
+            var pinnedStructure = FhirQuestionnaireReader.Read(pinned.FhirJson);
+            var pinnedTexts = FlattenTexts(pinnedStructure);
             var currentTexts = FlattenTexts(FhirQuestionnaireReader.Read(current.FhirJson));
-            var answered = AnsweredValues(r.Items);
+            var answered = AnsweredValues(r.Items, pinnedStructure);
 
             foreach (var cur in currentTexts)
             {
@@ -410,14 +376,17 @@ namespace ChequeAR.Application.Services
             if (current.Id == r.QuestionnaireVersionId) return r;   // ya está en la vigente
 
             var pinned = q?.VersionOrCurrent(r.QuestionnaireVersionId);
+            var pinnedStructure = FhirQuestionnaireReader.Read(pinned?.FhirJson);
             var currentStructure = FhirQuestionnaireReader.Read(current.FhirJson);
             var currentLinkIds = new HashSet<string>(FlattenTexts(currentStructure).Keys);
+
+            OptionCodes.Carry(pinnedStructure, currentStructure, r.Items);
 
             // Lo que se descarta (para el registro de auditoría): preguntas respondidas que la
             // versión nueva ya no tiene.
             var dropped = new List<ResponseFieldChange>();
-            var answered = AnsweredValues(r.Items);
-            var pinnedTexts = FlattenTexts(FhirQuestionnaireReader.Read(pinned?.FhirJson));
+            var answered = AnsweredValues(r.Items, pinnedStructure);
+            var pinnedTexts = FlattenTexts(pinnedStructure);
             foreach (var ans in answered)
             {
                 if (currentLinkIds.Contains(ans.Key)) continue;
@@ -443,7 +412,7 @@ namespace ChequeAR.Application.Services
                 AuthorUserId = r.AuthorUserId,
                 Items = keptItems
             };
-            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(mergedForFhir, currentStructure, DemographicsFrom(r.FhirJson));
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(mergedForFhir, currentStructure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
             r.QuestionnaireVersionId = current.Id;
             r.LastSavedAt = now;
             r.ConcurrencyVersion++;
@@ -469,13 +438,17 @@ namespace ChequeAR.Application.Services
             return texts;
         }
 
+        private static RenderableQuestion FindQuestion(RenderableQuestionnaire structure, string linkId)
+            => structure?.Groups.SelectMany(g => g.Questions).FirstOrDefault(x => x.LinkId == linkId);
+
         /// <summary>linkId -> respuesta formateada, sólo para las preguntas que tienen algún valor.</summary>
-        private static Dictionary<string, string> AnsweredValues(ICollection<QuestionnaireResponseItem> items)
+        private static Dictionary<string, string> AnsweredValues(
+            ICollection<QuestionnaireResponseItem> items, RenderableQuestionnaire structure)
         {
             var result = new Dictionary<string, string>();
             foreach (var gr in (items ?? new List<QuestionnaireResponseItem>()).GroupBy(i => i.LinkId ?? string.Empty))
             {
-                var formatted = ResponseAnswerFormatter.Format(gr.ToList());
+                var formatted = ResponseAnswerFormatter.Format(gr.ToList(), FindQuestion(structure, gr.Key));
                 if (formatted != ResponseAnswerFormatter.Empty) result[gr.Key] = formatted;
             }
             return result;
@@ -585,6 +558,7 @@ namespace ChequeAR.Application.Services
             var keptItems = (r.Items ?? new List<QuestionnaireResponseItem>())
                 .Where(i => !touchedLinkIds.Contains(i.LinkId)).ToList();
             var structure = await PinnedStructureAsync(r);
+            OptionCodes.Normalize(structure, incoming);
             var mergedForFhir = new QuestionnaireResponse
             {
                 Id = r.Id,
@@ -596,7 +570,7 @@ namespace ChequeAR.Application.Services
                 Items = keptItems.Concat(incoming).ToList()
             };
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
-                mergedForFhir, structure, DemographicsFrom(r.FhirJson));
+                mergedForFhir, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
 
             r.LastSavedAt = now;
             r.IsAutosave = true;
@@ -633,7 +607,7 @@ namespace ChequeAR.Application.Services
                     section.Answers.Add(new ResponseSnapshotAnswer
                     {
                         Text = string.IsNullOrWhiteSpace(question.Text) ? question.LinkId : question.Text,
-                        Answer = ResponseAnswerFormatter.Format(byLink.TryGetValue(key, out var its) ? its : null)
+                        Answer = ResponseAnswerFormatter.Format(byLink.TryGetValue(key, out var its) ? its : null, question)
                     });
                 }
                 if (section.Answers.Count > 0) sections.Add(section);
@@ -680,8 +654,9 @@ namespace ChequeAR.Application.Services
             foreach (var linkId in touchedLinkIds)
             {
                 var key = linkId ?? string.Empty;
-                var before = ResponseAnswerFormatter.Format(beforeByLink.TryGetValue(key, out var b) ? b : null);
-                var after = ResponseAnswerFormatter.Format(afterByLink.TryGetValue(key, out var a) ? a : null);
+                var question = FindQuestion(structure, key);
+                var before = ResponseAnswerFormatter.Format(beforeByLink.TryGetValue(key, out var b) ? b : null, question);
+                var after = ResponseAnswerFormatter.Format(afterByLink.TryGetValue(key, out var a) ? a : null, question);
                 if (before == after) continue;   // reguardado sin novedad
                 changes.Add(new ResponseFieldChange
                 {

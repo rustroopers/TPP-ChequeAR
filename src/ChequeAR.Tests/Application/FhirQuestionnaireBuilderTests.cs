@@ -246,7 +246,10 @@ namespace ChequeAR.Tests.Application
             var coding = FirstItem(json)["answerOption"][0]["valueCoding"];
             Assert.Equal("Moderada", (string)coding["display"]);
             Assert.Equal("Moderate", (string)coding["extension"][0]["valueString"]);
-            Assert.Equal(new[] { "Moderada" }, FhirQuestionnaireReader.Read(json).Groups[0].Questions[0].Options);
+            var opcion = Assert.Single(FhirQuestionnaireReader.Read(json).Groups[0].Questions[0].Options);
+            Assert.Equal("6736007", opcion.Code);
+            Assert.Equal("Moderada", opcion.Display);
+            Assert.Equal(new[] { "Moderada", "Moderate" }, opcion.Aliases);
         }
 
         // Un JSON corrupto en la base no debe impedir publicar: se ignora esa parte.

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -248,6 +249,30 @@ namespace ChequeAR.Tests.Application
 
             _qRepo.Verify(r => r.GetAsync(It.IsAny<Guid>()), Times.Never);
             Assert.Equal("Edad", (string)JObject.Parse(response.FhirJson).SelectToken("item[0].text"));
+        }
+
+        // Una pestaña abierta con el renderer anterior todavía manda el texto de la opción.
+        [Fact]
+        public async Task SaveProgressAsync_OpcionConElTexto_GuardaElCodigo()
+        {
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "T" };
+            q.Questions.Add(new Question
+            {
+                LinkId = "fiebre", Text = "Fiebre", Type = QuestionType.Choice,
+                Options = { new AnswerOption { Value = "si", Display = "Sí", Code = "373066001", SnomedCode = "373066001" } }
+            });
+            var json = FhirQuestionnaireBuilder.Build(q, 1);
+            var (id, lockToken, response) = FichaConLock(json);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = json });
+            var item = new QuestionnaireResponseItem { LinkId = "fiebre", ValueCode = "Sí" };
+
+            await _sut.SaveProgressAsync(id, "u", lockToken, null, new List<QuestionnaireResponseItem> { item });
+
+            Assert.Equal("373066001", item.ValueCode);
+            Assert.Equal("373066001", (string)JObject.Parse(response.FhirJson).SelectToken("item[0].answer[0].valueCoding.code"));
         }
 
         private (Guid id, Guid lockToken, QuestionnaireResponse response) FichaConLock(string questionnaireJson)

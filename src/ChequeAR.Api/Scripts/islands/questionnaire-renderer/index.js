@@ -325,6 +325,24 @@
                     .then(function () { viewingAttachment[linkId] = false; });
             }
 
+            // Las fichas anteriores guardaron el texto de la opción y no su código: al
+            // retomarlas se traduce, y el próximo guardado ya manda el código.
+            function optionCode(q, stored) {
+                if (stored === undefined || stored === null) return stored;
+                var opts = q.options || [];
+                for (var i = 0; i < opts.length; i++) if (opts[i].code === stored) return stored;
+                var match = opts.filter(function (o) { return (o.aliases || []).indexOf(stored) >= 0; });
+                return match.length === 1 ? match[0].code : stored;
+            }
+
+            function questionByLinkId(linkId) {
+                var found = null;
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) { if (!found && q.linkId === linkId) found = q; });
+                });
+                return found;
+            }
+
             // Opción múltiple: la respuesta es un array de opciones marcadas.
             function onToggleMulti(q, option, checked) {
                 var current = (answers[q.linkId] || []).slice();
@@ -381,7 +399,7 @@
             function valueFromFhirItem(q, it) {
                 if (q.type === 'openChoice') {
                     return it.answer
-                        .map(function (a) { return a.valueCoding && a.valueCoding.code; })
+                        .map(function (a) { return a.valueCoding && optionCode(q, a.valueCoding.code); })
                         .filter(function (c) { return !!c; });
                 }
                 var a = it.answer[0];
@@ -395,7 +413,7 @@
                     if (q.type === 'dateTime') return a.valueDateTime.slice(0, 16);
                     return a.valueDateTime;
                 }
-                if (a.valueCoding) return a.valueCoding.code;
+                if (a.valueCoding) return optionCode(q, a.valueCoding.code);
                 if (a.valueAttachment) {
                     return { attachmentId: attachmentIdFromUrl(a.valueAttachment.url), fileName: a.valueAttachment.title };
                 }
@@ -416,13 +434,14 @@
                 var result = [];
                 (fhirItems || []).forEach(function (it) {
                     if (!it.answer || !it.answer.length) { result.push({ LinkId: it.linkId }); return; }
+                    var q = questionByLinkId(it.linkId);
                     it.answer.forEach(function (a) {
                         var d = { LinkId: it.linkId };
                         if (a.valueBoolean !== undefined) d.ValueBoolean = a.valueBoolean;
                         else if (a.valueInteger !== undefined) d.ValueInteger = a.valueInteger;
                         else if (a.valueDecimal !== undefined) d.ValueDecimal = a.valueDecimal;
                         else if (a.valueDateTime !== undefined) d.ValueDate = a.valueDateTime;
-                        else if (a.valueCoding) d.ValueCode = a.valueCoding.code;
+                        else if (a.valueCoding) d.ValueCode = q ? optionCode(q, a.valueCoding.code) : a.valueCoding.code;
                         else if (a.valueAttachment) {
                             d.AttachmentId = attachmentIdFromUrl(a.valueAttachment.url);
                             d.ValueString = a.valueAttachment.title;
@@ -1070,7 +1089,7 @@
                         <select v-else-if="q.type === \'choice\'" class="form-select" style="max-width:340px;" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                 :value="answers[q.linkId] || \'\'" @change="onChange(q, $event.target.value)">\
                             <option value="">Seleccione…</option>\
-                            <option v-for="opt in q.options" :key="opt" :value="opt">{{ opt }}</option>\
+                            <option v-for="opt in q.options" :key="opt.code" :value="opt.code">{{ opt.display }}</option>\
                         </select>\
 \
                         <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
@@ -1084,10 +1103,10 @@
                         </div>\
 \
                         <div v-else-if="q.type === \'openChoice\'" :class="{ \'is-invalid\': errors[q.linkId] }">\
-                            <div v-for="opt in q.options" :key="opt" class="form-check">\
-                                <input class="form-check-input" type="checkbox" :id="q.linkId + \'_\' + opt"\
-                                       :checked="(answers[q.linkId] || []).indexOf(opt) >= 0" @change="onToggleMulti(q, opt, $event.target.checked)" />\
-                                <label class="form-check-label cq-text-sm" :for="q.linkId + \'_\' + opt">{{ opt }}</label>\
+                            <div v-for="opt in q.options" :key="opt.code" class="form-check">\
+                                <input class="form-check-input" type="checkbox" :id="q.linkId + \'_\' + opt.code"\
+                                       :checked="(answers[q.linkId] || []).indexOf(opt.code) >= 0" @change="onToggleMulti(q, opt.code, $event.target.checked)" />\
+                                <label class="form-check-label cq-text-sm" :for="q.linkId + \'_\' + opt.code">{{ opt.display }}</label>\
                             </div>\
                         </div>\
 \

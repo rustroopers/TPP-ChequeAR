@@ -117,6 +117,7 @@ namespace ChequeAR.Application.Fhir
                     Questions = sueltas
                 });
             }
+            ResolveOptionConditions(result);
             return result;
         }
 
@@ -145,9 +146,8 @@ namespace ChequeAR.Application.Fhir
 
             foreach (var opcion in item.AnswerOption ?? new List<FhirQuestionnaire.AnswerOptionComponent>())
             {
-                var coding = opcion.Value as Coding;
-                var display = coding?.Display ?? coding?.Code;
-                if (!string.IsNullOrEmpty(display)) question.Options.Add(display);
+                var option = ReadOption(opcion.Value);
+                if (option != null) question.Options.Add(option);
             }
 
             var condicion = (item.EnableWhen ?? new List<FhirQuestionnaire.EnableWhenComponent>()).FirstOrDefault();
@@ -161,6 +161,52 @@ namespace ChequeAR.Application.Fhir
                 };
             }
             return question;
+        }
+
+        /// <summary>
+        /// Los alias son los textos con los que se guardó la opción antes de guardar el código:
+        /// la etiqueta y, en versiones previas a la extensión, el término SNOMED.
+        /// </summary>
+        private static RenderableOption ReadOption(DataType value)
+        {
+            string code, display, system = null, term = null;
+            switch (value)
+            {
+                case Coding c:
+                    code = c.Code ?? c.Display;
+                    display = c.Display ?? c.Code;
+                    system = c.System;
+                    term = ChequeARExtensions.GetString(c, ChequeARExtensions.OptionSnomedDisplayUrl);
+                    break;
+                case FhirString s:
+                    code = display = s.Value;
+                    break;
+                default:
+                    return null;
+            }
+            if (string.IsNullOrEmpty(code)) return null;
+
+            var option = new RenderableOption { Code = code, System = system, Display = display };
+            foreach (var alias in new[] { display, term })
+                if (!string.IsNullOrEmpty(alias) && alias != code && !option.Aliases.Contains(alias))
+                    option.Aliases.Add(alias);
+            return option;
+        }
+
+        /// <summary>
+        /// El valor esperado de una condición sobre una opción pasa a ser el código de esa
+        /// opción, aunque la versión congelada lo haya guardado con el texto.
+        /// </summary>
+        private static void ResolveOptionConditions(RenderableQuestionnaire result)
+        {
+            var questions = result.Groups.SelectMany(g => g.Questions).ToList();
+            foreach (var q in questions)
+            {
+                if (!(q.EnableWhen?.Value is string expected)) continue;
+                var source = questions.FirstOrDefault(x => x.LinkId == q.EnableWhen.Question);
+                var option = source?.FindOption(expected);
+                if (option != null) q.EnableWhen.Value = option.Code;
+            }
         }
 
         /// <summary>
@@ -227,7 +273,7 @@ namespace ChequeAR.Application.Fhir
                 case FhirBoolean b: return b.Value ?? false;
                 case Integer i: return (long?)i.Value ?? 0L;
                 case FhirDecimal d: return d.Value ?? 0m;
-                case Coding c: return c.Display ?? c.Code;
+                case Coding c: return c.Code ?? c.Display;
                 case FhirString s: return s.Value;
                 default: return null;
             }
@@ -260,8 +306,31 @@ namespace ChequeAR.Application.Fhir
         public string Pattern { get; set; }
         public string Unit { get; set; }
         public string Accept { get; set; }
-        public List<string> Options { get; set; } = new List<string>();
+        public List<RenderableOption> Options { get; set; } = new List<RenderableOption>();
         public RenderableCondition EnableWhen { get; set; }
+
+        /// <summary>
+        /// La opción a la que corresponde un valor guardado: por código o, si no, por un alias
+        /// que no sea ambiguo. Null si no hay ninguna, o si el código destino se repite en
+        /// otra opción: mapear ahí perdería la distinción entre las dos.
+        /// </summary>
+        public RenderableOption FindOption(string stored)
+        {
+            if (string.IsNullOrEmpty(stored) || Options == null) return null;
+            var byCode = Options.FirstOrDefault(o => o.Code == stored);
+            if (byCode != null) return byCode;
+            var byAlias = Options.Where(o => o.Aliases.Contains(stored)).ToList();
+            if (byAlias.Count != 1 || Options.Count(o => o.Code == byAlias[0].Code) > 1) return null;
+            return byAlias[0];
+        }
+    }
+
+    public class RenderableOption
+    {
+        public string Code { get; set; }
+        public string System { get; set; }
+        public string Display { get; set; }
+        public List<string> Aliases { get; set; } = new List<string>();
     }
 
     public class RenderableCondition

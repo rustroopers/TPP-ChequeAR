@@ -15,7 +15,9 @@ namespace ChequeAR.Application.Reports
         private const string MultiValueSeparator = " | ";
 
         /// <param name="questionColumns">Pares (linkId, encabezado) en el orden deseado de columnas.</param>
-        public static ReportResult ToWide(ReportResult longResult, IList<KeyValuePair<string, string>> questionColumns)
+        /// <param name="label">(linkId, valor guardado) -> texto a mostrar; traduce el código de una opción a su etiqueta.</param>
+        public static ReportResult ToWide(ReportResult longResult, IList<KeyValuePair<string, string>> questionColumns,
+                                          Func<string, string, string> label = null)
         {
             var order = new List<string>();
             var byResponse = new Dictionary<string, List<Dictionary<string, object>>>();
@@ -56,6 +58,7 @@ namespace ChequeAR.Application.Reports
                     if (string.IsNullOrEmpty(link)) continue;
                     var val = Get(it, "ValueText");
                     if (val == null) continue;
+                    if (label != null && val is string text) val = label(link, text);
                     if (!valuesByLink.TryGetValue(link, out var vals)) valuesByLink[link] = vals = new List<object>();
                     if (!vals.Contains(val)) vals.Add(val);
                 }
