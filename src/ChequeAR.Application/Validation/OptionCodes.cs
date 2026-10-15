@@ -62,6 +62,23 @@ namespace ChequeAR.Application.Validation
             return changed + Normalize(to, list);
         }
 
+        /// <summary>Vacía las respuestas de opción cuyo código no es una opción de la versión.</summary>
+        /// <returns>Los linkId afectados.</returns>
+        public static List<string> ClearOrphans(RenderableQuestionnaire structure, IEnumerable<QuestionnaireResponseItem> items)
+        {
+            var cleared = new List<string>();
+            if (structure == null || items == null) return cleared;
+            var byLinkId = ChoiceQuestions(structure);
+            foreach (var item in items)
+            {
+                if (item == null || string.IsNullOrEmpty(item.ValueCode)) continue;
+                if (!byLinkId.TryGetValue(item.LinkId ?? string.Empty, out var q) || q.Options.Any(o => o.Code == item.ValueCode)) continue;
+                item.ValueCode = null;
+                if (!cleared.Contains(item.LinkId)) cleared.Add(item.LinkId);
+            }
+            return cleared;
+        }
+
         private static Dictionary<string, RenderableQuestion> ChoiceQuestions(RenderableQuestionnaire structure)
         {
             var byLinkId = new Dictionary<string, RenderableQuestion>();

@@ -176,6 +176,19 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("255604002", item.ValueCode);
         }
 
+        [Fact]
+        public void ClearOrphans_VaciaLasOpcionesQueYaNoExisten()
+        {
+            var huerfana = new QuestionnaireResponseItem { LinkId = "sev", ValueCode = "grave" };
+            var valida = new QuestionnaireResponseItem { LinkId = "sev", ValueCode = "leve" };
+
+            var afectadas = OptionCodes.ClearOrphans(ConOpcion("leve", "Leve"), new[] { huerfana, valida });
+
+            Assert.Equal(new[] { "sev" }, afectadas);
+            Assert.Null(huerfana.ValueCode);
+            Assert.Equal("leve", valida.ValueCode);
+        }
+
         [Theory]
         [InlineData(Si)]
         [InlineData("Sí")]

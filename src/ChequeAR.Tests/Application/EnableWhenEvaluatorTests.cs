@@ -279,6 +279,20 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
+        public void ClearUnknownAnswers_VaciaLoQueNoEstaEnLaVersion()
+        {
+            var s = Estructura(Pregunta("edad", type: "integer"));
+            var vieja = new QuestionnaireResponseItem { LinkId = "retirada", ValueString = "x" };
+            var edad = new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 3 };
+
+            var vaciadas = EnableWhenEvaluator.ClearUnknownAnswers(s, new List<QuestionnaireResponseItem> { vieja, edad });
+
+            Assert.Equal(new[] { "retirada" }, vaciadas);
+            Assert.Null(vieja.ValueString);
+            Assert.Equal(3, edad.ValueInteger);
+        }
+
+        [Fact]
         public void SinEstructura_NoSeValida()
         {
             Assert.Empty(EnableWhenEvaluator.MissingRequired(null, new List<QuestionnaireResponseItem>()));

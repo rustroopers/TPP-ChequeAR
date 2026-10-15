@@ -275,6 +275,42 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("373066001", (string)JObject.Parse(response.FhirJson).SelectToken("item[0].answer[0].valueCoding.code"));
         }
 
+        // Lo que el renderer no deja cargar tampoco entra por una llamada directa a $finalize.
+        [Fact]
+        public async Task FinalizeAsync_ValorFueraDeRango_422YSigueEnCurso()
+        {
+            const string json =
+                "{\"resourceType\":\"Questionnaire\",\"item\":[{\"linkId\":\"edad\",\"text\":\"Edad\",\"type\":\"integer\"," +
+                "\"extension\":[{\"url\":\"http://hl7.org/fhir/StructureDefinition/maxValue\",\"valueInteger\":18}]}]}";
+            var (id, lockToken, response) = FichaConLock(json);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            response.Items.Add(new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 40 });
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = json });
+
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.FinalizeAsync(id, "u", lockToken));
+
+            Assert.Contains("18", ex.Errors.Single());
+            Assert.Equal(ResponseStatus.InProgress, response.Status);
+            _repo.Verify(r => r.UpdateAsync(It.IsAny<QuestionnaireResponse>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task SaveProgressAsync_OpcionInexistente_422SinGuardar()
+        {
+            var (id, lockToken, response) = FichaConLock(DefaultStructure);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = DefaultStructure });
+
+            await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.SaveProgressAsync(id, "u", lockToken, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "sintomas", ValueCode = "Inventado" } }));
+
+            _repo.Verify(r => r.SaveProgressAsync(It.IsAny<QuestionnaireResponse>(), It.IsAny<ICollection<QuestionnaireResponseItem>>()), Times.Never);
+        }
+
         private (Guid id, Guid lockToken, QuestionnaireResponse response) FichaConLock(string questionnaireJson)
         {
             var id = Guid.NewGuid();
@@ -1213,6 +1249,12 @@ namespace ChequeAR.Tests.Application
         }
 
         /// Cuestionario activo con una version publicada, que es lo minimo para responderlo.
+        private const string DefaultStructure =
+            "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+            "{\"linkId\":\"a\",\"type\":\"string\"},{\"linkId\":\"b\",\"type\":\"string\"}," +
+            "{\"linkId\":\"peso\",\"type\":\"decimal\"},{\"linkId\":\"presion\",\"type\":\"string\"}," +
+            "{\"linkId\":\"sintomas\",\"type\":\"coding\",\"repeats\":true,\"answerOption\":[{\"valueCoding\":{\"code\":\"Dolor\"}},{\"valueCoding\":{\"code\":\"Fatiga\"}},{\"valueCoding\":{\"code\":\"Fiebre\"}}]}]}";
+
         private static Questionnaire Published(Guid id, string fhirJson = null, Guid? versionId = null)
         {
             var vid = versionId ?? Guid.NewGuid();
@@ -1221,7 +1263,7 @@ namespace ChequeAR.Tests.Application
             {
                 Id = vid,
                 VersionNumber = 1,
-                FhirJson = fhirJson ?? "{\"resourceType\":\"Questionnaire\",\"item\":[]}"
+                FhirJson = fhirJson ?? DefaultStructure
             });
             return q;
         }

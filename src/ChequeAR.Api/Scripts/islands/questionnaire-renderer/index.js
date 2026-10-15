@@ -285,12 +285,14 @@
 
             // Las fichas anteriores guardaron el texto de la opción y no su código: al
             // retomarlas se traduce, y el próximo guardado ya manda el código.
+            // Lo que no corresponde a ninguna opción de la versión se descarta: no hay forma de
+            // destildarlo en pantalla y el servidor lo rechazaría en cada guardado.
             function optionCode(q, stored) {
-                if (stored === undefined || stored === null) return stored;
+                if (stored === undefined || stored === null) return undefined;
                 var opts = q.options || [];
                 for (var i = 0; i < opts.length; i++) if (opts[i].code === stored) return stored;
                 var match = opts.filter(function (o) { return (o.aliases || []).indexOf(stored) >= 0; });
-                return match.length === 1 ? match[0].code : stored;
+                return match.length === 1 ? match[0].code : undefined;
             }
 
             function questionByLinkId(linkId) {
@@ -371,7 +373,7 @@
                     if (q.type === 'dateTime') return a.valueDateTime.slice(0, 16);
                     return a.valueDateTime;
                 }
-                if (a.valueCoding) return optionCode(q, a.valueCoding.code);
+                if (a.valueCoding) return optionCode(q, a.valueCoding.code) || undefined;
                 if (a.valueAttachment) {
                     return { attachmentId: attachmentIdFromUrl(a.valueAttachment.url), fileName: a.valueAttachment.title };
                 }
@@ -552,8 +554,13 @@
                         });
                     }
                     if (r.status === 422 && !isRetry) {
-                        lockToken.value = null;
-                        return ensureLock().then(function () { return putProgress(true); });
+                        // Sólo la sesión de edición perdida se resuelve tomando el lock de nuevo.
+                        return r.clone().json().catch(function () { return null; }).then(function (body) {
+                            var code = body && body.issue && body.issue[0] && body.issue[0].code;
+                            if (code !== 'business-rule') return errorFrom(r, 'error del servidor');
+                            lockToken.value = null;
+                            return ensureLock().then(function () { return putProgress(true); });
+                        });
                     }
                     if (!r.ok) return errorFrom(r, 'error del servidor');
                     var lockExpiresHeader = r.headers.get('X-Lock-Expires-At');

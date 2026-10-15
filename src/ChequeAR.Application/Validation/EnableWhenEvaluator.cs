@@ -55,16 +55,40 @@ namespace ChequeAR.Application.Validation
             foreach (var item in items)
             {
                 if (item?.LinkId == null || !hidden.Contains(item.LinkId) || ValueOf(item, null) == null) continue;
-                item.ValueBoolean = null;
-                item.ValueInteger = null;
-                item.ValueDecimal = null;
-                item.ValueDate = null;
-                item.ValueString = null;
-                item.ValueCode = null;
-                item.AttachmentId = null;
+                Clear(item);
                 if (!cleared.Contains(item.LinkId)) cleared.Add(item.LinkId);
             }
             return cleared;
+        }
+
+        /// <summary>
+        /// Vacía las respuestas a preguntas que no están en la versión: no se pueden mostrar ni
+        /// corregir, y no pueden ir en la ficha finalizada.
+        /// </summary>
+        public static IReadOnlyList<string> ClearUnknownAnswers(
+            RenderableQuestionnaire structure, ICollection<QuestionnaireResponseItem> items)
+        {
+            var cleared = new List<string>();
+            if (structure == null || items == null) return cleared;
+            var known = new HashSet<string>(TypesByLinkId(structure).Keys);
+            foreach (var item in items)
+            {
+                if (item == null || known.Contains(item.LinkId ?? string.Empty) || ValueOf(item, null) == null) continue;
+                Clear(item);
+                if (!cleared.Contains(item.LinkId)) cleared.Add(item.LinkId);
+            }
+            return cleared;
+        }
+
+        private static void Clear(QuestionnaireResponseItem item)
+        {
+            item.ValueBoolean = null;
+            item.ValueInteger = null;
+            item.ValueDecimal = null;
+            item.ValueDate = null;
+            item.ValueString = null;
+            item.ValueCode = null;
+            item.AttachmentId = null;
         }
 
         /// <summary>
