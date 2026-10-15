@@ -28,10 +28,13 @@ namespace ChequeAR.Domain.Entities
         public Guid? VariableId { get; set; }
 
         /// <summary>
-        /// Revisión de la variable al momento de insertarla. Lo que se guardó acá es un snapshot:
-        /// si el Administrador edita la variable después, esta pregunta NO cambia. Comparar contra
-        /// ClinicalVariable.Revision es lo que permite avisar en el borrador que quedó desfasada.
+        /// Versión publicada de la variable cuya definición copió esta pregunta. Si el
+        /// Administrador publica otra, esta pregunta NO cambia: el editor avisa y el Jefe decide.
+        /// Null en preguntas armadas antes del versionado con una definición que ya no existe.
         /// </summary>
+        public Guid? VariableVersionId { get; set; }
+
+        /// <summary>Número de esa versión (0 si no tiene), para mostrarlo y compararlo con la vigente.</summary>
         public int VariableRevision { get; set; }
 
         public virtual ICollection<AnswerOption> Options { get; set; } = new List<AnswerOption>();

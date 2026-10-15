@@ -49,6 +49,7 @@ namespace ChequeAR.Infrastructure.EF
         public DbSet<ExportJob> ExportJobs { get; set; }
         public DbSet<ClinicalVariable> ClinicalVariables { get; set; }
         public DbSet<VariableOption> VariableOptions { get; set; }
+        public DbSet<ClinicalVariableVersion> ClinicalVariableVersions { get; set; }
 
         protected override void OnModelCreating(DbModelBuilder modelBuilder)
         {
@@ -75,6 +76,7 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Configurations.Add(new QuestionnaireResponseConfig());
             modelBuilder.Configurations.Add(new AuditEventConfig());
             modelBuilder.Configurations.Add(new ClinicalVariableConfig());
+            modelBuilder.Configurations.Add(new ClinicalVariableVersionConfig());
 
             // Sin esto, EF no asocia QuestionGroup.Questions con Question.GroupId (no hay
             // navegación inversa en Question) y crea una FK sombra "QuestionGroup_Id" que
@@ -87,6 +89,7 @@ namespace ChequeAR.Infrastructure.EF
             // seguir el criterio del resto del esquema (los borrados son explícitos, en
             // transacción, desde el repositorio).
             modelBuilder.Entity<ClinicalVariable>().HasMany(v => v.Options).WithRequired().HasForeignKey(o => o.VariableId).WillCascadeOnDelete(false);
+            modelBuilder.Entity<ClinicalVariable>().HasMany(v => v.Versions).WithRequired().HasForeignKey(x => x.VariableId).WillCascadeOnDelete(false);
 
             // Claves string: acotadas para que sean PK/FK indexables en Oracle.
             modelBuilder.Entity<User>().Property(x => x.Id).HasMaxLength(128);
