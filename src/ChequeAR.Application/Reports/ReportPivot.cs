@@ -56,7 +56,9 @@ namespace ChequeAR.Application.Reports
                 {
                     var link = Convert.ToString(Get(it, "LinkId"), CultureInfo.InvariantCulture);
                     if (string.IsNullOrEmpty(link)) continue;
-                    var val = Get(it, "ValueText");
+                    // Un número va como número: el exportador lo formatea (coma en el CSV, celda
+                    // numérica en el XLSX). ValueText lo trae con punto.
+                    var val = Get(it, "ValueDecimal") ?? Get(it, "ValueInteger") ?? Get(it, "ValueText");
                     if (val == null) continue;
                     if (label != null && val is string text) val = label(link, text);
                     if (!valuesByLink.TryGetValue(link, out var vals)) valuesByLink[link] = vals = new List<object>();

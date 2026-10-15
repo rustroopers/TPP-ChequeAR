@@ -275,6 +275,7 @@ namespace ChequeAR.Application.Services
             var snapshot = BuildFullSnapshot(structure, r.Items);
 
             r.LastSavedAt = now;
+            r.CompletedAt = now;
             r.ReleaseLock();   // ya no hay nada que seguir editando ni que bloquear
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);

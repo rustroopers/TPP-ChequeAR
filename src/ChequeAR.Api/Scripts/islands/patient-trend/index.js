@@ -12,7 +12,7 @@
  * librería de charts agregaría otra dependencia externa para una línea, unos puntos y una
  * banda. Mismo criterio que report-stats/index.js.
  *
- * Las respuestas de la Web API llegan en PascalCase (LinkId, Points, AuthoredAt…), igual que
+ * Las respuestas de la Web API llegan en PascalCase (LinkId, Points, Date…), igual que
  * /api/reports/stats: por eso se leen así y no en camelCase.
  */
 (function () {
@@ -81,11 +81,17 @@
             Vue.onMounted(loadParams);
 
             // --- formato -------------------------------------------------------------
+            // Las fechas son días de calendario a medianoche UTC: se leen en UTC para que no se
+            // corran un día según la zona del navegador.
             function fmtDate(ms) {
                 var d = new Date(ms);
                 if (isNaN(d.getTime())) return '';
                 function pad(n) { return (n < 10 ? '0' : '') + n; }
-                return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2);
+                return pad(d.getUTCDate()) + '/' + pad(d.getUTCMonth() + 1) + '/' + String(d.getUTCFullYear()).slice(2);
+            }
+            function dayMs(p) {
+                var parts = String(p.Date || '').split('-');
+                return parts.length === 3 ? Date.UTC(+parts[0], +parts[1] - 1, +parts[2]) : NaN;
             }
             function fmtNum(v) {
                 var n = Math.round(v * 100) / 100;
@@ -103,7 +109,7 @@
                 var min = null, max = null;
                 series.value.forEach(function (s) {
                     (s.Points || []).forEach(function (p) {
-                        var t = new Date(p.AuthoredAt).getTime();
+                        var t = dayMs(p);
                         if (isNaN(t)) return;
                         if (min === null || t < min) min = t;
                         if (max === null || t > max) max = t;
@@ -114,7 +120,7 @@
 
             function buildChart(s, xDom) {
                 var pts = (s.Points || []).slice().sort(function (a, b) {
-                    return new Date(a.AuthoredAt).getTime() - new Date(b.AuthoredAt).getTime();
+                    return dayMs(a) - dayMs(b);
                 });
                 var base = { linkId: s.LinkId, text: s.Text, unit: s.Unit, type: s.Type };
                 if (!pts.length) { base.empty = true; return base; }
@@ -152,7 +158,7 @@
                 }
 
                 var points = pts.map(function (p) {
-                    var t = new Date(p.AuthoredAt).getTime();
+                    var t = dayMs(p);
                     return {
                         cx: xScale(t), cy: yScale(p.Value),
                         title: fmtDate(t) + ': ' + fmtValueForType(p.Value, s.Type) + (s.Unit ? ' ' + s.Unit : '')

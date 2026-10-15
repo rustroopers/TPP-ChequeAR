@@ -233,7 +233,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
                     QuestionnaireVersion = q?.FindVersion(qr.QuestionnaireVersionId)?.VersionNumber ?? 0,
                     Author = qr.AuthorUserId,
-                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.LastSavedAt),
+                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.CompletedAt ?? qr.LastSavedAt),
                     IsDiscarded = qr.Status == ResponseStatus.EnteredInError
                 };
 

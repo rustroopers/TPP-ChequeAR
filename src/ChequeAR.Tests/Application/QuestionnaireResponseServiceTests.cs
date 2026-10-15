@@ -180,6 +180,7 @@ namespace ChequeAR.Tests.Application
 
             Assert.Null(finalized.LockToken);
             Assert.Null(finalized.LockedByUserId);
+            Assert.NotNull(finalized.CompletedAt);
         }
 
         private const string ConObligatoria =
@@ -309,6 +310,7 @@ namespace ChequeAR.Tests.Application
 
             Assert.Contains("18", ex.Errors.Single());
             Assert.Equal(ResponseStatus.InProgress, response.Status);
+            Assert.Null(response.CompletedAt);
             _repo.Verify(r => r.UpdateAsync(It.IsAny<QuestionnaireResponse>()), Times.Never);
         }
 
