@@ -1,5 +1,6 @@
 # ---------- Infra (docker) ----------
 infra/**/.env
+infra/**/certs/
 
 # ---------- Visual Studio / .NET ----------
 

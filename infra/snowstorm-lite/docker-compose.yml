@@ -1,0 +1,40 @@
+# Snowstorm Lite + nginx para la VM de Oracle Cloud (Always Free, Ampere A1 arm64).
+# Lo único que sale a internet es nginx en 443: TLS con cert autofirmado (ChequeAR lo valida
+# por huella, ver TerminologyHttp), allowlist de IPs de Azure y header X-ChequeAR-Key.
+# Snowstorm Lite queda en 127.0.0.1:8080; la administración (/fhir-admin) se usa por SSH.
+services:
+  snowstorm-lite:
+    image: snomedinternational/snowstorm-lite:2.7.0
+    container_name: snowstorm-lite
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"     # nunca 0.0.0.0: Docker saltea el iptables del host
+    environment:
+      # Las imágenes de IHTSDO ignoran JAVA_OPTS (entrypoint fijo); JDK_JAVA_OPTIONS lo lee
+      # el lanzador java siempre. Ya indexado corre con ~500 MB; el heap extra es para el import.
+      - "JDK_JAVA_OPTIONS=-Xms${LITE_HEAP:-2g} -Xmx${LITE_HEAP:-2g}"
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?definir ADMIN_PASSWORD en .env}
+    command:
+      - --index.path=lucene-index/data
+      - --spring.ai.mcp.server.enabled=false   # no exponemos el server MCP
+    volumes:
+      - lite-index:/app/lucene-index
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: snowstorm-nginx
+    restart: unless-stopped
+    # Red del host: así el iptables de la VM también lo filtra y llega a 127.0.0.1:8080.
+    network_mode: host
+    environment:
+      - TERM_KEY=${TERM_KEY:?definir TERM_KEY en .env}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/azure-allow.conf:/etc/nginx/azure-allow.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - snowstorm-lite
+
+volumes:
+  lite-index:

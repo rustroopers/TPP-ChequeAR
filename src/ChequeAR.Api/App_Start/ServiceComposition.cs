@@ -77,6 +77,11 @@ namespace ChequeAR.Api.App_Start
             var terminologyUrl = ConfigurationManager.AppSettings["Terminology:BaseUrl"] ?? "";
             var terminologyEcl = ConfigurationManager.AppSettings["Terminology:Ecl"] ?? "";
             var terminologyLang = ConfigurationManager.AppSettings["Terminology:DisplayLanguage"] ?? "es";
+            // Snowstorm Lite propio en OCI (infra/snowstorm-lite/): exige una key compartida y
+            // sirve TLS con cert autofirmado, que se valida por huella SHA-256 (pinning). Ambos
+            // vacíos = server sin auth (Snowstorm local en Docker). Van en App Settings, no acá.
+            var terminologyApiKey = ConfigurationManager.AppSettings["Terminology:ApiKey"] ?? "";
+            var terminologyCertSha256 = ConfigurationManager.AppSettings["Terminology:CertSha256"] ?? "";
             var oracleConn = ConfigurationManager.AppSettings["Oracle:ConnectionString"] ?? "";
             var attachmentsRoot = Environment.ExpandEnvironmentVariables(
                 ConfigurationManager.AppSettings["Attachments:Root"] ?? @"C:\ChequeAR\Attachments");
@@ -103,7 +108,7 @@ namespace ChequeAR.Api.App_Start
             // grandes de la config (<<404684003 "Clinical finding" entero, etc.) se pasaba de 8s
             // hasta que Elasticsearch calienta sus cachés, y el autocomplete del editor moría en
             // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
-            var termHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(25) };
+            var termHttp = TerminologyHttp.Create(TimeSpan.FromSeconds(25), terminologyCertSha256);
 
             // Singleton con su propia factory de repositorio: pide un contexto nuevo por
             // operación y lo libera. No puede usar el del request: vive toda la aplicación y
@@ -182,7 +187,7 @@ namespace ChequeAR.Api.App_Start
                 container.Register<ICredentialAuthenticator>(() => new HospitalAuthClient(authHttp, hospitalAuthUrl));
             }
 
-            container.Register<ITerminologyClient>(() => new TerminologyClient(termHttp, terminologyUrl, terminologyEcl, terminologyLang));
+            container.Register<ITerminologyClient>(() => new TerminologyClient(termHttp, terminologyUrl, terminologyEcl, terminologyLang, terminologyApiKey));
             container.Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
             // Evolución longitudinal de parámetros (spec 010): consulta dedicada contra
             // vw_FlatResponses, misma conexión Oracle que los reportes.
