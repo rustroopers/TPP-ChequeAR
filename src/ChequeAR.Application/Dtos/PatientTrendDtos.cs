@@ -60,10 +60,13 @@ namespace ChequeAR.Application.Dtos
     {
         /// <summary>Ficha de origen del punto — habilita, a futuro, un link a la ficha completa.</summary>
         public Guid ResponseId { get; set; }
-        /// <summary>Fecha de la ficha; eje X del gráfico.</summary>
-        public DateTime AuthoredAt { get; set; }
+        /// <summary>
+        /// Día en que se finalizó la ficha, en hora de Argentina ("yyyy-MM-dd"); eje X del
+        /// gráfico. Va como texto para que el navegador no lo corra según su zona horaria.
+        /// </summary>
+        public string Date { get; set; }
         /// <summary>Valor numérico. Para preguntas de tipo Date se transporta como epoch en
-        /// milisegundos (UTC), y el frontend lo formatea como fecha.</summary>
+        /// milisegundos de la fecha a medianoche UTC, y el frontend la formatea en UTC.</summary>
         public decimal Value { get; set; }
     }
 }

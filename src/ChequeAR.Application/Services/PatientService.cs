@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
@@ -19,7 +20,7 @@ namespace ChequeAR.Application.Services
     /// reales de la base propia, no de demostración.
     ///
     /// Las fichas se filtran por las especialidades de quien consulta (ISpecialtyGuard).
-    public class PatientService
+    public class PatientService : IPatientDemographicsSource
     {
         private const string PatientView = "VW_PACIENTE";
 
@@ -83,6 +84,42 @@ namespace ChequeAR.Application.Services
             var responses = await _qrRepo.SearchAsync(hospitalId, null, null, 0, 50, _guard.Scope);
             if (responses.Count == 0) return null;
             return await BuildHitAsync(hospitalId, responses);
+        }
+
+        /// <summary>
+        /// Sólo el hospital, sin caer a las fichas propias: ahí el nombre puede ser la HC, y
+        /// embeberlo como paciente sería inventarlo.
+        /// </summary>
+        public async Task<PatientDemographicsDto> TryGetAsync(string hospitalId)
+        {
+            if (string.IsNullOrWhiteSpace(hospitalId)) return null;
+            try
+            {
+                var rows = await _oracle.QueryAsync(PatientView,
+                    new Dictionary<string, object> { { "ID_PACIENTE", hospitalId } });
+                if (rows.Count == 0) return null;
+                var row = rows[0];
+                var hit = MapRow(row, hospitalId);
+                if (string.IsNullOrWhiteSpace(hit.FullName)) return null;
+                return new PatientDemographicsDto
+                {
+                    FullName = hit.FullName,
+                    Gender = row.TryGetValue("SEXO", out var sexo) ? Gender(sexo?.ToString()) : null,
+                    BirthDate = row.TryGetValue("FECHA_NACIMIENTO", out var fn) && fn is DateTime dob ? dob : (DateTime?)null
+                };
+            }
+            catch { return null; /* hospital no disponible */ }
+        }
+
+        private static string Gender(string sexo)
+        {
+            switch ((sexo ?? "").Trim().ToUpperInvariant())
+            {
+                case "M": return "male";
+                case "F": return "female";
+                case "O": return "other";
+                default: return null;
+            }
         }
 
         public async Task<IReadOnlyList<QuestionnaireResponse>> GetEncountersAsync(string hospitalId, int take = 50)

@@ -56,10 +56,10 @@ namespace ChequeAR.Application.Reports
         }
 
         /// <summary>
-        /// Diccionario para volver de lo guardado en la respuesta a algo legible. Hace falta
-        /// porque no todas las respuestas guardan lo mismo: el editor manda code = value =
-        /// display (el texto), pero datos cargados por otras vías guardaron el código, así
-        /// que la misma categoría aparece con dos etiquetas y la distribución se parte en dos.
+        /// Diccionario para volver de lo guardado en la respuesta a algo legible. Las fichas
+        /// guardan el código de la opción, pero las anteriores al cambio guardaron el texto
+        /// visible (la etiqueta o, en versiones viejas, el término SNOMED), y sin mapear los
+        /// dos la misma categoría aparece con dos etiquetas y la distribución se parte en dos.
         ///
         /// Un código ambiguo —dos opciones distintas que comparten código— se deja afuera a
         /// propósito: mapearlo a cualquiera de las dos etiquetas sería inventar la mitad de
@@ -75,7 +75,7 @@ namespace ChequeAR.Application.Reports
                 var display = opt.Display ?? opt.Value ?? opt.Code;
                 if (string.IsNullOrWhiteSpace(display)) continue;
 
-                foreach (var clave in new[] { opt.Code, opt.Value, opt.Display })
+                foreach (var clave in new[] { opt.Code, opt.Value, opt.Display, opt.SnomedDisplay })
                 {
                     if (string.IsNullOrWhiteSpace(clave)) continue;
                     if (map.TryGetValue(clave, out var previo) && previo != display) ambiguos.Add(clave);

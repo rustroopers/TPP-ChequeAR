@@ -219,6 +219,7 @@ namespace ChequeAR.Api.App_Start
             container.Register<ReportExecutor>();
             container.Register<PatientTrendService>();
             container.Register<PatientService>();
+            container.Register<IPatientDemographicsSource, PatientService>();
             container.Register<AttachmentService>();
 
             // ===== Controllers =====

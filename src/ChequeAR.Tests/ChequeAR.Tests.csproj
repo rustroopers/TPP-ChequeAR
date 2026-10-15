@@ -36,6 +36,8 @@
     <PackageReference Include="coverlet.msbuild" Version="6.0.4" />
     <!-- Para assertear sobre POCOs de Firely en vez de sobre JSON crudo. -->
     <PackageReference Include="Hl7.Fhir.R5" Version="5.13.4" />
+    <!-- Ejecuta el enable-when.js del renderer para compararlo con EnableWhenEvaluator. -->
+    <PackageReference Include="Jint" Version="3.1.6" />
   </ItemGroup>
 
   <!--

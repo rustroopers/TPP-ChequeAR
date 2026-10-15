@@ -50,7 +50,10 @@ namespace ChequeAR.Application.Reports
                     LinkId = col.Key,
                     Text = col.Value,
                     Type = tipo.ToString(),
-                    Answered = filas.Select(f => Convert.ToString(Get(f, "ResponseId"), CultureInfo.InvariantCulture))
+                    // El renderer guarda una fila vacía por cada pregunta sin responder u oculta:
+                    // una fila sin valor no es una respuesta.
+                    Answered = filas.Where(TieneValor)
+                                    .Select(f => Convert.ToString(Get(f, "ResponseId"), CultureInfo.InvariantCulture))
                                     .Where(id => !string.IsNullOrEmpty(id))
                                     .Distinct().Count()
                 };
@@ -67,6 +70,12 @@ namespace ChequeAR.Application.Reports
 
             return stats;
         }
+
+        private static readonly string[] ColumnasDeValor =
+            { "ValueDecimal", "ValueInteger", "ValueString", "ValueDate", "ValueBoolean", "ValueCode" };
+
+        private static bool TieneValor(Dictionary<string, object> fila) =>
+            ColumnasDeValor.Any(c => Get(fila, c) is object v && !(v is DBNull) && !(v is string s && s.Length == 0));
 
         private static bool EsNumerica(QuestionType t) =>
             t == QuestionType.Integer || t == QuestionType.Decimal || t == QuestionType.Scale;

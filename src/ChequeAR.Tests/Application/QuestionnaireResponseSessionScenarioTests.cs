@@ -29,7 +29,7 @@ namespace ChequeAR.Tests.Application
             "{\"resourceType\":\"Questionnaire\",\"item\":[" +
             "{\"linkId\":\"peso\",\"text\":\"Peso (kg)\",\"type\":\"decimal\"}," +
             "{\"linkId\":\"presion\",\"text\":\"Presión arterial\",\"type\":\"string\"}," +
-            "{\"linkId\":\"sintomas\",\"text\":\"Síntomas\",\"type\":\"coding\",\"repeats\":true}," +
+            "{\"linkId\":\"sintomas\",\"text\":\"Síntomas\",\"type\":\"coding\",\"repeats\":true,\"answerOption\":[{\"valueCoding\":{\"code\":\"Dolor\"}},{\"valueCoding\":{\"code\":\"Fatiga\"}},{\"valueCoding\":{\"code\":\"Fiebre\"}}]}," +
             "{\"linkId\":\"estudio\",\"text\":\"Estudio adjunto\",\"type\":\"attachment\"}]}";
 
         private readonly InMemoryResponseRepository _repo = new InMemoryResponseRepository();

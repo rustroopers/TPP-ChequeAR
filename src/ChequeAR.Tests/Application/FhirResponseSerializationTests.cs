@@ -3,6 +3,7 @@ using System.Linq;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -49,6 +50,7 @@ namespace ChequeAR.Tests.Application
         [InlineData("valueBoolean")]
         [InlineData("valueInteger")]
         [InlineData("valueDecimal")]
+        [InlineData("valueDate")]
         [InlineData("valueDateTime")]
         [InlineData("valueCoding")]
         [InlineData("valueString")]
@@ -57,7 +59,8 @@ namespace ChequeAR.Tests.Application
             var item = esperado == "valueBoolean" ? new QuestionnaireResponseItem { LinkId = "x", ValueBoolean = true }
                      : esperado == "valueInteger" ? new QuestionnaireResponseItem { LinkId = "x", ValueInteger = 7 }
                      : esperado == "valueDecimal" ? new QuestionnaireResponseItem { LinkId = "x", ValueDecimal = 3.5m }
-                     : esperado == "valueDateTime" ? new QuestionnaireResponseItem { LinkId = "x", ValueDate = new DateTime(2026, 3, 1) }
+                     : esperado == "valueDate" ? new QuestionnaireResponseItem { LinkId = "x", ValueDate = new DateTime(2026, 3, 1) }
+                     : esperado == "valueDateTime" ? new QuestionnaireResponseItem { LinkId = "x", ValueDate = new DateTime(2026, 3, 1, 10, 30, 0) }
                      : esperado == "valueCoding" ? new QuestionnaireResponseItem { LinkId = "x", ValueCode = "si" }
                      : new QuestionnaireResponseItem { LinkId = "x", ValueString = "texto" };
 
@@ -171,6 +174,7 @@ namespace ChequeAR.Tests.Application
                 {
                     new RenderableGroup
                     {
+                        Synthetic = true,
                         Questions = { new RenderableQuestion { LinkId = "peso", Text = "Peso al nacer (kg)" } }
                     }
                 }
@@ -180,6 +184,79 @@ namespace ChequeAR.Tests.Application
                 Respuesta(new QuestionnaireResponseItem { LinkId = "peso", ValueDecimal = 3.2m }), anclada));
 
             Assert.Equal("Peso al nacer (kg)", (string)((JArray)json["item"])[0]["text"]);
+        }
+
+        private static RenderableQuestionnaire ConSecciones() => new RenderableQuestionnaire
+        {
+            Groups =
+            {
+                new RenderableGroup
+                {
+                    LinkId = "vitales", Title = "Signos vitales",
+                    Questions =
+                    {
+                        new RenderableQuestion { LinkId = "dolor", Type = "scale" },
+                        new RenderableQuestion { LinkId = "inicio", Type = "date" },
+                        new RenderableQuestion { LinkId = "control", Type = "dateTime" }
+                    }
+                },
+                new RenderableGroup { LinkId = "vacia", Title = "Sin respuestas", Questions = { new RenderableQuestion { LinkId = "nada" } } },
+                new RenderableGroup { Synthetic = true, LinkId = "sin-grupo", Questions = { new RenderableQuestion { LinkId = "obs", Type = "text" } } }
+            }
+        };
+
+        // R5: los ítems de la ficha siguen la estructura del Questionnaire.
+        [Fact]
+        public void LasPreguntasVanDentroDeSuSeccion()
+        {
+            var json = JObject.Parse(FhirQuestionnaireResponseBuilder.Build(Respuesta(
+                new QuestionnaireResponseItem { LinkId = "obs", ValueString = "x" },
+                new QuestionnaireResponseItem { LinkId = "dolor", ValueDecimal = 4 },
+                new QuestionnaireResponseItem { LinkId = "retirada", ValueString = "y" }), ConSecciones()));
+
+            var items = (JArray)json["item"];
+            Assert.Equal(new[] { "vitales", "obs", "retirada" }, items.Select(i => (string)i["linkId"]));
+            Assert.Equal("Signos vitales", (string)items[0]["text"]);
+            Assert.Equal("dolor", (string)items[0]["item"][0]["linkId"]);
+        }
+
+        [Fact]
+        public void ElTipoDeLaPreguntaDecideElAnswer()
+        {
+            var json = JsonConvert.DeserializeObject<JObject>(FhirQuestionnaireResponseBuilder.Build(Respuesta(
+                new QuestionnaireResponseItem { LinkId = "dolor", ValueDecimal = 4 },
+                new QuestionnaireResponseItem { LinkId = "inicio", ValueDate = new DateTime(2024, 5, 1) },
+                new QuestionnaireResponseItem { LinkId = "control", ValueDate = new DateTime(2024, 5, 1, 10, 30, 0) }), ConSecciones()),
+                new JsonSerializerSettings { DateParseHandling = DateParseHandling.None });
+
+            var seccion = json["item"][0]["item"];
+            Assert.Equal(4, (int)seccion[0]["answer"][0]["valueInteger"]);
+            Assert.Equal("2024-05-01", (string)seccion[1]["answer"][0]["valueDate"]);
+            Assert.Equal("2024-05-01T10:30:00-03:00", (string)seccion[2]["answer"][0]["valueDateTime"]);
+        }
+
+        [Fact]
+        public void DeclaraElPerfil()
+        {
+            var json = Serializar(Respuesta(new QuestionnaireResponseItem { LinkId = "x", ValueString = "y" }));
+
+            Assert.Equal(FhirQuestionnaireResponseBuilder.ProfileUrl, (string)json["meta"]["profile"][0]);
+        }
+
+        [Fact]
+        public void Parser_LeeLasPreguntasAnidadas()
+        {
+            var original = Respuesta(
+                new QuestionnaireResponseItem { LinkId = "dolor", ValueDecimal = 4 },
+                new QuestionnaireResponseItem { LinkId = "control", ValueDate = new DateTime(2024, 5, 1, 10, 30, 0) },
+                new QuestionnaireResponseItem { LinkId = "obs", ValueString = "x" });
+            var recurso = FhirQuestionnaireResponseBuilder.ToResource(original, ConSecciones());
+
+            var leido = FhirQuestionnaireResponseParser.ToDomain(recurso).Items.ToList();
+
+            Assert.Equal(new[] { "dolor", "control", "obs" }, leido.Select(i => i.LinkId));
+            Assert.Equal(4, leido[0].ValueInteger);
+            Assert.Equal(new DateTime(2024, 5, 1, 10, 30, 0), leido[1].ValueDate);
         }
 
         // ---- helpers ----

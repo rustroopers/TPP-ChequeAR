@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Reports;
 using Oracle.ManagedDataAccess.Client;
 
 namespace ChequeAR.Infrastructure.Oracle
@@ -15,9 +16,9 @@ namespace ChequeAR.Infrastructure.Oracle
     /// Lee los puntos de evolución de un paciente desde la vista analítica `vw_FlatResponses`.
     ///
     /// Se usa la MISMA vista que el módulo de Reportes (formato largo: una fila por
-    /// ficha+pregunta) porque ya expone las columnas que hacen falta —AuthoredAt, LinkId y las
+    /// ficha+pregunta) porque ya expone las columnas que hacen falta —CompletedAt, LinkId y las
     /// columnas de valor— sin tocar el esquema. Un detalle clave: la vista filtra
-    /// `WHERE qr."Status" = 1` en su propia definición, así que "solo fichas finalizadas"
+    /// `WHERE qr."Status" IN (1, 2)` en su propia definición, así que "solo fichas finalizadas"
     /// (FR-007) ya viene garantizado por la fuente, no hace falta repetir el filtro acá.
     ///
     /// A diferencia de los reportes, el filtro de esta consulta es fijo (paciente + cuestionario
@@ -58,7 +59,8 @@ namespace ChequeAR.Infrastructure.Oracle
                 StringComparer.Ordinal);
 
             var sql = new StringBuilder();
-            sql.AppendLine("SELECT v.\"ResponseId\", v.\"AuthoredAt\", v.\"LinkId\",");
+            // Fecha de finalización (FR-008); AuthoredAt sólo por si faltara.
+            sql.AppendLine("SELECT v.\"ResponseId\", COALESCE(v.\"CompletedAt\", v.\"AuthoredAt\") AS \"CompletedAt\", v.\"LinkId\",");
             sql.AppendLine("       v.\"ValueDecimal\", v.\"ValueInteger\", v.\"ValueDate\"");
             sql.AppendLine("FROM \"vw_FlatResponses\" v");
             sql.AppendLine("WHERE v.\"PatientHospitalId\" = :PatientHospitalId");
@@ -71,7 +73,7 @@ namespace ChequeAR.Infrastructure.Oracle
             }
             sql.AppendLine(")");
             // Orden estable y cronológico por serie: FR-008 exige los puntos en orden de fecha.
-            sql.AppendLine("ORDER BY v.\"LinkId\", v.\"AuthoredAt\"");
+            sql.AppendLine("ORDER BY v.\"LinkId\", 2");
 
             using (var conn = new OracleConnection(_connectionString))
             {
@@ -89,7 +91,7 @@ namespace ChequeAR.Infrastructure.Oracle
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
                         var oResponseId = reader.GetOrdinal("ResponseId");
-                        var oAuthoredAt = reader.GetOrdinal("AuthoredAt");
+                        var oCompletedAt = reader.GetOrdinal("CompletedAt");
                         var oLinkId = reader.GetOrdinal("LinkId");
                         var oDecimal = reader.GetOrdinal("ValueDecimal");
                         var oInteger = reader.GetOrdinal("ValueInteger");
@@ -106,7 +108,7 @@ namespace ChequeAR.Infrastructure.Oracle
                             serie.Points.Add(new TrendPointDto
                             {
                                 ResponseId = ToGuid(reader.GetValue(oResponseId)),
-                                AuthoredAt = reader.GetDateTime(oAuthoredAt),
+                                Date = ArgentinaClock.FromUtc(reader.GetDateTime(oCompletedAt)).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                                 Value = value.Value
                             });
                         }
@@ -130,7 +132,8 @@ namespace ChequeAR.Infrastructure.Oracle
             if (!reader.IsDBNull(oInteger)) return reader.GetDecimal(oInteger);
             if (!reader.IsDBNull(oDate))
             {
-                var d = DateTime.SpecifyKind(reader.GetDateTime(oDate), DateTimeKind.Utc);
+                // La fecha del calendario, sin hora: el frontend la formatea en UTC.
+                var d = DateTime.SpecifyKind(reader.GetDateTime(oDate).Date, DateTimeKind.Utc);
                 return (decimal)(d - Epoch).TotalMilliseconds;
             }
             return null;

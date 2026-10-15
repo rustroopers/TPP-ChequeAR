@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Application.Services
@@ -20,14 +21,15 @@ namespace ChequeAR.Application.Services
         private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
 
         /// <summary>Las respuestas de una pregunta (varias si es opción múltiple), separadas por coma.</summary>
-        public static string Format(IEnumerable<QuestionnaireResponseItem> items)
+        /// <param name="question">Si viene, las opciones se muestran con su etiqueta y no con el código.</param>
+        public static string Format(IEnumerable<QuestionnaireResponseItem> items, RenderableQuestion question = null)
         {
             var values = (items ?? Enumerable.Empty<QuestionnaireResponseItem>())
-                .Select(Format).Where(v => v != Empty).ToList();
+                .Select(i => Format(i, question)).Where(v => v != Empty).ToList();
             return values.Count > 0 ? string.Join(", ", values) : Empty;
         }
 
-        public static string Format(QuestionnaireResponseItem item)
+        public static string Format(QuestionnaireResponseItem item, RenderableQuestion question = null)
         {
             if (item == null) return Empty;
             if (item.ValueBoolean.HasValue) return item.ValueBoolean.Value ? "Sí" : "No";
@@ -35,7 +37,8 @@ namespace ChequeAR.Application.Services
             if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value.ToString(Culture);
             if (item.ValueDate.HasValue) return item.ValueDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
-            if (!string.IsNullOrEmpty(item.ValueCode)) return item.ValueCode;
+            if (!string.IsNullOrEmpty(item.ValueCode))
+                return question?.FindOption(item.ValueCode)?.Display ?? item.ValueCode;
             return Empty;
         }
     }

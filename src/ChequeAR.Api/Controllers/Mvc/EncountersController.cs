@@ -233,7 +233,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
                     QuestionnaireVersion = q?.FindVersion(qr.QuestionnaireVersionId)?.VersionNumber ?? 0,
                     Author = qr.AuthorUserId,
-                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.LastSavedAt),
+                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.CompletedAt ?? qr.LastSavedAt),
                     IsDiscarded = qr.Status == ResponseStatus.EnteredInError
                 };
 
@@ -261,7 +261,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                             group.Questions.Add(new AnsweredQuestion
                             {
                                 Text = question.Text,
-                                Answer = ResponseAnswerFormatter.Format(items),
+                                Answer = ResponseAnswerFormatter.Format(items, question),
                                 Prefilled = items != null && items.Any(i => i.WasPrefilled),
                                 AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
@@ -275,14 +275,18 @@ namespace ChequeAR.Api.Controllers.Mvc
                     // fuente más fiel que queda son los textos guardados en la propia
                     // respuesta; usar el cuestionario vivo mostraría preguntas que esta
                     // ficha nunca tuvo.
+                    // Las etiquetas de las opciones sí salen de la vigente, que es contra la que
+                    // se pasaron a código estas respuestas.
+                    var vigente = FhirQuestionnaireReader.Read(q?.CurrentVersion()?.FhirJson);
                     var answered = new QuestionGroupAnswered { Title = "Respuestas" };
                     foreach (var entry in TextsFromResponse(qr.FhirJson))
                     {
                         itemsByLink.TryGetValue(entry.Key, out var items);
+                        var question = vigente?.Groups.SelectMany(g => g.Questions).FirstOrDefault(x => x.LinkId == entry.Key);
                         answered.Questions.Add(new AnsweredQuestion
                         {
                             Text = entry.Value,
-                            Answer = ResponseAnswerFormatter.Format(items),
+                            Answer = ResponseAnswerFormatter.Format(items, question),
                             Prefilled = items != null && items.Any(i => i.WasPrefilled),
                             AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
@@ -314,11 +318,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (string.IsNullOrWhiteSpace(fhirJson)) return result;
             try
             {
-                var items = Newtonsoft.Json.Linq.JObject.Parse(fhirJson)["item"] as Newtonsoft.Json.Linq.JArray;
-                foreach (var item in items ?? new Newtonsoft.Json.Linq.JArray())
+                var root = Newtonsoft.Json.Linq.JObject.Parse(fhirJson);
+                // Las preguntas pueden venir dentro de una sección (item group).
+                foreach (var item in root.SelectTokens("$..item[*]"))
                 {
                     var linkId = (string)item["linkId"];
-                    if (string.IsNullOrWhiteSpace(linkId)) continue;
+                    if (string.IsNullOrWhiteSpace(linkId) || item["item"] != null) continue;
                     result.Add(new KeyValuePair<string, string>(linkId, (string)item["text"] ?? linkId));
                 }
             }

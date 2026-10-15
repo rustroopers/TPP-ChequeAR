@@ -103,6 +103,27 @@ namespace ChequeAR.Tests.Application
         // Una opcion multiple aporta VARIAS filas con el mismo linkId para la misma ficha.
         // "Respondida" tiene que contarse por ficha distinta, o la completitud pasa el 100%.
         [Fact]
+        public void FilasSinValor_NoCuentanComoRespondidas()
+        {
+            var largo = new ReportResult
+            {
+                Rows = new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object> { ["ResponseId"] = "r1", ["LinkId"] = "peso", ["ValueDecimal"] = 30m },
+                    new Dictionary<string, object> { ["ResponseId"] = "r2", ["LinkId"] = "peso", ["ValueDecimal"] = null },
+                    new Dictionary<string, object> { ["ResponseId"] = "r3", ["LinkId"] = "peso" }
+                }
+            };
+            var q = new Questionnaire { Id = Guid.NewGuid() };
+            q.Questions.Add(new Question { LinkId = "peso", Text = "Peso", Type = QuestionType.Decimal });
+
+            var peso = StatsCalculator.Compute(largo, ReportSchema.From(q), 3).Questions.Single();
+
+            Assert.Equal(1, peso.Answered);
+            Assert.Equal(2, peso.Missing);
+        }
+
+        [Fact]
         public void OpcionMultiple_CompletitudPorFichaNoPorFila()
         {
             var r1 = Guid.NewGuid();

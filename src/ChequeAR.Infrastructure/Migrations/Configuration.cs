@@ -46,6 +46,23 @@ namespace ChequeAR.Infrastructure.Migrations
             SeedSpecialties(context);
             SeedClinicalVariables(context);
             if (DemoUsersEnabled()) SeedDemoUsers(context);
+            BackfillResponses(context);
+        }
+
+        private static void BackfillResponses(ChequeARDbContext context)
+        {
+            // Lo sembrado hasta acá se guarda antes: el backfill descarta lo pendiente si una ficha falla.
+            context.SaveChanges();
+            try
+            {
+                var fichas = ResponseBackfill.Run(context);
+                if (fichas > 0) Trace.TraceInformation("Fichas puestas al día: " + fichas + ".");
+            }
+            catch (Exception ex)
+            {
+                // No frena el arranque: el servicio normaliza cada ficha al volver a guardarla.
+                Trace.TraceError("No se pudieron poner al día las fichas: " + ex);
+            }
         }
 
         /// <summary>

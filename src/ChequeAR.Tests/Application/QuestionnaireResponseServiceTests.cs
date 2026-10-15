@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -179,6 +180,7 @@ namespace ChequeAR.Tests.Application
 
             Assert.Null(finalized.LockToken);
             Assert.Null(finalized.LockedByUserId);
+            Assert.NotNull(finalized.CompletedAt);
         }
 
         private const string ConObligatoria =
@@ -248,6 +250,83 @@ namespace ChequeAR.Tests.Application
 
             _qRepo.Verify(r => r.GetAsync(It.IsAny<Guid>()), Times.Never);
             Assert.Equal("Edad", (string)JObject.Parse(response.FhirJson).SelectToken("item[0].text"));
+        }
+
+        // El recurso de una ficha en curso tiene que seguir anclado a su versión.
+        [Fact]
+        public async Task SaveProgressAsync_ElRecursoConservaLaVersionAnclada()
+        {
+            var (id, lockToken, response) = FichaConLock(ConObligatoria);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = ConObligatoria });
+
+            await _sut.SaveProgressAsync(id, "u", lockToken, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 7 } });
+
+            Assert.Equal(versionId, ChequeARExtensions.GetQuestionnaireVersionId(FhirResourceReader.ReadResponse(response.FhirJson)));
+        }
+
+        // Una pestaña abierta con el renderer anterior todavía manda el texto de la opción.
+        [Fact]
+        public async Task SaveProgressAsync_OpcionConElTexto_GuardaElCodigo()
+        {
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "T" };
+            q.Questions.Add(new Question
+            {
+                LinkId = "fiebre", Text = "Fiebre", Type = QuestionType.Choice,
+                Options = { new AnswerOption { Value = "si", Display = "Sí", Code = "373066001", SnomedCode = "373066001" } }
+            });
+            var json = FhirQuestionnaireBuilder.Build(q, 1);
+            var (id, lockToken, response) = FichaConLock(json);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = json });
+            var item = new QuestionnaireResponseItem { LinkId = "fiebre", ValueCode = "Sí" };
+
+            await _sut.SaveProgressAsync(id, "u", lockToken, null, new List<QuestionnaireResponseItem> { item });
+
+            Assert.Equal("373066001", item.ValueCode);
+            Assert.Equal("373066001", (string)JObject.Parse(response.FhirJson).SelectToken("item[0].answer[0].valueCoding.code"));
+        }
+
+        // Lo que el renderer no deja cargar tampoco entra por una llamada directa a $finalize.
+        [Fact]
+        public async Task FinalizeAsync_ValorFueraDeRango_422YSigueEnCurso()
+        {
+            const string json =
+                "{\"resourceType\":\"Questionnaire\",\"item\":[{\"linkId\":\"edad\",\"text\":\"Edad\",\"type\":\"integer\"," +
+                "\"extension\":[{\"url\":\"http://hl7.org/fhir/StructureDefinition/maxValue\",\"valueInteger\":18}]}]}";
+            var (id, lockToken, response) = FichaConLock(json);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            response.Items.Add(new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 40 });
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = json });
+
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.FinalizeAsync(id, "u", lockToken));
+
+            Assert.Contains("18", ex.Errors.Single());
+            Assert.Equal(ResponseStatus.InProgress, response.Status);
+            Assert.Null(response.CompletedAt);
+            _repo.Verify(r => r.UpdateAsync(It.IsAny<QuestionnaireResponse>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task SaveProgressAsync_OpcionInexistente_422SinGuardar()
+        {
+            var (id, lockToken, response) = FichaConLock(DefaultStructure);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = DefaultStructure });
+
+            await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.SaveProgressAsync(id, "u", lockToken, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "sintomas", ValueCode = "Inventado" } }));
+
+            _repo.Verify(r => r.SaveProgressAsync(It.IsAny<QuestionnaireResponse>(), It.IsAny<ICollection<QuestionnaireResponseItem>>()), Times.Never);
         }
 
         private (Guid id, Guid lockToken, QuestionnaireResponse response) FichaConLock(string questionnaireJson)
@@ -487,6 +566,47 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("contained[0].name[0].text"));
             Assert.Equal("2016-03-12", (string)fhir.SelectToken("contained[0].birthDate"));
             Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("subject.display"));
+        }
+
+        // El renderer no manda el paciente: lo pone el servidor con lo que dice el hospital.
+        [Fact]
+        public async Task CreateAsync_EmbebeElPacienteDelHospital()
+        {
+            var questionnaireId = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+            var hospital = new Mock<IPatientDemographicsSource>();
+            hospital.Setup(h => h.TryGetAsync("458821")).ReturnsAsync(new PatientDemographicsDto
+            {
+                FullName = "Gómez, Martina", Gender = "female", BirthDate = new DateTime(2016, 3, 12)
+            });
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
+                TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object, hospital.Object);
+
+            var parsed = FhirQuestionnaireResponseParser.ToDomain(new Hl7.Fhir.Model.QuestionnaireResponse
+            {
+                Questionnaire = "https://chequear.garrahan/Questionnaire/" + questionnaireId,
+                Subject = new Hl7.Fhir.Model.ResourceReference { Identifier = new Hl7.Fhir.Model.Identifier("x", "458821") }
+            });
+            var created = await sut.CreateAsync(parsed, "u");
+
+            var fhir = JObject.Parse(created.FhirJson);
+            Assert.Equal("Gómez, Martina", (string)fhir.SelectToken("contained[0].name[0].text"));
+            Assert.Equal("female", (string)fhir.SelectToken("contained[0].gender"));
+        }
+
+        [Fact]
+        public async Task CreateAsync_HospitalCaido_NoInventaPaciente()
+        {
+            var questionnaireId = Guid.NewGuid();
+            _qRepo.Setup(r => r.GetAsync(questionnaireId)).ReturnsAsync(Published(questionnaireId));
+            var hospital = new Mock<IPatientDemographicsSource>();
+            hospital.Setup(h => h.TryGetAsync(It.IsAny<string>())).ReturnsAsync((PatientDemographicsDto)null);
+            var sut = new QuestionnaireResponseService(_repo.Object, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
+                TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object, hospital.Object);
+
+            var created = await sut.CreateAsync(new QuestionnaireResponse { QuestionnaireId = questionnaireId, PatientHospitalId = "458821" }, "u");
+
+            Assert.Null(JObject.Parse(created.FhirJson)["contained"]);
         }
 
         // Sin datos de paciente NO se inventa un Patient contenido. El recurso escribe la HC
@@ -1188,6 +1308,12 @@ namespace ChequeAR.Tests.Application
         }
 
         /// Cuestionario activo con una version publicada, que es lo minimo para responderlo.
+        private const string DefaultStructure =
+            "{\"resourceType\":\"Questionnaire\",\"item\":[" +
+            "{\"linkId\":\"a\",\"type\":\"string\"},{\"linkId\":\"b\",\"type\":\"string\"}," +
+            "{\"linkId\":\"peso\",\"type\":\"decimal\"},{\"linkId\":\"presion\",\"type\":\"string\"}," +
+            "{\"linkId\":\"sintomas\",\"type\":\"coding\",\"repeats\":true,\"answerOption\":[{\"valueCoding\":{\"code\":\"Dolor\"}},{\"valueCoding\":{\"code\":\"Fatiga\"}},{\"valueCoding\":{\"code\":\"Fiebre\"}}]}]}";
+
         private static Questionnaire Published(Guid id, string fhirJson = null, Guid? versionId = null)
         {
             var vid = versionId ?? Guid.NewGuid();
@@ -1196,7 +1322,7 @@ namespace ChequeAR.Tests.Application
             {
                 Id = vid,
                 VersionNumber = 1,
-                FhirJson = fhirJson ?? "{\"resourceType\":\"Questionnaire\",\"item\":[]}"
+                FhirJson = fhirJson ?? DefaultStructure
             });
             return q;
         }

@@ -307,10 +307,34 @@ namespace ChequeAR.Application.Fhir
                     var opcion = FindOption(source, Convert.ToString(value, CultureInfo.InvariantCulture));
                     return opcion == null ? null : OptionCoding(opcion);
 
+                case QuestionType.Date:
+                    var fecha = ParseConditionDate(value);
+                    return fecha.HasValue ? new Date(fecha.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) : null;
+
+                // Hora de Argentina, que no tiene horario de verano: R5 exige zona si hay hora.
+                case QuestionType.DateTime:
+                    var momento = ParseConditionDate(value);
+                    return momento.HasValue
+                        ? new FhirDateTime(momento.Value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture) + "-03:00")
+                        : null;
+
                 default:
                     var texto = Convert.ToString(value, CultureInfo.InvariantCulture);
                     return string.IsNullOrEmpty(texto) ? null : new FhirString(texto);
             }
+        }
+
+        private static readonly string[] ConditionDateFormats =
+            { "yyyy-MM-dd", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss", "dd/MM/yyyy", "dd/MM/yyyy HH:mm" };
+
+        private static DateTime? ParseConditionDate(object value)
+        {
+            if (value is DateTime dt) return dt;
+            var texto = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim();
+            if (string.IsNullOrEmpty(texto)) return null;
+            var local = FhirQuestionnaireReader.LocalDateTime(texto);
+            return DateTime.TryParseExact(local, ConditionDateFormats, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var parsed) ? parsed : (DateTime?)null;
         }
 
         /// <summary>
