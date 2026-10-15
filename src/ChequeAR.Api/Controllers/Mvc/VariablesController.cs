@@ -114,9 +114,10 @@ namespace ChequeAR.Api.Controllers.Mvc
         [HttpPost, ValidateAntiForgeryToken]
         public async Task<ActionResult> Save(VariableFormViewModel model)
         {
+            ClinicalVariableDto dto = null;
             try
             {
-                var dto = JsonConvert.DeserializeObject<ClinicalVariableDto>(model.PayloadJson ?? "");
+                dto = JsonConvert.DeserializeObject<ClinicalVariableDto>(model.PayloadJson ?? "");
                 if (dto == null)
                 {
                     TempData["Toast"] = "No se recibió ninguna variable para guardar.";
@@ -144,7 +145,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // Una regla por línea: el admin ve todo lo que tiene que corregir de una.
                 TempData["Toast"] = string.Join(" ", ex.Errors);
                 TempData["ToastLevel"] = "error";
-                return RedirectToAction("Details", new { id = model.Id });
+                return await RedisplayAsync(model, dto);
             }
             catch (JsonException)
             {
@@ -161,6 +162,33 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
 
             return RedirectToAction("Index");
+        }
+
+        /// <summary>Re-muestra lo enviado; id, estado y revisión no vienen en el payload.</summary>
+        private async Task<ActionResult> RedisplayAsync(VariableFormViewModel model, ClinicalVariableDto enviado)
+        {
+            if (enviado == null) return RedirectToAction("Details", new { id = model.Id });
+
+            if (model.Id.HasValue)
+            {
+                var guardada = await _variables.GetAsync(model.Id.Value);
+                if (guardada == null) return HttpNotFound();
+                var original = ClinicalVariableDtoMap.ToDto(guardada);
+                enviado.Id = original.Id;
+                enviado.IsActive = original.IsActive;
+                enviado.Revision = original.Revision;
+                enviado.UpdatedAt = original.UpdatedAt;
+            }
+            else
+            {
+                enviado.Id = Guid.Empty;
+                enviado.IsActive = true;
+            }
+
+            ViewBag.Title = model.Id.HasValue ? "Editar variable" : "Nueva variable";
+            ViewBag.PageId = "variables";
+            ViewBag.VariableProps = JsonConvert.SerializeObject(enviado, CamelCase);
+            return View("Details", new VariableFormViewModel { Id = model.Id });
         }
 
         /// <summary>

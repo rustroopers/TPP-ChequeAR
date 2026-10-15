@@ -57,7 +57,8 @@
             options: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
-            var esNueva = !props.id;
+            // En un alta el DTO trae Guid.Empty, que llega como string no vacío.
+            var esNueva = !props.id || /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(props.id);
 
             var model = Vue.reactive({
                 code: props.code || '',
