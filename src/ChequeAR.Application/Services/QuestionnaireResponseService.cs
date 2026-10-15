@@ -192,6 +192,7 @@ namespace ChequeAR.Application.Services
             // la ficha (lo lee PatientService en modo degradado).
             var structure = FhirQuestionnaireReader.Read(pinned.FhirJson);
             OptionCodes.Normalize(structure, r.Items);
+            ResponseValidator.NormalizeColumns(structure, r.Items);
             EnsureValid(structure, r.Items, complete: false);
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
                 r, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
@@ -222,6 +223,7 @@ namespace ChequeAR.Application.Services
             r.Status = ResponseStatus.Completed;
             var structure = await PinnedStructureAsync(r);
             OptionCodes.Normalize(structure, r.Items);
+            ResponseValidator.NormalizeColumns(structure, r.Items);
 
             // Una respuesta cargada cuando la pregunta estaba visible no puede quedar en la ficha
             // finalizada si la condición dejó de cumplirse (FHIR: un ítem deshabilitado no tiene
@@ -396,6 +398,7 @@ namespace ChequeAR.Application.Services
             var answered = AnsweredValues(r.Items, pinnedStructure);
             var pinnedTexts = FlattenTexts(pinnedStructure);
             var orphans = new HashSet<string>(CarryOptions(pinnedStructure, currentStructure, r.Items));
+            ResponseValidator.NormalizeColumns(currentStructure, r.Items);
             foreach (var ans in answered)
             {
                 if (currentLinkIds.Contains(ans.Key) && !orphans.Contains(ans.Key)) continue;
@@ -413,16 +416,7 @@ namespace ChequeAR.Application.Services
             // FhirJson con la estructura nueva y sólo los items que se conservan.
             var keptItems = (r.Items ?? new List<QuestionnaireResponseItem>())
                 .Where(i => currentLinkIds.Contains(i.LinkId)).ToList();
-            var mergedForFhir = new QuestionnaireResponse
-            {
-                Id = r.Id,
-                QuestionnaireId = r.QuestionnaireId,
-                Status = r.Status,
-                AuthoredAt = r.AuthoredAt,
-                PatientHospitalId = r.PatientHospitalId,
-                AuthorUserId = r.AuthorUserId,
-                Items = keptItems
-            };
+            var mergedForFhir = WithItems(r, keptItems, current.Id);
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(mergedForFhir, currentStructure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
             r.QuestionnaireVersionId = current.Id;
             r.LastSavedAt = now;
@@ -581,17 +575,9 @@ namespace ChequeAR.Application.Services
                 .Where(i => !touchedLinkIds.Contains(i.LinkId)).ToList();
             var structure = await PinnedStructureAsync(r);
             OptionCodes.Normalize(structure, incoming);
+            ResponseValidator.NormalizeColumns(structure, incoming);
             EnsureValid(structure, incoming, complete: false);
-            var mergedForFhir = new QuestionnaireResponse
-            {
-                Id = r.Id,
-                QuestionnaireId = r.QuestionnaireId,
-                Status = r.Status,
-                AuthoredAt = r.AuthoredAt,
-                PatientHospitalId = r.PatientHospitalId,
-                AuthorUserId = r.AuthorUserId,
-                Items = keptItems.Concat(incoming).ToList()
-            };
+            var mergedForFhir = WithItems(r, keptItems.Concat(incoming).ToList(), r.QuestionnaireVersionId);
             r.FhirJson = FhirQuestionnaireResponseBuilder.Build(
                 mergedForFhir, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(r.FhirJson));
 
@@ -605,6 +591,25 @@ namespace ChequeAR.Application.Services
             await _repo.SaveProgressAsync(r, incoming);
             return r;
         }
+
+        /// <summary>
+        /// Copia de la cabecera con otros ítems, para armar el recurso FHIR antes de que el repo
+        /// toque los de la entidad. Lleva la versión anclada: sin ella el recurso sale sin anclaje.
+        /// </summary>
+        private static QuestionnaireResponse WithItems(
+            QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items, Guid versionId)
+            => new QuestionnaireResponse
+            {
+                Id = r.Id,
+                QuestionnaireId = r.QuestionnaireId,
+                QuestionnaireVersionId = versionId,
+                EncounterId = r.EncounterId,
+                Status = r.Status,
+                AuthoredAt = r.AuthoredAt,
+                PatientHospitalId = r.PatientHospitalId,
+                AuthorUserId = r.AuthorUserId,
+                Items = items
+            };
 
         private static void EnsureValid(
             RenderableQuestionnaire structure, IEnumerable<QuestionnaireResponseItem> items, bool complete)

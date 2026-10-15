@@ -19,6 +19,23 @@ namespace ChequeAR.Application.Validation
         // Grupos "(?" que JavaScript no tiene: modificadores en línea, atómicos, comentarios, condicionales.
         private static readonly Regex DotNetOnly = new Regex(@"(?<!\\)\(\?(?![:=!]|<[=!]|<[A-Za-z])", RegexOptions.None, RegexTimeout);
 
+        /// <summary>
+        /// La escala y los decimales se guardan en ValueDecimal, que es donde los buscan los
+        /// reportes; un cliente FHIR manda la escala como integer, que es su tipo en el Questionnaire.
+        /// </summary>
+        public static void NormalizeColumns(RenderableQuestionnaire structure, IEnumerable<QuestionnaireResponseItem> items)
+        {
+            if (structure == null || items == null) return;
+            var decimals = new HashSet<string>(structure.Groups.SelectMany(g => g.Questions)
+                .Where(q => q.LinkId != null && (q.Type == "scale" || q.Type == "decimal")).Select(q => q.LinkId));
+            foreach (var item in items)
+            {
+                if (item?.ValueInteger == null || item.ValueDecimal.HasValue || !decimals.Contains(item.LinkId ?? string.Empty)) continue;
+                item.ValueDecimal = item.ValueInteger;
+                item.ValueInteger = null;
+            }
+        }
+
         /// <param name="complete">
         /// False en el guardado parcial: sólo lo que nunca puede ser válido (pregunta inexistente,
         /// tipo equivocado, opción que no existe). Rango, largo y formato se exigen al finalizar,
@@ -67,10 +84,8 @@ namespace ChequeAR.Application.Validation
 
                 case "decimal":
                 case "scale":
-                    // La escala la guarda el renderer como decimal; un cliente FHIR la manda como integer.
-                    var esEntero = q.Type == "scale" && Only(item, nameof(item.ValueInteger));
-                    if (!esEntero && !Only(item, nameof(item.ValueDecimal))) return WrongType;
-                    var d = esEntero ? item.ValueInteger.Value : item.ValueDecimal.Value;
+                    if (!Only(item, nameof(item.ValueDecimal))) return WrongType;
+                    var d = item.ValueDecimal.Value;
                     if (q.Type == "scale" && d != decimal.Truncate(d)) return "tiene que ser un número entero.";
                     return complete ? Range(q, d) : null;
 

@@ -251,6 +251,22 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Edad", (string)JObject.Parse(response.FhirJson).SelectToken("item[0].text"));
         }
 
+        // El recurso de una ficha en curso tiene que seguir anclado a su versión.
+        [Fact]
+        public async Task SaveProgressAsync_ElRecursoConservaLaVersionAnclada()
+        {
+            var (id, lockToken, response) = FichaConLock(ConObligatoria);
+            var versionId = Guid.NewGuid();
+            response.QuestionnaireVersionId = versionId;
+            _qRepo.Setup(r => r.GetVersionByIdAsync(response.QuestionnaireId, versionId))
+                  .ReturnsAsync(new QuestionnaireVersion { Id = versionId, VersionNumber = 1, FhirJson = ConObligatoria });
+
+            await _sut.SaveProgressAsync(id, "u", lockToken, null,
+                new List<QuestionnaireResponseItem> { new QuestionnaireResponseItem { LinkId = "edad", ValueInteger = 7 } });
+
+            Assert.Equal(versionId, ChequeARExtensions.GetQuestionnaireVersionId(FhirResourceReader.ReadResponse(response.FhirJson)));
+        }
+
         // Una pestaña abierta con el renderer anterior todavía manda el texto de la opción.
         [Fact]
         public async Task SaveProgressAsync_OpcionConElTexto_GuardaElCodigo()

@@ -12,14 +12,16 @@ using ChequeAR.Infrastructure.EF;
 namespace ChequeAR.Infrastructure.Migrations
 {
     /// <summary>
-    /// Pasa al código de la opción las respuestas que guardaron el texto visible, contra la
-    /// versión anclada de cada ficha, y regenera el recurso FHIR de las que cambian. No se
-    /// puede hacer en una migración: hay que leer el JSON de cada versión.
+    /// Pone al día las fichas guardadas antes de dos cambios, contra la versión anclada de cada una:
+    ///  - las respuestas de opción que guardaron el texto visible pasan al código de la opción;
+    ///  - el recurso FHIR guardado con el formato anterior (plano, sin perfil ni tipos de R5) se
+    ///    regenera.
+    /// No se puede hacer en una migración: hay que leer el JSON de cada versión.
     ///
-    /// Corre desde el Seed en cada arranque. Es idempotente: un código no se vuelve a mapear,
-    /// así que una vez migrado no toca nada.
+    /// Corre desde el Seed en cada arranque. Es idempotente: un código no se vuelve a mapear y un
+    /// recurso regenerado ya declara el perfil, así que una vez migrado no toca nada.
     /// </summary>
-    internal static class OptionCodeBackfill
+    internal static class ResponseBackfill
     {
         public static int Run(ChequeARDbContext context)
         {
@@ -29,7 +31,11 @@ namespace ChequeAR.Infrastructure.Migrations
                         join r in context.QuestionnaireResponses on i.ResponseId equals r.Id
                         select new { i.ResponseId, i.LinkId, i.ValueCode, r.QuestionnaireId, r.QuestionnaireVersionId })
                 .AsNoTracking().ToList();
-            if (rows.Count == 0) return 0;
+
+            var formatoViejo = context.QuestionnaireResponses.AsNoTracking()
+                .Where(r => r.FhirJson != null && !r.FhirJson.Contains(FhirQuestionnaireResponseBuilder.ProfileUrl))
+                .Select(r => r.Id).ToList();
+            if (rows.Count == 0 && formatoViejo.Count == 0) return 0;
 
             var cache = new Dictionary<Guid, Versions>();
             RenderableQuestionnaire StructureOf(Guid questionnaireId, Guid versionId)
@@ -47,20 +53,24 @@ namespace ChequeAR.Infrastructure.Migrations
                     var option = question?.FindOption(x.ValueCode);
                     return option != null && option.Code != x.ValueCode;
                 })
-                .Select(x => x.ResponseId).Distinct().ToList();
+                .Select(x => x.ResponseId).ToList();
+            var pendientes = stale.Concat(formatoViejo).Distinct().ToList();
+            var regenerar = new HashSet<Guid>(formatoViejo);
 
             var migradas = 0;
-            foreach (var id in stale)
+            foreach (var id in pendientes)
             {
                 // Una ficha que falla no frena a las demás.
                 try
                 {
                     var response = context.QuestionnaireResponses.Include(r => r.Items).Single(r => r.Id == id);
                     var structure = StructureOf(response.QuestionnaireId, response.QuestionnaireVersionId);
-                    if (OptionCodes.Normalize(structure, response.Items) == 0) continue;
+                    var cambiaron = OptionCodes.Normalize(structure, response.Items) > 0;
+                    if (!cambiaron && !regenerar.Contains(id)) continue;
                     response.FhirJson = FhirQuestionnaireResponseBuilder.Build(
                         response, structure, FhirQuestionnaireResponseBuilder.ContainedPatient(response.FhirJson));
-                    if (response.Status != ResponseStatus.InProgress)
+                    // Sólo se audita si cambió un dato; regenerar el formato no cambia la ficha.
+                    if (cambiaron && response.Status != ResponseStatus.InProgress)
                         context.AuditEvents.Add(AuditEventBuilder.For(
                             "update", "QuestionnaireResponse/" + id + "$option-codes", "sistema", category: "system"));
                     context.SaveChanges();
@@ -68,7 +78,7 @@ namespace ChequeAR.Infrastructure.Migrations
                 }
                 catch (Exception ex)
                 {
-                    Trace.TraceError("No se pudo pasar a código la ficha " + id + ": " + ex);
+                    Trace.TraceError("No se pudo poner al día la ficha " + id + ": " + ex);
                     foreach (var entry in context.ChangeTracker.Entries().Where(e => e.State != EntityState.Unchanged).ToList())
                         entry.State = EntityState.Detached;
                 }

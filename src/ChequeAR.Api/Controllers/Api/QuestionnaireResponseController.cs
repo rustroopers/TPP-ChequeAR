@@ -93,7 +93,8 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var almacenado = FhirResourceReader.ReadResponse(r.FhirJson);
             var resource = almacenado ?? FhirQuestionnaireResponseBuilder.ToResource(r, null);
-            resource.Meta = new Hl7.Fhir.Model.Meta { VersionId = r.ConcurrencyVersion.ToString() };
+            resource.Meta = resource.Meta ?? new Hl7.Fhir.Model.Meta();
+            resource.Meta.VersionId = r.ConcurrencyVersion.ToString();
             return resource;
         }
 

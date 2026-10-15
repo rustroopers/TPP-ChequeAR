@@ -113,6 +113,7 @@ namespace ChequeAR.Application.Fhir
             {
                 result.Groups.Add(new RenderableGroup
                 {
+                    Synthetic = true,
                     LinkId = "sin-grupo",
                     Title = result.Title ?? "Preguntas",
                     Questions = sueltas
@@ -311,6 +312,8 @@ namespace ChequeAR.Application.Fhir
 
     public class RenderableGroup
     {
+        /// <summary>Agrupa las preguntas sueltas para la pantalla; no existe en el Questionnaire.</summary>
+        public bool Synthetic { get; set; }
         public string LinkId { get; set; }
         public string Title { get; set; }
         public List<RenderableQuestion> Questions { get; set; } = new List<RenderableQuestion>();

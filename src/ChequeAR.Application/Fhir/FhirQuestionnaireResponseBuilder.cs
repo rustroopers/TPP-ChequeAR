@@ -20,6 +20,7 @@ namespace ChequeAR.Application.Fhir
     public static class FhirQuestionnaireResponseBuilder
     {
         public const string PatientIdentifierSystem = "https://chequear.garrahan/patient-hospital-id";
+        public const string ProfileUrl = "https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaireResponse";
         private const string QuestionnaireBaseUrl = "https://chequear.garrahan/Questionnaire/";
 
         public static string Build(
@@ -34,6 +35,7 @@ namespace ChequeAR.Application.Fhir
             var resource = new FhirResponse
             {
                 Id = response.Id.ToString(),
+                Meta = new Meta { Profile = new[] { ProfileUrl } },
                 Questionnaire = QuestionnaireBaseUrl + response.QuestionnaireId,
                 Status = FhirStatus(response.Status),
                 Authored = response.AuthoredAt.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
@@ -116,39 +118,66 @@ namespace ChequeAR.Application.Fhir
             resource.Contained.Add(contained);
         }
 
+        /// <summary>
+        /// Los ítems siguen la estructura de la versión anclada: cada sección es un item group con
+        /// sus preguntas adentro, como pide R5. Las preguntas sueltas van en la raíz, igual que en
+        /// el Questionnaire. Sin estructura, o para un linkId que no está en ella, quedan en la raíz.
+        /// </summary>
         private static List<FhirResponse.ItemComponent> BuildItems(
             DomainResponse response, RenderableQuestionnaire pinnedVersion)
         {
-            // Los textos vienen de la VERSIÓN ANCLADA, no de la entidad viva: si alguien
-            // renombró una pregunta después, la ficha conserva lo que el médico leyó.
-            var questionByLinkId = (pinnedVersion?.Groups ?? new List<RenderableGroup>())
+            var groups = pinnedVersion?.Groups ?? new List<RenderableGroup>();
+            var questionByLinkId = groups
                 .SelectMany(g => g.Questions)
                 .Where(x => !string.IsNullOrWhiteSpace(x.LinkId))
                 .GroupBy(x => x.LinkId)
                 .ToDictionary(g => g.Key, g => g.First());
 
-            var items = new List<FhirResponse.ItemComponent>();
-
             // Un linkId puede repetirse en el dominio (opción múltiple: un registro por
             // opción marcada). En FHIR eso es UN item con varias entradas en answer.
+            var answered = new Dictionary<string, FhirResponse.ItemComponent>();
+            var order = new List<string>();
             foreach (var grupo in (response.Items ?? new List<DomainResponseItem>())
                          .Where(i => !string.IsNullOrWhiteSpace(i.LinkId))
                          .GroupBy(i => i.LinkId))
             {
-                var item = new FhirResponse.ItemComponent { LinkId = grupo.Key };
-
                 questionByLinkId.TryGetValue(grupo.Key, out var question);
+                var item = new FhirResponse.ItemComponent { LinkId = grupo.Key };
+                // Los textos vienen de la VERSIÓN ANCLADA, no de la entidad viva: si alguien
+                // renombró una pregunta después, la ficha conserva lo que el médico leyó.
                 if (!string.IsNullOrWhiteSpace(question?.Text)) item.Text = question.Text;
 
+                // Una pregunta sin responder se serializa SIN answer, no con uno vacío.
                 foreach (var valor in grupo.Select(i => Answer(i, question)).Where(a => a != null))
                     item.Answer.Add(new FhirResponse.AnswerComponent { Value = valor });
 
-                // Una pregunta sin responder se serializa SIN answer, no con uno vacío.
-                items.Add(item);
+                answered[grupo.Key] = item;
+                order.Add(grupo.Key);
             }
+
+            var items = new List<FhirResponse.ItemComponent>();
+            var placed = new HashSet<string>();
+            foreach (var g in groups)
+            {
+                var children = g.Questions
+                    .Where(q => q.LinkId != null && answered.ContainsKey(q.LinkId) && placed.Add(q.LinkId))
+                    .Select(q => answered[q.LinkId]).ToList();
+                if (children.Count == 0) continue;
+                if (g.Synthetic) { items.AddRange(children); continue; }
+
+                var section = new FhirResponse.ItemComponent { LinkId = g.LinkId, Text = g.Title };
+                section.Item.AddRange(children);
+                items.Add(section);
+            }
+            items.AddRange(order.Where(placed.Add).Select(l => answered[l]));
             return items;
         }
 
+        /// <summary>
+        /// El answer[x] lo decide el tipo de la pregunta, no la columna donde quedó el valor: la
+        /// escala se guarda como decimal pero en el Questionnaire es integer, y una fecha sin hora
+        /// es valueDate. Sin pregunta, se usa el tipo que mandó el renderer o, si no, la columna.
+        /// </summary>
         private static DataType Answer(DomainResponseItem item, RenderableQuestion question)
         {
             // El adjunto se guarda por referencia: el archivo ya está subido.
@@ -160,11 +189,34 @@ namespace ChequeAR.Application.Fhir
                     Title = item.ValueString
                 };
             }
+
+            var number = item.ValueDecimal ?? item.ValueInteger;
+            switch (question?.Type ?? item.QuestionType)
+            {
+                case "integer":
+                case "scale":
+                    if (number.HasValue && number.Value == decimal.Truncate(number.Value)
+                        && number.Value <= int.MaxValue && number.Value >= int.MinValue)
+                        return new Integer((int)number.Value);
+                    break;
+                case "decimal":
+                    if (number.HasValue) return new FhirDecimal(number.Value);
+                    break;
+                case "date":
+                    if (item.ValueDate.HasValue) return DateOnly(item.ValueDate.Value);
+                    break;
+                case "dateTime":
+                    if (item.ValueDate.HasValue) return DateTimeArgentina(item.ValueDate.Value);
+                    break;
+            }
+
             if (item.ValueBoolean.HasValue) return new FhirBoolean(item.ValueBoolean.Value);
             if (item.ValueInteger.HasValue) return new Integer(item.ValueInteger.Value);
             if (item.ValueDecimal.HasValue) return new FhirDecimal(item.ValueDecimal.Value);
             if (item.ValueDate.HasValue)
-                return new FhirDateTime(item.ValueDate.Value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
+                return item.ValueDate.Value.TimeOfDay == TimeSpan.Zero
+                    ? (DataType)DateOnly(item.ValueDate.Value)
+                    : DateTimeArgentina(item.ValueDate.Value);
             if (!string.IsNullOrEmpty(item.ValueCode))
             {
                 // Mismo Coding que el answerOption: es lo único que un consumidor puede comparar.
@@ -175,6 +227,20 @@ namespace ChequeAR.Application.Fhir
             }
             if (!string.IsNullOrEmpty(item.ValueString)) return new FhirString(item.ValueString);
             return null;   // sin responder
+        }
+
+        private static Date DateOnly(DateTime value)
+            => new Date(value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+        /// <summary>
+        /// La fecha y hora se guarda como la tipeó el médico, en hora de Argentina (sin horario
+        /// de verano). R5 exige la zona cuando hay hora.
+        /// </summary>
+        private static FhirDateTime DateTimeArgentina(DateTime value)
+        {
+            // Sin Kind es la hora tal como se cargó; con Kind, se convierte.
+            var local = value.Kind == DateTimeKind.Unspecified ? value : value.ToUniversalTime().AddHours(-3);
+            return new FhirDateTime(local.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture) + "-03:00");
         }
 
         private static FhirResponse.QuestionnaireResponseStatus FhirStatus(ResponseStatus status)

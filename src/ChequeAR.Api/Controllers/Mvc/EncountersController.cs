@@ -318,11 +318,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (string.IsNullOrWhiteSpace(fhirJson)) return result;
             try
             {
-                var items = Newtonsoft.Json.Linq.JObject.Parse(fhirJson)["item"] as Newtonsoft.Json.Linq.JArray;
-                foreach (var item in items ?? new Newtonsoft.Json.Linq.JArray())
+                var root = Newtonsoft.Json.Linq.JObject.Parse(fhirJson);
+                // Las preguntas pueden venir dentro de una sección (item group).
+                foreach (var item in root.SelectTokens("$..item[*]"))
                 {
                     var linkId = (string)item["linkId"];
-                    if (string.IsNullOrWhiteSpace(linkId)) continue;
+                    if (string.IsNullOrWhiteSpace(linkId) || item["item"] != null) continue;
                     result.Add(new KeyValuePair<string, string>(linkId, (string)item["text"] ?? linkId));
                 }
             }

@@ -73,9 +73,15 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
-        public void Escala_ComoEnteroDeUnClienteFhir()
+        public void Escala_ComoEnteroDeUnClienteFhir_SePasaADecimal()
         {
-            Assert.Empty(Validar(true, new QuestionnaireResponseItem { LinkId = "dolor", ValueInteger = 4 }));
+            var item = new QuestionnaireResponseItem { LinkId = "dolor", ValueInteger = 4 };
+
+            ResponseValidator.NormalizeColumns(Estructura(), new[] { item });
+
+            Assert.Equal(4m, item.ValueDecimal);
+            Assert.Null(item.ValueInteger);
+            Assert.Empty(Validar(true, item));
         }
 
         [Theory]

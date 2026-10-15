@@ -341,9 +341,22 @@
             // ficha en progreso. Un item con varias answer (opción múltiple) ya viene
             // agrupado por linkId -- a diferencia del formato interno, FHIR no lo separa en
             // varios registros.
+            // Las preguntas llegan dentro de su sección (item group), y pueden venir anidadas en
+            // una respuesta: se aplanan, porque el formulario las identifica sólo por linkId.
+            function flattenItems(items, out) {
+                out = out || [];
+                (items || []).forEach(function (it) {
+                    var nested = it.item && it.item.length;
+                    if (!nested || (it.answer && it.answer.length)) out.push(it);
+                    if (nested) flattenItems(it.item, out);
+                    (it.answer || []).forEach(function (a) { if (a.item) flattenItems(a.item, out); });
+                });
+                return out;
+            }
+
             function applyExistingItems(fhirItems) {
                 var byLinkId = {};
-                (fhirItems || []).forEach(function (it) {
+                flattenItems(fhirItems).forEach(function (it) {
                     if (it.linkId && it.answer && it.answer.length) byLinkId[it.linkId] = it;
                 });
                 questionnaire.value.groups.forEach(function (g) {
@@ -366,9 +379,10 @@
                 if (a.valueBoolean !== undefined) return a.valueBoolean;
                 if (a.valueInteger !== undefined) return a.valueInteger;
                 if (a.valueDecimal !== undefined) return a.valueDecimal;
+                if (a.valueDate !== undefined) return a.valueDate;
                 if (a.valueDateTime !== undefined) {
-                    // El server serializa fecha y fecha-hora igual (FhirDateTime); acá se
-                    // recorta según lo que espera cada control HTML nativo.
+                    // Las fichas anteriores guardaban la fecha sola también como fecha-hora; acá se
+                    // recorta según lo que espera cada control HTML nativo. La hora es de Argentina.
                     if (q.type === 'date') return a.valueDateTime.slice(0, 10);
                     if (q.type === 'dateTime') return a.valueDateTime.slice(0, 16);
                     return a.valueDateTime;
@@ -392,15 +406,18 @@
             // es sólo el formato del diff de auditoría de guardado parcial.
             function fhirItemsToDomain(fhirItems) {
                 var result = [];
-                (fhirItems || []).forEach(function (it) {
+                flattenItems(fhirItems).forEach(function (it) {
                     if (!it.answer || !it.answer.length) { result.push({ LinkId: it.linkId }); return; }
                     var q = questionByLinkId(it.linkId);
                     it.answer.forEach(function (a) {
                         var d = { LinkId: it.linkId };
                         if (a.valueBoolean !== undefined) d.ValueBoolean = a.valueBoolean;
+                        // La escala viaja como integer pero se guarda como decimal.
+                        else if (a.valueInteger !== undefined && q && q.type === 'scale') d.ValueDecimal = a.valueInteger;
                         else if (a.valueInteger !== undefined) d.ValueInteger = a.valueInteger;
                         else if (a.valueDecimal !== undefined) d.ValueDecimal = a.valueDecimal;
-                        else if (a.valueDateTime !== undefined) d.ValueDate = a.valueDateTime;
+                        else if (a.valueDate !== undefined) d.ValueDate = a.valueDate;
+                        else if (a.valueDateTime !== undefined) d.ValueDate = a.valueDateTime.slice(0, 19);
                         else if (a.valueCoding) d.ValueCode = q ? optionCode(q, a.valueCoding.code) : a.valueCoding.code;
                         else if (a.valueAttachment) {
                             d.AttachmentId = attachmentIdFromUrl(a.valueAttachment.url);
