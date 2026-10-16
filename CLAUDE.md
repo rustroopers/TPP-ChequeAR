@@ -28,4 +28,4 @@ El proyecto usa [Spec Kit](https://github.com/github/spec-kit). Cada módulo tie
 ## Levantar la app
 
 Usar la skill `/run-app`: arranca el TNS Listener de Oracle (servicio nativo de Windows, sin
-Docker), compila con MSBuild de VS2022 y levanta IIS Express en `https://localhost:44301`.
+Docker), compila con el MSBuild que encuentra `vswhere` y levanta IIS Express en `https://localhost:44301`.
