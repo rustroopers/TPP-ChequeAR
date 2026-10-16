@@ -33,7 +33,7 @@ namespace ChequeAR.Infrastructure.Repositories
         {
             if (scope != null && !scope.IsUnrestricted && scope.IsEmpty) return new List<QuestionnaireResponse>();
             return await Filtered(patientHospitalId, questionnaireId, status, scope)
-                .OrderByDescending(x => x.AuthoredAt).Skip(skip).Take(take).ToListAsync();
+                .OrderByDescending(x => x.AuthoredAt).ThenBy(x => x.Id).Skip(skip).Take(take).ToListAsync();
         }
 
         public async Task<int> CountAsync(string patientHospitalId = null, Guid? questionnaireId = null, ResponseStatus? status = null, SpecialtyScope scope = null)

@@ -40,7 +40,7 @@ namespace ChequeAR.Infrastructure.Repositories
             IReadOnlyCollection<string> withinSpecialties, int skip, int take)
         {
             var q = Filtered(status, titleContains, specialtyCode, withinSpecialties);
-            return await q.OrderByDescending(x => x.UpdatedAt).Skip(skip).Take(take).ToListAsync();
+            return await q.OrderByDescending(x => x.UpdatedAt).ThenBy(x => x.Id).Skip(skip).Take(take).ToListAsync();
         }
 
         public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode,
@@ -143,9 +143,24 @@ namespace ChequeAR.Infrastructure.Repositories
             using (var tx = _ctx.Database.BeginTransaction())
             {
                 _ctx.QuestionnaireVersions.Add(version);
-                await SaveAsync();
+                try
+                {
+                    await SaveAsync();
+                }
+                catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+                {
+                    // Otro publicó el mismo número de versión en el medio.
+                    throw new ConcurrencyConflictException(q.ConcurrencyVersion, q.ConcurrencyVersion + 1);
+                }
                 tx.Commit();
             }
+        }
+
+        private static bool IsUniqueViolation(Exception ex)
+        {
+            for (var e = ex; e != null; e = e.InnerException)
+                if (e is global::Oracle.ManagedDataAccess.Client.OracleException oe && oe.Number == 1) return true;
+            return false;
         }
 
         // Traduce el choque de concurrencia de EF al lenguaje de la aplicación. Salta

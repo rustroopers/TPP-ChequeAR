@@ -15,6 +15,8 @@
             AlterColumn("CHEQUEAR.RefreshToken", "TokenHash", c => c.String(maxLength: 64, unicode: false));
             CreateIndex("CHEQUEAR.QuestionnaireResponse", new[] { "PatientHospitalId", "AuthoredAt" }, name: "IX_Response_Patient");
             CreateIndex("CHEQUEAR.RefreshToken", "TokenHash", unique: true, name: "UX_RefreshToken_Hash");
+            // Redundante con IX_Response_Questionnaire (QuestionnaireId, Status).
+            Sql(@"DROP INDEX ""CHEQUEAR"".""IX_QuestionnaireResponse_Questionnaire""");
             Sql(@"ALTER TABLE ""CHEQUEAR"".""QuestionnaireResponse"" ADD CONSTRAINT ""FK_Response_Questionnaire""
   FOREIGN KEY (""QuestionnaireId"") REFERENCES ""CHEQUEAR"".""Questionnaire"" (""Id"") ENABLE NOVALIDATE");
             Sql(@"ALTER TABLE ""CHEQUEAR"".""QuestionnaireResponse"" ADD CONSTRAINT ""FK_Response_Version""
@@ -23,6 +25,7 @@
         
         public override void Down()
         {
+            Sql(@"CREATE INDEX ""IX_QuestionnaireResponse_Questionnaire"" ON CHEQUEAR.""QuestionnaireResponse""(""QuestionnaireId"")");
             Sql(@"ALTER TABLE ""CHEQUEAR"".""QuestionnaireResponse"" DROP CONSTRAINT ""FK_Response_Version""");
             Sql(@"ALTER TABLE ""CHEQUEAR"".""QuestionnaireResponse"" DROP CONSTRAINT ""FK_Response_Questionnaire""");
             DropIndex("CHEQUEAR.RefreshToken", "UX_RefreshToken_Hash");
