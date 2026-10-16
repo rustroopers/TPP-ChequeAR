@@ -24,9 +24,8 @@ namespace ChequeAR.Tests.Application
         private readonly ClinicalVariable _peso = TestHelpers.Variable("peso");
 
         private QuestionnaireService Sut(ISpecialtyGuard guard, SpecialtyCatalogService catalog = null, IAccessGuard access = null)
-            => new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object,
-                TestHelpers.NoopAuditDispatcher(), guard, catalog ?? TestHelpers.CatalogWith(),
-                access ?? TestHelpers.UnrestrictedAccess(), TestHelpers.VariableRepoWith(_peso));
+            => TestHelpers.QuestionnaireService(_repo, _responses, _validator, TestHelpers.VariableRepoWith(_peso),
+                guard, catalog, access);
 
         [Fact]
         public async Task GetAsync_FueraDeScope_Lanza()

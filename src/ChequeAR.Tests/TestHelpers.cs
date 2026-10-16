@@ -11,14 +11,41 @@ using Moq;
 
 namespace ChequeAR.Tests
 {
+    internal sealed class FakeClock : IClock
+    {
+        public FakeClock(DateTime utcNow) { UtcNow = utcNow; }
+        public DateTime UtcNow { get; private set; }
+        public void Advance(TimeSpan by) => UtcNow = UtcNow + by;
+    }
+
     internal static class TestHelpers
     {
         /// <summary>
         /// AuditDispatcher with a far-future flush interval so the background timer
         /// never races with assertions during a unit test.
         /// </summary>
-        public static AuditDispatcher NoopAuditDispatcher()
-            => new AuditDispatcher(Mock.Of<IAuditRepository>(), flushIntervalMs: 600000);
+        // Una sola instancia: cada dispatcher arranca un Timer, y los tests no los liberaban.
+        private static readonly AuditDispatcher Noop = new AuditDispatcher(Mock.Of<IAuditRepository>(), flushIntervalMs: 600000);
+
+        public static AuditDispatcher NoopAuditDispatcher() => Noop;
+
+        /// <summary>Junta en <paramref name="sink"/> lo que se persiste (FlushAsync para la cola).</summary>
+        public static AuditDispatcher CapturingAuditDispatcher(List<AuditEvent> sink)
+        {
+            var repo = new Mock<IAuditRepository>();
+            repo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
+                .Callback<IEnumerable<AuditEvent>>(sink.AddRange).Returns(Task.CompletedTask);
+            repo.Setup(r => r.AddAsync(It.IsAny<AuditEvent>()))
+                .Callback<AuditEvent>(sink.Add).Returns(Task.CompletedTask);
+            return new AuditDispatcher(repo.Object, flushIntervalMs: 600000);
+        }
+
+        public static QuestionnaireService QuestionnaireService(
+            Mock<IQuestionnaireRepository> repo, Mock<IQuestionnaireResponseRepository> responses, Mock<IFhirValidator> validator,
+            IClinicalVariableRepository variables, ISpecialtyGuard guard = null, SpecialtyCatalogService catalog = null,
+            IAccessGuard access = null, AuditDispatcher audit = null)
+            => new QuestionnaireService(repo.Object, responses.Object, validator.Object, audit ?? Noop,
+                guard ?? UnrestrictedGuard(), catalog ?? CatalogWith(), access ?? UnrestrictedAccess(), variables);
 
         public static ValidationResult ValidOk()
             => new ValidationResult { IsValid = true, Errors = Array.Empty<string>(), Warnings = Array.Empty<string>() };

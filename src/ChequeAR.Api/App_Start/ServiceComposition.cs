@@ -215,10 +215,11 @@ namespace ChequeAR.Api.App_Start
             container.Register<IAccessGuard, AccessGuard>();
 
             // ===== Servicios de aplicación =====
-            container.Register<RefreshTokenService>(() => new RefreshTokenService(container.GetInstance<IRefreshTokenRepository>(), refreshTtlHours));
+            container.Register<RefreshTokenService>(() => new RefreshTokenService(container.GetInstance<IRefreshTokenRepository>(), refreshTtlHours, SystemClock.Instance));
             container.Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 container.GetInstance<IHospitalFhirClient>(), container.GetInstance<IOracleViewClient>(), hospitalAuthUrl,
                 new ChequeAR.Infrastructure.Fhir.HttpProbe(), container.GetInstance<IFhirValidator>()));
+            container.RegisterInstance<IClock>(SystemClock.Instance);
             container.Register<QuestionnaireService>();
             container.Register<QuestionnaireResponseService>();
             container.Register<AuditQueryService>();

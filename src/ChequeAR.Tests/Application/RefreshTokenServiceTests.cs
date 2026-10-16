@@ -46,6 +46,22 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
+        public async Task ValidateAsync_VenceAlCumplirseElTtl()
+        {
+            var clock = new FakeClock(new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc));
+            var sut = new RefreshTokenService(_repo.Object, ttlHours: 8, clock: clock);
+            RefreshToken guardado = null;
+            _repo.Setup(r => r.AddAsync(It.IsAny<RefreshToken>())).Callback<RefreshToken>(t => guardado = t).Returns(Task.CompletedTask);
+            var raw = await sut.IssueAsync("dr.gomez", "ua", "ip");
+            _repo.Setup(r => r.GetByHashAsync(guardado.TokenHash)).ReturnsAsync(() => guardado);
+
+            clock.Advance(TimeSpan.FromHours(8) - TimeSpan.FromSeconds(1));
+            Assert.NotNull(await sut.ValidateAsync(raw));
+            clock.Advance(TimeSpan.FromSeconds(1));
+            Assert.Null(await sut.ValidateAsync(raw));
+        }
+
+        [Fact]
         public async Task IssueAsync_RespetaElTtlConfigurado()
         {
             var sut = new RefreshTokenService(_repo.Object, ttlHours: 1);

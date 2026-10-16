@@ -37,6 +37,7 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
         private readonly Mock<IAttachmentStore> _attachments = new Mock<IAttachmentStore>();
         private readonly Guid _questionnaireId = Guid.NewGuid();
+        private readonly FakeClock _clock = new FakeClock(new DateTime(2026, 10, 16, 13, 0, 0, DateTimeKind.Utc));
         private readonly QuestionnaireResponseService _sut;
 
         public QuestionnaireResponseSessionScenarioTests()
@@ -48,7 +49,8 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
             _sut = new QuestionnaireResponseService(
-                _repo, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object);
+                _repo, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object,
+                clock: _clock);
         }
 
         // Ficha nueva desde cero: no hay borrador previo, se crea vacía y se va llenando
@@ -126,7 +128,7 @@ namespace ChequeAR.Tests.Application
             var sessionA = await _sut.AcquireLockAsync(created.Id, "medico-a");
             var tokenA = sessionA.LockToken.Value;
             await _sut.SaveProgressAsync(created.Id, "medico-a", tokenA, null, Items(Decimal("peso", 32.5m)));
-            (await _repo.GetAsync(created.Id)).LockExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+            _clock.Advance(TimeSpan.FromMinutes(16));
 
             var sessionB = await _sut.AcquireLockAsync(created.Id, "medico-b");
             await Assert.ThrowsAsync<LockConflictException>(
@@ -135,6 +137,32 @@ namespace ChequeAR.Tests.Application
 
             Assert.NotEqual(tokenA, sessionB.LockToken.Value);
             Assert.Equal(32.5m, saved.Items.Single(i => i.LinkId == "peso").ValueDecimal);
+        }
+
+        // Nadie tomó el lock vencido: el mismo médico sigue guardando y el lock se renueva.
+        [Fact]
+        public async Task ExpiredLock_NotTakenByAnyone_SameUserKeepsSaving()
+        {
+            var created = await NewResponseAsync("medico-a");
+            var token = (await _sut.AcquireLockAsync(created.Id, "medico-a")).LockToken.Value;
+            _clock.Advance(TimeSpan.FromMinutes(40));
+
+            var saved = await _sut.SaveProgressAsync(created.Id, "medico-a", token, null, Items(Decimal("peso", 30m)));
+
+            Assert.Equal(_clock.UtcNow.AddMinutes(15), saved.LockExpiresAt);
+        }
+
+        [Fact]
+        public async Task LockVigente_OtroMedicoNoLoPuedeTomar_HastaQueVence()
+        {
+            var created = await NewResponseAsync("medico-a");
+            await _sut.AcquireLockAsync(created.Id, "medico-a");
+
+            _clock.Advance(TimeSpan.FromMinutes(14));
+            await Assert.ThrowsAsync<LockConflictException>(() => _sut.AcquireLockAsync(created.Id, "medico-b"));
+
+            _clock.Advance(TimeSpan.FromMinutes(2));
+            Assert.Equal("medico-b", (await _sut.AcquireLockAsync(created.Id, "medico-b")).LockedByUserId);
         }
 
         // Regresión del defecto encontrado probando en el navegador: $lock es una escritura

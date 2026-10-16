@@ -23,9 +23,7 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
 
         private QuestionnaireService Sut(params ClinicalVariable[] variables)
-            => new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object,
-                TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.CatalogWith(),
-                TestHelpers.UnrestrictedAccess(), TestHelpers.VariableRepoWith(variables));
+            => TestHelpers.QuestionnaireService(_repo, _responses, _validator, TestHelpers.VariableRepoWith(variables));
 
         private static Questionnaire Con(params Question[] preguntas)
         {
