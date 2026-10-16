@@ -16,6 +16,7 @@ namespace ChequeAR.Infrastructure.EF.Configurations
             // store type explícito el parámetro se liga como TIMESTAMP y conserva la fracción.
             Property(x => x.Recorded).HasColumnType("timestamp");
             Property(x => x.AgentUserId).HasMaxLength(128);
+            Property(x => x.AgentIp).HasMaxLength(45);
             Property(x => x.EntityRef).HasMaxLength(255);
             Property(x => x.EntityType).HasMaxLength(64);
             Property(x => x.Category).HasMaxLength(32);

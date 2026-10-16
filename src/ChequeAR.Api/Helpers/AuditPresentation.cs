@@ -123,6 +123,21 @@ namespace ChequeAR.Api.Helpers
             {
                 return Set(view, Op.Read, "Evolución consultada", "cq-badge--archived", "bi-graph-up");
             }
+            else if (type == "Patient")
+            {
+                if (StartsWith(suffix, "search")) return Set(view, Op.Read, "Búsqueda de pacientes", "cq-badge--archived", "bi-search");
+                if (StartsWith(suffix, "history")) return Set(view, Op.Read, "Historial consultado", "cq-badge--archived", "bi-clock-history");
+                return Set(view, Op.Read, "Paciente consultado", "cq-badge--archived", "bi-person");
+            }
+            else if (type == "Attachment")
+            {
+                if (actionCode == "C") return Set(view, Op.Create, "Adjunto subido", "cq-badge--info", "bi-paperclip");
+                return Set(view, Op.Read, "Adjunto descargado", "cq-badge--archived", "bi-download");
+            }
+            else if (type == "Http")
+            {
+                return Set(view, Op.Other, "Acceso denegado", "cq-badge--danger", "bi-slash-circle");
+            }
             else if (type == "AuditEvent" && actionCode == "E")
             {
                 return Set(view, Op.Export, "Auditoría exportada", "cq-badge--info", "bi-download");

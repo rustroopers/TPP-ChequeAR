@@ -61,6 +61,18 @@ namespace ChequeAR.Tests.Application
             _store.Verify(s => s.StoreAsync(It.IsAny<Stream>(), "estudio.pdf", "application/pdf", ".pdf", "u1"), Times.Once);
         }
 
+        [Fact]
+        public async Task Store_PasadoElLimiteDiario_NoGuarda()
+        {
+            _store.Setup(s => s.UploadedBytesSinceAsync("u1", It.IsAny<DateTime>())).ReturnsAsync(100);
+            var sut = Sut();
+            sut.DailyQuotaBytes = 100 + Pdf.Length - 1;
+
+            await Assert.ThrowsAsync<ChequeAR.Application.Exceptions.BusinessRuleException>(
+                () => sut.StoreAsync(new MemoryStream(Pdf), "estudio.pdf", "u1"));
+            _store.Verify(s => s.StoreAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
         [Theory]
         [InlineData("../../web.config", ".pdf", "web.pdf")]
         [InlineData(@"C:\fakepath\informe.final.PDF", ".pdf", "informe.final.pdf")]

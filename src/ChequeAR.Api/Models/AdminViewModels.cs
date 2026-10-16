@@ -42,6 +42,7 @@ namespace ChequeAR.Api.Models
         public string ActionBadge { get; set; }
         public string ActionIcon { get; set; }
         public string Resource { get; set; }
+        public string Ip { get; set; }
 
         // Diff de versiones (solo para publicaciones de un cuestionario).
         public bool HasVersionDiff { get; set; }

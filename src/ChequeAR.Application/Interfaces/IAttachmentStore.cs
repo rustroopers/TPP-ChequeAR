@@ -11,6 +11,9 @@ namespace ChequeAR.Application.Interfaces
         Task<Attachment> GetAsync(System.Guid attachmentId);
         Task<Stream> OpenReadAsync(System.Guid attachmentId);
 
+        /// <summary>Bytes subidos por el usuario desde esa fecha.</summary>
+        Task<long> UploadedBytesSinceAsync(string userId, System.DateTime sinceUtc);
+
         /// <summary>Borra archivo y fila de los adjuntos subidos antes de esa fecha que ninguna ficha usa.</summary>
         Task<int> PurgeOrphansAsync(System.DateTime uploadedBeforeUtc);
     }

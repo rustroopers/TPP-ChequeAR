@@ -185,5 +185,45 @@ namespace ChequeAR.Tests.Application
             await _dispatcher.FlushAsync();
             Assert.Empty(_eventos);
         }
+
+        // El nombre o el DNI buscado no queda en la base: sólo su hash.
+        [Fact]
+        public async Task PatientsSearched_GuardaElHashNoElTermino()
+        {
+            await _sut.PatientsSearched(" Pérez ", 3);
+
+            var evt = Assert.Single(_eventos);
+            Assert.Equal("Patient$search", evt.EntityRef);
+            Assert.DoesNotContain("rez", evt.FhirJson, StringComparison.OrdinalIgnoreCase);
+            var foto = JsonConvert.DeserializeObject<PatientSearchAuditSnapshot>(evt.FhirJson);
+            Assert.Equal(3, foto.Results);
+            Assert.Equal(64, foto.TermSha256.Length);
+        }
+
+        [Fact]
+        public async Task PacientesYAdjuntos_SeRegistranEnElActo()
+        {
+            var adjunto = Guid.NewGuid();
+            await _sut.PatientRead("PAC-1");
+            await _sut.PatientHistoryViewed("PAC-1");
+            await _sut.AttachmentUploaded(adjunto);
+            await _sut.AttachmentDownloaded(adjunto);
+
+            Assert.Equal(new[] { "Patient/PAC-1", "Patient/PAC-1$history", "Attachment/" + adjunto, "Attachment/" + adjunto },
+                _eventos.Select(e => e.EntityRef));
+            Assert.Equal(new[] { "R", "R", "C", "R" }, _eventos.Select(e => e.Action));
+        }
+
+        [Fact]
+        public async Task Dispatcher_SellaLaIpDeQuienPide()
+        {
+            _dispatcher.AgentIpProvider = () => "10.1.2.3";
+
+            await _sut.PatientRead("PAC-1");
+            _sut.AuditExported(new AuditExportSnapshot(), 1);
+            await _dispatcher.FlushAsync();
+
+            Assert.All(_eventos, e => Assert.Equal("10.1.2.3", e.AgentIp));
+        }
     }
 }

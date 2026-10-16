@@ -84,6 +84,12 @@ namespace ChequeAR.Infrastructure.Storage
             return File.Exists(path) ? File.OpenRead(path) : null;
         }
 
+        public async Task<long> UploadedBytesSinceAsync(string userId, DateTime sinceUtc)
+            => await _ctx.Attachments
+                .Where(a => a.UploadedBy == userId && a.UploadedAt >= sinceUtc)
+                .Select(a => (long?)a.SizeBytes)
+                .SumAsync() ?? 0;
+
         public async Task<int> PurgeOrphansAsync(DateTime uploadedBeforeUtc)
         {
             var huerfanos = await _ctx.Attachments

@@ -18,7 +18,13 @@ namespace ChequeAR.Api.Controllers.Api
     public class PatientController : ApiController
     {
         private readonly PatientService _svc;
-        public PatientController(PatientService svc) { _svc = svc; }
+        private readonly AccessAuditService _audit;
+
+        public PatientController(PatientService svc, AccessAuditService audit)
+        {
+            _svc = svc;
+            _audit = audit;
+        }
 
         [HttpGet, Route(""), Authorize]
         public async Task<IHttpActionResult> Search([FromUri] string name = null, [FromUri] string q = null,
@@ -32,6 +38,7 @@ namespace ChequeAR.Api.Controllers.Api
             // Uno de más para saber si hay otra página: la vista no da un total.
             var window = Math.Min(offset + count + 1, PatientService.MaxSearchWindow);
             var hits = await _svc.SearchAsync(texto, window);
+            await _audit.PatientsSearched(texto, hits.Count);
 
             var pagina = hits.Skip(offset).Take(count).ToList();
             var recursos = FhirPatientProjection.ToPatients(pagina).Cast<Hl7.Fhir.Model.Resource>();
@@ -45,6 +52,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var p = await _svc.GetAsync(hospitalId);
             if (p == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            await _audit.PatientRead(hospitalId);
             return Ok(FhirPatientProjection.ToPatient(p));
         }
 

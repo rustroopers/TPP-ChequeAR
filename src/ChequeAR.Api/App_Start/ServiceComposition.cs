@@ -117,6 +117,7 @@ namespace ChequeAR.Api.App_Start
             _audit = new AuditDispatcher(
                 () => new AuditRepository(new ChequeARDbContext(), ownsContext: true), 1000,
                 (ex, message) => Log.Error(ex, "{AuditMessage}", message));
+            _audit.AgentIpProvider = () => System.Web.HttpContext.Current?.Request.UserHostAddress;
             container.RegisterInstance(_audit);
 
             // Mismo criterio: contexto propio por recarga. El catálogo cambia rarísimo, así que
@@ -235,6 +236,9 @@ namespace ChequeAR.Api.App_Start
             container.Register<PatientService>();
             container.Register<IPatientDemographicsSource, PatientService>();
             container.Register<AttachmentService>();
+            var attachmentsQuota = long.TryParse(ConfigurationManager.AppSettings["Attachments:DailyQuotaBytes"], out var q)
+                ? q : AttachmentService.DefaultDailyQuotaBytes;
+            container.RegisterInitializer<AttachmentService>(s => s.DailyQuotaBytes = attachmentsQuota);
 
             // ===== Controllers =====
             container.RegisterMvcControllers(Assembly.GetExecutingAssembly());
@@ -270,6 +274,15 @@ namespace ChequeAR.Api.App_Start
                 Log.Error(ex, "No se pudo cargar la especificación FHIR desde {Path}: validador en modo degradado.", profilesPath);
                 return new FhirValidatorService();
             }
+        }
+
+        /// <summary>Un 403: alguien intentó algo que su rol o su especialidad no le permiten.</summary>
+        public static void AuditForbidden(string userId, string path)
+        {
+            if (_audit == null) return;
+            var entityRef = "Http/" + (path ?? string.Empty).TrimStart('/');
+            if (entityRef.Length > 255) entityRef = entityRef.Substring(0, 255);
+            _audit.Enqueue(AuditEventBuilder.For("execute", entityRef, userId, "4", UserService.AuditCategory));
         }
 
         /// <summary>Vacía la cola de auditoría y libera los singletons antes de que el proceso termine (Application_End).</summary>

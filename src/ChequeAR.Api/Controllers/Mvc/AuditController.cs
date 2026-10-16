@@ -169,7 +169,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = ResourceLabel(av, titles, e.FhirJson, e.EntityRef)
+                    Resource = ResourceLabel(av, titles, e.FhirJson, e.EntityRef),
+                    Ip = e.AgentIp
                 };
 
                 // Para una publicación mostramos de qué versión a qué versión pasó y el diff.
@@ -180,8 +181,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // reporte exportado, las condiciones con las que se corrió.
                 if (av.ResourceType == "SavedReport" || av.ResourceType == "Report")
                     await FillReportDetailAsync(detail, e.FhirJson, saved: av.ResourceType == "SavedReport");
-                else if (av.ResourceType == "Patient")
+                else if (av.ResourceType == "Patient" && e.EntityRef.Contains("$trend"))
                     await FillTrendDetailAsync(detail, e.FhirJson);
+                else if (av.ResourceType == "Patient" && e.EntityRef.Contains("$search"))
+                    FillPatientSearchDetail(detail, e.FhirJson);
                 else if (av.ResourceType == "AuditEvent")
                     FillAuditExportDetail(detail, e.FhirJson);
                 else if (av.ResourceType == "AppUser")
@@ -364,6 +367,19 @@ namespace ChequeAR.Api.Controllers.Mvc
                                             + " a " + (string.IsNullOrWhiteSpace(snap.To) ? "hoy" : snap.To));
         }
 
+        private static void FillPatientSearchDetail(AuditDetailViewModel detail, string fhirJson)
+        {
+            PatientSearchAuditSnapshot snap;
+            try { snap = Newtonsoft.Json.JsonConvert.DeserializeObject<PatientSearchAuditSnapshot>(fhirJson ?? string.Empty); }
+            catch (Newtonsoft.Json.JsonException) { return; }
+            if (snap == null) return;
+            detail.HasReportDetail = true;
+            detail.ReportHeading = "Búsqueda";
+            detail.ConditionsHeading = "Datos";
+            detail.ReportConditions.Add("Resultados: " + snap.Results);
+            detail.ReportConditions.Add("Término (SHA-256): " + snap.TermSha256);
+        }
+
         private static void FillUserChanges(AuditDetailViewModel detail, string fhirJson)
         {
             if (string.IsNullOrWhiteSpace(fhirJson)) return;
@@ -427,7 +443,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 && !string.IsNullOrWhiteSpace(tituloReporte))
                 return tituloReporte;
             if (av.ResourceType == "Patient")
-                return "Paciente HC " + AuditPresentation.PatientHospitalId(entityRef);
+                return entityRef.StartsWith("Patient$", StringComparison.Ordinal)
+                    ? "Pacientes" : "Paciente HC " + AuditPresentation.PatientHospitalId(entityRef);
+            if (av.ResourceType == "Attachment") return "Adjunto";
+            if (av.ResourceType == "Http") return "/" + entityRef.Substring("Http/".Length);
             if (av.ResourceType == "AuditEvent") return "Registro de auditoría";
             if (av.ResourceType == "AppUser") return "Usuario " + AuditPresentation.UserId(entityRef);
 

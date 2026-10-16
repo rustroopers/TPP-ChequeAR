@@ -97,6 +97,10 @@ namespace ChequeAR.Api
                 Context.Response.Cache.SetNoStore();
             }
 
+            if (Context.Response.StatusCode == 403)
+                ServiceComposition.AuditForbidden(CurrentUser.Id(Context.User as ClaimsPrincipal),
+                    Helpers.LogSanitizer.Path(Context.Request.Path));
+
             if (Context.Response.StatusCode != 401) return;
 
             var path = Context.Request.AppRelativeCurrentExecutionFilePath ?? string.Empty;
