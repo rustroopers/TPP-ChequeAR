@@ -125,6 +125,7 @@ namespace ChequeAR.Api.App_Start
 
             // ===== Por request: unidad de trabajo =====
             container.Register<ChequeARDbContext>(() => new ChequeARDbContext(), Lifestyle.Scoped);
+            container.RegisterInstance<ISchemaMigrator>(new ChequeAR.Infrastructure.Migrations.SchemaMigrator());
 
             container.Register<IQuestionnaireRepository, QuestionnaireRepository>(Lifestyle.Scoped);
             container.Register<IQuestionnaireResponseRepository, QuestionnaireResponseRepository>(Lifestyle.Scoped);

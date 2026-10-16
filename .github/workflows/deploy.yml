@@ -63,10 +63,11 @@ jobs:
           CONNSTR_CHEQUEAR: ${{ secrets.CHEQUEAR_CONNECTIONSTRING }}
           JWT_SIGNING_SECRET: ${{ secrets.JWT_SIGNING_SECRET }}
           ORACLE_CONNECTIONSTRING: ${{ secrets.ORACLE_CONNECTIONSTRING }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
         run: |
           # ORACLE_CONNECTIONSTRING es opcional a proposito: mientras el hospital no
           # exponga su base, se publica vacio y la app entra en MockOracleViewClient.
-          foreach ($name in 'CONNSTR_CHEQUEAR', 'JWT_SIGNING_SECRET') {
+          foreach ($name in 'CONNSTR_CHEQUEAR', 'JWT_SIGNING_SECRET', 'DEPLOY_KEY') {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
               throw "Falta el secret $name en el repositorio"
             }
@@ -75,6 +76,7 @@ jobs:
           # Escape para que una password con & o < no rompa el XML.
           $connStr = [System.Security.SecurityElement]::Escape($env:CONNSTR_CHEQUEAR)
           $jwt     = [System.Security.SecurityElement]::Escape($env:JWT_SIGNING_SECRET)
+          $deployKey = [System.Security.SecurityElement]::Escape($env:DEPLOY_KEY)
           # Escape(null) explota: sin secret, cadena vacia (=> MockOracleViewClient).
           $oracleRaw = if ([string]::IsNullOrWhiteSpace($env:ORACLE_CONNECTIONSTRING)) { '' } else { $env:ORACLE_CONNECTIONSTRING }
           $oracle  = [System.Security.SecurityElement]::Escape($oracleRaw)
@@ -92,6 +94,7 @@ jobs:
             '<appSettings>',
             ('  <add key="Jwt:SigningSecret" value="' + $jwt + '" />'),
             ('  <add key="Oracle:ConnectionString" value="' + $oracle + '" />'),
+            ('  <add key="Deploy:Key" value="' + $deployKey + '" />'),
             '  <add key="Auth:AllowDebugLoginFallback" value="false" />',
             '</appSettings>'
           )
@@ -124,7 +127,32 @@ jobs:
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: ${{ env.PUBLISH_DIR }}
 
-      # El primer uso de la base aplica las migraciones: si fallan, el deploy queda en rojo.
+      # La app no migra sola en producción: lo hace este paso, con un export previo del esquema
+      # (la Autonomous Always Free no tiene backups). Corre adentro de la app, que es la que
+      # tiene el wallet, y en segundo plano: se lanza y se consulta hasta que termina.
+      - name: Migrar la base
+        shell: pwsh
+        env:
+          APP_URL: ${{ steps.azure.outputs.webapp-url }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          $url = $env:APP_URL.TrimEnd('/') + '/api/deploy/migrate'
+          $headers = @{ 'X-Deploy-Key' = $env:DEPLOY_KEY }
+          $r = $null
+          for ($i = 1; $i -le 20 -and -not $r; $i++) {
+            try { $r = Invoke-RestMethod $url -Method Post -Headers $headers -Body '' -TimeoutSec 120 }
+            catch { "Intento ${i}: $($_.Exception.Message)"; Start-Sleep -Seconds 15 }
+          }
+          if (-not $r) { throw "No se pudo lanzar la migración en $url" }
+          for ($i = 0; $r.State -eq 'running' -and $i -lt 180; $i++) {
+            Start-Sleep -Seconds 10
+            try { $r = Invoke-RestMethod $url -Headers $headers -TimeoutSec 60 }
+            catch { "Consulta: $($_.Exception.Message)" }
+          }
+          $r | ConvertTo-Json
+          if ($r.State -ne 'done') { throw "La migración no terminó: $($r.Error)" }
+
+      # Que la base responda y no hayan quedado migraciones sin aplicar.
       - name: Smoke
         shell: pwsh
         env:
