@@ -70,7 +70,7 @@ namespace ChequeAR.Api.Controllers.Api
                 // El filtro ?specialty= pidió algo fuera del scope del usuario: se rechaza,
                 // no se devuelve un Bundle vacío (eso le mentiría "no hay nada").
                 return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
+                    "No tiene acceso a esa especialidad."));
             }
         }
 

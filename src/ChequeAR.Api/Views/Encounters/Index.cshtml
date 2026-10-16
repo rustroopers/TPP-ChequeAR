@@ -178,7 +178,7 @@ else
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
-                <p class="cq-text-sm">Este paciente ya tiene una ficha de <strong id="resumeChoiceQTitle">este cuestionario</strong> sin terminar. ¿Querés continuar donde quedó o empezarla de nuevo?</p>
+                <p class="cq-text-sm">Este paciente ya tiene una ficha de <strong id="resumeChoiceQTitle">este cuestionario</strong> sin terminar. ¿Quiere continuar donde quedó o empezarla de nuevo?</p>
                 <p class="cq-text-sm cq-text-muted">Empezar de nuevo descarta todo lo cargado en la ficha anterior. Esta acción no se puede deshacer.</p>
             </div>
             <div class="modal-footer">
@@ -349,10 +349,7 @@ else
 
         continueBtn.onclick = function () {
             continueBtn.disabled = true;
-            var meta = document.querySelector('meta[name="cq-token"]');
-            fetch("/fhir/r5/QuestionnaireResponse/" + draftId, {
-                headers: { "Authorization": "Bearer " + (meta ? meta.getAttribute("content") : "") }
-            }).then(function (r) {
+            fetch("/fhir/r5/QuestionnaireResponse/" + draftId).then(function (r) {
                 if (r.status === 404) return null;
                 if (!r.ok) throw new Error("HTTP " + r.status);
                 return r.json();
@@ -361,16 +358,12 @@ else
                 goToLoad(pid, qid);
             }).catch(function () {
                 continueBtn.disabled = false;
-                window.cqToast && cqToast("No se pudo verificar el estado de la ficha. Probá de nuevo.", "error");
+                window.cqToast && cqToast("No se pudo verificar el estado de la ficha. Pruebe de nuevo.", "error");
             });
         };
         restartBtn.onclick = function () {
             restartBtn.disabled = true;
-            var meta = document.querySelector('meta[name="cq-token"]');
-            fetch("/fhir/r5/QuestionnaireResponse/" + draftId + "/$abandon", {
-                method: "POST",
-                headers: { "Authorization": "Bearer " + (meta ? meta.getAttribute("content") : "") }
-            }).then(function (r) {
+            fetch("/fhir/r5/QuestionnaireResponse/" + draftId + "/$abandon", { method: "POST" }).then(function (r) {
                 if (r.ok) { goToLoad(pid, qid); return; }
                 // 422 = ya no está InProgress (alguien la finalizó justo antes de este
                 // click): no hay nada que descartar, y arrancar una ficha nueva en blanco
@@ -379,7 +372,7 @@ else
                 throw new Error("HTTP " + r.status);
             }).catch(function () {
                 restartBtn.disabled = false;
-                window.cqToast && cqToast("No se pudo descartar la ficha anterior. Probá de nuevo.", "error");
+                window.cqToast && cqToast("No se pudo descartar la ficha anterior. Pruebe de nuevo.", "error");
             });
         };
 
@@ -405,11 +398,7 @@ else
         var labels = document.querySelectorAll(".cq-q-last");
         Array.prototype.forEach.call(labels, function (el) { el.textContent = ""; });
         draftIdByQid = {};
-        var meta = document.querySelector('meta[name="cq-token"]');
-        if (!meta) return;
-        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200&_summary=true", {
-            headers: { "Authorization": "Bearer " + meta.getAttribute("content") }
-        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
+        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200&_summary=true").then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
             if (!bundle || patientId !== openPatientId) return;
             // Bundle conforme: los resultados vienen en entry[].resource, y el cuestionario
             // se referencia por su canonical (.../Questionnaire/{id}), no por un campo propio.

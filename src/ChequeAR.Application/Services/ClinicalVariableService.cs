@@ -324,7 +324,7 @@ namespace ChequeAR.Application.Services
         {
             if (expected.HasValue && expected.Value != v.Revision)
                 throw new ConcurrencyConflictException(expected.Value, v.Revision,
-                    "Otra persona modificó la variable mientras la editabas. Volvé a abrirla para ver sus cambios.");
+                    "Otra persona modificó la variable mientras usted la editaba. Vuelva a abrirla para ver sus cambios.");
         }
 
         /// <summary>

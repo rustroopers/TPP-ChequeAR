@@ -75,7 +75,7 @@ namespace ChequeAR.Api.Filters
 
                 case SpecialtyForbiddenException _:
                     return request.CreateResponse(HttpStatusCode.Forbidden,
-                        OperationOutcomes.Forbidden("No tenés acceso a la especialidad de ese cuestionario."));
+                        OperationOutcomes.Forbidden("No tiene acceso a la especialidad de ese cuestionario."));
 
                 case NotFoundException nf:
                     return request.CreateResponse(HttpStatusCode.NotFound, OperationOutcomes.NotFound(nf.Message));

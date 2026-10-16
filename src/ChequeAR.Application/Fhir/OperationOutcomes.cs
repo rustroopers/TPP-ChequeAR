@@ -23,7 +23,7 @@ namespace ChequeAR.Application.Fhir
 
         public static OperationOutcome Forbidden(string diagnostics = null)
             => Single(OperationOutcome.IssueType.Forbidden,
-                      diagnostics ?? "No tenés permiso para realizar esta operación.");
+                      diagnostics ?? "No tiene permiso para realizar esta operación.");
 
         public static OperationOutcome Invalid(string diagnostics = null)
             => Single(OperationOutcome.IssueType.Invalid,
@@ -65,8 +65,8 @@ namespace ChequeAR.Application.Fhir
         /// </summary>
         public static OperationOutcome Conflict(int expectedVersion, int actualVersion)
             => Single(OperationOutcome.IssueType.Conflict,
-                      "Otra persona modificó este recurso mientras lo editabas. " +
-                      "Tu versión era la " + expectedVersion + " y la actual es la " + actualVersion + ".");
+                      "Otra persona modificó este recurso mientras usted lo editaba. " +
+                      "Su versión era la " + expectedVersion + " y la actual es la " + actualVersion + ".");
 
         /// <summary>
         /// Fallo temporal de un servicio externo (terminología, hospital). Se distingue de un
@@ -76,7 +76,7 @@ namespace ChequeAR.Application.Fhir
         {
             var text = diagnostics;
             if (retryAfterSeconds.HasValue && retryAfterSeconds.Value > 0)
-                text += " Reintentá en " + retryAfterSeconds.Value + " segundos.";
+                text += " Reintente en " + retryAfterSeconds.Value + " segundos.";
             return Single(OperationOutcome.IssueType.Transient, text);
         }
 

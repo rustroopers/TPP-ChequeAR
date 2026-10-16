@@ -288,7 +288,7 @@ namespace ChequeAR.Application.Services
             var user = await _repo.GetAsync(userId);
             if (user == null || !user.IsActive) return;
             if (actingUserId != null && string.Equals(actingUserId, userId, StringComparison.OrdinalIgnoreCase))
-                throw new BusinessRuleException("No podés desactivar tu propio usuario.");
+                throw new BusinessRuleException("No puede desactivar su propio usuario.");
             var rol = RoleHierarchy.Principal(user.Roles?.Select(r => r.Role));
             if (string.Equals(rol, Role.Administrador, StringComparison.Ordinal)
                 && await _repo.CountAsync(null, Role.Administrador, null, true) <= 1)
@@ -309,7 +309,7 @@ namespace ChequeAR.Application.Services
                 && !string.Equals(role, Role.Administrador, StringComparison.Ordinal))
             {
                 if (actingUserId != null && string.Equals(actingUserId, userId, StringComparison.OrdinalIgnoreCase))
-                    throw new BusinessRuleException("No podés quitarte a vos mismo el rol Administrador.");
+                    throw new BusinessRuleException("No puede quitarse a sí mismo el rol Administrador.");
 
                 var otherAdmins = await _repo.CountAsync(null, Role.Administrador, null, true);
                 // El propio `user` todavía cuenta como Administrador acá (no se escribió el

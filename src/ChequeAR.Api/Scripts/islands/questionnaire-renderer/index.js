@@ -1107,7 +1107,7 @@
                     savingState.value = 'idle';
                     lockToken.value = null;   // ya liberado; el pagehide no reintenta
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Avance guardado. Podés retomar esta ficha desde el historial.', 'success');
+                    window.cqToast && window.cqToast('Avance guardado. Puede retomar esta ficha desde el historial.', 'success');
                     goToHistory();
                 }).catch(function (err) {
                     if (err && err.silent) return;

@@ -76,7 +76,7 @@ namespace ChequeAR.Application.Services
             {
                 var meta = await _attachments.GetAsync(id);
                 if (meta == null || !string.Equals(meta.UploadedBy, userId, StringComparison.OrdinalIgnoreCase))
-                    throw new ValidationFailedException(new List<string> { "Uno de los adjuntos no está disponible. Volvé a adjuntar el archivo." });
+                    throw new ValidationFailedException(new List<string> { "Uno de los adjuntos no está disponible. Vuelva a adjuntar el archivo." });
             }
         }
 

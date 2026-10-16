@@ -81,7 +81,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 model.Items.Clear();
                 model.Total = 0;
                 Response.StatusCode = 403;
-                ViewBag.DataError = "No tenés acceso a esa especialidad.";
+                ViewBag.DataError = "No tiene acceso a esa especialidad.";
             }
             catch (Exception ex)
             {
@@ -571,7 +571,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
             catch (SpecialtyForbiddenException)
             {
-                TempData["Toast"] = "No tenés acceso a la especialidad de ese cuestionario.";
+                TempData["Toast"] = "No tiene acceso a la especialidad de ese cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
             catch (ConcurrencyConflictException)
@@ -612,7 +612,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
             catch (SpecialtyForbiddenException)
             {
-                TempData["Toast"] = "No tenés acceso a la especialidad de ese cuestionario.";
+                TempData["Toast"] = "No tiene acceso a la especialidad de ese cuestionario.";
                 TempData["ToastLevel"] = "error";
             }
             catch (BusinessRuleException ex)
