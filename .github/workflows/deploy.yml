@@ -18,24 +18,30 @@ env:
   AZURE_WEBAPP_NAME: chequear
   PUBLISH_DIR: ${{ github.workspace }}\publish
 
+# El GITHUB_TOKEN sólo lee el repo.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: >
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main' &&
       contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event)
-    runs-on: windows-latest
+    runs-on: windows-2025
+    # Los aprobadores, si se quieren, se configuran en el environment desde GitHub.
+    environment: production
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - uses: microsoft/setup-msbuild@v2
+      - uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2.0.0
 
       - name: Cache de NuGet
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~\.nuget\packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
@@ -95,7 +101,6 @@ jobs:
             ('  <add key="Jwt:SigningSecret" value="' + $jwt + '" />'),
             ('  <add key="Oracle:ConnectionString" value="' + $oracle + '" />'),
             ('  <add key="Deploy:Key" value="' + $deployKey + '" />'),
-            '  <add key="Auth:AllowDebugLoginFallback" value="false" />',
             '</appSettings>'
           )
           $secrets | Set-Content (Join-Path $env:PUBLISH_DIR 'Web.Secrets.config') -Encoding utf8
@@ -121,7 +126,7 @@ jobs:
 
       - name: Deploy a Azure App Service
         id: azure
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}

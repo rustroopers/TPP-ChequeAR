@@ -22,7 +22,8 @@ namespace ChequeAR.Tests.MockHospital
     /// </summary>
     [Collection("MockHospital")]
     // Necesita el Oracle XE del mock levantado. El CI de build/test lo excluye
-    // con --filter "Requires!=Oracle"; el job de integracion lo incluye.
+    // con --filter "Requires!=Oracle"; no hay job que los corra: van a mano, contra un
+    // Oracle con el esquema del mock (ver infra/mock-hospital/README.md).
     [Trait("Requires", "Oracle")]
     public class MappingCompatibilityTests
     {
@@ -96,8 +97,8 @@ namespace ChequeAR.Tests.MockHospital
                 {
                     // Si parece una columna del dominio (empieza con ID_, COD_, FECHA_, etc.),
                     // exigimos que exista en al menos una vista.
-                    if (col.StartsWith("ID_") || col.StartsWith("COD_") ||
-                        col.StartsWith("FECHA_") || col.StartsWith("VALOR_") ||
+                    if (col.StartsWith("ID_", StringComparison.Ordinal) || col.StartsWith("COD_", StringComparison.Ordinal) ||
+                        col.StartsWith("FECHA_", StringComparison.Ordinal) || col.StartsWith("VALOR_", StringComparison.Ordinal) ||
                         col == "NOMBRE" || col == "APELLIDO" || col == "SEXO")
                     {
                         Assert.True(
