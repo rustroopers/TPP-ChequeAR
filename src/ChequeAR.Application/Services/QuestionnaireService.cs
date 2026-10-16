@@ -28,6 +28,8 @@ namespace ChequeAR.Application.Services
         private static readonly string[] TitleRequiredError =
             { "El cuestionario debe tener un título." };
 
+        private readonly IClock _clock;
+
         private readonly IQuestionnaireRepository _repo;
         private readonly IQuestionnaireResponseRepository _responses;
         private readonly IFhirValidator _validator;
@@ -45,8 +47,10 @@ namespace ChequeAR.Application.Services
             ISpecialtyGuard guard,
             SpecialtyCatalogService catalog,
             IAccessGuard access,
-            IClinicalVariableRepository variables)
+            IClinicalVariableRepository variables,
+            IClock clock = null)
         {
+            _clock = clock ?? SystemClock.Instance;
             _repo = repo;
             _responses = responses;
             _validator = validator;
@@ -197,8 +201,8 @@ namespace ChequeAR.Application.Services
             q.Status = QuestionnaireStatus.Draft;
             q.HasPendingChanges = false;   // todavía no hay versión publicada que contradecir
             q.CreatedBy = userId;
-            q.CreatedAt = DateTime.UtcNow;
-            q.UpdatedAt = DateTime.UtcNow;
+            q.CreatedAt = _clock.UtcNow;
+            q.UpdatedAt = _clock.UtcNow;
 
             // Antes de AssignChildIds: el snapshot genera las AnswerOption desde la variable,
             // y tienen que existir para que ahí abajo reciban Id y OrderIndex.
@@ -430,7 +434,7 @@ namespace ChequeAR.Application.Services
             // significa "sin codificar", no "no lo toques"—. Así se logra la misma paridad que
             // en las preguntas, donde quitar el término también es posible.
             q.CodingJson = patch.CodingJson;
-            q.UpdatedAt = DateTime.UtcNow;
+            q.UpdatedAt = _clock.UtcNow;
             // Toda edición deja cambios pendientes de publicar. En un borrador el flag es
             // inocuo (HasUnpublishedChanges() exige estado Activo).
             q.HasPendingChanges = true;
@@ -486,7 +490,7 @@ namespace ChequeAR.Application.Services
             if (q.Status == QuestionnaireStatus.Retired && !q.HasPendingChanges && q.CurrentVersion() != null)
             {
                 q.Status = QuestionnaireStatus.Active;
-                q.UpdatedAt = DateTime.UtcNow;
+                q.UpdatedAt = _clock.UtcNow;
                 q.ConcurrencyVersion++;
                 await _repo.UpdateAsync(q);
                 _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$unarchive", userId));
@@ -515,7 +519,7 @@ namespace ChequeAR.Application.Services
 
             // Un único timestamp para el recurso congelado, la versión y el cuestionario: deja
             // coherente el "última modificación" del listado con la fecha de publicación.
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             var fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber, now);
 
             var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
@@ -590,8 +594,8 @@ namespace ChequeAR.Application.Services
             copy.Status = QuestionnaireStatus.Draft;
             copy.HasPendingChanges = false;
             copy.CreatedBy = userId;
-            copy.CreatedAt = DateTime.UtcNow;
-            copy.UpdatedAt = DateTime.UtcNow;
+            copy.CreatedAt = _clock.UtcNow;
+            copy.UpdatedAt = _clock.UtcNow;
             AssignChildIds(copy);
             await _repo.AddAsync(copy);
             _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + copy.Id + "$clone-from-" + id, userId));
@@ -647,7 +651,7 @@ namespace ChequeAR.Application.Services
                 if (q.Status != QuestionnaireStatus.Retired)
                 {
                     q.Status = QuestionnaireStatus.Retired;
-                    q.UpdatedAt = DateTime.UtcNow;
+                    q.UpdatedAt = _clock.UtcNow;
                     q.ConcurrencyVersion++;
                     await _repo.UpdateAsync(q);
                 }
@@ -669,7 +673,7 @@ namespace ChequeAR.Application.Services
             if (q.Status == QuestionnaireStatus.Retired)
                 throw new BusinessRuleException("El cuestionario ya está archivado.");
             q.Status = QuestionnaireStatus.Retired;
-            q.UpdatedAt = DateTime.UtcNow;
+            q.UpdatedAt = _clock.UtcNow;
             q.ConcurrencyVersion++;
             await _repo.UpdateAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$archive", userId));

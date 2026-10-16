@@ -108,7 +108,7 @@ sqlplus -S "/ as sysdba" @cargar.sql
 
 Como el seed es determinístico (`DBMS_RANDOM.SEED(20260625)`), los pacientes,
 episodios y resultados son los mismos; sólo se corren las fechas al día de la
-nueva carga (SC-002).
+nueva carga (SC-002). `DeterminismTests` lo verifica con hashes fijos.
 
 ## Stakeholder review (US3, SC-005)
 
@@ -200,11 +200,10 @@ Cuando el Hospital Garrahan entregue el diseño real de sus tablas/vistas:
 5. **Actualizar `init/99-grants.sql`** con los grants exactos del hospital
    (esto puede no necesitarse si el hospital provee directamente el usuario
    read-only con permisos pre-configurados).
-6. **Crear `src/ChequeAR.Infrastructure/OracleMappings/*.yaml`** con los
-   nombres reales de columnas (hoy la carpeta no existe y
-   `MappingCompatibilityTests.cs` no valida nada).
-7. **Re-baselinear `tests/integration/MockHospital.Tests/DeterminismTests.cs`**
-   si quedaron hashes anclados.
+6. **Ajustar `MockOracleViewClient`** (datos en memoria) a las columnas reales:
+   `MockViewColumnsTests` compara sus columnas con las de cada vista.
+7. **Borrar `tests/integration/MockHospital.Tests/DeterminismTests.cs`**: sus
+   hashes son los del seed sintético.
 8. **Borrar este directorio entero** y apuntar `Oracle:ConnectionString` de
    `Web.Secrets.config` (o de las App Settings de Azure) al Oracle real del hospital.
 9. **Actualizar el banner** "PROVISORIO" en cualquier README que aún

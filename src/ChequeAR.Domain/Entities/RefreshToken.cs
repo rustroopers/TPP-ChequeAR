@@ -13,9 +13,9 @@ namespace ChequeAR.Domain.Entities
         public string UserAgent { get; set; }
         public string Ip { get; set; }
 
-        public bool IsActive()
+        public bool IsActive(DateTime nowUtc)
         {
-            return RevokedAt == null && ExpiresAt > DateTime.UtcNow;
+            return RevokedAt == null && ExpiresAt > nowUtc;
         }
     }
 }

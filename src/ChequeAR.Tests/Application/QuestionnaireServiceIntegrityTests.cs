@@ -29,9 +29,7 @@ namespace ChequeAR.Tests.Application
         }
 
         private QuestionnaireService Sut(params ClinicalVariable[] variables)
-            => new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object,
-                TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.CatalogWith(),
-                TestHelpers.UnrestrictedAccess(), TestHelpers.VariableRepoWith(variables));
+            => TestHelpers.QuestionnaireService(_repo, _responses, _validator, TestHelpers.VariableRepoWith(variables));
 
         private Questionnaire Persistido(params Question[] preguntas)
         {
