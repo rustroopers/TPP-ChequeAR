@@ -6,8 +6,10 @@ using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
+using Newtonsoft.Json;
 
 namespace ChequeAR.Application.Services
 {
@@ -21,13 +23,148 @@ namespace ChequeAR.Application.Services
     /// </summary>
     public class UserService
     {
+        public const string AuditCategory = "security";
+        public const int MinPasswordLength = 10;
+
         private readonly IUserRepository _repo;
         private readonly SpecialtyCatalogService _catalog;
+        private readonly AuditDispatcher _audit;
 
-        public UserService(IUserRepository repo, SpecialtyCatalogService catalog)
+        public UserService(IUserRepository repo, SpecialtyCatalogService catalog, AuditDispatcher audit = null)
         {
             _repo = repo;
             _catalog = catalog;
+            _audit = audit;
+        }
+
+        public void LoginSucceeded(string userId) => Audit("execute", userId, "login", userId, "0");
+
+        public async Task LoginFailedAsync(string typed)
+        {
+            var name = await LoggableUserNameAsync(typed);
+            Audit("execute", name, "login-failed", name, "4");
+        }
+
+        public void LoggedOut(string userId) => Audit("execute", userId, "logout", userId, "0");
+
+        /// <summary>Null si se cambió; si no, el motivo para la persona.</summary>
+        public async Task<string> ChangePasswordAsync(string userId, string current, string replacement, DateTime? nowUtc = null)
+        {
+            var user = await _repo.GetAsync(userId);
+            if (user == null || !user.IsActive || string.IsNullOrEmpty(user.PasswordHash))
+                return "No se pudo cambiar la contraseña.";
+
+            if (!PasswordHasher.Verify(current, user.PasswordHash))
+            {
+                // Cuenta como un login fallido: si no, esta pantalla serviría para probar contraseñas.
+                var now = nowUtc ?? DateTime.UtcNow;
+                var total = await _repo.IncrementFailedLoginAsync(user.Id);
+                var (_, until) = LoginLockoutPolicy.AfterFailure(total - 1, now);
+                if (until.HasValue) await _repo.SetLockoutUntilAsync(user.Id, until.Value);
+                return "La contraseña actual no es correcta.";
+            }
+
+            replacement = replacement ?? string.Empty;
+            if (replacement.Length < MinPasswordLength)
+                return "La nueva contraseña tiene que tener al menos " + MinPasswordLength + " caracteres.";
+            if (replacement == current)
+                return "La nueva contraseña tiene que ser distinta de la actual.";
+            if (string.Equals(replacement.Trim(), user.Id, StringComparison.OrdinalIgnoreCase))
+                return "La contraseña no puede ser igual al usuario.";
+
+            await _repo.SetPasswordHashAsync(user.Id, PasswordHasher.Hash(replacement));
+            if (user.FailedLoginCount != 0 || user.LockoutUntil.HasValue)
+                await _repo.SetLoginStateAsync(user.Id, 0, null);
+            await _repo.RotateSecurityStampAsync(user.Id);
+            Audit("update", user.Id, "password", user.Id, "0");
+            return null;
+        }
+
+        /// <summary>
+        /// Edición desde el ABM de usuarios: rol, estado, nombre y especialidades, con un único
+        /// evento de auditoría con lo que cambió.
+        /// </summary>
+        public async Task UpdateByAdminAsync(string userId, string displayName, bool active, string role,
+            IReadOnlyList<string> specialties, string actingUserId)
+        {
+            var before = await _repo.GetAsync(userId);
+            if (before == null) throw new NotFoundException("Usuario inexistente: " + userId);
+            var antes = Describe(before);
+
+            // Las reglas se chequean antes de escribir: rol primero (con el usuario todavía
+            // activo) y después la desactivación.
+            if (!active) await EnsureCanDeactivateAsync(userId, actingUserId);
+            await SetRoleAsync(userId, role, actingUserId);
+
+            var existing = await _repo.GetAsync(userId);
+            existing.DisplayName = displayName ?? existing.DisplayName;
+            existing.IsActive = active;
+            await UpsertAsync(existing);
+
+            // Lista explícita: null significaría "no tocar", que sirve para el sync del
+            // hospital pero no para un ABM, donde se manda el estado completo.
+            await SyncFromHospitalAsync(new UserInfo
+            {
+                Id = existing.Id,
+                DisplayName = existing.DisplayName,
+                Roles = null,
+                Specialties = (specialties ?? new List<string>())
+                    .Where(c => !string.IsNullOrWhiteSpace(c))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+            });
+
+            AuditChanges(userId, antes, Describe(await _repo.GetAsync(userId)), actingUserId);
+        }
+
+        /// <summary>Nombre, correo y estado (API de usuarios).</summary>
+        public async Task UpdateBasicsAsync(string userId, string displayName, string email, bool active, string actingUserId)
+        {
+            var before = await _repo.GetAsync(userId);
+            if (!active && before != null) await EnsureCanDeactivateAsync(userId, actingUserId);
+            await UpsertAsync(new User
+            {
+                Id = userId,
+                DisplayName = displayName,
+                Email = email,
+                IsActive = active,
+                LastSyncAt = DateTime.UtcNow
+            });
+            AuditChanges(userId, before == null ? new Dictionary<string, string>() : Describe(before),
+                Describe(await _repo.GetAsync(userId)), actingUserId);
+        }
+
+        private static Dictionary<string, string> Describe(User u)
+        {
+            if (u == null) return new Dictionary<string, string>();
+            return new Dictionary<string, string>
+            {
+                ["Nombre"] = u.DisplayName,
+                ["Correo"] = u.Email,
+                ["Activo"] = u.IsActive ? "Sí" : "No",
+                ["Rol"] = RoleHierarchy.Principal(u.Roles?.Select(r => r.Role)),
+                ["Especialidades"] = string.Join(", ", (u.Specialties ?? new List<UserSpecialty>())
+                    .Select(s => s.SpecialtyCode).OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
+            };
+        }
+
+        private void AuditChanges(string userId, Dictionary<string, string> antes, Dictionary<string, string> despues, string actingUserId)
+        {
+            var cambios = despues.Keys
+                .Where(k => !string.Equals(antes.TryGetValue(k, out var a) ? a ?? "" : "", despues[k] ?? "", StringComparison.Ordinal))
+                .Select(k => new UserAuditChange { Field = k, Before = antes.TryGetValue(k, out var a) ? a : null, After = despues[k] })
+                .ToList();
+            if (cambios.Count == 0) return;
+            Audit("update", userId, null, actingUserId, "0", new UserAuditSnapshot { Changes = cambios });
+        }
+
+        private void Audit(string action, string userRef, string operation, string agent, string outcome, UserAuditSnapshot snapshot = null)
+        {
+            if (_audit == null) return;
+            var evt = AuditEventBuilder.For(action, "AppUser/" + userRef + (operation == null ? "" : "$" + operation),
+                agent, outcome, AuditCategory);
+            if (snapshot != null) evt.FhirJson = JsonConvert.SerializeObject(snapshot);
+            _audit.Enqueue(evt);
         }
 
         public Task<User> GetAsync(string id) => _repo.GetAsync(id);
@@ -193,6 +330,18 @@ namespace ChequeAR.Application.Services
             if (!await _repo.KeepingAnAdminAsync(() => _repo.SyncFromHospitalAsync(userId, user.DisplayName, null, new List<string> { role }, null)))
                 throw new BusinessRuleException("Debe existir al menos un Administrador activo en el sistema.");
         }
+    }
+
+    public class UserAuditSnapshot
+    {
+        public List<UserAuditChange> Changes { get; set; } = new List<UserAuditChange>();
+    }
+
+    public class UserAuditChange
+    {
+        public string Field { get; set; }
+        public string Before { get; set; }
+        public string After { get; set; }
     }
 
     public class UserPage

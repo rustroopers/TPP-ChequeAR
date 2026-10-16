@@ -184,6 +184,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                     await FillTrendDetailAsync(detail, e.FhirJson);
                 else if (av.ResourceType == "AuditEvent")
                     FillAuditExportDetail(detail, e.FhirJson);
+                else if (av.ResourceType == "AppUser")
+                    FillUserChanges(detail, e.FhirJson);
 
                 // Para una ficha: al finalizar se guardó la foto COMPLETA (todas las
                 // respuestas); en un guardado de avance, sólo el diff de esa sesión.
@@ -362,6 +364,22 @@ namespace ChequeAR.Api.Controllers.Mvc
                                             + " a " + (string.IsNullOrWhiteSpace(snap.To) ? "hoy" : snap.To));
         }
 
+        private static void FillUserChanges(AuditDetailViewModel detail, string fhirJson)
+        {
+            if (string.IsNullOrWhiteSpace(fhirJson)) return;
+            ChequeAR.Application.Services.UserAuditSnapshot snap;
+            try { snap = Newtonsoft.Json.JsonConvert.DeserializeObject<ChequeAR.Application.Services.UserAuditSnapshot>(fhirJson); }
+            catch (Newtonsoft.Json.JsonException) { return; }
+            if (snap?.Changes == null || snap.Changes.Count == 0) return;
+
+            detail.HasReportDetail = true;
+            detail.ReportHeading = "Cambios";
+            detail.ConditionsHeading = "Campos";
+            foreach (var c in snap.Changes)
+                detail.ReportConditions.Add(c.Field + ": " + (string.IsNullOrEmpty(c.Before) ? "—" : c.Before)
+                                            + " → " + (string.IsNullOrEmpty(c.After) ? "—" : c.After));
+        }
+
         /// <summary>Mismas etiquetas que el selector "Acción" del listado.</summary>
         private static string ActionFilterLabel(string code)
         {
@@ -371,7 +389,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 case "C": return "Creaciones";
                 case "U": return "Modificaciones";
                 case "D": return "Eliminaciones";
-                case "E": return "Exportaciones";
+                case "E": return "Exportaciones e ingresos";
                 default: return code;
             }
         }
@@ -411,6 +429,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (av.ResourceType == "Patient")
                 return "Paciente HC " + AuditPresentation.PatientHospitalId(entityRef);
             if (av.ResourceType == "AuditEvent") return "Registro de auditoría";
+            if (av.ResourceType == "AppUser") return "Usuario " + AuditPresentation.UserId(entityRef);
 
             if (av.ResourceType == "Questionnaire" && av.ResourceId.HasValue
                 && titles.TryGetValue(av.ResourceId.Value, out var title)

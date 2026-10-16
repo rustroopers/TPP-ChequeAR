@@ -121,6 +121,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 LoginThrottle.RegisterFailure(ip);
                 Serilog.Log.Warning("Login fallido para {User} desde {Ip}", await _users.LoggableUserNameAsync(username), ip);
+                await _users.LoginFailedAsync(username);
                 return invalid;
             }
 
@@ -131,6 +132,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // cookie no lleve algo que la base rechazó.
             info = await _users.SyncFromHospitalAsync(info);
             if (info == null) return invalid;
+            _users.LoginSucceeded(info.Id);
 
             // SetAuthCookie guardaria solo el nombre y perderia info.Roles, que es
             // justo lo que necesita SessionToken para firmar el bearer de las islas.
@@ -179,6 +181,53 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
+        [Authorize, HttpGet]
+        public ActionResult Password()
+        {
+            ViewBag.Title = "Cambiar contraseña";
+            return View();
+        }
+
+        /// <summary>El cambio rota el sello: se cierran todas las sesiones, incluida ésta.</summary>
+        [Authorize, HttpPost, ValidateAntiForgeryToken]
+        public async Task<ActionResult> ChangePassword(string current, string replacement, string confirmation)
+        {
+            ViewBag.Title = "Cambiar contraseña";
+            if (string.IsNullOrEmpty(current) || string.IsNullOrEmpty(replacement))
+            {
+                ModelState.AddModelError("", "Completá la contraseña actual y la nueva.");
+                return View("Password");
+            }
+            if (replacement != confirmation)
+            {
+                ModelState.AddModelError("", "La nueva contraseña y su confirmación no coinciden.");
+                return View("Password");
+            }
+
+            var id = CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal);
+            try
+            {
+                var error = await _users.ChangePasswordAsync(id, current, replacement);
+                if (error != null)
+                {
+                    ModelState.AddModelError("", error);
+                    return View("Password");
+                }
+            }
+            catch (Exception ex)
+            {
+                Helpers.HandledErrors.Log(this, ex);
+                ModelState.AddModelError("", "No se pudo cambiar la contraseña. Intentá nuevamente.");
+                return View("Password");
+            }
+
+            SessionRevalidation.Invalidate(id);
+            FormsAuthentication.SignOut();
+            TempData["Toast"] = "Contraseña cambiada. Ingresá con la nueva.";
+            TempData["ToastLevel"] = "success";
+            return RedirectToAction("Login");
+        }
+
         /// <summary>Renueva el JWT de las islas. GET: otro origen puede dispararlo pero no leer la respuesta.</summary>
         [Authorize, HttpGet]
         [OutputCache(NoStore = true, Duration = 0, Location = System.Web.UI.OutputCacheLocation.None)]
@@ -200,6 +249,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     await _users.RotateSecurityStampAsync(id);
                     SessionRevalidation.Invalidate(id);
+                    _users.LoggedOut(id);
                 }
             }
             catch (Exception ex)
