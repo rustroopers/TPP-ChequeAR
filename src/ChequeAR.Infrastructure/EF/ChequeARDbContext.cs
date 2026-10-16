@@ -113,6 +113,11 @@ namespace ChequeAR.Infrastructure.EF
             // Nombre de zona del tema (red|violet|green|yellow|blue|orange), no un color libre.
             modelBuilder.Entity<Specialty>().Property(x => x.Color).HasMaxLength(32);
             modelBuilder.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
+            // SHA-256 en hex: cada /auth/refresh lo busca por igualdad.
+            modelBuilder.Entity<RefreshToken>().Property(x => x.TokenHash).HasMaxLength(64);
+            modelBuilder.Entity<RefreshToken>().HasIndex(x => x.TokenHash).IsUnique().HasName("UX_RefreshToken_Hash");
+            // Búsqueda de fichas por paciente y evolución.
+            modelBuilder.Entity<QuestionnaireResponse>().HasIndex(x => new { x.PatientHospitalId, x.AuthoredAt }).HasName("IX_Response_Patient");
             // Consistencia con Questionnaire.SpecialtyCode/Specialty.Code (ambos 64): estaba
             // en 2000 por la convención global de strings, un ancho que nunca podría matchear
             // la PK del catálogo. Puede ser NULL (Scope="private" no tiene especialidad).

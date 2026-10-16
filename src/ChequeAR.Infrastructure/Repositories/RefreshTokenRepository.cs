@@ -21,6 +21,9 @@ namespace ChequeAR.Infrastructure.Repositories
         public Task<RefreshToken> GetByHashAsync(string hash) =>
             _ctx.RefreshTokens.FirstOrDefaultAsync(x => x.TokenHash == hash);
 
+        public Task PurgeExpiredAsync(DateTime before) =>
+            _ctx.Database.ExecuteSqlCommandAsync(@"DELETE FROM ""RefreshToken"" WHERE ""ExpiresAt"" < :p0", before);
+
         public async Task RevokeAsync(string hash)
         {
             var t = await _ctx.RefreshTokens.FirstOrDefaultAsync(x => x.TokenHash == hash);

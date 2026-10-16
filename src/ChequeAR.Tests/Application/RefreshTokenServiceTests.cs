@@ -60,6 +60,15 @@ namespace ChequeAR.Tests.Application
             Assert.True(Math.Abs((vidaUtil - TimeSpan.FromHours(1)).TotalSeconds) < 1);
         }
 
+        // Sin limpieza, la tabla crecía con cada login.
+        [Fact]
+        public async Task Issue_PurgaLosVencidos()
+        {
+            await _sut.IssueAsync("u1", "ua", "1.1.1.1");
+
+            _repo.Verify(r => r.PurgeExpiredAsync(It.Is<DateTime>(d => d <= DateTime.UtcNow && d > DateTime.UtcNow.AddMinutes(-1))), Times.Once);
+        }
+
         [Fact]
         public async Task ValidateAsync_TokenActivo_LoDevuelve()
         {

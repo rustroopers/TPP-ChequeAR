@@ -73,6 +73,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // filtrados contra el catálogo, rol colapsado a uno solo) para que la
                 // cookie no lleve algo que la base rechazó.
                 info = await _users.SyncFromHospitalAsync(info);
+                if (info == null)
+                {
+                    ModelState.AddModelError("", "Usuario o contraseña inválidos. Después de varios intentos fallidos el acceso se bloquea por unos minutos.");
+                    return View("Login");
+                }
 
                 // SetAuthCookie guardaria solo el nombre y perderia info.Roles, que es
                 // justo lo que necesita SessionToken para firmar el bearer de las islas.

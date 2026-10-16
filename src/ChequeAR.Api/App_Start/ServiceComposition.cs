@@ -121,7 +121,7 @@ namespace ChequeAR.Api.App_Start
             // Mismo criterio: contexto propio por recarga. El catálogo cambia rarísimo, así que
             // un TTL de minutos alcanza sin pegarle a la base en cada request.
             container.RegisterInstance(new SpecialtyCatalogService(
-                () => new SpecialtyRepository(new ChequeARDbContext()), specialtiesCacheTtlMinutes));
+                () => new SpecialtyRepository(new ChequeARDbContext(), ownsContext: true), specialtiesCacheTtlMinutes));
 
             // ===== Por request: unidad de trabajo =====
             container.Register<ChequeARDbContext>(() => new ChequeARDbContext(), Lifestyle.Scoped);
@@ -131,7 +131,7 @@ namespace ChequeAR.Api.App_Start
             container.Register<IUserRepository, UserRepository>(Lifestyle.Scoped);
             container.Register<IRefreshTokenRepository, RefreshTokenRepository>(Lifestyle.Scoped);
             container.Register<ISavedReportRepository, SavedReportRepository>(Lifestyle.Scoped);
-            container.Register<ISpecialtyRepository, SpecialtyRepository>(Lifestyle.Scoped);
+            container.Register<ISpecialtyRepository>(() => new SpecialtyRepository(container.GetInstance<ChequeARDbContext>(), ownsContext: false), Lifestyle.Scoped);
             container.Register<IClinicalVariableRepository, ClinicalVariableRepository>(Lifestyle.Scoped);
             // No es dueño del contexto: el del request lo libera SimpleInjector.
             container.Register<IAuditRepository>(
@@ -156,6 +156,9 @@ namespace ChequeAR.Api.App_Start
             }
             else
             {
+                // Sin el archivo se aceptaría cualquier VW_* de la base del hospital.
+                if (allowedViews == null)
+                    throw new InvalidOperationException("Falta " + allowlistPath + ": no se consultan vistas del hospital sin allowlist.");
                 container.Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
             }
 

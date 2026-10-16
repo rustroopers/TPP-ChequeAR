@@ -25,6 +25,20 @@ namespace ChequeAR.Tests.Application
         private static UserService Sut(Mock<IUserRepository> repo)
             => new UserService(repo.Object, TestHelpers.CatalogWith());
 
+        // El hospital puede seguir validando la contraseña de alguien dado de baja acá.
+        [Fact]
+        public async Task SyncFromHospitalAsync_UsuarioInactivo_NoHaySesion()
+        {
+            var repo = new Mock<IUserRepository>();
+            repo.Setup(r => r.GetAsync("m.perez")).ReturnsAsync(UserWithRole("m.perez", Role.Medico, active: false));
+
+            var info = await Sut(repo).SyncFromHospitalAsync(new UserInfo { Id = "m.perez", Roles = new List<string> { Role.Medico } });
+
+            Assert.Null(info);
+            repo.Verify(r => r.SyncFromHospitalAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<string>>(), It.IsAny<IReadOnlyList<string>>()), Times.Never);
+        }
+
         // Si falla la carga del catálogo, filtrar contra uno vacío revocaría todas las especialidades.
         [Fact]
         public async Task SyncFromHospitalAsync_CatalogoVacio_NoTocaLasEspecialidades()
