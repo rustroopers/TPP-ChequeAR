@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Hl7.Fhir.Model;
 
@@ -40,21 +42,45 @@ namespace ChequeAR.Application.Fhir
         /// entrada. Si viene vacía, las entradas salen sin fullUrl en vez de con una URL
         /// relativa inválida.
         /// </param>
-        public static Bundle SearchSet(IEnumerable<Resource> resources, int? total, string baseUrl = null)
+        /// <param name="self">URL del pedido: con ella se arman los links self, next y previous.</param>
+        public static Bundle SearchSet(IEnumerable<Resource> resources, int? total, string baseUrl = null,
+            Uri self = null, int offset = 0, int count = 0)
         {
             var items = (resources ?? Enumerable.Empty<Resource>()).Where(r => r != null).ToList();
             var root = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/');
 
-            return new Bundle
+            var bundle = new Bundle
             {
                 Type = Bundle.BundleType.Searchset,
                 Total = total,
                 Entry = items.Select(r => new Bundle.EntryComponent
                 {
                     FullUrl = FullUrlFor(root, r),
-                    Resource = r
+                    Resource = r,
+                    Search = new Bundle.SearchComponent { Mode = Bundle.SearchEntryMode.Match }
                 }).ToList()
             };
+
+            if (self != null)
+            {
+                bundle.Link.Add(new Bundle.LinkComponent { Relation = "self", Url = self.ToString() });
+                if (count > 0 && total.HasValue && offset + count < total.Value)
+                    bundle.Link.Add(new Bundle.LinkComponent { Relation = "next", Url = WithOffset(self, offset + count) });
+                if (count > 0 && offset > 0)
+                    bundle.Link.Add(new Bundle.LinkComponent { Relation = "previous", Url = WithOffset(self, Math.Max(0, offset - count)) });
+            }
+            return bundle;
+        }
+
+        private static readonly char[] Ampersand = { '&' };
+
+        private static string WithOffset(Uri self, int offset)
+        {
+            var query = (self.Query ?? string.Empty).TrimStart('?')
+                .Split(Ampersand, StringSplitOptions.RemoveEmptyEntries)
+                .Where(p => !p.StartsWith("_offset=", StringComparison.OrdinalIgnoreCase))
+                .Concat(new[] { "_offset=" + offset.ToString(CultureInfo.InvariantCulture) });
+            return self.GetLeftPart(UriPartial.Path) + "?" + string.Join("&", query);
         }
 
         private static string FullUrlFor(string root, Resource resource)

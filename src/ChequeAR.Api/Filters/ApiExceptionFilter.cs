@@ -47,7 +47,7 @@ namespace ChequeAR.Api.Filters
                 {
                 }
                 context.Response = context.Request.CreateResponse(HttpStatusCode.Conflict,
-                    new { error = l.Message, lockedBy = name, expiresAt = l.LockExpiresAt });
+                    OperationOutcomes.LockConflict(l.Message, name, l.LockExpiresAt));
                 return;
             }
             OnException(context);
@@ -90,7 +90,7 @@ namespace ChequeAR.Api.Filters
                 // para mostrar "lo está completando X hasta las HH:mm".
                 case LockConflictException l:
                     return request.CreateResponse(HttpStatusCode.Conflict,
-                        new { error = l.Message, lockedBy = l.LockedByUserId, expiresAt = l.LockExpiresAt });
+                        OperationOutcomes.LockConflict(l.Message, l.LockedByUserId, l.LockExpiresAt));
 
                 case ConcurrencyConflictException c:
                     return request.CreateResponse(HttpStatusCode.Conflict,

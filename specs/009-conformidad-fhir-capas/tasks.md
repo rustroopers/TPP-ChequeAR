@@ -154,6 +154,7 @@ verificar que ninguna propiedad se perdió (paso 6 de `quickstart.md`).
 - [X] T041 [US2] Cambiar el `Content-Type` a `application/fhir+json` en `questionnaire-editor/index.js` línea 607
 - [X] T042 [US2] Leer la versión de registro desde `data.meta.versionId` en `questionnaire-editor/index.js` líneas 645-647, y eliminar el fallback `Id`/`id` de la línea 633 (FHIR normaliza en `id` minúscula)
 - [X] T043 [US2] Reescribir `toItems()` y el cuerpo de `submit()` en `src/ChequeAR.Api/Scripts/islands/questionnaire-renderer/index.js` (líneas ~300-360) para emitir `item[].answer[].value[x]` en lugar de `{ ValueBoolean, ValueInteger, ... }`, con `subject.identifier.value` y la extensión de versión anclada
+  - **Nota (2026-10-16):** el alta (`POST`) manda el recurso FHIR; el guardado parcial sigue con la forma interna, ahora como `POST QuestionnaireResponse/{id}/$save-progress` (antes un `PUT` que no recibía un recurso). Por eso el CapabilityStatement ya no declara `update`.
 - [X] T044 [US2] Verificar manualmente el ciclo completo del paso 6 de `quickstart.md`: 11 tipos, guardar, F5, nada perdido — **especialmente el término descriptivo**
 - [X] T045 [US2] Verificar el escenario de concurrencia: dos pestañas, guardar en ambas, la segunda recibe 409 y no pisa a la primera (paso 6 de `quickstart.md`)
 

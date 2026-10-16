@@ -557,6 +557,21 @@
                 });
             }
 
+            // El 409 de una sesión de edición ajena es un OperationOutcome con code lock-error;
+            // quién la tiene y hasta cuándo viajan como extensiones.
+            function lockHolder(body) {
+                var issue = body && body.issue && body.issue[0];
+                if (!issue || issue.code !== 'lock-error') return null;
+                var ext = body.extension || [];
+                var find = function (sufijo) {
+                    return ext.filter(function (e) { return (e.url || '').slice(-sufijo.length) === sufijo; })[0] || {};
+                };
+                return { userId: find('/lock-holder').valueString || null, expiresAt: find('/lock-expires').valueInstant || null };
+            }
+            function issueText(body) {
+                return body && body.issue && body.issue[0] && body.issue[0].diagnostics;
+            }
+
             function ensureLock() {
                 if (lockToken.value && lockExpiresAt.value && lockExpiresAt.value.getTime() > Date.now()) {
                     return Promise.resolve();
@@ -568,8 +583,8 @@
                 }).then(function (r) {
                     if (r.status === 409) {
                         return r.json().then(function (body) {
-                            lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
-                            throw new Error(body.error || 'Lo está completando otro usuario.');
+                            lockedByOther.value = lockHolder(body) || { userId: null, expiresAt: null };
+                            throw new Error(issueText(body) || 'Lo está completando otro usuario.');
                         });
                     }
                     if (r.status === 422) {
@@ -597,8 +612,8 @@
             // un header propio.
             function putProgress(isRetry) {
                 var sent = collectItems();
-                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, {
-                    method: 'PUT',
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$save-progress', {
+                    method: 'POST',
                     headers: Object.assign({}, authHeaders(), {
                         'If-Match': 'W/"' + concurrencyVersion.value + '"',
                         'X-Lock-Token': lockToken.value
@@ -607,10 +622,11 @@
                 }).then(function (r) {
                     if (r.status === 409) {
                         return r.json().then(function (body) {
-                            if (body.lockedBy) {
-                                lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
+                            var holder = lockHolder(body);
+                            if (holder) {
+                                lockedByOther.value = holder;
                                 lockToken.value = null;
-                                throw new Error(body.error || 'Lo está completando otro usuario.');
+                                throw new Error(issueText(body) || 'Lo está completando otro usuario.');
                             }
                             return reloadAfterForeignChange();
                         });

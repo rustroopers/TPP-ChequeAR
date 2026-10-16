@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
 
@@ -39,7 +40,12 @@ namespace ChequeAR.Api.Controllers.Api
                 return await SearchVersionAsync(url, version);
 
             QuestionnaireStatus? st = null;
-            if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                if (!Enum.TryParse(status.Trim(), true, out QuestionnaireStatus parsed) || !Enum.IsDefined(typeof(QuestionnaireStatus), parsed))
+                    return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("status no reconocido: " + status));
+                st = parsed;
+            }
             try
             {
                 var items = await _service.SearchAsync(st, titleContains, specialty,
@@ -56,7 +62,8 @@ namespace ChequeAR.Api.Controllers.Api
                 var versiones = await _service.GetVersionCountsAsync(ids);
                 var recursos = completos.Select(q => (Hl7.Fhir.Model.Resource)FhirQuestionnaireBuilder.ToResource(
                     q, versiones.TryGetValue(q.Id, out var n) ? n : 0));
-                return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+                return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl(), Request.RequestUri,
+                    FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count)));
             }
             catch (SpecialtyForbiddenException)
             {
@@ -137,6 +144,7 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpPost, Route(""), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
+            if (!ModelState.IsValid) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(FhirModelState.Describe(ModelState)));
             var q = FhirQuestionnaireParser.ToDomain(body);
             if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
@@ -145,6 +153,7 @@ namespace ChequeAR.Api.Controllers.Api
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
             var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
+            response.Headers.Location = new Uri(FhirBaseUrl() + "/Questionnaire/" + created.Id);
             response.Headers.ETag = ETagFor(created);
             return ResponseMessage(response);
         }
@@ -152,6 +161,10 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
+            if (!ModelState.IsValid) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(FhirModelState.Describe(ModelState)));
+            // FHIR: el id del cuerpo tiene que ser el de la URL.
+            if (body != null && !string.IsNullOrEmpty(body.Id) && !string.Equals(body.Id, id.ToString(), StringComparison.OrdinalIgnoreCase))
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("El id del recurso no coincide con el de la URL."));
             var patch = FhirQuestionnaireParser.ToDomain(body);
             if (patch == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
