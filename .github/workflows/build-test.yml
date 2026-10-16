@@ -50,17 +50,16 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      # No hay lock files, asi que la clave se arma con los csproj: cualquier
-      # cambio de version de paquete invalida el cache.
       - name: Cache de NuGet
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~\.nuget\packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      # Locked mode: falla si un packages.lock.json no coincide con los csproj.
       - name: Restore
-        run: msbuild src\ChequeAR.sln -t:Restore -v:minimal -nologo
+        run: msbuild src\ChequeAR.sln -t:Restore -p:RestoreLockedMode=true -v:minimal -nologo
 
       # -warnaserror: cualquier warning nuevo frena el PR. Se pudo prender recien
       # cuando el build quedo en cero (CS0105 y MSB3247, mismo PR que este cambio).

@@ -81,6 +81,9 @@ exports viejos (`Deploy:BackupsToKeep`, 3 por omisión). Con `Deploy:BackupObjec
 
 ## Dependencias clave (NuGet)
 
+Las versiones están en `Directory.Packages.props` (raíz del repo) y cada proyecto tiene su
+`packages.lock.json`: después de cambiar un paquete hay que restaurar y commitear los locks.
+
 - Microsoft.AspNet.Mvc / WebApi 5.2.9, Microsoft.Owin.Security.Jwt 4.2.2
 - SimpleInjector 5.5 (contenedor, armado en `App_Start/ServiceComposition.cs`)
 - EntityFramework 6.5.1, Oracle.ManagedDataAccess(.EntityFramework) 21.17

@@ -27,7 +27,7 @@ natural vive fuera de `/fhir/r5` (`/api/...`). Una extensión propia nueva se ju
 no hay campo nativo, y se documenta en `src/README.md`.
 
 ### V. Sólo es-AR
-La interfaz, los mensajes y la documentación están en español rioplatense. Fechas y horas se
+La interfaz, los mensajes y la documentación están en español rioplatense; la interfaz, en trato de usted. Fechas y horas se
 muestran en hora argentina. No hay selector de idioma (spec 007 descartada).
 
 ## Restricciones

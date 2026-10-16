@@ -15,17 +15,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
-    <PackageReference Include="EntityFramework" Version="6.5.1" />
-    <PackageReference Include="Oracle.ManagedDataAccess" Version="21.17.0" />
-    <PackageReference Include="Oracle.ManagedDataAccess.EntityFramework" Version="21.17.0" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="All" />
+    <PackageReference Include="EntityFramework" />
+    <PackageReference Include="Oracle.ManagedDataAccess" />
+    <PackageReference Include="Oracle.ManagedDataAccess.EntityFramework" />
     <!--
       Validacion contra perfiles. .Specification trae el Validator; .Specification.Data
       trae el specification.zip con las definiciones oficiales R5 que consume ZipSource.
       Misma version pinneada que Hl7.Fhir.R5 (ver research.md R1).
     -->
-    <PackageReference Include="Hl7.Fhir.Specification.R5" Version="5.13.4" />
-    <PackageReference Include="Hl7.Fhir.Specification.Data.R5" Version="5.13.4" />
+    <PackageReference Include="Hl7.Fhir.Specification.R5" />
+    <PackageReference Include="Hl7.Fhir.Specification.Data.R5" />
   </ItemGroup>
 
   <ItemGroup>
