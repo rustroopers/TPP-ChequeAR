@@ -1,6 +1,6 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Carga de ficha";
+    ViewBag.Title = ViewBag.Title ?? "Carga de ficha";
     string rendererProps = ViewBag.RendererProps as string;
     string loadError = ViewBag.LoadError as string;
 }

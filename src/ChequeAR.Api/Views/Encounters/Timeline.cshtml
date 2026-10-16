@@ -114,6 +114,10 @@
                             {
                                 <span class="cq-badge cq-badge--published">Finalizada</span>
                             }
+                            else if (e.Status == "amended")
+                            {
+                                <span class="cq-badge cq-badge--published">Corregida</span>
+                            }
                             else if (e.Status == "enteredinerror")
                             {
                                 <span class="cq-badge cq-badge--archived" title="Respuesta incompleta descartada">Descartada</span>
@@ -125,7 +129,7 @@
                         </div>
                         @* Columna 3: acción alineada a la derecha *@
                         @* Una descartada no se retoma: se abre en lectura, igual que una finalizada. *@
-                        @if (e.Status == "completed" || e.Status == "enteredinerror")
+                        @if (e.Status == "completed" || e.Status == "amended" || e.Status == "enteredinerror")
                         {
                             <a href="@Url.Action("View", new { id = e.EncounterId })" class="btn btn-sm btn-tertiary">Abrir →</a>
                         }

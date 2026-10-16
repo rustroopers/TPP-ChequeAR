@@ -14,6 +14,13 @@ using Newtonsoft.Json;
 
 namespace ChequeAR.Application.Services
 {
+    /// <summary>Lo que se audita al corregir una ficha finalizada.</summary>
+    public class AmendRecord
+    {
+        public string Reason { get; set; }
+        public List<ResponseFieldChange> Changes { get; set; } = new List<ResponseFieldChange>();
+    }
+
     public class QuestionnaireResponseService
     {
         // Inactividad tras la cual el lock de edición se libera solo. Se renueva en cada
@@ -227,7 +234,8 @@ namespace ChequeAR.Application.Services
         public async Task<QuestionnaireResponse> FinalizeAsync(Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
         {
             var r = await LoadForWriteAsync(id);
-            if (r.Status == ResponseStatus.Completed)
+            // Una ficha finalizada o corregida no vuelve a finalizarse: se corrige con $amend.
+            if (r.Status != ResponseStatus.InProgress)
                 return r;
 
             var now = DateTime.UtcNow;
@@ -302,6 +310,92 @@ namespace ChequeAR.Application.Services
             // suele abrir el "Detalle" de la ficha en el acto, y con el flush diferido el
             // evento recién guardado no llegaba a aparecer.
             await _audit.PersistImmediatelyAsync(evt);
+            return r;
+        }
+
+        /// <summary>
+        /// Abre la corrección de una ficha finalizada: toma el lock, igual que $lock en una en
+        /// curso. No cambia nada hasta confirmar con <see cref="CommitAmendAsync"/>: mientras
+        /// tanto la ficha sigue finalizada y los reportes ven lo que tenía.
+        /// </summary>
+        public async Task<QuestionnaireResponse> BeginAmendAsync(Guid id, string userId)
+        {
+            var r = await LoadFinalizedForWriteAsync(id);
+            var now = DateTime.UtcNow;
+            if (!r.CanBeLockedBy(userId, now))
+                throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
+
+            r.AcquireLock(userId, now, LockTtl);
+            r.ConcurrencyVersion++;
+            await _repo.UpdateAsync(r);
+            _audit.Enqueue(AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$amend-lock", userId));
+            return r;
+        }
+
+        /// <summary>
+        /// Guarda la corrección: reemplaza las respuestas, conserva la versión anclada, deja la
+        /// ficha en Amended y audita el motivo y lo que cambió.
+        /// </summary>
+        public async Task<QuestionnaireResponse> CommitAmendAsync(
+            Guid id, string userId, Guid lockToken, int? expectedVersion, ICollection<QuestionnaireResponseItem> items, string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+                throw new ValidationFailedException(new List<string> { "Falta el motivo de la corrección." });
+            if (reason.Trim().Length > 2000)
+                throw new ValidationFailedException(new List<string> { "El motivo no puede superar los 2000 caracteres." });
+
+            var r = await LoadFinalizedForWriteAsync(id);
+            var now = DateTime.UtcNow;
+            EnsureLockOwnedOrRenew(r, userId, lockToken, now);
+            if (expectedVersion.HasValue && r.ConcurrencyVersion != expectedVersion.Value)
+                throw new ConcurrencyConflictException(expectedVersion.Value, r.ConcurrencyVersion);
+
+            var incoming = (items ?? new List<QuestionnaireResponseItem>()).ToList();
+            await EnsureAttachmentsOwnedAsync(incoming, r.Items, userId);
+            var structure = await PinnedStructureAsync(r);
+            OptionCodes.Normalize(structure, incoming);
+            ResponseValidator.NormalizeColumns(structure, incoming);
+            EnableWhenEvaluator.ClearHiddenAnswers(structure, incoming);
+            EnableWhenEvaluator.ClearUnknownAnswers(structure, incoming);
+
+            var missing = EnableWhenEvaluator.MissingRequired(structure, incoming);
+            var invalid = ResponseValidator.Validate(structure, incoming, complete: true);
+            if (missing.Count > 0 || invalid.Count > 0)
+                throw new ValidationFailedException(missing.Select(q =>
+                    "Falta responder la pregunta obligatoria \"" + (string.IsNullOrWhiteSpace(q.Text) ? q.LinkId : q.Text) + "\".")
+                    .Concat(invalid));
+
+            var changes = BuildNetDiff(r.Items, incoming, structure);
+            if (changes.Count == 0)
+                throw new ValidationFailedException(new List<string> { "No hay cambios para guardar." });
+
+            foreach (var item in incoming)
+            {
+                item.Id = Guid.NewGuid();
+                item.ResponseId = r.Id;
+            }
+
+            r.Status = ResponseStatus.Amended;
+            r.FhirJson = FhirQuestionnaireResponseBuilder.Build(WithItems(r, incoming, r.QuestionnaireVersionId), structure, await PatientAsync(r));
+            var validation = _validator.Validate(r.FhirJson);
+            if (!validation.IsValid) throw new ValidationFailedException(validation.Errors);
+
+            r.LastSavedAt = now;
+            r.ReleaseLock();
+            r.ConcurrencyVersion++;
+            await _repo.ReplaceItemsAsync(r, incoming);
+
+            var evt = AuditEventBuilder.For("update", "QuestionnaireResponse/" + r.Id + "$amend", userId);
+            evt.FhirJson = JsonConvert.SerializeObject(new AmendRecord { Reason = reason.Trim(), Changes = changes });
+            await _audit.PersistImmediatelyAsync(evt);
+            return r;
+        }
+
+        private async Task<QuestionnaireResponse> LoadFinalizedForWriteAsync(Guid id)
+        {
+            var r = await LoadForWriteAsync(id);
+            if (r.Status != ResponseStatus.Completed && r.Status != ResponseStatus.Amended)
+                throw new BusinessRuleException("Sólo se puede corregir una ficha finalizada.");
             return r;
         }
 

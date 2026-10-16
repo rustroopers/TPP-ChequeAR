@@ -13,6 +13,8 @@
             // Número de la versión vigente si esta ficha está en una anterior; 0 si ya está
             // en la última. Habilita la opción de pasar a la versión nueva.
             newerVersion: { type: Number, default: 0 },
+            // Id de una ficha finalizada que se está corrigiendo ($amend).
+            amendResponseId: { type: String, default: null },
             title: String,
             groups: { type: Array, default: function () { return []; } }
         },
@@ -81,6 +83,9 @@
             function onPageShow() { applyFinalizedMark(); }
             window.addEventListener('pageshow', onPageShow);
             Vue.onUnmounted(function () { window.removeEventListener('pageshow', onPageShow); });
+
+            var amending = !!props.amendResponseId;
+            var amendReason = Vue.ref('');
 
             var answers = Vue.reactive({});
             var errors = Vue.reactive({});
@@ -309,7 +314,7 @@
             // tipeado que todavía no llegó al server" es de segundos, no de toda la llamada.
             function triggerAutosave() {
                 savingState.value = 'dirty';
-                if (readOnly()) return;
+                if (readOnly() || amending) return;
                 if (autosaveTimer) clearTimeout(autosaveTimer);
                 autosaveTimer = setTimeout(doSave, AUTOSAVE_DEBOUNCE_MS);
             }
@@ -481,7 +486,8 @@
                         if (!r.ok) return errorFrom(r, 'no se pudo leer la ficha');
                         return r.json();
                     }).then(function (resource) {
-                        if (resource.status && resource.status !== 'in-progress') {
+                        var expected = amending ? ['completed', 'amended'] : ['in-progress'];
+                        if (resource.status && expected.indexOf(resource.status) < 0) {
                             markClosedByOther();
                             return;
                         }
@@ -510,7 +516,7 @@
                     return Promise.resolve();
                 }
                 var known = concurrencyVersion.value;
-                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$lock', {
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + (amending ? '/$amend' : '/$lock'), {
                     method: 'POST',
                     headers: authHeaders()
                 }).then(function (r) {
@@ -670,7 +676,26 @@
             // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
             // entries son recursos FHIR reales (entry[].resource), igual que cualquier
             // cliente estándar esperaría.
+            function initAmend() {
+                responseId.value = props.amendResponseId;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, { headers: authHeaders() }).then(function (r) {
+                    if (!r.ok) return errorFrom(r, 'no se pudo leer la ficha');
+                    return r.json();
+                }).then(function (existing) {
+                    concurrencyVersion.value = versionOf(existing);
+                    sessionBaseline.value = fhirItemsToDomain(existing.item || []);
+                    applyExistingItems(existing.item || []);
+                    return enqueueWrite(function () { return ensureLock(); });
+                }).catch(function (err) {
+                    if (err && err.silent) return;
+                    if (!lockedByOther.value) notifyError('No se pudo abrir la corrección', err);
+                }).then(function () {
+                    sessionReady.value = true;
+                });
+            }
+
             function initSession() {
+                if (amending) { initAmend(); return; }
                 // No bloquea el render con `loading`: el formulario ya es usable de
                 // entrada (ficha nueva) y, si había algo para resumir, se completa solo
                 // un instante después sin parpadeo de spinner.
@@ -784,6 +809,7 @@
 
             function submit() {
                 if (submitting.value || readOnly()) return;
+                if (amending) { submitAmend(); return; }
 
                 var allErrors = [];
                 questionnaire.value.groups.forEach(function (g) {
@@ -842,6 +868,41 @@
                 }).then(function () {
                     submitting.value = false;
                 });
+            }
+
+            function submitAmend() {
+                if (!amendReason.value.trim()) return;
+                submitting.value = true;
+                savingState.value = 'saving';
+                enqueueWrite(function () {
+                    return ensureLock().then(function () {
+                        return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$amend-commit', {
+                            method: 'POST',
+                            headers: Object.assign({}, authHeaders(), {
+                                'If-Match': 'W/"' + concurrencyVersion.value + '"',
+                                'X-Lock-Token': lockToken.value
+                            }),
+                            body: JSON.stringify({ Items: collectItems(), Reason: amendReason.value.trim() })
+                        });
+                    }).then(function (r) {
+                        if (r.status === 409) return reloadAfterForeignChange();
+                        if (!r.ok) return errorFrom(r, 'no se pudo guardar la corrección');
+                    });
+                }).then(function () {
+                    lockToken.value = null;
+                    if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                    window.cqToast && window.cqToast('Ficha corregida', 'success');
+                    window.location.href = '/Encounters/View/' + responseId.value;
+                }).catch(function (err) {
+                    savingState.value = 'dirty';
+                    notifyError('No se pudo guardar la corrección', err);
+                }).then(function () {
+                    submitting.value = false;
+                });
+            }
+
+            function cancelAmend() {
+                window.location.href = '/Encounters/View/' + props.amendResponseId;
             }
 
             function goToHistory() {
@@ -958,7 +1019,8 @@
                 newerVersion: props.newerVersion, responseId: responseId,
                 retargetPreview: retargetPreview, showRetargetModal: showRetargetModal,
                 retargeting: retargeting, openRetargetPreview: openRetargetPreview,
-                closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget
+                closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget,
+                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend
             };
         },
         template: '\
@@ -1047,7 +1109,7 @@
                                    :inputmode="q.type === \'integer\' ? \'numeric\' : \'decimal\'"\
                                    :step="q.type === \'integer\' ? \'1\' : null"\
                                    class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
-                                   :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
+                                   :value="answers[q.linkId] ?? \'\'" @input="onChange(q, $event.target.value)" />\
                             <span v-if="q.unit" class="input-group-text">{{ q.unit }}</span>\
                         </div>\
 \
@@ -1110,7 +1172,15 @@
             </section>\
             </fieldset>\
 \
-            <div class="border-top pt-3 mt-3">\
+            <div v-if="amending" class="border-top pt-3 mt-3">\
+                <label class="form-label" for="amendReason">Motivo de la corrección<span class="text-danger"> *</span></label>\
+                <textarea id="amendReason" rows="2" maxlength="2000" class="form-control" v-model="amendReason" :disabled="readOnly()"></textarea>\
+                <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mt-3">\
+                    <button class="btn btn-outline-secondary" :disabled="submitting" @click="cancelAmend">Cancelar</button>\
+                    <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete() || !amendReason.trim()" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Guardar corrección\' }}</button>\
+                </div>\
+            </div>\
+            <div v-else class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
                     <button class="btn btn-outline-secondary" :disabled="submitting || readOnly()" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
                     <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\

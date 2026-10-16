@@ -89,6 +89,8 @@ namespace ChequeAR.Api.Helpers
                 if (StartsWith(suffix, "finalize")) return Set(view, Op.Finalize, "Respuesta finalizada", "cq-badge--published", "bi-check2-circle");
                 if (StartsWith(suffix, "save")) return Set(view, Op.Edit, "Avance guardado", "cq-badge--info", "bi-clock-history");
                 if (StartsWith(suffix, "retarget")) return Set(view, Op.Edit, "Versión actualizada", "cq-badge--info", "bi-arrow-up-circle");
+                if (StartsWith(suffix, "amend-lock")) return Set(view, Op.Other, "Corrección iniciada", "cq-badge--archived", "bi-lock");
+                if (StartsWith(suffix, "amend")) return Set(view, Op.Edit, "Ficha corregida", "cq-badge--info", "bi-pencil");
                 if (StartsWith(suffix, "abandon")) return Set(view, Op.Delete, "Ficha descartada", "cq-badge--danger", "bi-x-circle");
                 if (StartsWith(suffix, "lock")) return Set(view, Op.Other, "Edición iniciada", "cq-badge--archived", "bi-lock");
                 // "$unlock" ya no se emite como evento propio (el cierre audita "$save" con el

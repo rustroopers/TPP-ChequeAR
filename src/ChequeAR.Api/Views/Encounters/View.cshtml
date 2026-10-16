@@ -11,6 +11,10 @@
         {
             <span class="cq-badge cq-badge--archived" title="Respuesta incompleta descartada">Descartada</span>
         }
+        @if (Model.IsAmended)
+        {
+            <span class="cq-badge cq-badge--info">Corregida</span>
+        }
         @* Version 0 = ficha anterior al anclaje de version: no se sabe con cuál se cargó,
            y decir "v0" sería inventar un dato. *@
         <h1 class="cq-page-header__title mt-2">
@@ -29,6 +33,10 @@
         </p>
     </div>
     <div class="d-flex gap-2">
+        @if (!Model.IsDiscarded && Model.Groups.Count > 0 && Cq.Can(ChequeAR.Domain.Enums.Permissions.EncounterWrite))
+        {
+            <a href="@Url.Action("Amend", new { id = Model.EncounterId })" class="btn btn-neutral"><i class="bi bi-pencil me-1"></i>Corregir</a>
+        }
         <a href="@Url.Action("History", new { id = Model.EncounterId })" class="btn btn-primary" title="Quién y cuándo completó cada cambio"><i class="bi bi-clock-history me-1"></i> Detalle</a>
         <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver al historial</a>
     </div>
