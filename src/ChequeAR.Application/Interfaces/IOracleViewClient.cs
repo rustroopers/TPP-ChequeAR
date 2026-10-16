@@ -18,5 +18,8 @@ namespace ChequeAR.Application.Interfaces
             IEnumerable<string> columns,
             string term,
             int maxRows = 50);
+
+        /// <summary>Comprueba la conexión, fuera de la allowlist de vistas.</summary>
+        Task PingAsync();
     }
 }

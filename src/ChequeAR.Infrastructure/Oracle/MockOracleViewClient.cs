@@ -48,6 +48,8 @@ namespace ChequeAR.Infrastructure.Oracle
                 : null;
         }
 
+        public Task PingAsync() => Task.CompletedTask;
+
         public Task<IReadOnlyList<IDictionary<string, object>>> QueryAsync(
             string viewName, IReadOnlyDictionary<string, object> filters)
         {

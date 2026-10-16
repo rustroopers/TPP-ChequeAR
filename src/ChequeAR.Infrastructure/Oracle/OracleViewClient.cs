@@ -100,6 +100,8 @@ namespace ChequeAR.Infrastructure.Oracle
             return await ExecuteAsync(sql.ToString(), binds).ConfigureAwait(false);
         }
 
+        public Task PingAsync() => ExecuteAsync("SELECT 1 FROM DUAL", new List<OracleParameter>());
+
         internal static string EscapeLike(string term)
             => term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
