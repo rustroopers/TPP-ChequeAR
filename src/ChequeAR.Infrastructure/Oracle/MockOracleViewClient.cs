@@ -10,9 +10,9 @@ namespace ChequeAR.Infrastructure.Oracle
 {
     /// Sirve las vistas VW_* del lado hospital desde memoria, sin Oracle.
     ///
-    /// El mock de spec 008 (infra/mock-hospital) es Oracle XE en Docker: sirve en la
-    /// maquina de un dev, pero Azure App Service no corre contenedores, asi que alla
-    /// el buscador de pacientes queda sin datos. Este cliente cubre ese hueco: se
+    /// El mock de spec 008 (infra/mock-hospital) se carga en el Oracle XE de cada dev;
+    /// en Azure no hay base del hospital, asi que alla el buscador de pacientes quedaria
+    /// sin datos. Este cliente cubre ese hueco: se
     /// registra cuando Oracle:ConnectionString esta vacio (ver ServiceComposition),
     /// igual que MockHospitalAuthClient con HospitalAuth:LoginUrl.
     ///
