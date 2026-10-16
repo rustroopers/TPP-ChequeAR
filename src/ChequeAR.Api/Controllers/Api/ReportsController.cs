@@ -80,7 +80,7 @@ namespace ChequeAR.Api.Controllers.Api
             var resp = Request.CreateResponse(HttpStatusCode.OK);
             resp.Content = new StreamContent(stream);
             resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"estadisticas_{DateTime.Now:yyyy-MM-dd}.xlsx" };
+            resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"estadisticas_{Helpers.ArgentinaTime.From(DateTime.UtcNow):yyyy-MM-dd}.xlsx" };
             return resp;
         }
 
@@ -104,12 +104,12 @@ namespace ChequeAR.Api.Controllers.Api
             if (format == "csv")
             {
                 resp.Content.Headers.ContentType = new MediaTypeHeaderValue("text/csv") { CharSet = "utf-8" };
-                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"reporte_{DateTime.Now:yyyy-MM-dd}.csv" };
+                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"reporte_{Helpers.ArgentinaTime.From(DateTime.UtcNow):yyyy-MM-dd}.csv" };
             }
             else
             {
                 resp.Content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"reporte_{DateTime.Now:yyyy-MM-dd}.xlsx" };
+                resp.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"reporte_{Helpers.ArgentinaTime.From(DateTime.UtcNow):yyyy-MM-dd}.xlsx" };
             }
             return resp;
         }

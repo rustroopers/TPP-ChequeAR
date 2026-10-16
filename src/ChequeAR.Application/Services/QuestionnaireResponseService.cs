@@ -622,11 +622,41 @@ namespace ChequeAR.Application.Services
         /// null (cierre pasivo de pestaña) sólo se libera el lock, sin auditar: los datos ya
         /// quedaron por autosave y no fue un guardado deliberado.
         /// </param>
+        /// <param name="pending">
+        /// Lo que el autosave todavía no mandó cuando el médico salió de la página. Viaja en el
+        /// mismo pedido para que no compita con un PUT que llegue después de liberado el lock.
+        /// </param>
         public async Task ReleaseLockAsync(
-            Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
+            Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null,
+            ICollection<QuestionnaireResponseItem> pending = null)
         {
             var r = await LoadForWriteAsync(id);
             if (!r.IsLockHeldBy(userId, lockToken)) return;
+
+            if (pending != null && r.Status == ResponseStatus.InProgress)
+            {
+                // Un autosave en vuelo puede ganarle la escritura: se relee y se reintenta una vez.
+                for (var intento = 0; intento < 2; intento++)
+                {
+                    try
+                    {
+                        await SaveProgressAsync(id, userId, lockToken, null, pending);
+                        break;
+                    }
+                    catch (ValidationFailedException)
+                    {
+                        // Lo inválido no se guarda, pero la sesión se cierra igual.
+                        break;
+                    }
+                    catch (ConcurrencyConflictException)
+                    {
+                        _repo.DiscardChanges();
+                    }
+                }
+                _repo.DiscardChanges();
+                r = await LoadForWriteAsync(id);
+                if (!r.IsLockHeldBy(userId, lockToken)) return;
+            }
 
             List<ResponseFieldChange> changes = null;
             if (sessionBaseline != null)

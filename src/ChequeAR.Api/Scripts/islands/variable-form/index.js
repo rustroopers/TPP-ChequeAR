@@ -259,7 +259,7 @@
 
             '        <div class="col-md-6" v-if="tieneMaxLength">',
             '          <label class="form-label cq-text-sm">Largo m&aacute;ximo</label>',
-            '          <input v-model="model.maxLength" type="number" min="1" class="form-control" />',
+            '          <input v-model="model.maxLength" type="number" min="1" max="2000" class="form-control" />',
             '        </div>',
             '        <div class="col-md-6" v-if="esAdjunto">',
             '          <label class="form-label cq-text-sm">Formatos aceptados</label>',

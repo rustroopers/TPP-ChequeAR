@@ -1,6 +1,7 @@
 namespace ChequeAR.Infrastructure.Migrations
 {
     using System;
+    using System.Configuration;
     using System.Data.Entity.Migrations;
 
     /// <summary>
@@ -23,6 +24,17 @@ namespace ChequeAR.Infrastructure.Migrations
     {
         public override void Up()
         {
+            // Una base restaurada de un backup viejo volvería a pasar por acá: con fichas cargadas,
+            // la purga exige Migrations:AllowDataPurge=true.
+            if (!string.Equals(ConfigurationManager.AppSettings["Migrations:AllowDataPurge"], "true", StringComparison.OrdinalIgnoreCase))
+                Sql(@"DECLARE n NUMBER;
+BEGIN
+  SELECT (SELECT COUNT(*) FROM CHEQUEAR.""Questionnaire"") + (SELECT COUNT(*) FROM CHEQUEAR.""QuestionnaireResponse"") INTO n FROM DUAL;
+  IF n > 0 THEN
+    RAISE_APPLICATION_ERROR(-20001, 'AddClinicalVariableCatalog borra cuestionarios y fichas. Para aplicarla, Migrations:AllowDataPurge=true.');
+  END IF;
+END;");
+
             // ---- 1. Purga. Orden hijo -> padre: todas las FK del esquema están declaradas sin
             // cascade (WillCascadeOnDelete(false)), así que nada se borra solo.
             Sql(@"DELETE FROM CHEQUEAR.""QuestionnaireResponseItem""");

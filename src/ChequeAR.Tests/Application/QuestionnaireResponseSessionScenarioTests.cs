@@ -271,6 +271,48 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(32.5m, again.Items.Single(i => i.LinkId == "peso").ValueDecimal);
         }
 
+        // Salir de la página antes del autosave: lo pendiente llega con el cierre de la sesión.
+        [Fact]
+        public async Task Release_ConPendientes_LosGuardaYLibera()
+        {
+            var created = await NewResponseAsync("medico-a");
+            var token = (await _sut.AcquireLockAsync(created.Id, "medico-a")).LockToken.Value;
+            await _sut.SaveProgressAsync(created.Id, "medico-a", token, null, Items(Decimal("peso", 32.5m)));
+
+            await _sut.ReleaseLockAsync(created.Id, "medico-a", token, Items(), Items(Decimal("peso", 33m), Text("presion", "100/60")));
+
+            var r = await _sut.GetAsync(created.Id);
+            Assert.Null(r.LockToken);
+            Assert.Equal(33m, r.Items.Single(i => i.LinkId == "peso").ValueDecimal);
+            Assert.Equal("100/60", r.Items.Single(i => i.LinkId == "presion").ValueString);
+        }
+
+        [Fact]
+        public async Task Release_ConPendientesInvalidos_LiberaIgual()
+        {
+            var created = await NewResponseAsync("medico-a");
+            var token = (await _sut.AcquireLockAsync(created.Id, "medico-a")).LockToken.Value;
+
+            await _sut.ReleaseLockAsync(created.Id, "medico-a", token, null, Items(Text("presion", new string('a', 2001))));
+
+            var r = await _sut.GetAsync(created.Id);
+            Assert.Null(r.LockToken);
+            Assert.Empty(r.Items.Where(i => i.ValueString != null));
+        }
+
+        [Fact]
+        public async Task Release_ConTokenAjeno_NoGuardaLosPendientes()
+        {
+            var created = await NewResponseAsync("medico-a");
+            await _sut.AcquireLockAsync(created.Id, "medico-a");
+
+            await _sut.ReleaseLockAsync(created.Id, "medico-b", Guid.NewGuid(), null, Items(Decimal("peso", 40m)));
+
+            var r = await _sut.GetAsync(created.Id);
+            Assert.NotNull(r.LockToken);
+            Assert.Empty(r.Items.Where(i => i.ValueDecimal.HasValue));
+        }
+
         [Fact]
         public async Task Amend_ReemplazaLasRespuestasYConservaLaVersion()
         {
@@ -441,6 +483,8 @@ namespace ChequeAR.Tests.Application
                 r.Items = r.Items.Where(i => keepLinkIds.Contains(i.LinkId)).ToList();
                 return Task.CompletedTask;
             }
+
+            public void DiscardChanges() { }
 
             public Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items)
             {

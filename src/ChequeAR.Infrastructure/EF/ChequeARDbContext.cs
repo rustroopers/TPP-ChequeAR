@@ -6,6 +6,7 @@ using System.Data.Entity.Validation;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ChequeAR.Application.Validation;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Infrastructure.EF.Configurations;
 
@@ -74,6 +75,7 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Configurations.Add(new QuestionnaireConfig());
             modelBuilder.Configurations.Add(new QuestionnaireVersionConfig());
             modelBuilder.Configurations.Add(new QuestionnaireResponseConfig());
+            modelBuilder.Entity<QuestionnaireResponseItem>().Property(x => x.ValueDecimal).HasPrecision(22, ResponseValidator.DecimalPlaces);
             modelBuilder.Configurations.Add(new AuditEventConfig());
             modelBuilder.Configurations.Add(new ClinicalVariableConfig());
             modelBuilder.Configurations.Add(new ClinicalVariableVersionConfig());

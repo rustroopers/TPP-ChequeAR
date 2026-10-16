@@ -80,7 +80,14 @@
             // volver con "atrás" setup() NO se re-ejecuta y el chequeo de arriba no corre.
             // pageshow sí dispara en esa restauración (los listeners sobreviven al
             // congelado del bfcache): ahí re-evaluamos la marca y bloqueamos el formulario.
-            function onPageShow() { applyFinalizedMark(); }
+            // Al volver desde el bfcache, la sesión ya se cerró en el pagehide: se retoma.
+            function onPageShow(e) {
+                applyFinalizedMark();
+                if (!e || !e.persisted || blockedByBack.value || !responseId.value || lockToken.value) return;
+                // El cierre subió la versión de la ficha: se relee antes de retomar, sin el aviso
+                // de "otro usuario la modificó".
+                reloadFromServer().then(retryLock).catch(function () { retryLock(); });
+            }
             window.addEventListener('pageshow', onPageShow);
             Vue.onUnmounted(function () { window.removeEventListener('pageshow', onPageShow); });
 
@@ -178,6 +185,29 @@
             // (un input[type=number] la descarta y entrega '', sin forma de saber qué se tipeó).
             var parseNumeric = EnableWhen.parseNumeric;
 
+            // Lo que entra en la base: ver ResponseValidator.
+            var MAX_DECIMALS = 6, MAX_TEXT = 2000, MAX_TEXT_BYTES = 4000, MAX_NUMBER = 1e16;
+            function maxLengthOf(q) { return Math.min(q.maxLength || MAX_TEXT, MAX_TEXT); }
+
+            // Un valor que no entra en la columna no se manda en el autosave: el servidor lo
+            // rechaza y conserva el último guardado.
+            function storageError(q, value) {
+                if (value === undefined || value === null || value === '') return null;
+                if (q.type === 'decimal' || q.type === 'integer') {
+                    var n = parseNumeric(value);
+                    if (isNaN(n)) return null;
+                    if (!isFinite(n) || Math.abs(n) >= MAX_NUMBER) return 'Número demasiado grande';
+                    var s = String(value).trim().replace(',', '.');
+                    if (/e/i.test(s)) s = n.toFixed(20).replace(/0+$/, '');
+                    if (q.type === 'decimal' && (s.split('.')[1] || '').length > MAX_DECIMALS) return 'Hasta ' + MAX_DECIMALS + ' decimales';
+                }
+                if ((q.type === 'string' || q.type === 'text') && typeof value === 'string') {
+                    var max = maxLengthOf(q);
+                    if (value.length > max || new TextEncoder().encode(value).length > MAX_TEXT_BYTES) return 'Máximo ' + max + ' caracteres';
+                }
+                return null;
+            }
+
             function validate(q, value) {
                 if (!isVisible(q)) { delete errors[q.linkId]; return; }
                 // Una subida fallida bloquea antes que cualquier otra regla: la pregunta
@@ -196,6 +226,10 @@
                     if (isNaN(n)) { errors[q.linkId] = 'Debe ser un número'; return; }
                     // parseInt() truncaba 1,8 a 1 sin avisar. Mejor pedir el valor entero.
                     if (q.type === 'integer' && n !== Math.trunc(n)) { errors[q.linkId] = 'Debe ser un número entero'; return; }
+                }
+                var storage = storageError(q, value);
+                if (storage) { errors[q.linkId] = storage; return; }
+                if ((q.type === 'integer' || q.type === 'decimal') && value !== undefined && value !== '') {
                     if (q.min !== undefined && n < q.min) { errors[q.linkId] = 'Mín ' + q.min; return; }
                     if (q.max !== undefined && n > q.max) { errors[q.linkId] = 'Máx ' + q.max; return; }
                 }
@@ -328,6 +362,7 @@
                         // la pregunta se ocultara terminaba en la ficha finalizada. El valor sigue
                         // en `answers`: si la condición vuelve a cumplirse, reaparece.
                         if (!isVisible(q)) { items.push({ LinkId: q.linkId, QuestionType: q.type }); return; }
+                        if (storageError(q, answers[q.linkId])) return;
                         toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });
@@ -496,6 +531,7 @@
                         Object.keys(errors).forEach(function (k) { delete errors[k]; });
                         applyExistingItems(items);
                         sessionBaseline.value = fhirItemsToDomain(items);
+                        lastSaved = null;
                         concurrencyVersion.value = versionOf(resource);
                         savingState.value = 'idle';
                     });
@@ -550,13 +586,14 @@
             // meta.versionId); el vencimiento del lock, sin lugar nativo en FHIR, viaja en
             // un header propio.
             function putProgress(isRetry) {
+                var sent = collectItems();
                 return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, {
                     method: 'PUT',
                     headers: Object.assign({}, authHeaders(), {
                         'If-Match': 'W/"' + concurrencyVersion.value + '"',
                         'X-Lock-Token': lockToken.value
                     }),
-                    body: JSON.stringify({ Items: collectItems() })
+                    body: JSON.stringify({ Items: sent })
                 }).then(function (r) {
                     if (r.status === 409) {
                         return r.json().then(function (body) {
@@ -585,7 +622,9 @@
                             lockExpiresAt.value = new Date(lockExpiresHeader);
                             showRenewPrompt.value = false;
                         }
-                        savingState.value = 'idle';
+                        lastSaved = byLinkId(sent);
+                        // Si se siguió tipeando durante el PUT, ya hay otro autosave programado.
+                        if (!autosaveTimer) savingState.value = 'idle';
                     });
                 });
             }
@@ -658,24 +697,53 @@
             // keepalive (no sendBeacon, que no permite headers de auth ni X-Lock-Token); si el
             // navegador matan el proceso de golpe puede no llegar, y ahí el TTL libera el lock
             // solo unos minutos después. El chequeo de lockToken evita el doble disparo
-            // (beforeunload + onUnmounted): el segundo ve el token ya en null y no hace nada.
+            // (pagehide + onUnmounted): el segundo ve el token ya en null y no hace nada.
+            // Lo que el autosave todavía no mandó viaja en el mismo pedido (Pending): un PUT
+            // aparte competiría con el $unlock y, si llegaba después, ya no tenía lock.
+            // Lo último que aceptó el servidor, por linkId: al salir se manda sólo lo que cambió,
+            // porque keepalive no admite cuerpos de más de 64 KiB.
+            var lastSaved = null;
+            function byLinkId(items) {
+                var map = {};
+                items.forEach(function (it) { (map[it.LinkId] = map[it.LinkId] || []).push(it); });
+                Object.keys(map).forEach(function (k) { map[k] = JSON.stringify(map[k]); });
+                return map;
+            }
+            function unsavedItems() {
+                var current = collectItems();
+                if (!lastSaved) return current;
+                var now = byLinkId(current);
+                return current.filter(function (it) { return now[it.LinkId] !== lastSaved[it.LinkId]; });
+            }
+
             function releaseLock() {
                 if (!responseId.value || !lockToken.value) return;
+                var pending = !amending && hasUnsaved() ? unsavedItems() : null;
+                if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+                var body = JSON.stringify({ Items: sessionBaseline.value, Pending: pending });
+                // Si no entra, se resigna el baseline (sólo sirve para el diff de auditoría).
+                if (new TextEncoder().encode(body).length > 60000) body = JSON.stringify({ Pending: pending });
                 fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$unlock', {
                     method: 'POST',
                     headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
-                    body: JSON.stringify({ Items: sessionBaseline.value }),
+                    body: body,
                     keepalive: true
                 }).catch(function () { /* nada que hacer del lado del cliente */ });
                 lockToken.value = null;
                 if (lockCountdownTimer) clearInterval(lockCountdownTimer);
             }
 
-            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
-            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
-            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
-            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
-            // cliente estándar esperaría.
+            // Sin ficha creada todavía, o en una corrección (que no autoguarda), lo cargado no
+            // se puede mandar al salir: se pide confirmación.
+            function hasUnsaved() { return !!autosaveTimer || savingState.value !== 'idle'; }
+
+            function onBeforeUnload(e) {
+                if (submitting.value || !hasUnsaved() || readOnly()) return;
+                if (responseId.value && lockToken.value && !amending && savingState.value !== 'error') return;
+                e.preventDefault();
+                e.returnValue = '';
+            }
+
             function initAmend() {
                 responseId.value = props.amendResponseId;
                 fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, { headers: authHeaders() }).then(function (r) {
@@ -694,6 +762,11 @@
                 });
             }
 
+            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
+            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
+            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
+            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
+            // cliente estándar esperaría.
             function initSession() {
                 if (amending) { initAmend(); return; }
                 // No bloquea el render con `loading`: el formulario ya es usable de
@@ -729,11 +802,13 @@
                 initSession();
             });
             Vue.onUnmounted(function () {
-                window.removeEventListener('beforeunload', releaseLock);
-                if (autosaveTimer) clearTimeout(autosaveTimer);
+                window.removeEventListener('beforeunload', onBeforeUnload);
+                window.removeEventListener('pagehide', releaseLock);
                 releaseLock();
             });
-            window.addEventListener('beforeunload', releaseLock);
+            // pagehide y no beforeunload: si la persona cancela la salida, la sesión sigue abierta.
+            window.addEventListener('beforeunload', onBeforeUnload);
+            window.addEventListener('pagehide', releaseLock);
 
             function totalQuestions() {
                 var n = 0;
@@ -809,7 +884,6 @@
 
             function submit() {
                 if (submitting.value || readOnly()) return;
-                if (amending) { submitAmend(); return; }
 
                 var allErrors = [];
                 questionnaire.value.groups.forEach(function (g) {
@@ -827,6 +901,7 @@
                     window.cqToast && window.cqToast('No hay sesión: no se puede guardar la ficha.', 'error');
                     return;
                 }
+                if (amending) { submitAmend(); return; }
 
                 submitting.value = true;
                 savingState.value = 'saving';
@@ -947,7 +1022,7 @@
                         return r.json();
                     });
                 }).then(function () {
-                    // Se anula el lock del lado del cliente para que el beforeunload de la
+                    // Se anula el lock del lado del cliente para que el pagehide de la
                     // recarga no dispare un "Avance guardado" espurio (el diff sería contra un
                     // baseline que ya no corresponde). Al recargar, la sesión se retoma sola en
                     // la versión nueva.
@@ -988,7 +1063,7 @@
                     });
                 }).then(function () {
                     savingState.value = 'idle';
-                    lockToken.value = null;   // ya liberado; el beforeunload no reintenta
+                    lockToken.value = null;   // ya liberado; el pagehide no reintenta
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
                     window.cqToast && window.cqToast('Avance guardado. Podés retomar esta ficha desde el historial.', 'success');
                     goToHistory();
@@ -1020,7 +1095,8 @@
                 retargetPreview: retargetPreview, showRetargetModal: showRetargetModal,
                 retargeting: retargeting, openRetargetPreview: openRetargetPreview,
                 closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget,
-                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend
+                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend,
+                maxLengthOf: maxLengthOf
             };
         },
         template: '\
@@ -1101,7 +1177,7 @@
                     <div v-if="isVisible(q)" class="mb-3">\
                         <label class="form-label">{{ q.text }}<span v-if="q.required" class="text-danger" aria-label="obligatorio"> *</span></label>\
 \
-                        <input v-if="q.type === \'string\'" type="text" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <input v-if="q.type === \'string\'" type="text" class="form-control" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <div v-else-if="q.type === \'integer\' || q.type === \'decimal\'" class="input-group" style="max-width:260px;">\
@@ -1126,7 +1202,7 @@
                             <option v-for="opt in q.options" :key="opt.code" :value="opt.code">{{ opt.display }}</option>\
                         </select>\
 \
-                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                   :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)"></textarea>\
 \
                         <div v-else-if="q.type === \'scale\'" class="d-flex align-items-center gap-3" style="max-width:360px;">\

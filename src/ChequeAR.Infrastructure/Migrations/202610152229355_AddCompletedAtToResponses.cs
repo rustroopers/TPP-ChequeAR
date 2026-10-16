@@ -25,12 +25,12 @@
             DropColumn("CHEQUEAR.QuestionnaireResponse", "CompletedAt");
         }
 
-        private static string View(bool current)
+        internal static string View(bool current, int decimals = 2)
         {
             var completedAt = current ? @"
   qr.""CompletedAt""       AS ""CompletedAt""," : "";
             var decimalText = current
-                ? @"RTRIM(TO_CHAR(qri.""ValueDecimal"", 'FM999999999999990D99', 'NLS_NUMERIC_CHARACTERS=''.,'''), '.')"
+                ? @"RTRIM(TO_CHAR(qri.""ValueDecimal"", 'FM999999999999990D" + new string('9', decimals) + @"', 'NLS_NUMERIC_CHARACTERS=''.,'''), '.')"
                 : @"TO_CHAR(qri.""ValueDecimal"")";
             return @"CREATE OR REPLACE VIEW ""CHEQUEAR"".""vw_FlatResponses"" AS
 SELECT
