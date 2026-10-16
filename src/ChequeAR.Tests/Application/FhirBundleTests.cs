@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using ChequeAR.Application.Fhir;
 using Hl7.Fhir.Model;
@@ -105,6 +106,18 @@ namespace ChequeAR.Tests.Application
 
             Assert.Null(bundle.Total);
             Assert.Single(bundle.Entry);
+        }
+
+        [Theory]
+        [InlineData(true, 1)]
+        [InlineData(false, 0)]
+        public void TotalDesconocido_NextSegunSiHayMas(bool hayMas, int nexts)
+        {
+            var self = new Uri(Base + "/Patient?name=ana&_count=1");
+            var bundle = FhirBundles.SearchSet(new[] { Cuestionario("abc") }, total: null, baseUrl: Base,
+                self: self, offset: 0, count: 1, hasMore: hayMas);
+
+            Assert.Equal(nexts, bundle.Link.Count(l => l.Relation == "next"));
         }
 
         [Theory]

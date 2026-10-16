@@ -131,9 +131,9 @@ namespace ChequeAR.Api.Fhir
                 Type = "ValueSet",
                 Operations = new List<OperationCap>
                 {
-                    new OperationCap { Name = "expand", Definition = "https://chequear.garrahan/OperationDefinition/expand" }
+                    new OperationCap { Name = "expand", Definition = "http://hl7.org/fhir/OperationDefinition/ValueSet-expand" }
                 },
-                Documentation = "$expand sirve al autocompletado SNOMED del editor y devuelve un formato propio, no un ValueSet."
+                Documentation = "Sólo $expand sobre SNOMED CT (filter, count), para el autocompletado del editor."
             },
             new ResourceCap
             {

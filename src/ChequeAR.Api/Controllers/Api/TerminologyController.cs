@@ -6,23 +6,22 @@ using System.Web.Http;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
-using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
-using Newtonsoft.Json.Linq;
 
 namespace ChequeAR.Api.Controllers.Api
 {
     /// Autocompletado de códigos SNOMED CT para el editor de cuestionarios.
-    /// El front manda el texto de la pregunta como filter y recibe una lista
-    /// {code, display}. La llamada al servidor terminológico se hace server-side
+    /// El front manda el texto de la pregunta como filter y recibe un ValueSet con la
+    /// expansión. La llamada al servidor terminológico se hace server-side
     /// (ver TerminologyClient): así no exponemos el server externo al navegador
     /// (CORS/licencia) y podemos cambiar de instancia sólo por config.
     [RoutePrefix("fhir/r5/ValueSet")]
     public class TerminologyController : ApiController
     {
-        private readonly ITerminologyClient _terminology;
+        private readonly TerminologyService _terminology;
 
-        public TerminologyController(ITerminologyClient terminology)
+        public TerminologyController(TerminologyService terminology)
         {
             _terminology = terminology;
         }
@@ -33,22 +32,11 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpGet, Route("$expand"), RequiresPermissionApi(Permissions.TerminologyExpand)]
         public async Task<IHttpActionResult> Expand([FromUri] string filter = null, [FromUri] int count = 15)
         {
-            // Menos de 3 caracteres da ruido y castiga al server terminológico: no buscamos.
-            if (string.IsNullOrWhiteSpace(filter) || filter.Trim().Length < 3)
-                return Ok(new { system = "http://snomed.info/sct", results = new object[0] });
-
+            // Menos de 3 caracteres da ruido y castiga al server terminológico: el servicio
+            // devuelve la expansión vacía sin consultarlo.
             try
             {
-                var json = await _terminology.ExpandSnomedAsync(filter.Trim(), System.Math.Min(System.Math.Max(count, 1), 50));
-                var results = new List<object>();
-                var contains = JObject.Parse(json)["expansion"]?["contains"] as JArray;
-                foreach (var c in contains ?? new JArray())
-                {
-                    var code = (string)c["code"];
-                    if (string.IsNullOrEmpty(code)) continue;
-                    results.Add(new { code = code, display = (string)c["display"] });
-                }
-                return Ok(new { system = "http://snomed.info/sct", results = results });
+                return Ok(await _terminology.ExpandAsync(filter, count, DateTime.UtcNow));
             }
             catch (TerminologyException ex)
             {

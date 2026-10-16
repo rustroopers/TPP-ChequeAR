@@ -97,9 +97,9 @@ conformes y `OperationOutcome` en los errores.
 | `Questionnaire` | read, search, create, update, delete + `$publish`, `$archive`, `$clone` |
 | `QuestionnaireResponse` | read, search, create + `$save-progress`, `$finalize`, `$amend`, `$amend-commit`, `$abandon`, `$lock`, `$renew-lock`, `$unlock`, `$retarget-preview`, `$retarget-version` |
 | `AuditEvent` | read, search |
-| `Patient` | read, search — **sólo lectura**: ChequeAR no posee la entidad |
-| `Encounter` | search — **sólo lectura**: derivado de las fichas cargadas |
-| `ValueSet` | `$expand` (autocompletado SNOMED CT; devuelve un formato propio, no un ValueSet) |
+| `Patient` | read, search (paginada) — **sólo lectura**: ChequeAR no posee la entidad |
+| `Encounter` | search (paginada) — **sólo lectura**: derivado de las fichas cargadas |
+| `ValueSet` | `$expand` sobre SNOMED CT (autocompletado del editor) |
 | `Observation` | **no soportado**, declarado explícitamente en el CapabilityStatement |
 
 **Fuera de la interfaz FHIR, a propósito**: `/auth`, `/api/reports`, `/api/reports/saved`,
