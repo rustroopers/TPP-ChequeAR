@@ -19,9 +19,9 @@
   <PropertyGroup>
     <Include>[ChequeAR.Domain]*,[ChequeAR.Application]*</Include>
     <CoverletOutputFormat>cobertura</CoverletOutputFormat>
-    <ThresholdType>line</ThresholdType>
+    <ThresholdType>line,branch</ThresholdType>
     <ThresholdStat>total</ThresholdStat>
-    <Threshold>75</Threshold>
+    <Threshold>85,75</Threshold>
   </PropertyGroup>
 
   <ItemGroup>
