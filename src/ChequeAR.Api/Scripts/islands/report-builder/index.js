@@ -124,13 +124,15 @@
                 return out;
             }
 
+            var questionsSeq = window.ChequeARIslands.http.latest();
             function loadQuestions(id) {
+                var vigente = questionsSeq();
                 questions.value = [];
                 if (!id) return Promise.resolve();
                 // Las preguntas de las versiones publicadas, que son contra las que se cargaron las fichas.
                 return fetch('/api/reports/questionnaires/' + id + '/structure', { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
-                    .then(function (q) { questions.value = flattenItems(q.item, []); })
+                    .then(function (q) { if (vigente()) questions.value = flattenItems(q.item, []); })
                     .catch(function () { /* sin preguntas: se puede filtrar igual por fecha */ });
             }
 

@@ -298,7 +298,7 @@ else
             var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
             if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "error"); return; }
             var draft = draftIdByQid[qid.toLowerCase()];
-            if (draft) {
+            if (draft && draft.patientId === pid) {
                 openResumeChoice(pid, qid, draft.id, questionnaireTitleFor(qid));
             } else {
                 goToLoad(pid, qid);
@@ -398,7 +398,10 @@ else
     // arma draftIdByQid (qid -> ficha InProgress), que usa "Comenzar carga" para decidir si
     // hay que preguntar "continuar o empezar de nuevo".
     var draftIdByQid = {};
+    // El paciente abierto en el selector: la respuesta de uno anterior que llega tarde se ignora.
+    var openPatientId = null;
     function loadLastEntries(patientId) {
+        openPatientId = patientId;
         var labels = document.querySelectorAll(".cq-q-last");
         Array.prototype.forEach.call(labels, function (el) { el.textContent = ""; });
         draftIdByQid = {};
@@ -407,7 +410,7 @@ else
         fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200&_summary=true", {
             headers: { "Authorization": "Bearer " + meta.getAttribute("content") }
         }).then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
-            if (!bundle) return;
+            if (!bundle || patientId !== openPatientId) return;
             // Bundle conforme: los resultados vienen en entry[].resource, y el cuestionario
             // se referencia por su canonical (.../Questionnaire/{id}), no por un campo propio.
             var entries = bundle.entry || [];
@@ -423,7 +426,7 @@ else
                 // A lo sumo debería haber una InProgress por paciente+cuestionario; si hay
                 // más de una (dato viejo), nos quedamos con la más reciente.
                 if (r.status === "in-progress" && r.id && (!draftIdByQid[qid] || when > draftIdByQid[qid].when)) {
-                    draftIdByQid[qid] = { id: r.id, when: when };
+                    draftIdByQid[qid] = { id: r.id, when: when, patientId: patientId };
                 }
             });
             Array.prototype.forEach.call(labels, function (el) {

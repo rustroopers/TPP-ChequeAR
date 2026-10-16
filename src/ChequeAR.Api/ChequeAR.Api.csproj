@@ -186,7 +186,6 @@
     <Content Include="Content\img\favicon-512.png" />
     <Content Include="Content\i18n\es-AR.json" />
     <Content Include="Views\Account\Login.cshtml" />
-    <Content Include="Views\Account\SessionExpired.cshtml" />
     <Content Include="Views\Account\Profile.cshtml" />
     <Content Include="Views\Questionnaires\Index.cshtml" />
     <Content Include="Views\Questionnaires\Edit.cshtml" />

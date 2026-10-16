@@ -46,8 +46,10 @@
 
             function authHeaders() { return window.ChequeARIslands.auth.headers(true); }
 
+            var loadSeq = window.ChequeARIslands.http.latest();
             function load(query) {
                 if (!query || !query.questionnaireId) return;
+                var vigente = loadSeq();
                 lastQuery.value = query;
                 loading.value = true; error.value = null;
                 fetch('/api/reports/stats', {
@@ -55,13 +57,15 @@
                 }).then(window.ChequeARIslands.http.ensureOk).then(function (r) {
                     return r.json();
                 }).then(function (d) {
+                    if (!vigente()) return;
                     stats.value = d;
                     Object.keys(selected).forEach(function (k) { delete selected[k]; });
                     chartableQuestions.value.forEach(function (q) { selected[q.LinkId] = true; });
                 }).catch(function (e) {
+                    if (!vigente()) return;
                     error.value = e.message;
                     stats.value = null;
-                }).then(function () { loading.value = false; });
+                }).then(function () { if (vigente()) loading.value = false; });
             }
 
             // El constructor de consultas (otra isla) avisa que hay una cohorte nueva. Es el
