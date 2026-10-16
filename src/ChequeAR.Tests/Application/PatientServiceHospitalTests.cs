@@ -122,6 +122,24 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("22253000", unico.Code);
         }
 
+        [Fact]
+        public async Task ExpandAsync_DevuelveUnValueSetConLaExpansion()
+        {
+            var client = new Mock<ITerminologyClient>();
+            client.Setup(c => c.ExpandSnomedAsync("dolor", 50)).ReturnsAsync(
+                "{\"expansion\":{\"contains\":[{\"code\":\"22253000\",\"display\":\"dolor\"}]}}");
+            var ahora = new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc);
+
+            var vs = await new TerminologyService(client.Object).ExpandAsync("dolor", 500, ahora);
+
+            Assert.Equal("http://snomed.info/sct?fhir_vs", vs.Url);
+            var c1 = Assert.Single(vs.Expansion.Contains);
+            Assert.Equal("http://snomed.info/sct", c1.System);
+            Assert.Equal("22253000", c1.Code);
+            Assert.Contains(vs.Expansion.Parameter, p => p.Name == "count" && ((Hl7.Fhir.Model.Integer)p.Value).Value == 50);
+            Assert.NotNull(new Hl7.Fhir.Serialization.FhirJsonSerializer().SerializeToString(vs));
+        }
+
         [Theory]
         [InlineData(null)]
         [InlineData("<html>")]

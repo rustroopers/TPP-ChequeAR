@@ -36,7 +36,9 @@
                     throw err;
                 }
                 if (!res.ok) throw new Error(diagnostico(body, 'HTTP ' + res.status));
-                return body;
+                // ValueSet: los conceptos vienen en expansion.contains.
+                var contains = (body && body.expansion && body.expansion.contains) || [];
+                return contains.map(function (c) { return { code: c.code, display: c.display }; });
             });
         });
     }
@@ -93,7 +95,7 @@
 
             expand(term, 15, abort ? abort.signal : undefined)
                 .then(function (data) {
-                    results.value = (data && data.results) || [];
+                    results.value = data;
                     open.value = true;
                 })
                 .catch(function (err) {
@@ -150,7 +152,7 @@
         }
         return expand(code, 5)
             .then(function (data) {
-                var results = (data && data.results) || [];
+                var results = data;
                 for (var i = 0; i < results.length; i++) {
                     // Match exacto: $expand con filtro numérico puede devolver conceptos cuyo
                     // código apenas contiene lo tipeado, y aceptar el primero codificaría algo

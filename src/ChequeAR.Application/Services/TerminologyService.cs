@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
 using Newtonsoft.Json.Linq;
+using FhirModel = Hl7.Fhir.Model;
 
 namespace ChequeAR.Application.Services
 {
@@ -30,7 +32,31 @@ namespace ChequeAR.Application.Services
 
         private readonly ITerminologyClient _client;
 
+        public const int MaxCount = 50;
+
         public TerminologyService(ITerminologyClient client) { _client = client; }
+
+        /// <summary>
+        /// La respuesta de <c>ValueSet/$expand</c>: un ValueSet con la expansión sobre el
+        /// ValueSet implícito de SNOMED CT entero.
+        /// </summary>
+        public async Task<FhirModel.ValueSet> ExpandAsync(string filter, int count, DateTime nowUtc)
+        {
+            count = Math.Max(1, Math.Min(count, MaxCount));
+            var sugerencias = await SuggestAsync(filter, count);
+            var expansion = new FhirModel.ValueSet.ExpansionComponent { TimestampElement = new FhirModel.FhirDateTime(new DateTimeOffset(nowUtc, TimeSpan.Zero)) };
+            if (!string.IsNullOrWhiteSpace(filter))
+                expansion.Parameter.Add(new FhirModel.ValueSet.ParameterComponent { Name = "filter", Value = new FhirModel.FhirString(filter.Trim()) });
+            expansion.Parameter.Add(new FhirModel.ValueSet.ParameterComponent { Name = "count", Value = new FhirModel.Integer(count) });
+            foreach (var s in sugerencias)
+                expansion.Contains.Add(new FhirModel.ValueSet.ContainsComponent { System = SnomedSystem, Code = s.Code, Display = s.Display });
+            return new FhirModel.ValueSet
+            {
+                Url = SnomedSystem + "?fhir_vs",
+                Status = FhirModel.PublicationStatus.Active,
+                Expansion = expansion
+            };
+        }
 
         public async Task<IReadOnlyList<CodeSuggestion>> SuggestAsync(string filter, int count)
         {

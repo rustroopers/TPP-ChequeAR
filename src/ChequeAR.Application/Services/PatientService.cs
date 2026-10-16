@@ -50,24 +50,28 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public const int MaxSearchResults = 50;
 
+        /// <summary>Lo más que se trae para paginar una búsqueda (FHIR _offset + _count).</summary>
+        public const int MaxSearchWindow = 1000;
+
         // con una sola letra coincide cualquier paciente
         public const int MinSearchLength = 2;
 
-        public async Task<IReadOnlyList<PatientSearchHit>> SearchAsync(string query)
+        public async Task<IReadOnlyList<PatientSearchHit>> SearchAsync(string query, int limit = MaxSearchResults)
         {
             if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < MinSearchLength)
                 return new List<PatientSearchHit>();
+            limit = Math.Max(1, Math.Min(limit, MaxSearchWindow));
 
             try
             {
-                var rows = await _oracle.SearchAsync(PatientView, SearchColumns, query, MaxSearchResults);
+                var rows = await _oracle.SearchAsync(PatientView, SearchColumns, query, limit);
                 var result = new List<PatientSearchHit>();
                 foreach (var row in rows) result.Add(MapRow(row, null));
                 if (result.Count > 0) return result;
             }
             catch { /* hospital no disponible: caemos a datos propios */ }
 
-            return await SearchFromResponsesAsync(query);
+            return await SearchFromResponsesAsync(query, limit);
         }
 
         public async Task<PatientSearchHit> GetAsync(string hospitalId)
@@ -122,9 +126,9 @@ namespace ChequeAR.Application.Services
             }
         }
 
-        public async Task<IReadOnlyList<QuestionnaireResponse>> GetEncountersAsync(string hospitalId, int take = 50)
+        public async Task<IReadOnlyList<QuestionnaireResponse>> GetEncountersAsync(string hospitalId, int take = 50, int skip = 0)
         {
-            return await _qrRepo.SearchAsync(hospitalId, null, null, 0, take, _guard.Scope);
+            return await _qrRepo.SearchAsync(hospitalId, null, null, skip, take, _guard.Scope);
         }
 
         /// <summary>Total de fichas del paciente visibles para quien consulta, sin el tope de <see cref="GetEncountersAsync"/>.</summary>
@@ -135,7 +139,7 @@ namespace ChequeAR.Application.Services
         /// <summary>Fichas recientes entre las que se busca cuando el hospital no responde.</summary>
         private const int DegradedScan = 500;
 
-        private async Task<IReadOnlyList<PatientSearchHit>> SearchFromResponsesAsync(string query)
+        private async Task<IReadOnlyList<PatientSearchHit>> SearchFromResponsesAsync(string query, int limit)
         {
             var responses = await _qrRepo.SearchAsync(null, null, null, 0, DegradedScan, _guard.Scope);
             var q = query.Trim().ToLowerInvariant();
@@ -154,7 +158,7 @@ namespace ChequeAR.Application.Services
             var catalog = await _specialties.GetAsync();
             var specialtyByQuestionnaire = new Dictionary<Guid, string>();
             var hits = new List<PatientSearchHit>();
-            foreach (var m in matches.Take(MaxSearchResults))
+            foreach (var m in matches.Take(limit))
                 hits.Add(await BuildHitAsync(m.HospitalId, m.Responses, catalog, specialtyByQuestionnaire));
             return hits;
         }

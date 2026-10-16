@@ -21,17 +21,23 @@ namespace ChequeAR.Api.Controllers.Api
         public PatientController(PatientService svc) { _svc = svc; }
 
         [HttpGet, Route(""), Authorize]
-        public async Task<IHttpActionResult> Search([FromUri] string name = null, [FromUri] string q = null)
+        public async Task<IHttpActionResult> Search([FromUri] string name = null, [FromUri] string q = null,
+            [FromUri] int _count = PatientService.MaxSearchResults, [FromUri] int _offset = 0)
         {
             // 'name' es el parámetro de búsqueda del estándar; 'q' se acepta por
             // compatibilidad con lo que usaban las pantallas antes de la feature 009.
             var texto = !string.IsNullOrWhiteSpace(name) ? name : q;
-            var hits = await _svc.SearchAsync(texto);
+            var count = FhirBundles.ClampCount(_count);
+            var offset = Math.Min(FhirBundles.ClampOffset(_offset), PatientService.MaxSearchWindow - 1);
+            // Uno de más para saber si hay otra página: la vista no da un total.
+            var window = Math.Min(offset + count + 1, PatientService.MaxSearchWindow);
+            var hits = await _svc.SearchAsync(texto, window);
 
-            var recursos = FhirPatientProjection.ToPatients(hits).Cast<Hl7.Fhir.Model.Resource>();
-            // Con el tope alcanzado puede haber más coincidencias: el total no se conoce.
-            var total = hits.Count < PatientService.MaxSearchResults ? hits.Count : (int?)null;
-            return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl()));
+            var pagina = hits.Skip(offset).Take(count).ToList();
+            var recursos = FhirPatientProjection.ToPatients(pagina).Cast<Hl7.Fhir.Model.Resource>();
+            var total = hits.Count < window ? hits.Count : (int?)null;
+            return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl(), Request.RequestUri, offset, count,
+                hasMore: hits.Count > offset + count));
         }
 
         [HttpGet, Route("{hospitalId}"), Authorize]

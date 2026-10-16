@@ -43,8 +43,9 @@ namespace ChequeAR.Application.Fhir
         /// relativa inválida.
         /// </param>
         /// <param name="self">URL del pedido: con ella se arman los links self, next y previous.</param>
+        /// <param name="hasMore">Sin total conocido, si hay resultados después de esta página.</param>
         public static Bundle SearchSet(IEnumerable<Resource> resources, int? total, string baseUrl = null,
-            Uri self = null, int offset = 0, int count = 0)
+            Uri self = null, int offset = 0, int count = 0, bool hasMore = false)
         {
             var items = (resources ?? Enumerable.Empty<Resource>()).Where(r => r != null).ToList();
             var root = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/');
@@ -64,7 +65,7 @@ namespace ChequeAR.Application.Fhir
             if (self != null)
             {
                 bundle.Link.Add(new Bundle.LinkComponent { Relation = "self", Url = self.ToString() });
-                if (count > 0 && total.HasValue && offset + count < total.Value)
+                if (count > 0 && (total.HasValue ? offset + count < total.Value : hasMore))
                     bundle.Link.Add(new Bundle.LinkComponent { Relation = "next", Url = WithOffset(self, offset + count) });
                 if (count > 0 && offset > 0)
                     bundle.Link.Add(new Bundle.LinkComponent { Relation = "previous", Url = WithOffset(self, Math.Max(0, offset - count)) });
