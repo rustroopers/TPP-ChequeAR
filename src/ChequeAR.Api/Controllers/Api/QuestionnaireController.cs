@@ -39,7 +39,12 @@ namespace ChequeAR.Api.Controllers.Api
                 return await SearchVersionAsync(url, version);
 
             QuestionnaireStatus? st = null;
-            if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                if (!Enum.TryParse(status.Trim(), true, out QuestionnaireStatus parsed) || !Enum.IsDefined(typeof(QuestionnaireStatus), parsed))
+                    return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("status no reconocido: " + status));
+                st = parsed;
+            }
             try
             {
                 var items = await _service.SearchAsync(st, titleContains, specialty,
@@ -56,7 +61,8 @@ namespace ChequeAR.Api.Controllers.Api
                 var versiones = await _service.GetVersionCountsAsync(ids);
                 var recursos = completos.Select(q => (Hl7.Fhir.Model.Resource)FhirQuestionnaireBuilder.ToResource(
                     q, versiones.TryGetValue(q.Id, out var n) ? n : 0));
-                return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+                return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl(), Request.RequestUri,
+                    FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count)));
             }
             catch (SpecialtyForbiddenException)
             {

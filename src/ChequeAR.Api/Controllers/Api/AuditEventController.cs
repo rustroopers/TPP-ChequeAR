@@ -25,7 +25,8 @@ namespace ChequeAR.Api.Controllers.Api
                 skip: FhirBundles.ClampOffset(_offset), take: FhirBundles.ClampCount(_count));
 
             var recursos = pagina.Items.Select(e => (Resource)FhirAuditEventBuilder.Build(e));
-            return Ok(FhirBundles.SearchSet(recursos, pagina.Total, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, pagina.Total, FhirBaseUrl(), Request.RequestUri,
+                FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count)));
         }
 
         // A7 — detalle de evento. Búsqueda por id directo (no FHIR-search).

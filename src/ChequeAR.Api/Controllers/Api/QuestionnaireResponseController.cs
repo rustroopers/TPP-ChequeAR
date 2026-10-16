@@ -29,13 +29,17 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         [HttpGet, Route(""), Authorize]
-        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] Guid? questionnaire = null, [FromUri] string status = null, [FromUri] int _count = 50, [FromUri] int _offset = 0, [FromUri] string _summary = null)
+        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] string questionnaire = null, [FromUri] string status = null, [FromUri] int _count = 50, [FromUri] int _offset = 0, [FromUri] string _summary = null)
         {
-            ResponseStatus? st = null;
-            if (Enum.TryParse(status, true, out ResponseStatus s)) st = s;
-            var items = await _service.SearchAsync(subject, questionnaire, st,
-                FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count));
-            var total = await _service.CountAsync(subject, questionnaire, st);
+            if (!FhirSearchParams.TryParseStatus(status, out var st))
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("status no reconocido: " + status));
+            if (!FhirSearchParams.TryParseQuestionnaire(questionnaire, out var qid))
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("questionnaire no reconocido: " + questionnaire));
+            var paciente = FhirSearchParams.ParseSubject(subject);
+            var offset = FhirBundles.ClampOffset(_offset);
+            var count = FhirBundles.ClampCount(_count);
+            var items = await _service.SearchAsync(paciente, qid, st, offset, count);
+            var total = await _service.CountAsync(paciente, qid, st);
 
             // Con _summary=true no viajan respuestas y no se audita; sin él, cada ficha cuenta como lectura.
             var resumen = string.Equals(_summary, "true", StringComparison.OrdinalIgnoreCase);
@@ -43,7 +47,7 @@ namespace ChequeAR.Api.Controllers.Api
                 foreach (var r in items) await _accessAudit.ResponseRead(r);
 
             var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)(resumen ? Summary(ToFhir(r)) : ToFhir(r)));
-            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl(), Request.RequestUri, offset, count));
         }
 
         private static Hl7.Fhir.Model.QuestionnaireResponse Summary(Hl7.Fhir.Model.QuestionnaireResponse resource)
