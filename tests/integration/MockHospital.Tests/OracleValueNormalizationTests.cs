@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using ChequeAR.Infrastructure.Oracle;
 using Xunit;
@@ -35,7 +36,7 @@ namespace ChequeAR.Tests.MockHospital
 
             Assert.Equal(a, na);
             Assert.Equal(b, nb);
-            Assert.NotEqual(Convert.ToString(na), Convert.ToString(nb));
+            Assert.NotEqual(Convert.ToString(na, CultureInfo.InvariantCulture), Convert.ToString(nb, CultureInfo.InvariantCulture));
         }
 
         [Fact]

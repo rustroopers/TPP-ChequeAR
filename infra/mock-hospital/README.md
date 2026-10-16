@@ -128,11 +128,13 @@ catálogos embebidos (CIE-10, LOINC).
 
 ```bash
 cd tests/integration/MockHospital.Tests
-dotnet test
+dotnet test --filter "Requires=Oracle"
 ```
 
-La suite asume que el contenedor está corriendo y `healthy`. Si no, los tests
-fallan con un mensaje claro indicando cómo levantarlo.
+Los tests marcados `Requires=Oracle` necesitan una base con el esquema del mock y
+**no corren en CI**: el CI usa runners Windows, que no pueden levantar el contenedor
+de Oracle. En CI sólo corren los que no necesitan base (`--filter "Requires!=Oracle"`).
+Si la base no está, los tests fallan con un mensaje que dice cómo levantarla.
 
 ### Wiring de la suite del módulo 003
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.IO;
 using System.Linq;
@@ -14,7 +15,8 @@ namespace ChequeAR.Tests.MockHospital
     /// </summary>
     [Collection("MockHospital")]
     // Necesita el Oracle XE del mock levantado. El CI de build/test lo excluye
-    // con --filter "Requires!=Oracle"; el job de integracion lo incluye.
+    // con --filter "Requires!=Oracle"; no hay job que los corra: van a mano, contra un
+    // Oracle con el esquema del mock (ver infra/mock-hospital/README.md).
     [Trait("Requires", "Oracle")]
     public class ViewContractTests
     {
@@ -90,7 +92,7 @@ namespace ChequeAR.Tests.MockHospital
                     "WHERE PRIVILEGE IN ('INSERT ANY TABLE','UPDATE ANY TABLE','DELETE ANY TABLE')", conn))
                 {
                     conn.Open();
-                    var cnt = Convert.ToInt64(cmd.ExecuteScalar());
+                    var cnt = Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
                     // El owner SÍ puede tener varios privs sobre su schema; el test ancla
                     // que CHEQUEAR_RO no es alcanzable con privilegios destructivos
                     // a través de esta sesión. La auditoría completa está en el README.

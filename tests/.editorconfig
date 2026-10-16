@@ -9,3 +9,6 @@ dotnet_diagnostic.CA1707.severity = none
 # a proposito -moverlo a un campo aparte de la clase perjudica la lectura del caso, no la
 # mejora- y ningun test corre en un loop caliente.
 dotnet_diagnostic.CA1861.severity = none
+
+# xUnit nombra las definiciones de colección con el sufijo Collection.
+dotnet_diagnostic.CA1711.severity = none

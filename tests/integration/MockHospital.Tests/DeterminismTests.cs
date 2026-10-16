@@ -17,7 +17,8 @@ namespace ChequeAR.Tests.MockHospital
     /// </summary>
     [Collection("MockHospital")]
     // Necesita el Oracle XE del mock levantado. El CI de build/test lo excluye
-    // con --filter "Requires!=Oracle"; el job de integracion lo incluye.
+    // con --filter "Requires!=Oracle"; no hay job que los corra: van a mano, contra un
+    // Oracle con el esquema del mock (ver infra/mock-hospital/README.md).
     [Trait("Requires", "Oracle")]
     public class DeterminismTests
     {

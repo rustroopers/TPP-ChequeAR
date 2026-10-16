@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -56,7 +57,7 @@ namespace ChequeAR.Tests.MockHospital
             using (var cmd = new OracleCommand($"SELECT COUNT(*) FROM HOSPITAL_MOCK.{viewName}", conn))
             {
                 conn.Open();
-                return Convert.ToInt64(cmd.ExecuteScalar());
+                return Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
             }
         }
 

@@ -137,7 +137,8 @@ description: "Task list — Mock de la base de datos del lado Hospital (provisor
 
 - [X] T036 [P] Agregar al README sección "Apple Silicon": confirmar `platform: linux/amd64`, sugerir ≥6 GB de RAM en Docker Desktop, advertir que primer arranque puede tardar ~8 min (R8)
 - [X] T037 [P] Agregar al README sección "Troubleshooting" copiando de `quickstart.md` (puerto 1521 ocupado, `unhealthy` tras 10 min, logs del seed)
-- [X] T038 [P] Agregar workflow opcional `.github/workflows/mock-hospital-smoke.yml` que en cada PR a `dev` levanta el compose, espera `--wait`, corre los 4 grupos de tests (~5 min total) y reporta; marcar como opcional si CI de GitHub Actions no tiene Docker disponible
+- [ ] T038 [P] Agregar workflow opcional `.github/workflows/mock-hospital-smoke.yml` que en cada PR a `dev` levanta el compose, espera `--wait`, corre los 4 grupos de tests (~5 min total) y reporta; marcar como opcional si CI de GitHub Actions no tiene Docker disponible
+  - **Nota (2026-10-16):** el workflow se borró en 0f911ad. Los runners Windows del CI no pueden levantar el contenedor; los tests `Requires=Oracle` se corren a mano.
 - [X] T039 Actualizar `src/README.md` (ChequeAR) con una línea al final apuntando a `infra/mock-hospital/README.md` para que devs nuevos lo descubran
 - [X] T040 Smoke manual completo: clonar el repo en una máquina limpia (o `git clean -fdx`), seguir el quickstart al pie de la letra, cronometrar tiempo a `healthy`; documentar el resultado en una entrada de commit message para evidenciar SC-001
 

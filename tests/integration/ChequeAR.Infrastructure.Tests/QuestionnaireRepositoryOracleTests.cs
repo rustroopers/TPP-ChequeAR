@@ -34,7 +34,7 @@ namespace ChequeAR.Infrastructure.Tests
                 Assert.Equal(esperado, total);
                 Assert.Single(pagina);
                 Assert.All(pagina, q => Assert.Equal(codigo, q.SpecialtyCode));
-                Assert.Equal(0, await repo.CountAsync(null, null, null, new string[0]));
+                Assert.Equal(0, await repo.CountAsync(null, null, null, System.Array.Empty<string>()));
             }
         }
 
