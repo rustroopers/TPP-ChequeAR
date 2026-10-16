@@ -37,7 +37,6 @@
                                 min: q.min,
                                 max: q.max,
                                 maxLength: q.maxLength,
-                                pattern: q.pattern,
                                 accept: q.accept || 'image/jpeg,image/png,application/pdf',
                                 options: q.options || [],
                                 enableWhen: q.enableWhen || null
@@ -198,13 +197,6 @@
                 if ((q.type === 'string' || q.type === 'text') && typeof value === 'string' && value !== '') {
                     if (q.maxLength && value.length > q.maxLength) {
                         errors[q.linkId] = 'Máximo ' + q.maxLength + ' caracteres'; return;
-                    }
-                    if (q.pattern) {
-                        var re = null;
-                        // Un patrón inválido es error del autor del cuestionario, no de quien
-                        // responde: no debe bloquear la carga, así que se ignora.
-                        try { re = new RegExp(q.pattern); } catch (e) { re = null; }
-                        if (re && !re.test(value)) { errors[q.linkId] = 'Formato inválido'; return; }
                     }
                 }
                 delete errors[q.linkId];

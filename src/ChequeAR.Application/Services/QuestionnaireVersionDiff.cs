@@ -159,7 +159,6 @@ namespace ChequeAR.Application.Services
             Add(changes, "unit", va.Unit, vb.Unit);
             Add(changes, "range", Range(va.Min, va.Max), Range(vb.Min, vb.Max));
             Add(changes, "maxLength", Number(va.MaxLength), Number(vb.MaxLength));
-            Add(changes, "pattern", va.Pattern, vb.Pattern);
             Add(changes, "accept", va.Accept, vb.Accept);
 
             Add(changes, "options", Options(a), Options(b));

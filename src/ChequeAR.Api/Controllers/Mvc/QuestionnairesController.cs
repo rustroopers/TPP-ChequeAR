@@ -345,7 +345,6 @@ namespace ChequeAR.Api.Controllers.Mvc
                 view.Unit = validation.Unit;
                 view.Accept = validation.Accept;
                 view.MaxLength = validation.MaxLength;
-                view.Pattern = validation.Pattern;
             }
 
             var enableWhen = QuestionMetadataReader.ReadCondition(qq.EnableWhenJson);

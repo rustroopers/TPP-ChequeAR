@@ -215,7 +215,6 @@ namespace ChequeAR.Application.Services
             v.MinValue = patch.MinValue;
             v.MaxValue = patch.MaxValue;
             v.MaxLength = patch.MaxLength;
-            v.Pattern = patch.Pattern;
             v.Accept = patch.Accept;
             v.SnomedSystem = patch.SnomedSystem;
             v.SnomedCode = patch.SnomedCode;
@@ -350,7 +349,6 @@ namespace ChequeAR.Application.Services
             v.Name = v.Name?.Trim();
             v.SnomedCode = Blank(v.SnomedCode);
             v.Unit = Blank(v.Unit);
-            v.Pattern = Blank(v.Pattern);
             v.Accept = Blank(v.Accept);
             v.Term = Blank(v.Term);
 
@@ -426,13 +424,6 @@ namespace ChequeAR.Application.Services
             if (v.MaxLength.HasValue && v.MaxLength <= 0)
                 errors.Add("El largo máximo debe ser mayor que cero.");
 
-            if (v.Pattern != null)
-            {
-                // Se compila acá y no al validar cada respuesta: un patrón roto guardado en el
-                // catálogo se convertiría en una excepción en el renderer de CADA cuestionario
-                // que use la variable, lejos de donde se cometió el error.
-                if (!Compila(v.Pattern)) errors.Add("La expresión regular de validación no es válida.");
-            }
 
             if (v.SnomedCode != null)
             {
@@ -444,11 +435,6 @@ namespace ChequeAR.Application.Services
             if (errors.Count > 0) throw new ValidationFailedException(errors);
         }
 
-        private static bool Compila(string pattern)
-        {
-            try { return new Regex(pattern).ToString() != null; }
-            catch (ArgumentException) { return false; }
-        }
 
         private static void AssignOptionIds(ClinicalVariable v)
         {

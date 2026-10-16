@@ -27,7 +27,6 @@ namespace ChequeAR.Application.Services
         public decimal? MinValue { get; set; }
         public decimal? MaxValue { get; set; }
         public int? MaxLength { get; set; }
-        public string Pattern { get; set; }
         public string Accept { get; set; }
         public string SnomedSystem { get; set; }
         public string SnomedCode { get; set; }
@@ -48,7 +47,6 @@ namespace ChequeAR.Application.Services
             MinValue = v.MinValue,
             MaxValue = v.MaxValue,
             MaxLength = v.MaxLength,
-            Pattern = v.Pattern,
             Accept = v.Accept,
             SnomedSystem = v.SnomedSystem,
             SnomedCode = v.SnomedCode,
@@ -83,7 +81,6 @@ namespace ChequeAR.Application.Services
             MinValue = MinValue,
             MaxValue = MaxValue,
             MaxLength = MaxLength,
-            Pattern = Pattern,
             Accept = Accept,
             SnomedSystem = SnomedSystem,
             SnomedCode = SnomedCode,

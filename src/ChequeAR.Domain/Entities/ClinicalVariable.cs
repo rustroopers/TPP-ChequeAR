@@ -58,8 +58,6 @@ namespace ChequeAR.Domain.Entities
         /// <summary>Largo máximo; sólo para String y Text.</summary>
         public int? MaxLength { get; set; }
 
-        /// <summary>Expresión regular de validación; se valida que compile antes de guardar.</summary>
-        public string Pattern { get; set; }
 
         /// <summary>Lista de tipos MIME aceptados; sólo para Attachment.</summary>
         public string Accept { get; set; }

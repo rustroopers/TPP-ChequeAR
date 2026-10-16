@@ -103,9 +103,8 @@ namespace ChequeAR.Api.Models
         public string Unit { get; set; }
         public decimal? Min { get; set; }
         public decimal? Max { get; set; }
-        // Validación de texto (string/text): largo máximo y patrón (regex).
+        // Validación de texto (string/text): largo máximo.
         public int? MaxLength { get; set; }
-        public string Pattern { get; set; }
         public string Accept { get; set; }
         public EnableWhenView EnableWhen { get; set; }
         public string CodeSystem { get; set; }

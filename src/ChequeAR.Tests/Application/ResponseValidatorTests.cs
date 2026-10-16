@@ -20,8 +20,8 @@ namespace ChequeAR.Tests.Application
                     new RenderableQuestion { LinkId = "edad", Text = "Edad", Type = "integer", Min = 0, Max = 18 },
                     new RenderableQuestion { LinkId = "temp", Text = "Temperatura", Type = "decimal", Min = 30, Max = 45 },
                     new RenderableQuestion { LinkId = "dolor", Text = "Dolor", Type = "scale", Min = 0, Max = 10 },
-                    new RenderableQuestion { LinkId = "dni", Text = "DNI", Type = "string", MaxLength = 8, Pattern = "^[0-9]+$" },
-                    new RenderableQuestion { LinkId = "obs", Text = "Observaciones", Type = "text", Pattern = "([" },
+                    new RenderableQuestion { LinkId = "dni", Text = "DNI", Type = "string", MaxLength = 8 },
+                    new RenderableQuestion { LinkId = "obs", Text = "Observaciones", Type = "text" },
                     new RenderableQuestion { LinkId = "sev", Text = "Severidad", Type = "choice", Options = { new RenderableOption { Code = "leve" } } },
                     new RenderableQuestion { LinkId = "sint", Text = "Síntomas", Type = "openChoice", Options = { new RenderableOption { Code = "tos" }, new RenderableOption { Code = "fiebre" } } },
                     new RenderableQuestion { LinkId = "rx", Text = "Rx", Type = "attachment" },
@@ -84,41 +84,11 @@ namespace ChequeAR.Tests.Application
             Assert.Empty(Validar(true, item));
         }
 
-        [Theory]
-        [InlineData("123456789")]   // largo
-        [InlineData("12a45")]       // patrón
-        public void Texto_LargoOFormato(string valor)
-        {
-            Assert.Single(Validar(true, new QuestionnaireResponseItem { LinkId = "dni", ValueString = valor }));
-        }
-
-        [Theory]
-        [InlineData("(?i)^[a-z]+$", "123")]   // no compila en JavaScript: el navegador lo ignora
-        [InlineData("^\\w+$", "ñandú")]      // \w de JavaScript es ASCII: el navegador lo rechaza igual
-        public void Patron_SeEvaluaComoEnElNavegador(string patron, string valor)
-        {
-            var s = new RenderableQuestionnaire();
-            s.Groups.Add(new RenderableGroup { Questions = { new RenderableQuestion { LinkId = "x", Type = "string", Pattern = patron } } });
-            var errores = ResponseValidator.Validate(s, new[] { new QuestionnaireResponseItem { LinkId = "x", ValueString = valor } }, true);
-
-            if (patron.StartsWith("(?i)", StringComparison.Ordinal)) Assert.Empty(errores);
-            else Assert.Single(errores);
-        }
-
         [Fact]
-        public void Patron_ParentesisEscapadoOpcional_SeAplica()
+        public void Texto_SuperaElLargo()
         {
-            var s = new RenderableQuestionnaire();
-            s.Groups.Add(new RenderableGroup { Questions = { new RenderableQuestion { LinkId = "tel", Type = "string", Pattern = @"^\(?\d{2}\)?$" } } });
-
-            Assert.Empty(ResponseValidator.Validate(s, new[] { new QuestionnaireResponseItem { LinkId = "tel", ValueString = "(11)" } }, true));
-            Assert.Single(ResponseValidator.Validate(s, new[] { new QuestionnaireResponseItem { LinkId = "tel", ValueString = "abc" } }, true));
-        }
-
-        [Fact]
-        public void PatronInvalido_NoBloquea()
-        {
-            Assert.Empty(Validar(true, new QuestionnaireResponseItem { LinkId = "obs", ValueString = "x" }));
+            Assert.Single(Validar(true, new QuestionnaireResponseItem { LinkId = "dni", ValueString = "123456789" }));
+            Assert.Empty(Validar(true, new QuestionnaireResponseItem { LinkId = "dni", ValueString = "12a45" }));
         }
 
         [Fact]
