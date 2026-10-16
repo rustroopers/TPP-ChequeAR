@@ -73,6 +73,12 @@ El CI (`.github/workflows/build-test.yml`) corre lo mismo más los tests de inte
 necesitan Oracle, con umbral de cobertura en `ChequeAR.Tests`. `deploy.yml` publica en Azure
 desde `main`.
 
+Antes de migrar, el deploy exporta el esquema con Data Pump en `DATA_PUMP_DIR` y borra los
+exports viejos (`Deploy:BackupsToKeep`, 3 por omisión). Con `Deploy:BackupObjectUri` y
+`Deploy:BackupCredential` además copia el export a Object Storage. Borrar y copiar necesitan
+`GRANT EXECUTE ON DBMS_CLOUD TO CHEQUEAR` y, para copiar, una credencial creada con
+`DBMS_CLOUD.CREATE_CREDENTIAL`; sin eso el deploy sigue y deja un aviso.
+
 ## Dependencias clave (NuGet)
 
 - Microsoft.AspNet.Mvc / WebApi 5.2.9, Microsoft.Owin.Security.Jwt 4.2.2

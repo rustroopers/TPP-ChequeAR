@@ -53,5 +53,49 @@ END;";
             }
             return fileName + ".dmp";
         }
+
+        // Los tres necesitan EXECUTE sobre DBMS_CLOUD; la copia, además, una credencial de OCI
+        // creada con DBMS_CLOUD.CREATE_CREDENTIAL.
+        public IReadOnlyList<string> ListBackupFiles()
+        {
+            var archivos = new List<string>();
+            using (var conn = Open())
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT object_name FROM DBMS_CLOUD.LIST_FILES('DATA_PUMP_DIR')";
+                using (var r = cmd.ExecuteReader())
+                    while (r.Read()) archivos.Add(r.GetString(0));
+            }
+            return archivos;
+        }
+
+        public void DeleteBackupFile(string fileName) => Execute(
+            "BEGIN DBMS_CLOUD.DELETE_FILE(directory_name => 'DATA_PUMP_DIR', file_name => :archivo); END;",
+            ("archivo", fileName));
+
+        public void CopyBackup(string fileName, string objectUriBase, string credentialName) => Execute(
+            "BEGIN DBMS_CLOUD.PUT_OBJECT(credential_name => :credencial, object_uri => :uri, directory_name => 'DATA_PUMP_DIR', file_name => :archivo); END;",
+            ("credencial", credentialName), ("uri", objectUriBase.TrimEnd('/') + "/" + fileName), ("archivo", fileName));
+
+        private static OracleConnection Open()
+        {
+            var conn = new OracleConnection(ConfigurationManager.ConnectionStrings["ChequeAR"].ConnectionString);
+            conn.Open();
+            return conn;
+        }
+
+        private static void Execute(string plsql, params (string Name, string Value)[] parameters)
+        {
+            using (var conn = Open())
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandTimeout = BackupTimeoutSeconds;
+                cmd.CommandText = plsql;
+                cmd.BindByName = true;
+                foreach (var p in parameters)
+                    cmd.Parameters.Add(p.Name, OracleDbType.Varchar2).Value = p.Value;
+                cmd.ExecuteNonQuery();
+            }
+        }
     }
 }

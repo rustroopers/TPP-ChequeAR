@@ -9,6 +9,7 @@ using System.Text;
 using System.Web.Hosting;
 using System.Web.Http;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Services;
 using Serilog;
 
 namespace ChequeAR.Api.Controllers.Api
@@ -66,7 +67,13 @@ namespace ChequeAR.Api.Controllers.Api
                 var archivo = "chequear_" + DateTime.UtcNow.ToString("yyyyMMddHHmm", CultureInfo.InvariantCulture);
                 var backup = migrator.Backup(archivo);
                 Log.Information("Deploy: export del esquema en DATA_PUMP_DIR/{Backup}", backup);
-                lock (Gate) { _status.Backup = backup; _status.Step = "migrate"; }
+                lock (Gate) { _status.Backup = backup; _status.Step = "copy"; }
+                CopyAndPrune(migrator, archivo,
+                    ConfigurationManager.AppSettings["Deploy:BackupObjectUri"],
+                    ConfigurationManager.AppSettings["Deploy:BackupCredential"],
+                    int.TryParse(ConfigurationManager.AppSettings["Deploy:BackupsToKeep"], out var n) ? n : BackupRetention.DefaultKeep,
+                    _status);
+                lock (Gate) { _status.Step = "migrate"; }
 
                 var applied = migrator.Apply();
                 Log.Information("Deploy: migraciones aplicadas {Applied}", applied);
@@ -77,6 +84,44 @@ namespace ChequeAR.Api.Controllers.Api
                 Log.Error(ex, "Deploy: falló el paso {Step}", _status.Step);
                 lock (Gate) { _status.State = "failed"; _status.Error = ex.GetBaseException().Message; }
             }
+        }
+
+        /// <summary>
+        /// Copia el export a Object Storage (si está configurado) y borra los viejos. Ninguna de
+        /// las dos frena el deploy: el export ya quedó en la base.
+        /// </summary>
+        public static void CopyAndPrune(ISchemaMigrator migrator, string archivo, string objectUri, string credential,
+            int keep, MigrationStatus status)
+        {
+            if (!string.IsNullOrWhiteSpace(objectUri) && !string.IsNullOrWhiteSpace(credential))
+            {
+                try
+                {
+                    migrator.CopyBackup(archivo + ".dmp", objectUri, credential);
+                    lock (Gate) status.Copied = true;
+                }
+                catch (Exception ex)
+                {
+                    Warn(status, "No se pudo copiar el export a Object Storage", ex);
+                }
+            }
+
+            try
+            {
+                var borrar = BackupRetention.ToDelete(migrator.ListBackupFiles(), keep);
+                foreach (var f in borrar) migrator.DeleteBackupFile(f);
+                lock (Gate) status.Pruned = borrar.ToList();
+            }
+            catch (Exception ex)
+            {
+                Warn(status, "No se pudieron borrar los exports viejos", ex);
+            }
+        }
+
+        private static void Warn(MigrationStatus status, string message, Exception ex)
+        {
+            Log.Warning(ex, "Deploy: {Message}", message);
+            lock (Gate) status.Warnings.Add(message + ": " + ex.GetBaseException().Message);
         }
 
         // Sin clave configurada el endpoint no existe.
@@ -103,6 +148,9 @@ namespace ChequeAR.Api.Controllers.Api
             public List<string> Pending { get; set; }
             public List<string> Applied { get; set; }
             public string Backup { get; set; }
+            public bool Copied { get; set; }
+            public List<string> Pruned { get; set; }
+            public List<string> Warnings { get; set; } = new List<string>();
             public string Error { get; set; }
         }
     }
