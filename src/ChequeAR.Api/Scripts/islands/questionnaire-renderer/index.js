@@ -189,6 +189,16 @@
             var MAX_DECIMALS = 6, MAX_TEXT = 2000, MAX_TEXT_BYTES = 4000, MAX_NUMBER = 1e16;
             function maxLengthOf(q) { return Math.min(q.maxLength || MAX_TEXT, MAX_TEXT); }
 
+            // Ids para enlazar cada pregunta con su etiqueta y su error (lectores de pantalla).
+            function fieldId(q) { return 'q_' + String(q.linkId).replace(/[^A-Za-z0-9_-]/g, '_'); }
+            function isGroup(q) { return q.type === 'boolean' || q.type === 'openChoice'; }
+            // Sin control propio (grupo, o adjunto ya cargado) la etiqueta no apunta a nada.
+            function labelFor(q) {
+                if (isGroup(q)) return null;
+                if (q.type === 'attachment' && answers[q.linkId] && answers[q.linkId].attachmentId) return null;
+                return fieldId(q);
+            }
+
             // Un valor que no entra en la columna no se manda en el autosave: el servidor lo
             // rechaza y conserva el último guardado.
             function storageError(q, value) {
@@ -669,15 +679,17 @@
                     return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$renew-lock', {
                         method: 'POST',
                         headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
-                    }).then(function (r) { return r.ok ? r.json() : null; })
-                      .then(function (body) {
-                          if (body && body.expiresAt) {
-                              lockExpiresAt.value = new Date(body.expiresAt);
-                              showRenewPrompt.value = false;
-                              if (body.concurrencyVersion !== undefined) concurrencyVersion.value = Number(body.concurrencyVersion);
-                          }
-                      });
-                }).catch(function () { });
+                    }).then(function (r) {
+                        if (!r.ok) return errorFrom(r, 'no se pudo extender la sesión de edición');
+                        return r.json();
+                    }).then(function (body) {
+                        if (body && body.expiresAt) {
+                            lockExpiresAt.value = new Date(body.expiresAt);
+                            showRenewPrompt.value = false;
+                            if (body.concurrencyVersion !== undefined) concurrencyVersion.value = Number(body.concurrencyVersion);
+                        }
+                    });
+                }).catch(function (err) { notifyError('No se pudo extender la sesión', err); });
             }
 
             function retryLock() {
@@ -991,6 +1003,7 @@
             // eliminó) y se recarga la página para renderizar el formulario nuevo.
             var retargetPreview = Vue.ref(null);
             var showRetargetModal = Vue.ref(false);
+            var retargetDialog = Vue.ref(null);
             var retargeting = Vue.ref(false);
 
             function openRetargetPreview() {
@@ -1003,6 +1016,7 @@
                 }).then(function (preview) {
                     retargetPreview.value = preview;
                     showRetargetModal.value = true;
+                    Vue.nextTick(function () { if (retargetDialog.value) retargetDialog.value.focus(); });
                 }).catch(function (err) {
                     notifyError('No se pudo calcular la vista previa', err);
                 });
@@ -1096,7 +1110,7 @@
                 retargeting: retargeting, openRetargetPreview: openRetargetPreview,
                 closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget,
                 amending: amending, amendReason: amendReason, cancelAmend: cancelAmend,
-                maxLengthOf: maxLengthOf
+                maxLengthOf: maxLengthOf, fieldId: fieldId, isGroup: isGroup, labelFor: labelFor, retargetDialog: retargetDialog
             };
         },
         template: '\
@@ -1137,7 +1151,7 @@
     <div v-else-if="showRenewPrompt" class="col-12">\
         <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
             <i class="bi bi-clock-history"></i>\
-            <div class="flex-grow-1">Su sesión de edición se cierra en {{ lockSecondsLeft }}s por inactividad.</div>\
+            <div class="flex-grow-1">{{ lockSecondsLeft > 0 ? \'Su sesión de edición se cierra en \' + lockSecondsLeft + \'s por inactividad.\' : \'Su sesión de edición venció por inactividad. Si nadie más la tomó, se retoma al seguir completando.\' }}</div>\
             <button class="btn btn-sm btn-primary" @click="renewLock">Seguir completando</button>\
         </div>\
     </div>\
@@ -1175,44 +1189,44 @@
                 <h2 class="cq-section-title" style="margin-top:0;">{{ g.title }}</h2>\
                 <template v-for="q in g.questions" :key="q.linkId">\
                     <div v-if="isVisible(q)" class="mb-3">\
-                        <label class="form-label">{{ q.text }}<span v-if="q.required" class="text-danger" aria-label="obligatorio"> *</span></label>\
+                        <label class="form-label" :id="fieldId(q) + \'_label\'" :for="labelFor(q)">{{ q.text }}<span v-if="q.required" class="text-danger" aria-label="obligatorio"> *</span></label>\
 \
-                        <input v-if="q.type === \'string\'" type="text" class="form-control" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <input v-if="q.type === \'string\'" type="text" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <div v-else-if="q.type === \'integer\' || q.type === \'decimal\'" class="input-group" style="max-width:260px;">\
                             <input :type="q.type === \'integer\' ? \'number\' : \'text\'"\
                                    :inputmode="q.type === \'integer\' ? \'numeric\' : \'decimal\'"\
                                    :step="q.type === \'integer\' ? \'1\' : null"\
-                                   class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                                   class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                    :value="answers[q.linkId] ?? \'\'" @input="onChange(q, $event.target.value)" />\
                             <span v-if="q.unit" class="input-group-text">{{ q.unit }}</span>\
                         </div>\
 \
-                        <div v-else-if="q.type === \'boolean\'" class="btn-group" role="group">\
+                        <div v-else-if="q.type === \'boolean\'" class="btn-group" role="group" :aria-labelledby="fieldId(q) + \'_label\'">\
                             <input :id="q.linkId + \'_y\'" type="radio" class="btn-check" :name="q.linkId" :checked="answers[q.linkId] === true" @change="onChange(q, true)" />\
                             <label class="btn btn-outline-secondary" :for="q.linkId + \'_y\'">Sí</label>\
                             <input :id="q.linkId + \'_n\'" type="radio" class="btn-check" :name="q.linkId" :checked="answers[q.linkId] === false" @change="onChange(q, false)" />\
                             <label class="btn btn-outline-secondary" :for="q.linkId + \'_n\'">No</label>\
                         </div>\
 \
-                        <select v-else-if="q.type === \'choice\'" class="form-select" style="max-width:340px;" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <select v-else-if="q.type === \'choice\'" class="form-select" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:340px;" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                 :value="answers[q.linkId] || \'\'" @change="onChange(q, $event.target.value)">\
                             <option value="">Seleccione…</option>\
                             <option v-for="opt in q.options" :key="opt.code" :value="opt.code">{{ opt.display }}</option>\
                         </select>\
 \
-                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                   :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)"></textarea>\
 \
                         <div v-else-if="q.type === \'scale\'" class="d-flex align-items-center gap-3" style="max-width:360px;">\
-                            <input type="range" class="form-range" :min="q.min !== undefined ? q.min : 0" :max="q.max !== undefined ? q.max : 10"\
+                            <input type="range" class="form-range" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" @click="onChange(q, Number($event.target.value))" :min="q.min !== undefined ? q.min : 0" :max="q.max !== undefined ? q.max : 10"\
                                    :value="answers[q.linkId] !== undefined && answers[q.linkId] !== \'\' ? answers[q.linkId] : (q.min !== undefined ? q.min : 0)"\
                                    @input="onChange(q, Number($event.target.value))" />\
                             <span class="cq-text-sm fw-semibold" style="min-width:2.5rem; text-align:right;">{{ answers[q.linkId] !== undefined && answers[q.linkId] !== \'\' ? answers[q.linkId] : \'—\' }}</span>\
                         </div>\
 \
-                        <div v-else-if="q.type === \'openChoice\'" :class="{ \'is-invalid\': errors[q.linkId] }">\
+                        <div v-else-if="q.type === \'openChoice\'" role="group" :aria-labelledby="fieldId(q) + \'_label\'" :class="{ \'is-invalid\': errors[q.linkId] }">\
                             <div v-for="opt in q.options" :key="opt.code" class="form-check">\
                                 <input class="form-check-input" type="checkbox" :id="q.linkId + \'_\' + opt.code"\
                                        :checked="(answers[q.linkId] || []).indexOf(opt.code) >= 0" @change="onToggleMulti(q, opt.code, $event.target.checked)" />\
@@ -1220,10 +1234,10 @@
                             </div>\
                         </div>\
 \
-                        <input v-else-if="q.type === \'date\'" type="date" class="form-control" style="max-width:240px;"\
+                        <input v-else-if="q.type === \'date\'" type="date" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:240px;"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
-                        <input v-else-if="q.type === \'dateTime\'" type="datetime-local" class="form-control" style="max-width:260px;"\
+                        <input v-else-if="q.type === \'dateTime\'" type="datetime-local" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:260px;"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <div v-else-if="q.type === \'attachment\'">\
@@ -1234,7 +1248,7 @@
                                 <button class="btn btn-sm btn-link text-danger" @click="clearFile(q)">Quitar</button>\
                             </div>\
                             <div v-else class="d-flex align-items-center gap-2">\
-                                <input type="file" class="form-control" style="max-width:340px;" :accept="q.accept"\
+                                <input type="file" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:340px;" :accept="q.accept"\
                                        :disabled="uploading[q.linkId]" @change="onFile(q, $event.target.files[0])" />\
                                 <span v-if="uploading[q.linkId]" class="cq-spinner"></span>\
                             </div>\
@@ -1242,7 +1256,7 @@
 \
                         <input v-else type="text" class="form-control" disabled placeholder="Tipo no soportado" />\
 \
-                        <div v-if="errors[q.linkId]" class="invalid-feedback d-block">{{ errors[q.linkId] }}</div>\
+                        <div v-if="errors[q.linkId]" :id="fieldId(q) + \'_error\'" class="invalid-feedback d-block">{{ errors[q.linkId] }}</div>\
                     </div>\
                 </template>\
             </section>\
@@ -1266,8 +1280,8 @@
     </div>\
 \
     <div v-if="showRetargetModal && retargetPreview" class="col-12" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeRetargetModal">\
-        <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
-            <h2 class="cq-section-title" style="margin-top:0;">Pasar a la versión v{{ retargetPreview.ToVersion }}</h2>\
+        <div ref="retargetDialog" class="cq-card" role="dialog" aria-modal="true" aria-labelledby="retargetTitle" tabindex="-1" @keydown.esc="closeRetargetModal" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
+            <h2 id="retargetTitle" class="cq-section-title" style="margin-top:0;">Pasar a la versión v{{ retargetPreview.ToVersion }}</h2>\
             <p class="cq-text-sm cq-text-muted">Está completando la v{{ retargetPreview.FromVersion }}. Así queda su ficha si pasa a la v{{ retargetPreview.ToVersion }}:</p>\
             <div class="mb-3">\
                 <div class="cq-text-sm fw-semibold"><i class="bi bi-check2 text-success me-1"></i>Se conservan ({{ retargetPreview.Carried.length }})</div>\
