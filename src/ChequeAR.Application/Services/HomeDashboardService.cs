@@ -69,19 +69,10 @@ namespace ChequeAR.Application.Services
             var recientes = await _responses.SearchAsync(null, null, null, 0, take, scope);
             if (recientes.Count == 0) return new List<RecentEncounterDto>();
 
-            // Una sola consulta en lugar de una por ficha. El cache manual del controller
-            // amortiguaba el N+1 dentro de la página, pero seguía siendo una consulta por
-            // cuestionario distinto.
-            var ids = recientes.Select(r => r.QuestionnaireId).Distinct().ToList();
-            var porId = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
-            foreach (var id in ids)
-            {
-                // Recorre por id directo (no vía QuestionnaireService): el scope ya se aplicó
-                // en SearchAsync, así que estos cuestionarios son los de las fichas que el
-                // usuario tiene permitido ver -- acá sólo se resuelven sus títulos.
-                var q = await _questionnaires.GetAsync(id);
-                if (q != null) porId[id] = q;
-            }
+            // Una sola consulta, sólo con la cabecera de cada cuestionario. Va directo al
+            // repositorio: el scope ya se aplicó al buscar las fichas.
+            var porId = (await _questionnaires.GetHeadersAsync(recientes.Select(r => r.QuestionnaireId)))
+                .ToDictionary(q => q.Id);
 
             var cat = await _specialties.GetAsync();
             return recientes.Select(r =>

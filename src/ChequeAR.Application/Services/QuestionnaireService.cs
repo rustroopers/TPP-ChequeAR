@@ -22,13 +22,6 @@ namespace ChequeAR.Application.Services
 
     public class QuestionnaireService
     {
-        // Tope del scan en memoria cuando el usuario está restringido a un subconjunto de
-        // especialidades: los repos no aceptan una lista de códigos permitidos (harían
-        // falta cambiar todas las firmas de búsqueda), así que se trae una tanda acotada y
-        // se filtra/pagina acá. Questionnaire son decenas de filas en este dominio -- el
-        // costo de sobre-traer es bajo. Documentado como simplificación deliberada.
-        private const int MaxScopedScan = 2000;
-
         private static readonly string[] SpecialtyRequiredError =
             { "El cuestionario debe tener una especialidad." };
 
@@ -102,8 +95,7 @@ namespace ChequeAR.Application.Services
                 return await _repo.SearchAsync(status, titleContains, specialtyCode, skip, take);
             if (scope.IsEmpty) return new List<Questionnaire>();
 
-            var scanned = await _repo.SearchAsync(status, titleContains, specialtyCode, 0, MaxScopedScan);
-            return scanned.Where(q => scope.Allows(q.SpecialtyCode)).Skip(skip).Take(take).ToList();
+            return await _repo.SearchAsync(status, titleContains, specialtyCode, scope.Codes.ToList(), skip, take);
         }
 
         public async Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
@@ -113,8 +105,7 @@ namespace ChequeAR.Application.Services
             if (scope.IsUnrestricted) return await _repo.CountAsync(status, titleContains, specialtyCode);
             if (scope.IsEmpty) return 0;
 
-            var scanned = await _repo.SearchAsync(status, titleContains, specialtyCode, 0, MaxScopedScan);
-            return scanned.Count(q => scope.Allows(q.SpecialtyCode));
+            return await _repo.CountAsync(status, titleContains, specialtyCode, scope.Codes.ToList());
         }
 
         /// <summary>

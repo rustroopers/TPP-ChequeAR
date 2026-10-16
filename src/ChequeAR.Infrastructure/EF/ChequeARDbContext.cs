@@ -27,8 +27,11 @@ namespace ChequeAR.Infrastructure.EF
                 new MigrateDatabaseToLatestVersion<ChequeARDbContext, Migrations.Configuration>());
         }
 
-        public ChequeARDbContext() : base("name=ChequeAR") { }
-        public ChequeARDbContext(string connectionString) : base(connectionString) { }
+        // ODP.NET no tiene límite por defecto: una espera de lock dejaba el request colgado.
+        public const int CommandTimeoutSeconds = 30;
+
+        public ChequeARDbContext() : base("name=ChequeAR") { Database.CommandTimeout = CommandTimeoutSeconds; }
+        public ChequeARDbContext(string connectionString) : base(connectionString) { Database.CommandTimeout = CommandTimeoutSeconds; }
 
         public DbSet<Questionnaire> Questionnaires { get; set; }
         public DbSet<QuestionnaireVersion> QuestionnaireVersions { get; set; }
