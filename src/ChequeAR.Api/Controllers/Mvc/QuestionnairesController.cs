@@ -115,6 +115,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             var pendingChanges = false;
             var concurrencyVersion = 0;
             var groups = new List<QuestionGroupView>();
+            var publishedLinkIds = new List<string>();
             // Codificación clínica del cuestionario completo (opcional). Mismo contrato que la
             // de cada pregunta: se lo desarma en la capa de negocio y acá sólo se pasa al editor.
             string code = null, codeDisplay = null, term = null;
@@ -141,6 +142,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     pendingChanges = q.HasUnpublishedChanges();
                     concurrencyVersion = q.ConcurrencyVersion;
                     groups = BuildEditorGroups(q, await VariablesDe(q));
+                    publishedLinkIds = PublishedLinkIds.From(q).Keys.ToList();
 
                     var coding = QuestionMetadataReader.ReadCoding(q.CodingJson);
                     if (coding != null)
@@ -182,7 +184,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             // El JSON de props se arma acá (no en la vista) para no serializar dynamics.
             // status manda: el editor no autoguarda un cuestionario publicado.
             ViewBag.EditorProps = JsonConvert.SerializeObject(
-                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges, code, codeDisplay, term, canEdit },
+                new { id = editorId, title, version = publishedVersion, isNew, specialtyCode = specialty, status, concurrencyVersion, groups, hasPendingChanges = pendingChanges, code, codeDisplay, term, canEdit, publishedLinkIds },
                 new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
             return View();
         }

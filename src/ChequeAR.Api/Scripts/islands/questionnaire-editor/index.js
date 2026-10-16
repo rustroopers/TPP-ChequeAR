@@ -24,7 +24,9 @@
             // Declarado (como hasPendingChanges): sin esto Vue lo deja en $attrs y
             // props.canEdit llega siempre undefined. Default true porque una prop Boolean
             // ausente vale false, y el server siempre la manda.
-            canEdit: { type: Boolean, default: true }
+            canEdit: { type: Boolean, default: true },
+            // linkIds de versiones publicadas: no se proponen para preguntas nuevas.
+            publishedLinkIds: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
             // Estado de persistencia. Para un cuestionario nuevo el id del controller es
@@ -670,6 +672,7 @@
                 var usados = usedLinkIds();
                 Object.keys(indexQuestions(baseGroups)).forEach(function (l) { usados[l] = true; });
                 Object.keys(reservados || {}).forEach(function (l) { usados[l] = true; });
+                (props.publishedLinkIds || []).forEach(function (l) { usados[l] = true; });
                 var n = 1;
                 while (usados[code + '-' + n]) n++;
                 return code + '-' + n;

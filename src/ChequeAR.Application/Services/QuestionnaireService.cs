@@ -460,6 +460,7 @@ namespace ChequeAR.Application.Services
                                          .ToDictionary(g => g.Key, g => g.First());
                 await BindVariablesAsync(replacement, yaEnUso, previas);
                 EnsureStructure(QuestionnaireStructureRules.CheckForSave(replacement.Groups, AllQuestions(replacement)));
+                EnsureStructure(PublishedLinkIds.Conflicts(PublishedLinkIds.From(q), AllQuestions(replacement)));
                 AssignChildIds(replacement);
                 await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
             }
@@ -519,6 +520,7 @@ namespace ChequeAR.Application.Services
                     "La pregunta \"" + (x.Text ?? x.LinkId) + "\" usa una definición anterior de su variable: actualizala desde el editor antes de publicar."));
 
             EnsureStructure(QuestionnaireStructureRules.CheckForPublish(q.Groups, preguntas));
+            EnsureStructure(PublishedLinkIds.Conflicts(PublishedLinkIds.From(q), preguntas));
 
             var nextVersionNumber = (q.Versions?.Count ?? 0) + 1;
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -196,6 +197,42 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(1, guardada.VariableRevision);
             Assert.Equal(pregunta.VariableVersionId, guardada.VariableVersionId);
             Assert.Equal("Fumador", guardada.Options.OrderBy(o => o.OrderIndex).First().Display);
+        }
+
+        private static void PublicadaCon(Questionnaire q, Question pregunta)
+        {
+            var publicada = new Questionnaire { Id = q.Id, Title = q.Title };
+            publicada.Questions.Add(pregunta);
+            q.Versions.Add(new QuestionnaireVersion { Id = Guid.NewGuid(), VersionNumber = 1, FhirJson = FhirQuestionnaireBuilder.Build(publicada, 1) });
+        }
+
+        // Reportes y evolución unen por linkId: reusar uno publicado para otra variable mezclaría datos.
+        [Fact]
+        public async Task UpdateAsync_LinkIdPublicadoConOtraVariable_Falla()
+        {
+            var peso = TestHelpers.Variable("peso");
+            var talla = TestHelpers.Variable("talla");
+            var q = Persistido();
+            PublicadaCon(q, new Question { LinkId = "dato-1", Type = QuestionType.Decimal, VariableId = peso.Id });
+            var patch = new Questionnaire();
+            patch.Questions.Add(new Question { LinkId = "dato-1", VariableId = talla.Id });
+
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => Sut(peso, talla).UpdateAsync(q.Id, patch, "jefe"));
+
+            Assert.Contains(ex.Errors, e => e.Contains("dato-1"));
+        }
+
+        [Fact]
+        public async Task UpdateAsync_LinkIdPublicadoConLaMismaVariable_SePermite()
+        {
+            var peso = TestHelpers.Variable("peso");
+            var q = Persistido();
+            PublicadaCon(q, new Question { LinkId = "peso-1", Type = QuestionType.Decimal, VariableId = peso.Id });
+            var patch = new Questionnaire();
+            patch.Questions.Add(new Question { LinkId = "peso-1", VariableId = peso.Id });
+            CapturarGuardadas();
+
+            await Sut(peso).UpdateAsync(q.Id, patch, "jefe");
         }
 
         [Fact]
