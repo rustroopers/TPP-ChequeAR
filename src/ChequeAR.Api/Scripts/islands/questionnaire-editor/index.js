@@ -1143,9 +1143,11 @@
             // explicit = lo pidió el usuario (botón Guardar) -> confirmamos con un toast.
             // El autosave guarda en silencio: para eso está el indicador "Guardado hh:mm"
             // en el header. Los errores avisan siempre, vengan de donde vengan.
+            // Un autosave que llega con otro guardado en vuelo no se pierde: se repite al terminar.
+            var saveAgain = false;
             function save(options) {
                 var explicit = !!(options && options.explicit);
-                if (saving.value) return Promise.resolve(false);
+                if (saving.value) { saveAgain = true; return Promise.resolve(false); }
                 // Nada cambió desde el último guardado: no hay razón para pegarle al
                 // server. Un cuestionario nuevo siempre tiene que crearse la primera vez,
                 // aunque todavía no se haya tocado nada.
@@ -1279,6 +1281,10 @@
                     return false;
                 }).then(function (ok) {
                     saving.value = false;
+                    if (saveAgain) {
+                        saveAgain = false;
+                        if (dirty.value && !conflict.value) { clearTimeout(debounce); debounce = setTimeout(save, 0); }
+                    }
                     return ok;
                 });
             }
