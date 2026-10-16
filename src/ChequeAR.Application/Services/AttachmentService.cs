@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
@@ -19,6 +20,11 @@ namespace ChequeAR.Application.Services
             ("image/png", ".png", new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
             ("application/pdf", ".pdf", new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D }) // "%PDF-"
         };
+
+        public const long DefaultDailyQuotaBytes = 200L * 1024 * 1024;
+
+        /// <summary>Lo que un usuario puede subir en 24 horas: el disco del plan F1 es de 1 GB.</summary>
+        public long DailyQuotaBytes { get; set; } = DefaultDailyQuotaBytes;
 
         private readonly IAttachmentStore _store;
         private readonly IQuestionnaireResponseRepository _responses;
@@ -60,6 +66,11 @@ namespace ChequeAR.Application.Services
 
             var tipo = Detect(header);
             if (tipo == null) return null;
+
+            var subido = await _store.UploadedBytesSinceAsync(uploadedBy, DateTime.UtcNow.AddHours(-24));
+            if (subido + content.Length > DailyQuotaBytes)
+                throw new BusinessRuleException("Se alcanzó el límite de adjuntos de las últimas 24 horas ("
+                    + (DailyQuotaBytes / (1024 * 1024)) + " MB).");
 
             return await _store.StoreAsync(content, SafeFileName(originalFileName, tipo.Value.Extension),
                 tipo.Value.ContentType, tipo.Value.Extension, uploadedBy);

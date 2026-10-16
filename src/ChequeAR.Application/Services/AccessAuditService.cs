@@ -78,6 +78,36 @@ namespace ChequeAR.Application.Services
             return _audit.PersistImmediatelyAsync(evt);
         }
 
+        /// <summary>
+        /// Búsqueda de pacientes. El término (nombre o DNI) no se guarda: va su SHA-256, que
+        /// alcanza para comparar dos búsquedas iguales.
+        /// </summary>
+        public Task PatientsSearched(string term, int results)
+        {
+            if (string.IsNullOrWhiteSpace(term)) return Task.CompletedTask;
+            var evt = AuditEventBuilder.For("read", "Patient$search", _user.Id);
+            evt.FhirJson = JsonConvert.SerializeObject(new PatientSearchAuditSnapshot { TermSha256 = Sha256(term.Trim().ToLowerInvariant()), Results = results });
+            return _audit.PersistImmediatelyAsync(evt);
+        }
+
+        public Task PatientRead(string patientHospitalId)
+            => _audit.PersistImmediatelyAsync(AuditEventBuilder.For("read", "Patient/" + patientHospitalId, _user.Id));
+
+        public Task PatientHistoryViewed(string patientHospitalId)
+            => _audit.PersistImmediatelyAsync(AuditEventBuilder.For("read", "Patient/" + patientHospitalId + "$history", _user.Id));
+
+        public Task AttachmentUploaded(Guid attachmentId)
+            => _audit.PersistImmediatelyAsync(AuditEventBuilder.For("create", "Attachment/" + attachmentId, _user.Id));
+
+        public Task AttachmentDownloaded(Guid attachmentId)
+            => _audit.PersistImmediatelyAsync(AuditEventBuilder.For("read", "Attachment/" + attachmentId, _user.Id));
+
+        private static string Sha256(string value)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant();
+        }
+
         /// <summary>Exportación del propio registro de auditoría, con los filtros aplicados.</summary>
         public void AuditExported(AuditExportSnapshot filters, int rows)
         {
@@ -107,6 +137,12 @@ namespace ChequeAR.Application.Services
         public string PatientHospitalId { get; set; }
         public Guid QuestionnaireId { get; set; }
         public List<string> LinkIds { get; set; } = new List<string>();
+    }
+
+    public class PatientSearchAuditSnapshot
+    {
+        public string TermSha256 { get; set; }
+        public int Results { get; set; }
     }
 
     /// <summary>Filtros con los que se exportó la auditoría, tal como estaban en pantalla.</summary>

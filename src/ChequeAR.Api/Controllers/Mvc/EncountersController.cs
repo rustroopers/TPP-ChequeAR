@@ -38,8 +38,22 @@ namespace ChequeAR.Api.Controllers.Mvc
         // R1 — pantalla de pacientes (buscador). El action se llama Index para que
         // la URL canónica sea /Pacientes (via ruta nombrada) o /Encounters como
         // fallback, en vez del ex "/Encounters/Search" que exponía el verbo interno.
-        public async Task<ActionResult> Index(string q = null)
+        /// <summary>
+        /// La búsqueda llega por POST y se guarda en TempData: el nombre o el DNI no quedan en
+        /// la URL ni en los logs de IIS.
+        /// </summary>
+        [HttpPost, ValidateAntiForgeryToken]
+        public ActionResult Search(string q)
         {
+            TempData[PatientQueryKey] = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
+            return RedirectToAction("Index");
+        }
+
+        private const string PatientQueryKey = "PatientQuery";
+
+        public async Task<ActionResult> Index()
+        {
+            var q = TempData.Peek(PatientQueryKey) as string;
             ViewBag.Title = "Pacientes";
             ViewBag.PageId = "encounters";
 
@@ -76,6 +90,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var cat = await _specialties.GetAsync();
                 var hits = await _patients.SearchAsync(q);
+                await _accessAudit.PatientsSearched(q, hits.Count);
                 foreach (var h in hits)
                 {
                     model.Results.Add(new PatientSearchItem
@@ -503,6 +518,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var cat = await _specialties.GetAsync();
                 var p = await _patients.GetAsync(patientId);
+                await _accessAudit.PatientHistoryViewed(patientId);
                 model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = cat.CodeOrDefault(p?.SpecialtyCode), SpecialtyLabel = p?.SpecialtyLabel ?? cat.DefaultLabel };
 
                 // El historial de UN paciente está intrínsecamente acotado (no crece sin
