@@ -3,6 +3,7 @@ using System.Web.Mvc;
 
 namespace ChequeAR.Api.Controllers.Mvc
 {
+    [AllowAnonymous]
     public class ErrorController : Controller
     {
         public ErrorController() { }
