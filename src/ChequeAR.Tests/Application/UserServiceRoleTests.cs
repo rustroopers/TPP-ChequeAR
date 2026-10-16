@@ -25,6 +25,54 @@ namespace ChequeAR.Tests.Application
         private static UserService Sut(Mock<IUserRepository> repo)
             => new UserService(repo.Object, TestHelpers.CatalogWith());
 
+        // Si falla la carga del catálogo, filtrar contra uno vacío revocaría todas las especialidades.
+        [Fact]
+        public async Task SyncFromHospitalAsync_CatalogoVacio_NoTocaLasEspecialidades()
+        {
+            var repo = new Mock<IUserRepository>();
+            IReadOnlyList<string> capturadas = new List<string> { "sin llamar" };
+            repo.Setup(r => r.SyncFromHospitalAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.IsAny<IReadOnlyList<string>>(), It.IsAny<IReadOnlyList<string>>()))
+                .Callback<string, string, string, IReadOnlyList<string>, IReadOnlyList<string>>((id, name, email, roles, specs) => capturadas = specs)
+                .Returns(Task.CompletedTask);
+            var vacio = new Mock<ISpecialtyRepository>();
+            vacio.Setup(r => r.ListAsync(It.IsAny<bool>())).ReturnsAsync((IReadOnlyList<Specialty>)new List<Specialty>());
+            var sut = new UserService(repo.Object, new SpecialtyCatalogService(() => vacio.Object, ttlMinutes: 60));
+
+            await sut.SyncFromHospitalAsync(new UserInfo { Id = "u1", Specialties = new List<string> { "cardio" } });
+
+            Assert.Null(capturadas);
+        }
+
+        [Fact]
+        public async Task EnsureCanDeactivate_ASiMismo_Falla()
+        {
+            var repo = new Mock<IUserRepository>();
+            repo.Setup(r => r.GetAsync("jefe")).ReturnsAsync(UserWithRole("jefe", Role.Jefe));
+
+            await Assert.ThrowsAsync<BusinessRuleException>(() => Sut(repo).EnsureCanDeactivateAsync("jefe", "jefe"));
+        }
+
+        [Fact]
+        public async Task EnsureCanDeactivate_UltimoAdministrador_Falla()
+        {
+            var repo = new Mock<IUserRepository>();
+            repo.Setup(r => r.GetAsync("admin")).ReturnsAsync(UserWithRole("admin", Role.Administrador));
+            repo.Setup(r => r.CountAsync(null, Role.Administrador, null, true)).ReturnsAsync(1);
+
+            await Assert.ThrowsAsync<BusinessRuleException>(() => Sut(repo).EnsureCanDeactivateAsync("admin", "otro"));
+        }
+
+        [Fact]
+        public async Task EnsureCanDeactivate_AdministradorConOtros_Pasa()
+        {
+            var repo = new Mock<IUserRepository>();
+            repo.Setup(r => r.GetAsync("admin")).ReturnsAsync(UserWithRole("admin", Role.Administrador));
+            repo.Setup(r => r.CountAsync(null, Role.Administrador, null, true)).ReturnsAsync(2);
+
+            await Sut(repo).EnsureCanDeactivateAsync("admin", "otro");
+        }
+
         // ---- SyncFromHospitalAsync: normalización a rol único ----
 
         [Fact]

@@ -1,3 +1,4 @@
+using System.Linq;
 using ChequeAR.Application.Fhir;
 using Xunit;
 
@@ -57,7 +58,7 @@ namespace ChequeAR.Tests.Application
 
             Assert.Equal("choice", pregunta.Type);
             Assert.True(pregunta.Required);
-            Assert.Equal(new[] { "Sí", "No" }, pregunta.Options);
+            Assert.Equal(new[] { "Sí", "No" }, pregunta.Options.Select(o => o.Display));
         }
 
         [Fact]

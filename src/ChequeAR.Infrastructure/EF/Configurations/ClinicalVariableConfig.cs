@@ -44,6 +44,31 @@ namespace ChequeAR.Infrastructure.EF.Configurations
             // (p. ej. peso neonatal en kg) se truncaría en silencio al guardar el rango.
             Property(x => x.MinValue).HasPrecision(18, 4);
             Property(x => x.MaxValue).HasPrecision(18, 4);
+
+            Property(x => x.Revision).IsConcurrencyToken();
+        }
+    }
+
+    public class ClinicalVariableVersionConfig : EntityTypeConfiguration<ClinicalVariableVersion>
+    {
+        // Corto: Oracle anterior a 12.2 no admite nombres de más de 30 caracteres.
+        private const string UniqueVersionIndex = "UX_CVV_Variable_Number";
+
+        public ClinicalVariableVersionConfig()
+        {
+            ToTable("ClinicalVariableVersion");
+            HasKey(x => x.Id);
+
+            // Igual que QuestionnaireVersion: la base cierra la carrera de dos publicaciones simultáneas.
+            Property(x => x.VariableId)
+                .HasColumnAnnotation(IndexAnnotation.AnnotationName,
+                    new IndexAnnotation(new IndexAttribute(UniqueVersionIndex, 1) { IsUnique = true }));
+            Property(x => x.VersionNumber)
+                .HasColumnAnnotation(IndexAnnotation.AnnotationName,
+                    new IndexAnnotation(new IndexAttribute(UniqueVersionIndex, 2) { IsUnique = true }));
+
+            Property(x => x.DefinitionJson).IsRequired().HasColumnType("CLOB").IsMaxLength();
+            Property(x => x.PublishedBy).HasMaxLength(128);
         }
     }
 }

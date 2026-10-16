@@ -58,8 +58,6 @@ namespace ChequeAR.Domain.Entities
         /// <summary>Largo máximo; sólo para String y Text.</summary>
         public int? MaxLength { get; set; }
 
-        /// <summary>Expresión regular de validación; se valida que compile antes de guardar.</summary>
-        public string Pattern { get; set; }
 
         /// <summary>Lista de tipos MIME aceptados; sólo para Attachment.</summary>
         public string Accept { get; set; }
@@ -91,11 +89,13 @@ namespace ChequeAR.Domain.Entities
         public int SortOrder { get; set; }
 
         /// <summary>
-        /// Se incrementa en cada escritura y se copia a Question.VariableRevision al insertar.
-        /// Es lo que permite avisar "esta pregunta usa una versión anterior de la variable" sin
-        /// re-sincronizar nada por atrás: lo publicado queda congelado y el borrador avisa.
+        /// Se incrementa en cada guardado del borrador y es el token de concurrencia: dos
+        /// administradores que editan a la vez no se pisan.
         /// </summary>
         public int Revision { get; set; }
+
+        /// <summary>Versión publicada vigente; null si la variable nunca se publicó.</summary>
+        public Guid? CurrentVersionId { get; set; }
 
         public string CreatedBy { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -103,6 +103,8 @@ namespace ChequeAR.Domain.Entities
         public DateTime UpdatedAt { get; set; }
 
         public virtual ICollection<VariableOption> Options { get; set; } = new List<VariableOption>();
+
+        public virtual ICollection<ClinicalVariableVersion> Versions { get; set; } = new List<ClinicalVariableVersion>();
 
         /// <summary>Tipos que admiten unidad y rango.</summary>
         public bool IsNumeric() => Type == QuestionType.Decimal || Type == QuestionType.Integer || Type == QuestionType.Scale;

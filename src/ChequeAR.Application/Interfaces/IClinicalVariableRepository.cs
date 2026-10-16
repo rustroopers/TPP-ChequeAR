@@ -27,14 +27,36 @@ namespace ChequeAR.Application.Interfaces
         /// contra nombre, código y concepto SNOMED: el buscador es un solo campo.
         /// <paramref name="active"/>: null = todas, true = sólo activas, false = sólo de baja.
         /// </summary>
-        Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool? active, int skip, int take);
+        /// <param name="publishedOnly">Sólo las que tienen versión publicada: lo que puede usar un cuestionario.</param>
+        Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool? active, int skip, int take, bool publishedOnly = false);
 
-        Task<int> CountAsync(string search, QuestionType? type, bool? active);
+        Task<int> CountAsync(string search, QuestionType? type, bool? active, bool publishedOnly = false);
 
         Task AddAsync(ClinicalVariable v);
 
         /// <summary>Reemplaza la variable y todas sus opciones en una transacción.</summary>
         Task UpdateWithOptionsAsync(ClinicalVariable v, ICollection<VariableOption> options);
+
+        /// <summary>Guarda sólo la cabecera (estado, versión vigente), sin tocar las opciones.</summary>
+        Task UpdateHeaderAsync(ClinicalVariable v);
+
+        /// <summary>Agrega una versión publicada y guarda la cabecera en la misma operación.</summary>
+        Task AddVersionAsync(ClinicalVariable v, ClinicalVariableVersion version);
+
+        Task<ClinicalVariableVersion> GetVersionAsync(Guid versionId);
+        Task<ClinicalVariableVersion> GetVersionAsync(Guid variableId, int versionNumber);
+
+        /// <summary>Historial sin la definición (no trae el CLOB), de la más nueva a la más vieja.</summary>
+        Task<IReadOnlyList<ClinicalVariableVersion>> ListVersionsAsync(Guid variableId);
+
+        /// <summary>Todas las versiones de varias variables, con su definición: para armar un cuestionario de una vez.</summary>
+        Task<IReadOnlyList<ClinicalVariableVersion>> GetVersionsAsync(IEnumerable<Guid> variableIds);
+
+        /// <summary>Número y revisión de origen de la versión vigente de cada variable, sin la definición.</summary>
+        Task<IReadOnlyDictionary<Guid, ClinicalVariableVersion>> GetCurrentVersionHeadersAsync(IEnumerable<Guid> variableIds);
+
+        /// <summary>La revisión de origen se actualiza si se publica sin cambios: no hay versión nueva que crear.</summary>
+        Task UpdateVersionSourceAsync(ClinicalVariableVersion version);
 
         Task DeleteAsync(Guid id);
 

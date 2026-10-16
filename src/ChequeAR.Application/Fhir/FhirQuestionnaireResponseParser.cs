@@ -27,19 +27,31 @@ namespace ChequeAR.Application.Fhir
                 PatientHospitalId = resource.Subject?.Identifier?.Value
             };
 
-            foreach (var item in resource.Item ?? new List<FhirResponse.ItemComponent>())
+            AddItems(r, resource.Item);
+            return r;
+        }
+
+        /// <summary>
+        /// Recorre también los ítems anidados (secciones, y preguntas dentro de una respuesta):
+        /// el dominio guarda las respuestas planas, por linkId.
+        /// </summary>
+        private static void AddItems(DomainResponse r, IEnumerable<FhirResponse.ItemComponent> items)
+        {
+            foreach (var item in items ?? Enumerable.Empty<FhirResponse.ItemComponent>())
             {
+                var answers = item.Answer ?? new List<FhirResponse.AnswerComponent>();
+                var nested = item.Item != null && item.Item.Count > 0;
+
                 // Un item con varias answer vuelve a ser varios registros con el mismo linkId:
                 // es la forma en que el dominio guarda una opción múltiple.
-                if (item.Answer == null || item.Answer.Count == 0)
+                if (answers.Count == 0 && !nested) r.Items.Add(new DomainResponseItem { LinkId = item.LinkId });
+                foreach (var answer in answers)
                 {
-                    r.Items.Add(new DomainResponseItem { LinkId = item.LinkId });
-                    continue;
+                    if (answer.Value != null) r.Items.Add(ToItem(item.LinkId, answer.Value));
+                    AddItems(r, answer.Item);
                 }
-                foreach (var answer in item.Answer)
-                    r.Items.Add(ToItem(item.LinkId, answer.Value));
+                AddItems(r, item.Item);
             }
-            return r;
         }
 
         /// <summary>
@@ -86,11 +98,18 @@ namespace ChequeAR.Application.Fhir
             return Guid.TryParse(ultimo, out var id) ? id : (Guid?)null;
         }
 
+        /// <summary>
+        /// Se guarda la hora de Argentina, que es como la carga el renderer. Una fecha y hora con
+        /// otra zona se convierte; sin convertir quedaría corrida según la zona del servidor.
+        /// </summary>
         private static DateTime? ParseDate(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return null;
-            return DateTime.TryParse(raw, CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind, out var parsed) ? parsed : (DateTime?)null;
+            var conZona = raw.Length > 10 && (raw.EndsWith("Z", StringComparison.Ordinal) || raw.LastIndexOf('+') > 10 || raw.LastIndexOf('-') > 10);
+            if (conZona && DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dto))
+                return dto.ToOffset(TimeSpan.FromHours(-3)).DateTime;
+            return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+                ? parsed : (DateTime?)null;
         }
     }
 }

@@ -1,6 +1,8 @@
 # API Contract: Evolución longitudinal de parámetros por paciente
 
-Ambos endpoints se agregan a `PatientController.cs` (`[RoutePrefix("api/patients")]`), mismo esquema de auth que el resto del controller (`[Authorize]`).
+Ambos endpoints viven en `PatientTrendController.cs` (`[RoutePrefix("api/patients")]`, `[Authorize]`).
+
+Como el resto de la Web API, el JSON sale en PascalCase y sin las propiedades nulas. Los ejemplos de abajo usan esos nombres.
 
 ## `GET api/patients/{hospitalId}/questionnaires/{questionnaireId}/trend-parameters`
 
@@ -9,22 +11,20 @@ Lista los parámetros seleccionables de un cuestionario para armar el selector d
 **Respuesta 200**:
 ```json
 {
-  "questionnaireId": "guid",
-  "questionnaireTitle": "Vasculitis (Kawasaki/PAN) - Seguimiento",
-  "parameters": [
+  "QuestionnaireId": "guid",
+  "QuestionnaireTitle": "Vasculitis (Kawasaki/PAN) - Seguimiento",
+  "Parameters": [
     {
-      "linkId": "peso",
-      "text": "Peso (kg)",
-      "type": "decimal",
-      "unit": "kg",
-      "normalRange": { "min": 2.5, "max": 120 }
+      "LinkId": "peso",
+      "Text": "Peso (kg)",
+      "Type": "decimal",
+      "Unit": "kg",
+      "NormalRange": { "Min": 2.5, "Max": 120 }
     },
     {
-      "linkId": "fecha_proximo_control",
-      "text": "Fecha próximo control",
-      "type": "date",
-      "unit": null,
-      "normalRange": null
+      "LinkId": "fecha_proximo_control",
+      "Text": "Fecha próximo control",
+      "Type": "date"
     }
   ]
 }
@@ -47,35 +47,39 @@ Devuelve las series de evolución para los parámetros pedidos, usando solo fich
 **Respuesta 200**:
 ```json
 {
-  "questionnaireId": "guid",
-  "patientHospitalId": "PAC-000043",
-  "series": [
+  "QuestionnaireId": "guid",
+  "PatientHospitalId": "PAC-000043",
+  "Series": [
     {
-      "linkId": "peso",
-      "text": "Peso (kg)",
-      "unit": "kg",
-      "normalRange": { "min": 2.5, "max": 120 },
-      "points": [
-        { "responseId": "guid-1", "authoredAt": "2026-02-10T00:00:00", "value": 14.2 },
-        { "responseId": "guid-2", "authoredAt": "2026-04-03T00:00:00", "value": 14.8 }
+      "LinkId": "peso",
+      "Text": "Peso (kg)",
+      "Type": "decimal",
+      "Unit": "kg",
+      "NormalRange": { "Min": 2.5, "Max": 120 },
+      "Points": [
+        { "ResponseId": "guid-1", "Date": "2026-02-10", "Value": 14.2 },
+        { "ResponseId": "guid-2", "Date": "2026-04-03", "Value": 14.8 }
       ]
     },
     {
-      "linkId": "resultado_lab",
-      "text": "Resultado laboratorio",
-      "unit": "mg/dL",
-      "normalRange": null,
-      "points": []
+      "LinkId": "resultado_lab",
+      "Text": "Resultado laboratorio",
+      "Type": "decimal",
+      "Unit": "mg/dL",
+      "Points": []
     }
   ]
 }
 ```
 
+- `Date` es el día en que se finalizó la ficha, en hora de Argentina (FR-008). Va como texto para que el navegador no lo corra por su zona horaria.
+- `Type` le indica al frontend cómo formatear el eje Y. Los valores de tipo `date` viajan como epoch en milisegundos de la fecha a medianoche UTC.
+
 **Reglas**:
-- Un `linkId` sin datos en ninguna ficha finalizada devuelve `points: []`, nunca un error — el frontend es responsable de mostrar el estado "sin datos suficientes" (FR-011, SC-005).
-- Los `points` de cada serie vienen ordenados cronológicamente por `authoredAt` (FR-008).
-- Fichas con `Status` distinto de `Completed` (en progreso, con guardado parcial) nunca contribuyen puntos (FR-007) — filtro aplicado en el repositorio, no en el frontend, para que no dependa de que el cliente filtre correctamente.
+- Un `linkId` sin datos en ninguna ficha finalizada devuelve `Points: []`, nunca un error — el frontend es responsable de mostrar el estado "sin datos suficientes" (FR-011, SC-005).
+- Los `Points` de cada serie vienen ordenados cronológicamente por fecha de finalización (FR-008).
+- Sólo contribuyen las fichas finalizadas (`Completed` o `Amended`); las en curso o descartadas nunca aportan puntos (FR-007) — filtro aplicado en el repositorio, no en el frontend, para que no dependa de que el cliente filtre correctamente.
 - `linkId`s que no pertenecen al `questionnaireId` pedido, o que no son de tipo graficable, se ignoran silenciosamente (no rompen la respuesta del resto de los parámetros válidos).
 - Sin límite en la cantidad de `linkId` aceptados por request (FR-004).
 - `400` si falta `questionnaireId` o no se pasa ningún `linkId`.
-- Mismo nivel de permisos (`[Authorize]`) que ya protege el resto de `PatientController` y `EncountersController.Timeline` — sin rol adicional (FR-012).
+- Mismo nivel de permisos (`[Authorize]`) que `EncountersController.Timeline`, y sólo con las fichas de las especialidades de quien consulta: un médico nunca ve datos de otra especialidad (decisión del 2026-10-13, que prevalece sobre FR-012).

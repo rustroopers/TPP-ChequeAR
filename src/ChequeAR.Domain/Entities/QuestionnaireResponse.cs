@@ -16,6 +16,9 @@ namespace ChequeAR.Domain.Entities
         public string AuthorUserId { get; set; }
         public string FhirJson { get; set; }
         public DateTime LastSavedAt { get; set; }
+
+        /// <summary>Cuándo se finalizó (UTC). Null mientras está en curso.</summary>
+        public DateTime? CompletedAt { get; set; }
         public bool IsAutosave { get; set; }
 
         /// <summary>

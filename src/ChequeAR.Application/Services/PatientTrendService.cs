@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Reports;
 using ChequeAR.Application.Security;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -43,7 +44,7 @@ namespace ChequeAR.Application.Services
             // IQuestionnaireRepository no aplica el guard (mismo chequeo que ReportExecutor)
             _guard.EnsureAllows(q.SpecialtyCode);
 
-            var parameters = GraphableQuestions(q).ToList();
+            var parameters = GraphableQuestions(PublishedStructure.Union(q)).ToList();
 
             return new TrendParametersResult
             {
@@ -74,7 +75,7 @@ namespace ChequeAR.Application.Services
 
             // Metadata de las preguntas graficables, indexada por linkId. Solo se atienden los
             // linkId pedidos que efectivamente son graficables en este cuestionario.
-            var graphable = GraphableQuestions(q).ToDictionary(x => x.LinkId, StringComparer.Ordinal);
+            var graphable = GraphableQuestions(PublishedStructure.Union(q)).ToDictionary(x => x.LinkId, StringComparer.Ordinal);
             var validLinkIds = requested.Where(graphable.ContainsKey).ToList();
             if (validLinkIds.Count == 0) return new List<TrendSeriesDto>();
 

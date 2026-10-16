@@ -13,6 +13,8 @@
             // Número de la versión vigente si esta ficha está en una anterior; 0 si ya está
             // en la última. Habilita la opción de pasar a la versión nueva.
             newerVersion: { type: Number, default: 0 },
+            // Id de una ficha finalizada que se está corrigiendo ($amend).
+            amendResponseId: { type: String, default: null },
             title: String,
             groups: { type: Array, default: function () { return []; } }
         },
@@ -37,7 +39,6 @@
                                 min: q.min,
                                 max: q.max,
                                 maxLength: q.maxLength,
-                                pattern: q.pattern,
                                 accept: q.accept || 'image/jpeg,image/png,application/pdf',
                                 options: q.options || [],
                                 enableWhen: q.enableWhen || null
@@ -82,6 +83,9 @@
             function onPageShow() { applyFinalizedMark(); }
             window.addEventListener('pageshow', onPageShow);
             Vue.onUnmounted(function () { window.removeEventListener('pageshow', onPageShow); });
+
+            var amending = !!props.amendResponseId;
+            var amendReason = Vue.ref('');
 
             var answers = Vue.reactive({});
             var errors = Vue.reactive({});
@@ -154,51 +158,15 @@
             }
 
 
-            // --- Evaluación de condiciones (enableWhen) ---------------------------------
-            // La condición referencia otra pregunta y un valor esperado. Los dos lados
-            // pueden no tener la misma forma que un === estricto necesita, y cada
-            // desajuste dejaba la pregunta dependiente invisible para siempre:
-            //  - la respuesta de una opción múltiple es un array, no un valor suelto;
-            //  - los inputs de texto devuelven strings ("5") contra un valor esperado que
-            //    el recurso FHIR guarda tipado (answerInteger -> 5).
-            // Por eso la comparación se normaliza acá en vez de en cada operador.
-
-            /// Un valor del formulario contra el valor esperado de la condición.
-            function sameAnswer(actual, expected) {
-                if (actual === expected) return true;
-                if (typeof expected === 'number') {
-                    var n = parseNumeric(actual);
-                    return !isNaN(n) && n === expected;
-                }
-                return false;
-            }
-
-            function compareAnswer(op, actual, expected) {
-                switch (op) {
-                    case '=':  return sameAnswer(actual, expected);
-                    case '!=': return !sameAnswer(actual, expected);
-                    // Comparaciones numéricas: si todavía no hay respuesta, la condición no
-                    // se cumple (y la pregunta queda oculta) en vez de comparar contra NaN.
-                    case '>':  return actual !== undefined && actual !== '' && parseNumeric(actual) > Number(expected);
-                    case '<':  return actual !== undefined && actual !== '' && parseNumeric(actual) < Number(expected);
-                    default:   return true;
-                }
-            }
+            // --- Evaluación de condiciones (enableWhen): ver enable-when.js -------------
+            var EnableWhen = window.ChequeAREnableWhen;
+            var questionsByLinkId = {};
+            questionnaire.value.groups.forEach(function (g) {
+                g.questions.forEach(function (q) { if (!questionsByLinkId[q.linkId]) questionsByLinkId[q.linkId] = q; });
+            });
 
             function isVisible(q) {
-                if (!q.enableWhen) return true;
-                var actual = answers[q.enableWhen.question];
-                var expected = q.enableWhen.value;
-
-                // FHIR R5: cuando la pregunta origen admite varias respuestas, la condición
-                // se cumple si ALGUNA de ellas la satisface. Un array sin nada marcado no
-                // satisface ninguna condición: equivale a no haber respondido.
-                if (Array.isArray(actual)) {
-                    return actual.some(function (one) {
-                        return compareAnswer(q.enableWhen.op, one, expected);
-                    });
-                }
-                return compareAnswer(q.enableWhen.op, actual, expected);
+                return EnableWhen.isVisible(q, questionsByLinkId, answers);
             }
 
             // Adjuntos que fallaron al subir, por linkId. Van aparte de `errors` porque
@@ -206,15 +174,9 @@
             // el submit borraba el error y finalizaba la ficha sin el archivo.
             var uploadErrors = Vue.reactive({});
 
-            // En es-AR el separador decimal es la coma. El input de decimales es de texto
-            // justamente para que la coma llegue hasta acá (un input[type=number] la
-            // descarta y entrega '', sin forma de saber qué se había tipeado).
-            function parseNumeric(value) {
-                if (value === undefined || value === null) return NaN;
-                var raw = String(value).trim().replace(',', '.');
-                if (raw === '') return NaN;
-                return Number(raw);
-            }
+            // El input de decimales es de texto para que la coma de es-AR llegue hasta acá
+            // (un input[type=number] la descarta y entrega '', sin forma de saber qué se tipeó).
+            var parseNumeric = EnableWhen.parseNumeric;
 
             function validate(q, value) {
                 if (!isVisible(q)) { delete errors[q.linkId]; return; }
@@ -241,13 +203,6 @@
                     if (q.maxLength && value.length > q.maxLength) {
                         errors[q.linkId] = 'Máximo ' + q.maxLength + ' caracteres'; return;
                     }
-                    if (q.pattern) {
-                        var re = null;
-                        // Un patrón inválido es error del autor del cuestionario, no de quien
-                        // responde: no debe bloquear la carga, así que se ignora.
-                        try { re = new RegExp(q.pattern); } catch (e) { re = null; }
-                        if (re && !re.test(value)) { errors[q.linkId] = 'Formato inválido'; return; }
-                    }
                 }
                 delete errors[q.linkId];
             }
@@ -256,10 +211,10 @@
                 if (readOnly()) return;
                 answers[q.linkId] = value;
                 validate(q, value);
-                // re-validar campos dependientes
+                // Las condiciones pueden encadenarse: se revalidan todas las condicionales.
                 questionnaire.value.groups.forEach(function (g) {
                     g.questions.forEach(function (qq) {
-                        if (qq.enableWhen && qq.enableWhen.question === q.linkId) validate(qq, answers[qq.linkId]);
+                        if (qq.enableWhen && qq !== q) validate(qq, answers[qq.linkId]);
                     });
                 });
                 triggerAutosave();
@@ -325,6 +280,26 @@
                     .then(function () { viewingAttachment[linkId] = false; });
             }
 
+            // Las fichas anteriores guardaron el texto de la opción y no su código: al
+            // retomarlas se traduce, y el próximo guardado ya manda el código.
+            // Lo que no corresponde a ninguna opción de la versión se descarta: no hay forma de
+            // destildarlo en pantalla y el servidor lo rechazaría en cada guardado.
+            function optionCode(q, stored) {
+                if (stored === undefined || stored === null) return undefined;
+                var opts = q.options || [];
+                for (var i = 0; i < opts.length; i++) if (opts[i].code === stored) return stored;
+                var match = opts.filter(function (o) { return (o.aliases || []).indexOf(stored) >= 0; });
+                return match.length === 1 ? match[0].code : undefined;
+            }
+
+            function questionByLinkId(linkId) {
+                var found = null;
+                questionnaire.value.groups.forEach(function (g) {
+                    g.questions.forEach(function (q) { if (!found && q.linkId === linkId) found = q; });
+                });
+                return found;
+            }
+
             // Opción múltiple: la respuesta es un array de opciones marcadas.
             function onToggleMulti(q, option, checked) {
                 var current = (answers[q.linkId] || []).slice();
@@ -339,7 +314,7 @@
             // tipeado que todavía no llegó al server" es de segundos, no de toda la llamada.
             function triggerAutosave() {
                 savingState.value = 'dirty';
-                if (readOnly()) return;
+                if (readOnly() || amending) return;
                 if (autosaveTimer) clearTimeout(autosaveTimer);
                 autosaveTimer = setTimeout(doSave, AUTOSAVE_DEBOUNCE_MS);
             }
@@ -363,9 +338,22 @@
             // ficha en progreso. Un item con varias answer (opción múltiple) ya viene
             // agrupado por linkId -- a diferencia del formato interno, FHIR no lo separa en
             // varios registros.
+            // Las preguntas llegan dentro de su sección (item group), y pueden venir anidadas en
+            // una respuesta: se aplanan, porque el formulario las identifica sólo por linkId.
+            function flattenItems(items, out) {
+                out = out || [];
+                (items || []).forEach(function (it) {
+                    var nested = it.item && it.item.length;
+                    if (!nested || (it.answer && it.answer.length)) out.push(it);
+                    if (nested) flattenItems(it.item, out);
+                    (it.answer || []).forEach(function (a) { if (a.item) flattenItems(a.item, out); });
+                });
+                return out;
+            }
+
             function applyExistingItems(fhirItems) {
                 var byLinkId = {};
-                (fhirItems || []).forEach(function (it) {
+                flattenItems(fhirItems).forEach(function (it) {
                     if (it.linkId && it.answer && it.answer.length) byLinkId[it.linkId] = it;
                 });
                 questionnaire.value.groups.forEach(function (g) {
@@ -381,21 +369,22 @@
             function valueFromFhirItem(q, it) {
                 if (q.type === 'openChoice') {
                     return it.answer
-                        .map(function (a) { return a.valueCoding && a.valueCoding.code; })
+                        .map(function (a) { return a.valueCoding && optionCode(q, a.valueCoding.code); })
                         .filter(function (c) { return !!c; });
                 }
                 var a = it.answer[0];
                 if (a.valueBoolean !== undefined) return a.valueBoolean;
                 if (a.valueInteger !== undefined) return a.valueInteger;
                 if (a.valueDecimal !== undefined) return a.valueDecimal;
+                if (a.valueDate !== undefined) return a.valueDate;
                 if (a.valueDateTime !== undefined) {
-                    // El server serializa fecha y fecha-hora igual (FhirDateTime); acá se
-                    // recorta según lo que espera cada control HTML nativo.
+                    // Las fichas anteriores guardaban la fecha sola también como fecha-hora; acá se
+                    // recorta según lo que espera cada control HTML nativo. La hora es de Argentina.
                     if (q.type === 'date') return a.valueDateTime.slice(0, 10);
                     if (q.type === 'dateTime') return a.valueDateTime.slice(0, 16);
                     return a.valueDateTime;
                 }
-                if (a.valueCoding) return a.valueCoding.code;
+                if (a.valueCoding) return optionCode(q, a.valueCoding.code) || undefined;
                 if (a.valueAttachment) {
                     return { attachmentId: attachmentIdFromUrl(a.valueAttachment.url), fileName: a.valueAttachment.title };
                 }
@@ -414,15 +403,19 @@
             // es sólo el formato del diff de auditoría de guardado parcial.
             function fhirItemsToDomain(fhirItems) {
                 var result = [];
-                (fhirItems || []).forEach(function (it) {
+                flattenItems(fhirItems).forEach(function (it) {
                     if (!it.answer || !it.answer.length) { result.push({ LinkId: it.linkId }); return; }
+                    var q = questionByLinkId(it.linkId);
                     it.answer.forEach(function (a) {
                         var d = { LinkId: it.linkId };
                         if (a.valueBoolean !== undefined) d.ValueBoolean = a.valueBoolean;
+                        // La escala viaja como integer pero se guarda como decimal.
+                        else if (a.valueInteger !== undefined && q && q.type === 'scale') d.ValueDecimal = a.valueInteger;
                         else if (a.valueInteger !== undefined) d.ValueInteger = a.valueInteger;
                         else if (a.valueDecimal !== undefined) d.ValueDecimal = a.valueDecimal;
-                        else if (a.valueDateTime !== undefined) d.ValueDate = a.valueDateTime;
-                        else if (a.valueCoding) d.ValueCode = a.valueCoding.code;
+                        else if (a.valueDate !== undefined) d.ValueDate = a.valueDate;
+                        else if (a.valueDateTime !== undefined) d.ValueDate = a.valueDateTime.slice(0, 19);
+                        else if (a.valueCoding) d.ValueCode = q ? optionCode(q, a.valueCoding.code) : a.valueCoding.code;
                         else if (a.valueAttachment) {
                             d.AttachmentId = attachmentIdFromUrl(a.valueAttachment.url);
                             d.ValueString = a.valueAttachment.title;
@@ -493,7 +486,8 @@
                         if (!r.ok) return errorFrom(r, 'no se pudo leer la ficha');
                         return r.json();
                     }).then(function (resource) {
-                        if (resource.status && resource.status !== 'in-progress') {
+                        var expected = amending ? ['completed', 'amended'] : ['in-progress'];
+                        if (resource.status && expected.indexOf(resource.status) < 0) {
                             markClosedByOther();
                             return;
                         }
@@ -522,7 +516,7 @@
                     return Promise.resolve();
                 }
                 var known = concurrencyVersion.value;
-                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$lock', {
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + (amending ? '/$amend' : '/$lock'), {
                     method: 'POST',
                     headers: authHeaders()
                 }).then(function (r) {
@@ -575,8 +569,13 @@
                         });
                     }
                     if (r.status === 422 && !isRetry) {
-                        lockToken.value = null;
-                        return ensureLock().then(function () { return putProgress(true); });
+                        // Sólo la sesión de edición perdida se resuelve tomando el lock de nuevo.
+                        return r.clone().json().catch(function () { return null; }).then(function (body) {
+                            var code = body && body.issue && body.issue[0] && body.issue[0].code;
+                            if (code !== 'business-rule') return errorFrom(r, 'error del servidor');
+                            lockToken.value = null;
+                            return ensureLock().then(function () { return putProgress(true); });
+                        });
                     }
                     if (!r.ok) return errorFrom(r, 'error del servidor');
                     var lockExpiresHeader = r.headers.get('X-Lock-Expires-At');
@@ -677,7 +676,26 @@
             // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
             // entries son recursos FHIR reales (entry[].resource), igual que cualquier
             // cliente estándar esperaría.
+            function initAmend() {
+                responseId.value = props.amendResponseId;
+                fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, { headers: authHeaders() }).then(function (r) {
+                    if (!r.ok) return errorFrom(r, 'no se pudo leer la ficha');
+                    return r.json();
+                }).then(function (existing) {
+                    concurrencyVersion.value = versionOf(existing);
+                    sessionBaseline.value = fhirItemsToDomain(existing.item || []);
+                    applyExistingItems(existing.item || []);
+                    return enqueueWrite(function () { return ensureLock(); });
+                }).catch(function (err) {
+                    if (err && err.silent) return;
+                    if (!lockedByOther.value) notifyError('No se pudo abrir la corrección', err);
+                }).then(function () {
+                    sessionReady.value = true;
+                });
+            }
+
             function initSession() {
+                if (amending) { initAmend(); return; }
                 // No bloquea el render con `loading`: el formulario ya es usable de
                 // entrada (ficha nueva) y, si había algo para resumir, se completa solo
                 // un instante después sin parpadeo de spinner.
@@ -726,9 +744,7 @@
             }
             // Misma noción de "vacío" que validate(): una opción múltiple sin nada tildado
             // llega como [], que no es '' ni null pero tampoco es una respuesta.
-            function isEmptyAnswer(v) {
-                return v === undefined || v === '' || v === null || (Array.isArray(v) && v.length === 0);
-            }
+            var isEmptyAnswer = EnableWhen.isEmpty;
             function answeredCount() {
                 var n = 0;
                 questionnaire.value.groups.forEach(function (g) {
@@ -793,6 +809,7 @@
 
             function submit() {
                 if (submitting.value || readOnly()) return;
+                if (amending) { submitAmend(); return; }
 
                 var allErrors = [];
                 questionnaire.value.groups.forEach(function (g) {
@@ -851,6 +868,41 @@
                 }).then(function () {
                     submitting.value = false;
                 });
+            }
+
+            function submitAmend() {
+                if (!amendReason.value.trim()) return;
+                submitting.value = true;
+                savingState.value = 'saving';
+                enqueueWrite(function () {
+                    return ensureLock().then(function () {
+                        return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$amend-commit', {
+                            method: 'POST',
+                            headers: Object.assign({}, authHeaders(), {
+                                'If-Match': 'W/"' + concurrencyVersion.value + '"',
+                                'X-Lock-Token': lockToken.value
+                            }),
+                            body: JSON.stringify({ Items: collectItems(), Reason: amendReason.value.trim() })
+                        });
+                    }).then(function (r) {
+                        if (r.status === 409) return reloadAfterForeignChange();
+                        if (!r.ok) return errorFrom(r, 'no se pudo guardar la corrección');
+                    });
+                }).then(function () {
+                    lockToken.value = null;
+                    if (lockCountdownTimer) clearInterval(lockCountdownTimer);
+                    window.cqToast && window.cqToast('Ficha corregida', 'success');
+                    window.location.href = '/Encounters/View/' + responseId.value;
+                }).catch(function (err) {
+                    savingState.value = 'dirty';
+                    notifyError('No se pudo guardar la corrección', err);
+                }).then(function () {
+                    submitting.value = false;
+                });
+            }
+
+            function cancelAmend() {
+                window.location.href = '/Encounters/View/' + props.amendResponseId;
             }
 
             function goToHistory() {
@@ -967,7 +1019,8 @@
                 newerVersion: props.newerVersion, responseId: responseId,
                 retargetPreview: retargetPreview, showRetargetModal: showRetargetModal,
                 retargeting: retargeting, openRetargetPreview: openRetargetPreview,
-                closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget
+                closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget,
+                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend
             };
         },
         template: '\
@@ -1056,7 +1109,7 @@
                                    :inputmode="q.type === \'integer\' ? \'numeric\' : \'decimal\'"\
                                    :step="q.type === \'integer\' ? \'1\' : null"\
                                    class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
-                                   :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
+                                   :value="answers[q.linkId] ?? \'\'" @input="onChange(q, $event.target.value)" />\
                             <span v-if="q.unit" class="input-group-text">{{ q.unit }}</span>\
                         </div>\
 \
@@ -1070,7 +1123,7 @@
                         <select v-else-if="q.type === \'choice\'" class="form-select" style="max-width:340px;" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                 :value="answers[q.linkId] || \'\'" @change="onChange(q, $event.target.value)">\
                             <option value="">Seleccione…</option>\
-                            <option v-for="opt in q.options" :key="opt" :value="opt">{{ opt }}</option>\
+                            <option v-for="opt in q.options" :key="opt.code" :value="opt.code">{{ opt.display }}</option>\
                         </select>\
 \
                         <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
@@ -1084,10 +1137,10 @@
                         </div>\
 \
                         <div v-else-if="q.type === \'openChoice\'" :class="{ \'is-invalid\': errors[q.linkId] }">\
-                            <div v-for="opt in q.options" :key="opt" class="form-check">\
-                                <input class="form-check-input" type="checkbox" :id="q.linkId + \'_\' + opt"\
-                                       :checked="(answers[q.linkId] || []).indexOf(opt) >= 0" @change="onToggleMulti(q, opt, $event.target.checked)" />\
-                                <label class="form-check-label cq-text-sm" :for="q.linkId + \'_\' + opt">{{ opt }}</label>\
+                            <div v-for="opt in q.options" :key="opt.code" class="form-check">\
+                                <input class="form-check-input" type="checkbox" :id="q.linkId + \'_\' + opt.code"\
+                                       :checked="(answers[q.linkId] || []).indexOf(opt.code) >= 0" @change="onToggleMulti(q, opt.code, $event.target.checked)" />\
+                                <label class="form-check-label cq-text-sm" :for="q.linkId + \'_\' + opt.code">{{ opt.display }}</label>\
                             </div>\
                         </div>\
 \
@@ -1119,7 +1172,15 @@
             </section>\
             </fieldset>\
 \
-            <div class="border-top pt-3 mt-3">\
+            <div v-if="amending" class="border-top pt-3 mt-3">\
+                <label class="form-label" for="amendReason">Motivo de la corrección<span class="text-danger"> *</span></label>\
+                <textarea id="amendReason" rows="2" maxlength="2000" class="form-control" v-model="amendReason" :disabled="readOnly()"></textarea>\
+                <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mt-3">\
+                    <button class="btn btn-outline-secondary" :disabled="submitting" @click="cancelAmend">Cancelar</button>\
+                    <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete() || !amendReason.trim()" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Guardar corrección\' }}</button>\
+                </div>\
+            </div>\
+            <div v-else class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
                     <button class="btn btn-outline-secondary" :disabled="submitting || readOnly()" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
                     <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\

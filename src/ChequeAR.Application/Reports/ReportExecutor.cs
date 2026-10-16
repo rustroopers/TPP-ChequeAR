@@ -5,6 +5,7 @@ using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
+using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Application.Reports
 {
@@ -66,13 +67,25 @@ namespace ChequeAR.Application.Reports
         {
             var raw = await RunRawAsync(q, paginate);
             var wide = ReportPivot.ToWide(
-                new ReportResult { Rows = raw.Rows, Total = raw.Rows.Count }, raw.Schema.Columns);
+                new ReportResult { Rows = raw.Rows, Total = raw.Rows.Count }, raw.Schema.Columns, raw.Schema.LabelFor);
             // El total de la cohorte, no el de la página traída.
             wide.Total = raw.TotalResponses;
             return wide;
         }
 
         /// <summary>Filas en formato largo + el total real de fichas + la metadata usada.</summary>
+        /// <summary>
+        /// Las preguntas sobre las que se puede filtrar: las de las versiones publicadas, no las
+        /// del borrador. Null si el cuestionario no existe.
+        /// </summary>
+        public async Task<Questionnaire> GetReportStructureAsync(Guid questionnaireId)
+        {
+            var questionnaire = await _questionnaires.GetAsync(questionnaireId);
+            if (questionnaire == null) return null;
+            _guard.EnsureAllows(questionnaire.SpecialtyCode);
+            return PublishedStructure.Union(questionnaire);
+        }
+
         private async Task<RawResult> RunRawAsync(ReportQuery q, bool paginate)
         {
             // La metadata del cuestionario decide de qué tipo es cada pregunta (y por lo
@@ -86,7 +99,7 @@ namespace ChequeAR.Application.Reports
             // conociera el GUID de un cuestionario podía ejecutar un reporte sobre datos de
             // una especialidad fuera de su scope. Es el mismo chequeo, hecho acá.
             _guard.EnsureAllows(questionnaire.SpecialtyCode);
-            var schema = ReportSchema.From(questionnaire);
+            var schema = ReportSchema.From(PublishedStructure.Union(questionnaire));
 
             BuiltQuery built;
             try

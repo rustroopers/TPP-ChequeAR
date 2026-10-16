@@ -10,11 +10,10 @@ namespace ChequeAR.Application.Validation
     /// <summary>
     /// Visibilidad (enableWhen) y completitud de una ficha, del lado del servidor.
     ///
-    /// Replica a propósito la semántica del renderer (isVisible/compareAnswer/isEmptyAnswer
-    /// en Scripts/islands/questionnaire-renderer): la validación del navegador es la que ve
-    /// el médico, y el servidor no puede rechazar una ficha que la pantalla mostró completa.
-    /// Lo que agrega es que la regla se cumpla aunque el cliente no la aplique (una llamada
-    /// directa a $finalize).
+    /// Tiene que dar lo mismo que el renderer (Scripts/islands/questionnaire-renderer/enable-when.js):
+    /// la validación del navegador es la que ve el médico, y si los dos lados difieren, $finalize
+    /// borra respuestas que la pantalla mostraba o exige preguntas que no mostraba. Los tests de
+    /// paridad corren los mismos casos contra los dos.
     /// </summary>
     public static class EnableWhenEvaluator
     {
@@ -28,16 +27,11 @@ namespace ChequeAR.Application.Validation
             var missing = new List<RenderableQuestion>();
             if (structure == null) return missing;
 
-            var answers = AnswersByLinkId(items);
-            var questions = structure.Groups.SelectMany(g => g.Questions).ToList();
-            var typeByLinkId = new Dictionary<string, string>();
-            foreach (var q in questions)
-                if (q.LinkId != null && !typeByLinkId.ContainsKey(q.LinkId)) typeByLinkId[q.LinkId] = q.Type;
-
-            foreach (var q in questions)
+            var answers = AnswersByLinkId(items, structure);
+            var hidden = HiddenLinkIds(structure, answers);
+            foreach (var q in structure.Groups.SelectMany(g => g.Questions))
             {
-                if (!q.Required) continue;
-                if (!IsVisible(q, answers, typeByLinkId)) continue;
+                if (!q.Required || hidden.Contains(q.LinkId ?? string.Empty)) continue;
                 if (!answers.TryGetValue(q.LinkId ?? string.Empty, out var values) || values.Count == 0)
                     missing.Add(q);
             }
@@ -48,8 +42,7 @@ namespace ChequeAR.Application.Validation
         /// Vacía las respuestas de las preguntas que la condición enableWhen deja ocultas. FHIR
         /// lo exige (un ítem deshabilitado no puede tener respuestas) y es lo que ve el médico:
         /// una respuesta cargada cuando la pregunta estaba visible no puede sobrevivir a que la
-        /// condición deje de cumplirse. La visibilidad se calcula una sola vez, con las
-        /// respuestas originales, igual que el renderer.
+        /// condición deje de cumplirse.
         /// </summary>
         /// <returns>Los linkId cuyas respuestas se vaciaron.</returns>
         public static IReadOnlyList<string> ClearHiddenAnswers(
@@ -58,86 +51,128 @@ namespace ChequeAR.Application.Validation
             var cleared = new List<string>();
             if (structure == null || items == null || items.Count == 0) return cleared;
 
-            var answers = AnswersByLinkId(items);
-            var questions = structure.Groups.SelectMany(g => g.Questions).ToList();
-            var typeByLinkId = new Dictionary<string, string>();
-            foreach (var q in questions)
-                if (q.LinkId != null && !typeByLinkId.ContainsKey(q.LinkId)) typeByLinkId[q.LinkId] = q.Type;
-
-            var hidden = new HashSet<string>(questions
-                .Where(q => q.LinkId != null && !IsVisible(q, answers, typeByLinkId))
-                .Select(q => q.LinkId));
-
+            var hidden = HiddenLinkIds(structure, AnswersByLinkId(items, structure));
             foreach (var item in items)
             {
-                if (item?.LinkId == null || !hidden.Contains(item.LinkId) || ValueOf(item) == null) continue;
-                item.ValueBoolean = null;
-                item.ValueInteger = null;
-                item.ValueDecimal = null;
-                item.ValueDate = null;
-                item.ValueString = null;
-                item.ValueCode = null;
-                item.AttachmentId = null;
+                if (item?.LinkId == null || !hidden.Contains(item.LinkId) || ValueOf(item, null) == null) continue;
+                Clear(item);
                 if (!cleared.Contains(item.LinkId)) cleared.Add(item.LinkId);
             }
             return cleared;
         }
 
-        /// <summary>linkId -> valores respondidos (sin los vacíos). Una opción múltiple aporta un valor por opción.</summary>
-        public static Dictionary<string, List<object>> AnswersByLinkId(IEnumerable<QuestionnaireResponseItem> items)
+        /// <summary>
+        /// Vacía las respuestas a preguntas que no están en la versión: no se pueden mostrar ni
+        /// corregir, y no pueden ir en la ficha finalizada.
+        /// </summary>
+        public static IReadOnlyList<string> ClearUnknownAnswers(
+            RenderableQuestionnaire structure, ICollection<QuestionnaireResponseItem> items)
         {
+            var cleared = new List<string>();
+            if (structure == null || items == null) return cleared;
+            var known = new HashSet<string>(TypesByLinkId(structure).Keys);
+            foreach (var item in items)
+            {
+                if (item == null || known.Contains(item.LinkId ?? string.Empty) || ValueOf(item, null) == null) continue;
+                Clear(item);
+                if (!cleared.Contains(item.LinkId)) cleared.Add(item.LinkId);
+            }
+            return cleared;
+        }
+
+        private static void Clear(QuestionnaireResponseItem item)
+        {
+            item.ValueBoolean = null;
+            item.ValueInteger = null;
+            item.ValueDecimal = null;
+            item.ValueDate = null;
+            item.ValueString = null;
+            item.ValueCode = null;
+            item.AttachmentId = null;
+        }
+
+        /// <summary>
+        /// linkId -> valores respondidos (sin los vacíos). Una opción múltiple aporta un valor por
+        /// opción. Las fechas se pasan a texto según el tipo de la pregunta, que es como las
+        /// compara el renderer.
+        /// </summary>
+        public static Dictionary<string, List<object>> AnswersByLinkId(
+            IEnumerable<QuestionnaireResponseItem> items, RenderableQuestionnaire structure = null)
+        {
+            var types = TypesByLinkId(structure);
             var result = new Dictionary<string, List<object>>();
             foreach (var item in items ?? Enumerable.Empty<QuestionnaireResponseItem>())
             {
-                var value = ValueOf(item);
+                var key = item?.LinkId ?? string.Empty;
+                types.TryGetValue(key, out var type);
+                var value = ValueOf(item, type);
                 if (value == null) continue;
-                var key = item.LinkId ?? string.Empty;
                 if (!result.TryGetValue(key, out var list)) result[key] = list = new List<object>();
                 list.Add(value);
             }
             return result;
         }
 
-        /// <param name="typeByLinkId">Tipo de cada pregunta: decide si la origen es de respuesta múltiple.</param>
-        public static bool IsVisible(
+        /// <summary>
+        /// Preguntas ocultas. Una condición cuya pregunta de origen está oculta se evalúa como si
+        /// la origen no tuviera respuesta, aunque tenga un valor guardado.
+        /// </summary>
+        public static HashSet<string> HiddenLinkIds(
+            RenderableQuestionnaire structure, IReadOnlyDictionary<string, List<object>> answers)
+        {
+            var byLinkId = new Dictionary<string, RenderableQuestion>();
+            foreach (var q in structure?.Groups.SelectMany(g => g.Questions) ?? Enumerable.Empty<RenderableQuestion>())
+                if (q.LinkId != null && !byLinkId.ContainsKey(q.LinkId)) byLinkId[q.LinkId] = q;
+
+            var hidden = new HashSet<string>();
+            foreach (var q in byLinkId.Values)
+                if (!IsVisible(q, byLinkId, answers, new HashSet<string>())) hidden.Add(q.LinkId);
+            return hidden;
+        }
+
+        private static bool IsVisible(
             RenderableQuestion q,
+            IReadOnlyDictionary<string, RenderableQuestion> byLinkId,
             IReadOnlyDictionary<string, List<object>> answers,
-            IReadOnlyDictionary<string, string> typeByLinkId)
+            HashSet<string> visiting)
         {
             var cond = q?.EnableWhen;
             if (cond == null) return true;
+            // Un ciclo lo rechaza QuestionnaireStructureRules; si llega igual, no oculta nada.
+            if (!visiting.Add(q.LinkId ?? string.Empty)) return true;
 
-            answers.TryGetValue(cond.Question ?? string.Empty, out var values);
-            values = values ?? new List<object>();
+            byLinkId.TryGetValue(cond.Question ?? string.Empty, out var source);
+            var sourceVisible = source == null || IsVisible(source, byLinkId, answers, visiting);
+            visiting.Remove(q.LinkId ?? string.Empty);
 
-            // FHIR R5 y el renderer: con respuesta múltiple, alcanza con que UNA opción cumpla.
-            // Un múltiple sin nada marcado no cumple ninguna condición (ni siquiera '!='),
-            // porque en el navegador es un array vacío y no "sin responder".
-            var multiple = values.Count > 1
-                           || (typeByLinkId != null && typeByLinkId.TryGetValue(cond.Question ?? string.Empty, out var t)
-                               && t == "openChoice");
-            if (multiple) return values.Any(v => Compare(cond.Op, v, cond.Value));
-
-            return Compare(cond.Op, values.Count == 0 ? null : values[0], cond.Value);
+            List<object> values = null;
+            if (sourceVisible) answers.TryGetValue(cond.Question ?? string.Empty, out values);
+            return Satisfies(cond.Op, values ?? new List<object>(), Normalize(source?.Type, cond.Value));
         }
 
-        /// <summary>compareAnswer del renderer. Un operador desconocido no oculta la pregunta.</summary>
+        /// <summary>Una sola respuesta (o ninguna, si es null) contra el valor esperado.</summary>
         public static bool Compare(string op, object actual, object expected)
+            => Satisfies(op, actual == null ? new List<object>() : new List<object> { actual }, expected);
+
+        /// <summary>
+        /// FHIR R5: '=' y los de orden se cumplen si alguna respuesta cumple; '!=' si ninguna es
+        /// igual. Sin respuesta, '!=' se cumple y el resto no. Un operador desconocido no oculta.
+        /// </summary>
+        public static bool Satisfies(string op, IList<object> values, object expected)
         {
             switch (op)
             {
-                case "=": return SameAnswer(actual, expected);
-                case "!=": return !SameAnswer(actual, expected);
-                // Sin respuesta, una comparación numérica no se cumple (no se compara contra NaN).
-                case ">": return actual != null && Numeric(actual) > Numeric(expected);
-                case "<": return actual != null && Numeric(actual) < Numeric(expected);
+                case "=": return values.Any(v => SameAnswer(v, expected));
+                case "!=": return !values.Any(v => SameAnswer(v, expected));
+                case ">": return values.Any(v => CompareNumeric(v, expected) > 0);
+                case "<": return values.Any(v => CompareNumeric(v, expected) < 0);
                 default: return true;
             }
         }
 
         private static bool SameAnswer(object actual, object expected)
         {
-            if (actual == null) return false;
+            if (actual == null || expected == null) return false;
             if (IsNumber(expected))
             {
                 var n = Numeric(actual);
@@ -146,6 +181,15 @@ namespace ChequeAR.Application.Validation
             if (expected is bool b) return actual is bool a && a == b;
             if (expected is string s) return actual is string x && string.Equals(x, s, StringComparison.Ordinal);
             return Equals(actual, expected);
+        }
+
+        /// <summary>Signo de actual - expected, o 0 si alguno no es número (y la comparación no se cumple).</summary>
+        private static int CompareNumeric(object actual, object expected)
+        {
+            var n = Numeric(actual);
+            var e = Numeric(expected);
+            if (!n.HasValue || !e.HasValue) return 0;
+            return n.Value.CompareTo(e.Value);
         }
 
         private static bool IsNumber(object v) => v is long || v is int || v is decimal || v is double;
@@ -161,21 +205,41 @@ namespace ChequeAR.Application.Validation
                 case decimal d: return d;
                 case double db: return (decimal)db;
                 case string s:
-                    var raw = s.Trim().Replace(',', '.');
+                    var raw = s.Trim();
+                    var coma = raw.IndexOf(',');
+                    if (coma >= 0) raw = raw.Substring(0, coma) + "." + raw.Substring(coma + 1);
                     return decimal.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
                         ? parsed : (decimal?)null;
                 default: return null;
             }
         }
 
-        /// <summary>El valor respondido de un item, o null si está vacío (isEmptyAnswer del renderer).</summary>
-        private static object ValueOf(QuestionnaireResponseItem item)
+        private static object Normalize(string type, object value)
+        {
+            if (!(value is string s)) return value;
+            if (type == "date" && s.Length > 10) return s.Substring(0, 10);
+            if (type == "dateTime" && s.Length > 16) return s.Substring(0, 16);
+            return s;
+        }
+
+        private static Dictionary<string, string> TypesByLinkId(RenderableQuestionnaire structure)
+        {
+            var types = new Dictionary<string, string>();
+            foreach (var q in structure?.Groups.SelectMany(g => g.Questions) ?? Enumerable.Empty<RenderableQuestion>())
+                if (q.LinkId != null && !types.ContainsKey(q.LinkId)) types[q.LinkId] = q.Type;
+            return types;
+        }
+
+        /// <summary>El valor respondido de un item, o null si está vacío.</summary>
+        private static object ValueOf(QuestionnaireResponseItem item, string type)
         {
             if (item == null) return null;
             if (item.ValueBoolean.HasValue) return item.ValueBoolean.Value;
             if (item.ValueInteger.HasValue) return (long)item.ValueInteger.Value;
             if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value;
-            if (item.ValueDate.HasValue) return item.ValueDate.Value;
+            if (item.ValueDate.HasValue)
+                return item.ValueDate.Value.ToString(
+                    type == "dateTime" ? "yyyy-MM-dd'T'HH:mm" : "yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (!string.IsNullOrEmpty(item.ValueCode)) return item.ValueCode;
             if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
             if (item.AttachmentId.HasValue) return item.AttachmentId.Value;

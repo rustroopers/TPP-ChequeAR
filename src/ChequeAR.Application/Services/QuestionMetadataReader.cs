@@ -12,7 +12,6 @@ namespace ChequeAR.Application.Services
         public string Unit { get; set; }
         public string Accept { get; set; }
         public int? MaxLength { get; set; }
-        public string Pattern { get; set; }
     }
 
     /// <summary>Condición de visibilidad de una pregunta.</summary>
@@ -64,8 +63,7 @@ namespace ChequeAR.Application.Services
                 Max = AsDecimal(o["max"]),
                 Unit = AsString(o["unit"]),
                 Accept = AsString(o["accept"]),
-                MaxLength = AsInt(o["maxLength"]),
-                Pattern = AsString(o["pattern"])
+                MaxLength = AsInt(o["maxLength"])
             };
         }
 
@@ -178,7 +176,8 @@ namespace ChequeAR.Application.Services
         private static JObject TryParse(string json)
         {
             if (string.IsNullOrWhiteSpace(json)) return null;
-            try { return JObject.Parse(json); }
+            // Sin convertir fechas: una condición "2024-05-01" tiene que volver tal cual al editor.
+            try { return JsonConvert.DeserializeObject<JObject>(json, new JsonSerializerSettings { DateParseHandling = DateParseHandling.None }); }
             catch (JsonException) { return null; }
         }
     }

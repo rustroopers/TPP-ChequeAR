@@ -215,6 +215,7 @@
     <Content Include="Scripts\islands\shared\snomed.js" />
     <Content Include="Scripts\islands\variable-form\index.js" />
     <Content Include="Scripts\islands\questionnaire-editor\index.js" />
+    <Content Include="Scripts\islands\questionnaire-renderer\enable-when.js" />
     <Content Include="Scripts\islands\questionnaire-renderer\index.js" />
     <Content Include="Scripts\islands\report-builder\index.js" />
     <Content Include="Scripts\islands\patient-trend\index.js" />

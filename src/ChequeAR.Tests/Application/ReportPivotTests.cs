@@ -7,6 +7,22 @@ namespace ChequeAR.Tests.Application
 {
     public class ReportPivotTests
     {
+        [Fact]
+        public void ValorNumerico_VaComoNumeroYNoComoTexto()
+        {
+            var largo = new ReportResult
+            {
+                Rows = new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object> { ["ResponseId"] = "r1", ["LinkId"] = "peso", ["ValueDecimal"] = 14.2m, ["ValueText"] = "14.2" }
+                }
+            };
+
+            var ancho = ReportPivot.ToWide(largo, new List<KeyValuePair<string, string>> { new KeyValuePair<string, string>("peso", "Peso") });
+
+            Assert.Equal(14.2m, ancho.Rows[0]["Peso"]);
+        }
+
         // La normalizacion del identificador (byte[16] -> Guid) es comportamiento del
         // driver, no del pivot: sus pruebas viven en MockHospital.Tests, que sí ve la capa
         // de infraestructura. Acá se asume ya normalizado, que es como llega.

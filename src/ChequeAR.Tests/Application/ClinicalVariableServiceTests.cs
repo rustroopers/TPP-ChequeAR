@@ -99,19 +99,6 @@ namespace ChequeAR.Tests.Application
             Assert.Contains(ex.Errors, e => e.Contains("mínimo"));
         }
 
-        // Un patrón roto guardado en el catálogo se convertiría en una excepción en el renderer
-        // de CADA cuestionario que use la variable, lejos de donde se cometió el error.
-        [Fact]
-        public async Task CreateAsync_PatternInvalido_Falla()
-        {
-            var v = Nueva("documento", QuestionType.String);
-            v.Pattern = "[a-z";
-
-            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.CreateAsync(v, "admin"));
-
-            Assert.Contains(ex.Errors, e => e.Contains("expresión regular"));
-        }
-
         // Dos variables para el mismo concepto SNOMED partirían en dos columnas datos que
         // clínicamente son lo mismo — justo lo que la feature viene a evitar.
         [Fact]

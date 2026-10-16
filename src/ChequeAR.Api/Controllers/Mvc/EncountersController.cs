@@ -190,6 +190,67 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
 
+        // Corrección de una ficha finalizada: mismo formulario que la carga, con la versión
+        // con la que se completó.
+        public async Task<ActionResult> Amend(Guid id)
+        {
+            Response.Cache.SetCacheability(HttpCacheability.NoCache);
+            Response.Cache.SetNoStore();
+
+            ViewBag.Title = "Corrección de ficha";
+            ViewBag.PageId = "encounters";
+            ViewBag.ExistingResponseId = id;
+            try
+            {
+                var qr = await _responses.GetAsync(id);
+                if (qr == null) return HttpNotFound();
+                if (qr.Status != ResponseStatus.Completed && qr.Status != ResponseStatus.Amended)
+                    return RedirectToAction("View", new { id });
+
+                var q = await _questionnaires.GetAsync(qr.QuestionnaireId);
+                var p = await _patients.GetAsync(qr.PatientHospitalId);
+                ViewBag.PatientName = p != null ? (p.FullName + " (HC " + p.HospitalId + ")") : ("HC " + qr.PatientHospitalId);
+                ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
+
+                var version = q?.FindVersion(qr.QuestionnaireVersionId);
+                var renderable = FhirQuestionnaireReader.Read(version?.FhirJson);
+                ViewBag.Version = version?.VersionNumber ?? 0;
+                if (renderable == null)
+                {
+                    ViewBag.LoadError = "No se encontró la versión con la que se completó la ficha.";
+                    return View("Load");
+                }
+
+                ViewBag.RendererProps = JsonConvert.SerializeObject(
+                    new
+                    {
+                        patientId = qr.PatientHospitalId,
+                        questionnaireId = qr.QuestionnaireId,
+                        questionnaireVersionId = version.Id,
+                        version = version.VersionNumber,
+                        amendResponseId = id,
+                        title = q.Title,
+                        groups = renderable.Groups
+                    },
+                    new JsonSerializerSettings
+                    {
+                        ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                        NullValueHandling = NullValueHandling.Ignore
+                    });
+            }
+            catch (SpecialtyForbiddenException)
+            {
+                return HttpNotFound();
+            }
+            catch (Exception ex)
+            {
+                Helpers.HandledErrors.Log(this, ex);
+                ViewBag.Version = 0;
+                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
+            }
+            return View("Load");
+        }
+
         /// <summary>
         /// La ficha InProgress más reciente para este paciente+cuestionario, o null si no hay
         /// (ficha nueva) o la base no responde. Mismo criterio que usa el renderer, así ambos
@@ -233,8 +294,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     // ahora: si se publicó otra después, la ficha sigue siendo de la suya.
                     QuestionnaireVersion = q?.FindVersion(qr.QuestionnaireVersionId)?.VersionNumber ?? 0,
                     Author = qr.AuthorUserId,
-                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.LastSavedAt),
-                    IsDiscarded = qr.Status == ResponseStatus.EnteredInError
+                    FinalizedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(qr.CompletedAt ?? qr.LastSavedAt),
+                    IsDiscarded = qr.Status == ResponseStatus.EnteredInError,
+                    IsAmended = qr.Status == ResponseStatus.Amended
                 };
 
                 // Un linkId puede repetirse (opción múltiple: un item por opción marcada),
@@ -261,7 +323,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                             group.Questions.Add(new AnsweredQuestion
                             {
                                 Text = question.Text,
-                                Answer = ResponseAnswerFormatter.Format(items),
+                                Answer = ResponseAnswerFormatter.Format(items, question),
                                 Prefilled = items != null && items.Any(i => i.WasPrefilled),
                                 AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
@@ -275,14 +337,18 @@ namespace ChequeAR.Api.Controllers.Mvc
                     // fuente más fiel que queda son los textos guardados en la propia
                     // respuesta; usar el cuestionario vivo mostraría preguntas que esta
                     // ficha nunca tuvo.
+                    // Las etiquetas de las opciones sí salen de la vigente, que es contra la que
+                    // se pasaron a código estas respuestas.
+                    var vigente = FhirQuestionnaireReader.Read(q?.CurrentVersion()?.FhirJson);
                     var answered = new QuestionGroupAnswered { Title = "Respuestas" };
                     foreach (var entry in TextsFromResponse(qr.FhirJson))
                     {
                         itemsByLink.TryGetValue(entry.Key, out var items);
+                        var question = vigente?.Groups.SelectMany(g => g.Questions).FirstOrDefault(x => x.LinkId == entry.Key);
                         answered.Questions.Add(new AnsweredQuestion
                         {
                             Text = entry.Value,
-                            Answer = ResponseAnswerFormatter.Format(items),
+                            Answer = ResponseAnswerFormatter.Format(items, question),
                             Prefilled = items != null && items.Any(i => i.WasPrefilled),
                             AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
@@ -314,11 +380,12 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (string.IsNullOrWhiteSpace(fhirJson)) return result;
             try
             {
-                var items = Newtonsoft.Json.Linq.JObject.Parse(fhirJson)["item"] as Newtonsoft.Json.Linq.JArray;
-                foreach (var item in items ?? new Newtonsoft.Json.Linq.JArray())
+                var root = Newtonsoft.Json.Linq.JObject.Parse(fhirJson);
+                // Las preguntas pueden venir dentro de una sección (item group).
+                foreach (var item in root.SelectTokens("$..item[*]"))
                 {
                     var linkId = (string)item["linkId"];
-                    if (string.IsNullOrWhiteSpace(linkId)) continue;
+                    if (string.IsNullOrWhiteSpace(linkId) || item["item"] != null) continue;
                     result.Add(new KeyValuePair<string, string>(linkId, (string)item["text"] ?? linkId));
                 }
             }
@@ -357,13 +424,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                     var isSave = suffix != null && suffix.StartsWith("save", StringComparison.OrdinalIgnoreCase);
                     var isFinalize = suffix != null && suffix.StartsWith("finalize", StringComparison.OrdinalIgnoreCase);
                     var isAbandon = suffix != null && suffix.StartsWith("abandon", StringComparison.OrdinalIgnoreCase);
+                    var isAmend = string.Equals(suffix, "amend", StringComparison.OrdinalIgnoreCase);
 
                     // Sólo interesa lo que se COMPLETÓ: un avance guardado (con su diff), la
                     // finalización, o el descarte de la ficha. Se descartan "edición iniciada"
                     // ($lock) — alguien pudo abrir la ficha y cerrarla sin tocar nada —, "ficha
                     // iniciada" (create) y los cambios de versión: ninguno registra trabajo
                     // hecho sobre las respuestas.
-                    if (!isSave && !isFinalize && !isAbandon) continue;
+                    if (!isSave && !isFinalize && !isAbandon && !isAmend) continue;
 
                     var av = ChequeAR.Api.Helpers.AuditPresentation.Describe(e.EntityRef, e.Action);
                     var entry = new EncounterHistoryEntry
@@ -385,6 +453,16 @@ namespace ChequeAR.Api.Controllers.Mvc
                             if (changes != null) entry.Changes = changes;
                         }
                         catch (JsonException) { /* payload viejo o ilegible: se muestra sin diff */ }
+                    }
+                    if (isAmend && !string.IsNullOrWhiteSpace(e.FhirJson))
+                    {
+                        try
+                        {
+                            var amend = JsonConvert.DeserializeObject<AmendRecord>(e.FhirJson);
+                            entry.Note = amend?.Reason;
+                            if (amend?.Changes != null) entry.Changes = amend.Changes;
+                        }
+                        catch (JsonException) { }
                     }
 
                     model.Entries.Add(entry);
@@ -546,7 +624,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         private static bool StatusMatches(string rawStatus, string filter)
         {
             if (filter == "pendiente") return rawStatus == "inprogress";
-            if (filter == "finalizada") return rawStatus == "completed";
+            if (filter == "finalizada") return rawStatus == "completed" || rawStatus == "amended";
             return true;
         }
 

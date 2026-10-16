@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -29,7 +29,7 @@ namespace ChequeAR.Tests.Application
             "{\"resourceType\":\"Questionnaire\",\"item\":[" +
             "{\"linkId\":\"peso\",\"text\":\"Peso (kg)\",\"type\":\"decimal\"}," +
             "{\"linkId\":\"presion\",\"text\":\"Presión arterial\",\"type\":\"string\"}," +
-            "{\"linkId\":\"sintomas\",\"text\":\"Síntomas\",\"type\":\"coding\",\"repeats\":true}," +
+            "{\"linkId\":\"sintomas\",\"text\":\"Síntomas\",\"type\":\"coding\",\"repeats\":true,\"answerOption\":[{\"valueCoding\":{\"code\":\"Dolor\"}},{\"valueCoding\":{\"code\":\"Fatiga\"}},{\"valueCoding\":{\"code\":\"Fiebre\"}}]}," +
             "{\"linkId\":\"estudio\",\"text\":\"Estudio adjunto\",\"type\":\"attachment\"}]}";
 
         private readonly InMemoryResponseRepository _repo = new InMemoryResponseRepository();
@@ -271,6 +271,71 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(32.5m, again.Items.Single(i => i.LinkId == "peso").ValueDecimal);
         }
 
+        [Fact]
+        public async Task Amend_ReemplazaLasRespuestasYConservaLaVersion()
+        {
+            var finalized = await FinalizedAsync("medico-a", Decimal("peso", 32.5m), Text("presion", "100/60"));
+            var versionId = finalized.QuestionnaireVersionId;
+
+            var amend = await _sut.BeginAmendAsync(finalized.Id, "medico-b");
+            var amended = await _sut.CommitAmendAsync(finalized.Id, "medico-b", amend.LockToken.Value, amend.ConcurrencyVersion,
+                Items(Decimal("peso", 33m)), "Error de tipeo");
+
+            Assert.Equal(ResponseStatus.Amended, amended.Status);
+            Assert.Equal(versionId, amended.QuestionnaireVersionId);
+            Assert.Null(amended.LockToken);
+            Assert.Equal(new[] { "peso" }, amended.Items.Select(i => i.LinkId));
+            Assert.Equal(33m, amended.Items.Single().ValueDecimal);
+            Assert.Equal("amended", (string)JObject.Parse(amended.FhirJson)["status"]);
+
+            // Una corregida se puede volver a corregir, pero no finalizar.
+            var again = await _sut.BeginAmendAsync(finalized.Id, "medico-a");
+            Assert.Equal(ResponseStatus.Amended, (await _sut.FinalizeAsync(finalized.Id, "medico-a", again.LockToken.Value)).Status);
+        }
+
+        [Fact]
+        public async Task Amend_SobreFichaEnCurso_Falla()
+        {
+            var created = await NewResponseAsync("medico-a");
+
+            await Assert.ThrowsAsync<BusinessRuleException>(() => _sut.BeginAmendAsync(created.Id, "medico-a"));
+        }
+
+        [Fact]
+        public async Task Amend_SinMotivoOSinCambios_Falla()
+        {
+            var finalized = await FinalizedAsync("medico-a", Decimal("peso", 32.5m));
+            var amend = await _sut.BeginAmendAsync(finalized.Id, "medico-a");
+            var token = amend.LockToken.Value;
+
+            await Assert.ThrowsAsync<ValidationFailedException>(
+                () => _sut.CommitAmendAsync(finalized.Id, "medico-a", token, null, Items(Decimal("peso", 33m)), " "));
+            await Assert.ThrowsAsync<ValidationFailedException>(
+                () => _sut.CommitAmendAsync(finalized.Id, "medico-a", token, null, Items(Decimal("peso", 32.5m)), "Revisión"));
+            Assert.Equal(ResponseStatus.Completed, (await _sut.GetAsync(finalized.Id)).Status);
+        }
+
+        [Fact]
+        public async Task Amend_ConLaCorreccionDeOtroAbierta_Falla()
+        {
+            var finalized = await FinalizedAsync("medico-a", Decimal("peso", 32.5m));
+            var amend = await _sut.BeginAmendAsync(finalized.Id, "medico-a");
+
+            await Assert.ThrowsAsync<LockConflictException>(() => _sut.BeginAmendAsync(finalized.Id, "medico-b"));
+            await Assert.ThrowsAsync<LockConflictException>(() => _sut.CommitAmendAsync(
+                finalized.Id, "medico-b", Guid.NewGuid(), null, Items(Decimal("peso", 40m)), "Motivo"));
+            Assert.Equal(32.5m, (await _sut.GetAsync(finalized.Id)).Items.Single().ValueDecimal);
+            Assert.NotNull(amend.LockToken);
+        }
+
+        private async Task<QuestionnaireResponse> FinalizedAsync(string userId, params QuestionnaireResponseItem[] items)
+        {
+            var created = await NewResponseAsync(userId);
+            var locked = await _sut.AcquireLockAsync(created.Id, userId);
+            await _sut.SaveProgressAsync(created.Id, userId, locked.LockToken.Value, null, Items(items));
+            return await _sut.FinalizeAsync(created.Id, userId, locked.LockToken.Value);
+        }
+
         // Un borrador descartado no se puede retomar: para seguir hay que empezar otro.
         [Fact]
         public async Task AbandonedResponse_CannotBeResumed()
@@ -374,6 +439,12 @@ namespace ChequeAR.Tests.Application
             public Task RetargetAsync(QuestionnaireResponse r, ICollection<string> keepLinkIds)
             {
                 r.Items = r.Items.Where(i => keepLinkIds.Contains(i.LinkId)).ToList();
+                return Task.CompletedTask;
+            }
+
+            public Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items)
+            {
+                r.Items = items.ToList();
                 return Task.CompletedTask;
             }
 

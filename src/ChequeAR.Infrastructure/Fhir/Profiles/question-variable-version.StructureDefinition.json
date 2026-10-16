@@ -1,0 +1,38 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "question-variable-version",
+  "url": "https://chequear.garrahan/StructureDefinition/question-variable-version",
+  "version": "1.0.0",
+  "name": "QuestionVariableVersion",
+  "title": "Versión de la variable clínica que usa la pregunta",
+  "status": "active",
+  "publisher": "Hospital Garrahan",
+  "description": "Número de la versión publicada de la variable del catálogo (question-variable-id) cuya definición copió esta pregunta. Permite saber, para una versión congelada del cuestionario, con qué definición de la variable se armó.",
+  "fhirVersion": "5.0.0",
+  "kind": "complex-type",
+  "abstract": false,
+  "context": [{ "type": "element", "expression": "Questionnaire.item" }],
+  "type": "Extension",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Extension",
+        "path": "Extension",
+        "max": "1"
+      },
+      {
+        "id": "Extension.url",
+        "path": "Extension.url",
+        "fixedUri": "https://chequear.garrahan/StructureDefinition/question-variable-version"
+      },
+      {
+        "id": "Extension.value[x]",
+        "path": "Extension.value[x]",
+        "min": 1,
+        "type": [{ "code": "integer" }]
+      }
+    ]
+  }
+}

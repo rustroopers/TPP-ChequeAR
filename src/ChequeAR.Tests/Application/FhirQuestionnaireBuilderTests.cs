@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -234,6 +236,82 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Sí", (string)opciones[0]["valueCoding"]["display"]);
         }
 
+        [Theory]
+        [InlineData(QuestionType.Date, "2024-05-01", "answerDate", "2024-05-01", "2024-05-01")]
+        [InlineData(QuestionType.Date, "01/05/2024", "answerDate", "2024-05-01", "2024-05-01")]
+        [InlineData(QuestionType.DateTime, "2024-05-01T10:30", "answerDateTime", "2024-05-01T10:30:00-03:00", "2024-05-01T10:30")]
+        public void Build_CondicionSobreFecha_UsaElTipoDeFecha(QuestionType tipo, string valor, string campo, string emitido, string leido)
+        {
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "Test" };
+            q.Questions.Add(new Question { LinkId = "inicio", Type = tipo, OrderIndex = 0 });
+            q.Questions.Add(new Question
+            {
+                LinkId = "detalle", Type = QuestionType.String, OrderIndex = 1,
+                EnableWhenJson = "{\"question\":\"inicio\",\"op\":\"=\",\"value\":\"" + valor + "\"}"
+            });
+
+            var json = FhirQuestionnaireBuilder.Build(q, 1);
+
+            var condicion = JsonConvert.DeserializeObject<JObject>(json, new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })["item"][1]["enableWhen"][0];
+            Assert.Equal(emitido, (string)condicion[campo]);
+            Assert.Equal(leido, FhirQuestionnaireReader.Read(json).Groups[0].Questions[1].EnableWhen.Value);
+        }
+
+        [Fact]
+        public void VersionDeLaVariable_IdaYVuelta()
+        {
+            var q = WithQuestion(new Question
+            {
+                LinkId = "peso", Type = QuestionType.Decimal, VariableId = Guid.NewGuid(),
+                VariableVersionId = Guid.NewGuid(), VariableRevision = 3
+            });
+
+            var json = FhirQuestionnaireBuilder.Build(q, 1);
+
+            Assert.Equal(3, (int)FirstItem(json)["extension"].First(e => (string)e["url"] == ChequeARExtensions.QuestionVariableVersionUrl)["valueInteger"]);
+            Assert.Equal(3, FhirQuestionnaireReader.ReadDomain(json).Questions.Single().VariableRevision);
+        }
+
+        [Fact]
+        public void PreguntaSinVersion_NoEmiteLaExtension()
+        {
+            var json = FhirQuestionnaireBuilder.Build(WithQuestion(new Question
+            {
+                LinkId = "peso", Type = QuestionType.Decimal, VariableId = Guid.NewGuid(), VariableRevision = 0
+            }), 1);
+
+            Assert.DoesNotContain(ChequeARExtensions.QuestionVariableVersionUrl, json);
+        }
+
+        [Fact]
+        public void Reader_CondicionNumericaGuardadaComoTexto_SeComparaComoNumero()
+        {
+            var json = new JObject
+            {
+                ["resourceType"] = "Questionnaire",
+                ["status"] = "active",
+                ["item"] = new JArray(
+                    new JObject { ["linkId"] = "n", ["type"] = "integer" },
+                    new JObject
+                    {
+                        ["linkId"] = "x", ["type"] = "string",
+                        ["enableWhen"] = new JArray(new JObject { ["question"] = "n", ["operator"] = "=", ["answerString"] = "5" })
+                    })
+            }.ToString();
+
+            Assert.Equal(5m, FhirQuestionnaireReader.Read(json).Groups[0].Questions[1].EnableWhen.Value);
+        }
+
+        [Theory]
+        [InlineData("2024-05-01T13:30:00Z", "2024-05-01T10:30")]
+        [InlineData("2024-05-01T10:30:00-03:00", "2024-05-01T10:30")]
+        [InlineData("2024-05-01T10:30-03:00", "2024-05-01T10:30")]
+        [InlineData("2024-05-01", "2024-05-01")]
+        public void LocalDateTime_LlevaAHoraArgentina(string valor, string esperado)
+        {
+            Assert.Equal(esperado, FhirQuestionnaireReader.LocalDateTime(valor));
+        }
+
         [Fact]
         public void Build_OpcionSnomed_MuestraLaEtiquetaYGuardaElTerminoAparte()
         {
@@ -246,7 +324,10 @@ namespace ChequeAR.Tests.Application
             var coding = FirstItem(json)["answerOption"][0]["valueCoding"];
             Assert.Equal("Moderada", (string)coding["display"]);
             Assert.Equal("Moderate", (string)coding["extension"][0]["valueString"]);
-            Assert.Equal(new[] { "Moderada" }, FhirQuestionnaireReader.Read(json).Groups[0].Questions[0].Options);
+            var opcion = Assert.Single(FhirQuestionnaireReader.Read(json).Groups[0].Questions[0].Options);
+            Assert.Equal("6736007", opcion.Code);
+            Assert.Equal("Moderada", opcion.Display);
+            Assert.Equal(new[] { "Moderada", "Moderate" }, opcion.Aliases);
         }
 
         // Un JSON corrupto en la base no debe impedir publicar: se ignora esa parte.
@@ -456,10 +537,9 @@ namespace ChequeAR.Tests.Application
         }
 
         // Largo máximo de un texto: maxLength es un campo NATIVO del item FHIR, no una
-        // extensión. Y el patrón regex viaja como extensión estándar. Round-trip completo:
-        // lo que emite el builder lo tiene que volver a leer el reader.
+        // extensión. Un patrón que haya quedado en la pregunta ya no se emite.
         [Fact]
-        public void Build_TextValidation_MaxLengthIsNative_PatternIsExtension()
+        public void Build_TextValidation_MaxLengthIsNative_SinPatron()
         {
             var q = WithQuestion(new Question
             {
@@ -473,17 +553,8 @@ namespace ChequeAR.Tests.Application
             var item = FirstItem(json);
 
             Assert.Equal(8, (int)item["maxLength"]);
-            Assert.Contains((JArray)item["extension"],
-                e => (string)e["url"] == "http://hl7.org/fhir/StructureDefinition/regex"
-                  && (string)e["valueString"] == "^[0-9]{7,8}$");
-
-            // Reader: el ida y vuelta conserva ambos.
-            var back = FhirQuestionnaireReader.Read(json).Groups.Count > 0
-                ? FhirQuestionnaireReader.Read(json).Groups[0].Questions[0]
-                : null;
-            Assert.NotNull(back);
-            Assert.Equal(8, back.MaxLength);
-            Assert.Equal("^[0-9]{7,8}$", back.Pattern);
+            Assert.DoesNotContain("StructureDefinition/regex", json);
+            Assert.Equal(8, FhirQuestionnaireReader.Read(json).Groups[0].Questions[0].MaxLength);
         }
 
         private static Questionnaire WithQuestion(Question question)

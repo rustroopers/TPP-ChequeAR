@@ -77,14 +77,22 @@ namespace ChequeAR.Application.Services
             {
                 var known = new System.Collections.Generic.HashSet<string>(
                     await _catalog.AllCodesAsync(), System.StringComparer.OrdinalIgnoreCase);
-                var valid = info.Specialties.Where(c => !string.IsNullOrWhiteSpace(c) && known.Contains(c.Trim())).ToList();
-                var ignored = info.Specialties.Except(valid, System.StringComparer.OrdinalIgnoreCase).ToList();
-                if (ignored.Count > 0)
+                // Catálogo vacío = falló su carga: filtrar contra él revocaría todas las especialidades.
+                if (known.Count == 0)
                 {
-                    Trace.TraceWarning("Login " + info.Id + ": el hospital informo especialidades fuera del "
-                        + "catalogo y se ignoraron: " + string.Join(",", ignored));
+                    Trace.TraceWarning("Login " + info.Id + ": catalogo de especialidades vacio, no se tocan las del usuario.");
                 }
-                sanitizedSpecialties = valid;
+                else
+                {
+                    var valid = info.Specialties.Where(c => !string.IsNullOrWhiteSpace(c) && known.Contains(c.Trim())).ToList();
+                    var ignored = info.Specialties.Except(valid, System.StringComparer.OrdinalIgnoreCase).ToList();
+                    if (ignored.Count > 0)
+                    {
+                        Trace.TraceWarning("Login " + info.Id + ": el hospital informo especialidades fuera del "
+                            + "catalogo y se ignoraron: " + string.Join(",", ignored));
+                    }
+                    sanitizedSpecialties = valid;
+                }
             }
 
             // Cada usuario tiene un único rol (ver Domain.Enums.Role): si lo que llega trae
@@ -117,6 +125,22 @@ namespace ChequeAR.Application.Services
         /// rol -- ambos son bloqueos de cuenta silenciosos si no se los ataja acá.
         /// </summary>
         /// <param name="actingUserId">Id de quien hace el cambio, para la regla de auto-degradación. Null = no se valida (p. ej. sync automático).</param>
+        /// <summary>
+        /// Se chequea antes de escribir nada: si no, la desactivación quedaba guardada aunque
+        /// después fallara el cambio de rol.
+        /// </summary>
+        public async Task EnsureCanDeactivateAsync(string userId, string actingUserId)
+        {
+            var user = await _repo.GetAsync(userId);
+            if (user == null || !user.IsActive) return;
+            if (actingUserId != null && string.Equals(actingUserId, userId, StringComparison.OrdinalIgnoreCase))
+                throw new BusinessRuleException("No podés desactivar tu propio usuario.");
+            var rol = RoleHierarchy.Principal(user.Roles?.Select(r => r.Role));
+            if (string.Equals(rol, Role.Administrador, StringComparison.Ordinal)
+                && await _repo.CountAsync(null, Role.Administrador, null, true) <= 1)
+                throw new BusinessRuleException("Debe existir al menos un Administrador activo en el sistema.");
+        }
+
         public async Task SetRoleAsync(string userId, string role, string actingUserId = null)
         {
             if (!Role.IsKnown(role))

@@ -93,7 +93,8 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var almacenado = FhirResourceReader.ReadResponse(r.FhirJson);
             var resource = almacenado ?? FhirQuestionnaireResponseBuilder.ToResource(r, null);
-            resource.Meta = new Hl7.Fhir.Model.Meta { VersionId = r.ConcurrencyVersion.ToString() };
+            resource.Meta = resource.Meta ?? new Hl7.Fhir.Model.Meta();
+            resource.Meta.VersionId = r.ConcurrencyVersion.ToString();
             return resource;
         }
 
@@ -244,6 +245,37 @@ namespace ChequeAR.Api.Controllers.Api
             return ResponseMessage(response);
         }
 
+        // Corrección de una ficha finalizada: $amend abre la sesión (como $lock) y
+        // $amend-commit guarda todo junto, con el motivo. No hay autoguardado.
+        [HttpPost, Route("{id:guid}/$amend"), RequiresPermissionApi(Permissions.EncounterWrite)]
+        public async Task<IHttpActionResult> Amend(Guid id)
+        {
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            var r = await _service.BeginAmendAsync(id, userId);
+            var response = Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                lockToken = r.LockToken,
+                expiresAt = r.LockExpiresAt,
+                concurrencyVersion = r.ConcurrencyVersion
+            });
+            response.Headers.ETag = ETagFor(r);
+            return ResponseMessage(response);
+        }
+
+        [HttpPost, Route("{id:guid}/$amend-commit"), RequiresPermissionApi(Permissions.EncounterWrite)]
+        public async Task<IHttpActionResult> AmendCommit(Guid id, [FromBody] AmendBody body)
+        {
+            var lockToken = ParseLockToken(Request);
+            if (!lockToken.HasValue)
+                return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
+
+            var userId = CurrentUser.Id(User as ClaimsPrincipal);
+            var r = await _service.CommitAmendAsync(id, userId, lockToken.Value, ParseIfMatch(Request), body?.Items, body?.Reason);
+            var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
+            response.Headers.ETag = ETagFor(r);
+            return ResponseMessage(response);
+        }
+
         // Descarta un borrador InProgress (el médico eligió "Empezar de nuevo" en vez de
         // retomarlo). No exige X-Lock-Token: a diferencia de $finalize/$save, esto no cierra
         // una sesión de edición propia sino que se dispara ANTES de abrir una, desde el
@@ -290,5 +322,11 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         public class SaveProgressBody { public List<QuestionnaireResponseItem> Items { get; set; } }
+
+        public class AmendBody
+        {
+            public List<QuestionnaireResponseItem> Items { get; set; }
+            public string Reason { get; set; }
+        }
     }
 }

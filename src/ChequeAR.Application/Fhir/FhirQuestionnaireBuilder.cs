@@ -33,7 +33,6 @@ namespace ChequeAR.Application.Fhir
 
         private const string MinValueUrl = "http://hl7.org/fhir/StructureDefinition/minValue";
         private const string MaxValueUrl = "http://hl7.org/fhir/StructureDefinition/maxValue";
-        private const string RegexUrl = "http://hl7.org/fhir/StructureDefinition/regex";
         private const string MimeTypeUrl = "http://hl7.org/fhir/StructureDefinition/mimeType";
         private const string UnitUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit";
         private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
@@ -198,6 +197,7 @@ namespace ChequeAR.Application.Fhir
             // Todo lo demás de la variable viaja denormalizado en campos nativos; la referencia
             // en sí no tiene lugar nativo y sin ella el parser la perdería en cada guardado.
             ChequeARExtensions.SetVariableId(item, question.VariableId);
+            ChequeARExtensions.SetVariableVersion(item, question.VariableVersionId.HasValue ? question.VariableRevision : 0);
 
             foreach (var o in (question.Options ?? new List<AnswerOption>()).OrderBy(x => x.OrderIndex))
                 item.AnswerOption.Add(new FhirQuestionnaire.AnswerOptionComponent { Value = OptionCoding(o) });
@@ -307,10 +307,34 @@ namespace ChequeAR.Application.Fhir
                     var opcion = FindOption(source, Convert.ToString(value, CultureInfo.InvariantCulture));
                     return opcion == null ? null : OptionCoding(opcion);
 
+                case QuestionType.Date:
+                    var fecha = ParseConditionDate(value);
+                    return fecha.HasValue ? new Date(fecha.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) : null;
+
+                // Hora de Argentina, que no tiene horario de verano: R5 exige zona si hay hora.
+                case QuestionType.DateTime:
+                    var momento = ParseConditionDate(value);
+                    return momento.HasValue
+                        ? new FhirDateTime(momento.Value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture) + "-03:00")
+                        : null;
+
                 default:
                     var texto = Convert.ToString(value, CultureInfo.InvariantCulture);
                     return string.IsNullOrEmpty(texto) ? null : new FhirString(texto);
             }
+        }
+
+        private static readonly string[] ConditionDateFormats =
+            { "yyyy-MM-dd", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss", "dd/MM/yyyy", "dd/MM/yyyy HH:mm" };
+
+        private static DateTime? ParseConditionDate(object value)
+        {
+            if (value is DateTime dt) return dt;
+            var texto = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim();
+            if (string.IsNullOrEmpty(texto)) return null;
+            var local = FhirQuestionnaireReader.LocalDateTime(texto);
+            return DateTime.TryParseExact(local, ConditionDateFormats, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var parsed) ? parsed : (DateTime?)null;
         }
 
         /// <summary>
@@ -365,8 +389,6 @@ namespace ChequeAR.Application.Fhir
 
             if (v.MaxLength.HasValue && v.MaxLength.Value > 0) item.MaxLength = v.MaxLength.Value;
 
-            if (!string.IsNullOrWhiteSpace(v.Pattern))
-                item.Extension.Add(new Extension(RegexUrl, new FhirString(v.Pattern)));
 
             if (!string.IsNullOrWhiteSpace(v.Unit))
                 item.Extension.Add(new Extension(UnitUrl, new Coding("http://unitsofmeasure.org", v.Unit, v.Unit)));

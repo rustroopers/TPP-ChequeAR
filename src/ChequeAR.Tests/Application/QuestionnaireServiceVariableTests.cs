@@ -173,7 +173,21 @@ namespace ChequeAR.Tests.Application
 
             var copiada = copia.Questions.First();
             Assert.Equal(peso.Id, copiada.VariableId);
+            Assert.Equal(pregunta.VariableVersionId, copiada.VariableVersionId);
             Assert.Equal(2, copiada.VariableRevision);
+        }
+
+        // Clonar es un uso nuevo de las variables: una dada de baja no se puede usar.
+        [Fact]
+        public async Task CloneAsync_ConVariableInactiva_Falla()
+        {
+            var id = Guid.NewGuid();
+            var peso = TestHelpers.Variable("peso", isActive: false);
+            var origen = new Questionnaire { Id = id, Title = "Control", Status = QuestionnaireStatus.Active, SpecialtyCode = "cardio" };
+            origen.Questions.Add(TestHelpers.QuestionFrom(peso));
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(origen);
+
+            await Assert.ThrowsAsync<ValidationFailedException>(() => Sut(peso).CloneAsync(id, null, "jefe"));
         }
     }
 }

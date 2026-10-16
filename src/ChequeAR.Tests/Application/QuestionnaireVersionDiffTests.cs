@@ -169,14 +169,13 @@ namespace ChequeAR.Tests.Application
         public void Compare_CambiosDeValidacionYRepeticion_SeReportan()
         {
             var a = P("dni-1", "DNI", QuestionType.String, validation: "{\"maxLength\":8}");
-            var b = P("dni-1", "DNI", QuestionType.String, validation: "{\"maxLength\":10,\"pattern\":\"^[0-9]+$\"}");
+            var b = P("dni-1", "DNI", QuestionType.String, validation: "{\"maxLength\":10}");
             b.RepeatsAllowed = true;
 
             var d = QuestionnaireVersionDiff.Compare(Q("Control", a), Q("Control", b));
 
             var campos = Assert.Single(d.Questions).Changes.Select(x => x.Field).ToList();
             Assert.Contains("maxLength", campos);
-            Assert.Contains("pattern", campos);
             Assert.Contains("repeats", campos);
         }
 

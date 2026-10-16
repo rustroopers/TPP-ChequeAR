@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Exporters;
 using ChequeAR.Application.Reports;
 using ChequeAR.Application.Services;
@@ -23,6 +24,15 @@ namespace ChequeAR.Api.Controllers.Api
         {
             _executor = executor;
             _audit = audit;
+        }
+
+        /// <summary>Preguntas filtrables: las de las versiones publicadas, como un Questionnaire FHIR.</summary>
+        [HttpGet, Route("questionnaires/{id:guid}/structure"), RequiresPermissionApi(Permissions.ReportRead)]
+        public async Task<IHttpActionResult> Structure(Guid id)
+        {
+            var estructura = await _executor.GetReportStructureAsync(id);
+            if (estructura == null) return Content(System.Net.HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            return Ok(FhirQuestionnaireBuilder.ToResource(estructura, 0));
         }
 
         [HttpPost, Route("query"), RequiresPermissionApi(Permissions.ReportRead)]
