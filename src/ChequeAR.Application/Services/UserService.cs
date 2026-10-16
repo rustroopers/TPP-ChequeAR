@@ -72,6 +72,10 @@ namespace ChequeAR.Application.Services
         {
             if (info == null) return null;
 
+            // Dado de baja acá: el hospital puede seguir validando su contraseña.
+            var existente = await _repo.GetAsync(info.Id);
+            if (existente != null && !existente.IsActive) return null;
+
             IReadOnlyList<string> sanitizedSpecialties = null;
             if (info.Specialties != null)
             {

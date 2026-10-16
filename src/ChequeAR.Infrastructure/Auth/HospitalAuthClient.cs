@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Interfaces;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace ChequeAR.Infrastructure.Auth
 {
@@ -25,52 +29,49 @@ namespace ChequeAR.Infrastructure.Auth
         public async Task<UserInfo> LoginAsync(string username, string password)
         {
             // Estructura mínima esperada. En producción reemplazar por el contrato real del hospital.
-            var payload = "{\"username\":\"" + Escape(username) + "\",\"password\":\"" + Escape(password) + "\"}";
-            var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            var res = await _http.PostAsync(_loginUrl, content);
-            if (!res.IsSuccessStatusCode) return null;
-            var body = await res.Content.ReadAsStringAsync();
+            var payload = JsonConvert.SerializeObject(new { username, password });
+            using (var content = new StringContent(payload, Encoding.UTF8, "application/json"))
+            using (var res = await _http.PostAsync(_loginUrl, content))
+            {
+                // 401, 423 (cuenta bloqueada) o cualquier otro: credenciales no válidas.
+                if (!res.IsSuccessStatusCode) return null;
+                return Parse(await res.Content.ReadAsStringAsync());
+            }
+        }
 
-            // Parser muy simple para MVP. Producción: Newtonsoft.Json o System.Text.Json.
+        /// <summary>
+        /// Sin id o sin roles no hay sesión: antes se usaba el usuario tipeado y el rol Medico,
+        /// y una respuesta incompleta del hospital terminaba dando acceso.
+        /// </summary>
+        public static UserInfo Parse(string body)
+        {
+            JObject json;
+            try { json = JObject.Parse(body ?? string.Empty); }
+            catch (JsonException) { Trace.TraceWarning("Login del hospital: respuesta que no es JSON."); return null; }
+
+            var id = Scalar(json["id"]);
+            var roles = List(json["roles"]);
+            if (string.IsNullOrWhiteSpace(id) || roles == null || roles.Count == 0)
+            {
+                Trace.TraceWarning("Login del hospital: la respuesta no trae id o roles.");
+                return null;
+            }
+
             return new UserInfo
             {
-                Id = ExtractScalar(body, "id") ?? username,
-                DisplayName = ExtractScalar(body, "displayName") ?? username,
-                Roles = ExtractList(body, "roles") ?? new List<string> { "Medico" },
-                Specialties = ExtractList(body, "specialties") ?? new List<string>()
+                Id = id,
+                DisplayName = Scalar(json["displayName"]) ?? id,
+                Roles = roles,
+                Specialties = List(json["specialties"]) ?? new List<string>()
             };
         }
 
-        private static string Escape(string s) => (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+        private static string Scalar(JToken token) =>
+            token == null || token.Type == JTokenType.Null || token is JContainer ? null : token.ToString();
 
-        private static string ExtractScalar(string json, string key)
-        {
-            var marker = "\"" + key + "\"";
-            var idx = json.IndexOf(marker, StringComparison.Ordinal);
-            if (idx < 0) return null;
-            var colon = json.IndexOf(':', idx);
-            var quote = json.IndexOf('"', colon + 1);
-            if (quote < 0) return null;
-            var end = json.IndexOf('"', quote + 1);
-            return end > quote ? json.Substring(quote + 1, end - quote - 1) : null;
-        }
-
-        private static List<string> ExtractList(string json, string key)
-        {
-            var marker = "\"" + key + "\"";
-            var idx = json.IndexOf(marker, StringComparison.Ordinal);
-            if (idx < 0) return null;
-            var open = json.IndexOf('[', idx);
-            var close = json.IndexOf(']', open);
-            if (open < 0 || close < 0) return null;
-            var inside = json.Substring(open + 1, close - open - 1);
-            var items = new List<string>();
-            foreach (var part in inside.Split(','))
-            {
-                var trimmed = part.Trim().Trim('"');
-                if (!string.IsNullOrEmpty(trimmed)) items.Add(trimmed);
-            }
-            return items;
-        }
+        private static List<string> List(JToken token) =>
+            token is JArray array
+                ? array.Select(Scalar).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
+                : null;
     }
 }
