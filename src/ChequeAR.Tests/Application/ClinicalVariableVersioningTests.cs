@@ -75,7 +75,7 @@ namespace ChequeAR.Tests.Application
             await _sut.PublishAsync(v.Id, "admin", " Alta ");
 
             Assert.Equal(1, creada.VersionNumber);
-            Assert.Equal(2, creada.SourceRevision);
+            Assert.Equal(3, creada.SourceRevision);
             Assert.Equal("Alta", creada.ChangeNote);
             Assert.Equal(creada.Id, v.CurrentVersionId);
             Assert.Equal(2, VariableDefinition.Parse(creada.DefinitionJson).Options.Count);
@@ -108,6 +108,62 @@ namespace ChequeAR.Tests.Application
 
             Assert.Equal(2, creada.VersionNumber);
             Assert.Equal(creada.Id, v.CurrentVersionId);
+        }
+
+        [Fact]
+        public async Task Publish_ConRevisionVieja_Rechaza()
+        {
+            var v = Severidad(revision: 4);
+
+            await Assert.ThrowsAsync<ConcurrencyConflictException>(() => _sut.PublishAsync(v.Id, "admin", expectedRevision: 3));
+
+            _repo.Verify(r => r.AddVersionAsync(It.IsAny<ClinicalVariable>(), It.IsAny<ClinicalVariableVersion>()), Times.Never);
+        }
+
+        // Mover la revisión al publicar es lo que hace chocar dos publicaciones simultáneas.
+        [Fact]
+        public async Task Publish_MueveLaRevision()
+        {
+            var v = Severidad(revision: 4);
+            ClinicalVariableVersion creada = null;
+            _repo.Setup(r => r.AddVersionAsync(v, It.IsAny<ClinicalVariableVersion>()))
+                 .Callback<ClinicalVariable, ClinicalVariableVersion>((_, x) => creada = x).Returns(Task.CompletedTask);
+
+            await _sut.PublishAsync(v.Id, "admin");
+
+            Assert.Equal(5, v.Revision);
+            Assert.Equal(5, creada.SourceRevision);
+        }
+
+        [Fact]
+        public async Task Publish_NotaDemasiadoLarga_Rechaza()
+        {
+            var v = Severidad();
+
+            await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.PublishAsync(v.Id, "admin", new string('x', 2001)));
+        }
+
+        [Theory]
+        [InlineData("otro-codigo", false)]
+        [InlineData("severidad", true)]
+        public async Task Update_CodigoORepeticionEnUnaPublicada_Rechaza(string code, bool repeats)
+        {
+            var v = Severidad(vigente: new ClinicalVariableVersion { Id = Guid.NewGuid(), VersionNumber = 1, SourceRevision = 1 });
+            var patch = new ClinicalVariable { Code = code, Name = "Severidad", Type = QuestionType.Choice, RepeatsAllowed = repeats, Options = v.Options.ToList() };
+
+            await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.UpdateAsync(v.Id, patch, "admin"));
+        }
+
+        [Fact]
+        public async Task Delete_SinPublicarPeroEnUso_Desactiva()
+        {
+            var v = Severidad();
+            _repo.Setup(r => r.CountQuestionsUsingAsync(v.Id)).ReturnsAsync(2);
+
+            var outcome = await _sut.DeleteAsync(v.Id, "admin");
+
+            Assert.Equal(VariableDeleteOutcome.DeactivatedBecauseInUse, outcome);
+            _repo.Verify(r => r.DeleteAsync(It.IsAny<Guid>()), Times.Never);
         }
 
         [Fact]

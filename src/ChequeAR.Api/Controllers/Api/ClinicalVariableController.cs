@@ -74,7 +74,9 @@ namespace ChequeAR.Api.Controllers.Api
             var v = await _service.GetAsync(id);
             if (v == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             var estado = await _service.GetPublicationAsync(new[] { v });
-            return Ok(ClinicalVariableDtoMap.ToDto(v, estado[v.Id]));
+            var response = Request.CreateResponse(HttpStatusCode.OK, ClinicalVariableDtoMap.ToDto(v, estado[v.Id]));
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"" + v.Revision + "\"", true);
+            return ResponseMessage(response);
         }
 
         [HttpGet, Route("{id:guid}/versions"), RequiresPermissionApi(Permissions.QuestionnaireRead)]
@@ -131,7 +133,8 @@ namespace ChequeAR.Api.Controllers.Api
             if (body == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             var actualizada = await _service.UpdateAsync(id, ClinicalVariableDtoMap.ToEntity(body), UserId, ParseIfMatch(Request));
             if (actualizada == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
-            return Ok(ClinicalVariableDtoMap.ToDto(actualizada));
+            var estado = await _service.GetPublicationAsync(new[] { actualizada });
+            return Ok(ClinicalVariableDtoMap.ToDto(actualizada, estado[actualizada.Id]));
         }
 
         [HttpPost, Route("{id:guid}/activate"), RequiresPermissionApi(Permissions.VariableManage)]

@@ -245,6 +245,8 @@ namespace ChequeAR.Application.Services
             if (v == null) return null;
             EnsureRevision(v, expectedRevision);
             await ValidateAsync(v, existingId: id);
+            if (changeNote != null && changeNote.Trim().Length > 2000)
+                throw new ValidationFailedException(new List<string> { "Las notas del cambio no pueden superar los 2000 caracteres." });
 
             var definition = VariableDefinition.From(v);
             var current = v.CurrentVersionId.HasValue ? await _repo.GetVersionAsync(v.CurrentVersionId.Value) : null;
@@ -259,6 +261,8 @@ namespace ChequeAR.Application.Services
             }
 
             var versions = await _repo.ListVersionsAsync(id);
+            // Mueve el token de concurrencia: de dos publicaciones simultáneas, la segunda choca.
+            v.Revision++;
             var version = new ClinicalVariableVersion
             {
                 Id = Guid.NewGuid(),

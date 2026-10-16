@@ -174,6 +174,30 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("¿Fuma?", guardada.Text);
         }
 
+        // Pedir la misma versión que ya tiene la pregunta conserva su definición.
+        [Fact]
+        public async Task UpdateAsync_PideLaMismaVersion_ConservaElSnapshot()
+        {
+            var v1 = Tabaquismo(revision: 1, fumador: "Fumador");
+            var pregunta = TestHelpers.QuestionFrom(v1, "tabaco-1");
+            TestHelpers.ApplySnapshot(pregunta, v1);
+            var q = Persistido(pregunta);
+            var v2 = Tabaquismo(revision: 2, fumador: "Fumador actual");
+            v2.Id = v1.Id;
+            var patch = new Questionnaire();
+            var pedida = TestHelpers.QuestionFrom(v2, "tabaco-1");
+            pedida.VariableRevision = 1;
+            patch.Questions.Add(pedida);
+            var guardadas = CapturarGuardadas();
+
+            await Sut(v2).UpdateAsync(q.Id, patch, "jefe");
+
+            var guardada = guardadas.Single();
+            Assert.Equal(1, guardada.VariableRevision);
+            Assert.Equal(pregunta.VariableVersionId, guardada.VariableVersionId);
+            Assert.Equal("Fumador", guardada.Options.OrderBy(o => o.OrderIndex).First().Display);
+        }
+
         [Fact]
         public async Task UpdateAsync_PreguntaNueva_TomaLaVersionVigente()
         {

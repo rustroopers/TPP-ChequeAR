@@ -371,7 +371,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (qq.VariableId.HasValue)
             {
                 view.VariableId = qq.VariableId.Value.ToString();
-                view.VariableRevision = qq.VariableRevision;
+                view.VariableRevision = qq.VariableVersionId.HasValue ? qq.VariableRevision : 0;
                 VariableInfo v = null;
                 if (variables != null) variables.TryGetValue(qq.VariableId.Value, out v);
                 // Si la variable ya no está en el catálogo, la pregunta sigue mostrándose con

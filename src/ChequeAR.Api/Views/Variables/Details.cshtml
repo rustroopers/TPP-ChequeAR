@@ -79,11 +79,12 @@
 {
     <div class="modal fade" id="publishModal" tabindex="-1" aria-labelledby="publishModalLabel" aria-hidden="true">
         <div class="modal-dialog">
-            @using (Html.BeginForm("Publish", "Variables", FormMethod.Post, new { @class = "modal-content" }))
+            @using (Html.BeginForm("Publish", "Variables", FormMethod.Post, new { @class = "modal-content", id = "publishForm" }))
             {
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="id" value="@Model.Id" />
                 <input type="hidden" name="revision" value="@Model.Revision" />
+                <input type="hidden" name="payloadJson" id="publishPayload" />
                 <div class="modal-header">
                     <h2 class="modal-title h3" id="publishModalLabel">Publicar variable</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
@@ -106,4 +107,9 @@
 <script src="@Asset.Url("~/Scripts/islands/bootstrap.js")"></script>
 <script src="@Asset.Url("~/Scripts/islands/shared/snomed.js")"></script>
 <script src="@Asset.Url("~/Scripts/islands/variable-form/index.js")"></script>
+<script>
+    document.getElementById('publishForm')?.addEventListener('submit', function () {
+        document.getElementById('publishPayload').value = document.getElementById('variablePayload').value;
+    });
+</script>
 }

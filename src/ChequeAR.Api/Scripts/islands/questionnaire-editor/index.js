@@ -1958,7 +1958,7 @@
     <strong>{{ staleVariables.length }}</strong> pregunta(s) usan una versión anterior de su variable.\
     <ul class="mb-0 mt-1 ps-3">\
         <li v-for="q in staleVariables" :key="q.linkId">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.variableName }})</span>\
-            <button v-if="canEdit" type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" :disabled="updatingVariable[q.linkId]" @click="updateToCurrentVersion(q)">Actualizar a v{{ q.variableCurrentRevision }}</button>\
+            <button v-if="!readOnly" type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" :disabled="updatingVariable[q.linkId]" @click="updateToCurrentVersion(q)">Actualizar a v{{ q.variableCurrentRevision }}</button>\
         </li>\
     </ul>\
 </div>\

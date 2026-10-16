@@ -140,13 +140,22 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         [HttpPost, ValidateAntiForgeryToken]
-        public async Task<ActionResult> Publish(Guid id, string changeNote, int? revision)
+        public async Task<ActionResult> Publish(Guid id, string changeNote, int? revision, string payloadJson)
         {
             try
             {
                 var antes = await _variables.GetAsync(id);
                 if (antes == null) return HttpNotFound();
                 var vigente = (await _variables.GetPublicationAsync(new[] { antes }))[id].CurrentVersion;
+
+                // Lo que está en el formulario se guarda primero: si no, se publicaría el borrador anterior.
+                var dto = string.IsNullOrWhiteSpace(payloadJson) ? null : JsonConvert.DeserializeObject<ClinicalVariableDto>(payloadJson);
+                if (dto != null)
+                {
+                    var guardada = await _variables.UpdateAsync(id, ClinicalVariableDtoMap.ToEntity(dto), User.Identity.Name, dto.Revision);
+                    revision = guardada.Revision;
+                }
+
                 var version = await _variables.PublishAsync(id, User.Identity.Name, changeNote, revision);
                 TempData["Toast"] = version.VersionNumber == vigente
                     ? "No hay cambios para publicar."
@@ -275,7 +284,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var outcome = await _variables.DeleteAsync(id, User.Identity.Name);
                 TempData["Toast"] = outcome == VariableDeleteOutcome.DeactivatedBecauseInUse
-                    ? "La variable está en uso en algún cuestionario: se desactivó en vez de eliminarse."
+                    ? "La variable está publicada o en uso: se desactivó en vez de eliminarse."
                     : "Variable eliminada.";
                 TempData["ToastLevel"] = "success";
             }
