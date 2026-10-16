@@ -66,14 +66,8 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Upsert(string id, [FromBody] UserUpsertRequest body)
         {
             if (body == null) return BadRequest("body required");
-            await _users.UpsertAsync(new User
-            {
-                Id = id,
-                DisplayName = body.DisplayName,
-                Email = body.Email,
-                IsActive = body.IsActive,
-                LastSyncAt = System.DateTime.UtcNow
-            });
+            await _users.UpdateBasicsAsync(id, body.DisplayName, body.Email, body.IsActive,
+                CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
             SessionRevalidation.Invalidate(id);
             return StatusCode(HttpStatusCode.NoContent);
         }

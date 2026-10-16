@@ -66,6 +66,16 @@ namespace ChequeAR.Api.Helpers
             return dollar >= 0 ? value.Substring(0, dollar) : value;
         }
 
+        /// <summary>Usuario de un evento de cuenta ("AppUser/{id}$operación").</summary>
+        public static string UserId(string entityRef)
+        {
+            const string prefix = "AppUser/";
+            if (entityRef == null || !entityRef.StartsWith(prefix, StringComparison.Ordinal)) return null;
+            var value = entityRef.Substring(prefix.Length);
+            var dollar = value.IndexOf('$');
+            return dollar >= 0 ? value.Substring(0, dollar) : value;
+        }
+
         public static ActionView Describe(string entityRef, string actionCode)
         {
             ParseRef(entityRef, out var type, out var id, out var suffix);
@@ -116,6 +126,14 @@ namespace ChequeAR.Api.Helpers
             else if (type == "AuditEvent" && actionCode == "E")
             {
                 return Set(view, Op.Export, "Auditoría exportada", "cq-badge--info", "bi-download");
+            }
+            else if (type == "AppUser")
+            {
+                if (StartsWith(suffix, "login-failed")) return Set(view, Op.Other, "Ingreso fallido", "cq-badge--danger", "bi-shield-exclamation");
+                if (StartsWith(suffix, "login")) return Set(view, Op.Other, "Ingreso", "cq-badge--archived", "bi-box-arrow-in-right");
+                if (StartsWith(suffix, "logout")) return Set(view, Op.Other, "Salida", "cq-badge--archived", "bi-box-arrow-right");
+                if (StartsWith(suffix, "password")) return Set(view, Op.Edit, "Contraseña cambiada", "cq-badge--info", "bi-key");
+                if (actionCode == "U") return Set(view, Op.Edit, "Usuario modificado", "cq-badge--info", "bi-person-gear");
             }
             else if (type == "SavedReport")
             {

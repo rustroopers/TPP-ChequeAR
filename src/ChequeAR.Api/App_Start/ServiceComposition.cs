@@ -45,6 +45,7 @@ namespace ChequeAR.Api.App_Start
     public static class ServiceComposition
     {
         private static AuditDispatcher _audit;
+        private static OrphanAttachmentSweeper _orphans;
 
         public static Container Container { get; private set; }
 
@@ -139,6 +140,14 @@ namespace ChequeAR.Api.App_Start
                 () => new AuditRepository(container.GetInstance<ChequeARDbContext>(), ownsContext: false), Lifestyle.Scoped);
             container.Register<IAttachmentStore>(
                 () => new FileShareAttachmentStore(attachmentsRoot, container.GetInstance<ChequeARDbContext>()), Lifestyle.Scoped);
+            _orphans = new OrphanAttachmentSweeper(async cutoff =>
+                {
+                    using (var ctx = new ChequeARDbContext())
+                        return await new FileShareAttachmentStore(attachmentsRoot, ctx).PurgeOrphansAsync(cutoff);
+                },
+                TimeSpan.FromMinutes(10), TimeSpan.FromHours(12),
+                n => Log.Information("Adjuntos sin uso borrados: {Count}", n),
+                ex => Log.Error(ex, "No se pudieron borrar los adjuntos sin uso"));
 
             // ===== Integraciones externas =====
             // Allowlist de vistas autorizadas, copiada a la salida (bin/Oracle/allowlist.yaml).
@@ -265,6 +274,7 @@ namespace ChequeAR.Api.App_Start
         /// <summary>Vacía la cola de auditoría y libera los singletons antes de que el proceso termine (Application_End).</summary>
         public static void Shutdown()
         {
+            _orphans?.Dispose();
             _audit?.Dispose();
             Container?.Dispose();
         }
