@@ -14,9 +14,7 @@ namespace ChequeAR.Infrastructure.Fhir
     ///
     /// No inventa un dataset propio: proyecta el MISMO que sirve las vistas VW_*, leyendolo
     /// por IOracleViewClient. Asi el paciente PAC-000007 cuenta la misma historia por las dos
-    /// vias, que es justo lo que PrefillService necesita —mezcla prefills 'oracle-view' con
-    /// 'fhir-observation' en un mismo cuestionario y dos datasets distintos darian fichas
-    /// internamente contradictorias.
+    /// vias.
     ///
     /// Los recursos se arman con POCOs de Firely y se serializan con FhirJsonSerializer, no
     /// con strings a mano: lo que sale es FHIR R5 estructuralmente valido, verificable por el

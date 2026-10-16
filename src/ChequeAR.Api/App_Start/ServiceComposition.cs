@@ -219,7 +219,6 @@ namespace ChequeAR.Api.App_Start
             container.Register<ClinicalVariableService>();
             container.Register<TerminologyService>();
             container.Register<HomeDashboardService>();
-            container.Register<PrefillService>();
             container.Register<QueryBuilder>();
             container.Register<ReportExecutor>();
             container.Register<PatientTrendService>();

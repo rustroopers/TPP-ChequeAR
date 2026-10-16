@@ -69,12 +69,6 @@ namespace ChequeAR.Infrastructure.Repositories
 
         public Task UpdateAsync(QuestionnaireResponse r) => SaveAsync();
 
-        public async Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items)
-        {
-            _ctx.QuestionnaireResponseItems.AddRange(items);
-            await _ctx.SaveChangesAsync();
-        }
-
         public Task<bool> HasResponsesAsync(Guid questionnaireId)
         {
             return _ctx.QuestionnaireResponses.AnyAsync(r => r.QuestionnaireId == questionnaireId);

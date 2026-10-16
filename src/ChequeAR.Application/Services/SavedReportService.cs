@@ -67,8 +67,6 @@ namespace ChequeAR.Application.Services
             return _repo.ListForUserAsync(userId, specialties);
         }
 
-        public Task<SavedReport> GetAsync(Guid id) => _repo.GetAsync(id);
-
         /// <summary>
         /// Lectura por id con el MISMO chequeo de acceso que ListForUserAsync (dueño, o
         /// scope='specialty' dentro de las especialidades del usuario). Antes GetAsync se

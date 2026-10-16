@@ -53,7 +53,6 @@
                 <dd class="col-sm-7">
                     <strong>@q.Answer</strong>
                     @if (!string.IsNullOrEmpty(q.Unit)) { <span class="cq-text-sm cq-text-muted ms-1">@q.Unit</span> }
-                    @if (q.Prefilled) { <span class="cq-badge cq-badge--info ms-2">Pre-cargado</span> }
                     @if (q.AttachmentId.HasValue)
                     {
                         <button type="button" class="btn btn-sm btn-link cq-view-attachment" data-attachment-id="@q.AttachmentId">Ver</button>

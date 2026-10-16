@@ -54,9 +54,6 @@ namespace ChequeAR.Infrastructure.EF
         public DbSet<Specialty> Specialties { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<SavedReport> SavedReports { get; set; }
-        public DbSet<ReportExecution> ReportExecutions { get; set; }
-        public DbSet<ExportArtifact> ExportArtifacts { get; set; }
-        public DbSet<ExportJob> ExportJobs { get; set; }
         public DbSet<ClinicalVariable> ClinicalVariables { get; set; }
         public DbSet<VariableOption> VariableOptions { get; set; }
         public DbSet<ClinicalVariableVersion> ClinicalVariableVersions { get; set; }
@@ -144,8 +141,6 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
             modelBuilder.Entity<Questionnaire>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
             modelBuilder.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
-            modelBuilder.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
-            modelBuilder.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
 
             base.OnModelCreating(modelBuilder);
         }

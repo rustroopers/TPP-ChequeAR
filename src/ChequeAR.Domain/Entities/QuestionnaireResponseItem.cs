@@ -15,6 +15,5 @@ namespace ChequeAR.Domain.Entities
         public bool? ValueBoolean { get; set; }
         public string ValueCode { get; set; }
         public Guid? AttachmentId { get; set; }
-        public bool WasPrefilled { get; set; }
     }
 }
