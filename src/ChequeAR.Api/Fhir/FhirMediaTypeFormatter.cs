@@ -45,6 +45,9 @@ namespace ChequeAR.Api.Fhir
             SupportedMediaTypes.Add(new MediaTypeHeaderValue(FhirJson));
             SupportedMediaTypes.Add(new MediaTypeHeaderValue("application/json"));
             SupportedEncodings.Add(new UTF8Encoding(false, true));
+            // _format de FHIR: sólo JSON. Un valor que no sea JSON queda sin formatter (406).
+            foreach (var valor in new[] { "json", FhirJson, "application/json" })
+                MediaTypeMappings.Add(new QueryStringMapping("_format", valor, FhirJson));
         }
 
         public override bool CanReadType(Type type) => typeof(Hl7.Fhir.Model.Resource).IsAssignableFrom(type);

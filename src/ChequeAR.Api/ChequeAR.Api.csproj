@@ -136,6 +136,8 @@
     <Compile Include="Controllers\Mvc\VariablesController.cs" />
     <Compile Include="Controllers\Mvc\AdminController.cs" />
     <Compile Include="Fhir\CapabilityCatalog.cs" />
+    <Compile Include="Fhir\FhirErrorHandler.cs" />
+    <Compile Include="Fhir\FhirModelState.cs" />
     <Compile Include="Fhir\FhirMediaTypeFormatter.cs" />
     <Compile Include="Models\HomeViewModel.cs" />
     <Compile Include="Models\QuestionnaireListItem.cs" />
@@ -148,6 +150,7 @@
     <Compile Include="Models\ProfileViewModel.cs" />
     <Compile Include="Controllers\Api\AuthController.cs" />
     <Compile Include="Controllers\Api\DeployController.cs" />
+    <Compile Include="Controllers\Api\FhirNotFoundController.cs" />
     <Compile Include="Controllers\Api\HealthController.cs" />
     <Compile Include="Controllers\Api\MetadataController.cs" />
     <Compile Include="Controllers\Api\TerminologyController.cs" />

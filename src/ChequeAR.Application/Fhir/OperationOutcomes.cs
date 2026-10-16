@@ -38,6 +38,23 @@ namespace ChequeAR.Application.Fhir
         /// cliente vio la última versión, y una edición concurrente pisaría trabajo ajeno
         /// en silencio.
         /// </summary>
+        public const string LockHolderUrl = "https://chequear.garrahan/StructureDefinition/lock-holder";
+        public const string LockExpiresUrl = "https://chequear.garrahan/StructureDefinition/lock-expires";
+
+        /// <summary>
+        /// 409 por la sesión de edición de otro usuario. Quién la tiene y hasta cuándo no tienen
+        /// lugar en el OperationOutcome: van como extensiones, que el renderer lee para avisar.
+        /// </summary>
+        public static OperationOutcome LockConflict(string diagnostics, string lockedBy, System.DateTime? expiresAt)
+        {
+            var outcome = Single(OperationOutcome.IssueType.LockError, diagnostics);
+            if (!string.IsNullOrEmpty(lockedBy)) outcome.Extension.Add(new Extension(LockHolderUrl, new FhirString(lockedBy)));
+            if (expiresAt.HasValue)
+                outcome.Extension.Add(new Extension(LockExpiresUrl, new Instant(new System.DateTimeOffset(
+                    System.DateTime.SpecifyKind(expiresAt.Value, System.DateTimeKind.Utc)))));
+            return outcome;
+        }
+
         public static OperationOutcome PreconditionRequired(string diagnostics = null)
             => Single(OperationOutcome.IssueType.Required,
                       diagnostics ?? "Falta el header If-Match con la versión del recurso (ej: If-Match: W/\"3\").");

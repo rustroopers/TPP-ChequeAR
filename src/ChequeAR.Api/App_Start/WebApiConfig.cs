@@ -21,6 +21,8 @@ namespace ChequeAR.Api.App_Start
             // Filters/ApiExceptionFilter). Las acciones sólo capturan lo que para ellas
             // significa otra cosa.
             config.Filters.Add(new ChequeAR.Api.Filters.ApiExceptionFilter());
+            // En /fhir/ todo error sale como OperationOutcome, también los que arma Web API.
+            config.MessageHandlers.Add(new FhirErrorHandler());
 
             config.MapHttpAttributeRoutes();
 
@@ -30,12 +32,11 @@ namespace ChequeAR.Api.App_Start
                 routeTemplate: "fhir/r5/metadata",
                 defaults: new { controller = "Metadata", action = "Get" });
 
+            // Resto en attribute routing. Lo que no tiene ruta bajo fhir/r5 da 404 FHIR.
             config.Routes.MapHttpRoute(
-                name: "FhirResourceById",
-                routeTemplate: "fhir/r5/{resourceType}/{id}",
-                defaults: new { id = RouteParameter.Optional });
-
-            // Resto en attribute routing
+                name: "FhirNotFound",
+                routeTemplate: "fhir/r5/{*path}",
+                defaults: new { controller = "FhirNotFound", action = "Handle" });
 
             // El formatter de FHIR va PRIMERO: la negociación de contenido recorre la cadena
             // en orden, así que ser el primero es lo que hace que application/fhir+json sea el

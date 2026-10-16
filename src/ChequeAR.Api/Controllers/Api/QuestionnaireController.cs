@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
 
@@ -143,6 +144,7 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpPost, Route(""), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
+            if (!ModelState.IsValid) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(FhirModelState.Describe(ModelState)));
             var q = FhirQuestionnaireParser.ToDomain(body);
             if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
@@ -151,6 +153,7 @@ namespace ChequeAR.Api.Controllers.Api
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
             var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
+            response.Headers.Location = new Uri(FhirBaseUrl() + "/Questionnaire/" + created.Id);
             response.Headers.ETag = ETagFor(created);
             return ResponseMessage(response);
         }
@@ -158,6 +161,10 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
+            if (!ModelState.IsValid) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(FhirModelState.Describe(ModelState)));
+            // FHIR: el id del cuerpo tiene que ser el de la URL.
+            if (body != null && !string.IsNullOrEmpty(body.Id) && !string.Equals(body.Id, id.ToString(), StringComparison.OrdinalIgnoreCase))
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("El id del recurso no coincide con el de la URL."));
             var patch = FhirQuestionnaireParser.ToDomain(body);
             if (patch == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
