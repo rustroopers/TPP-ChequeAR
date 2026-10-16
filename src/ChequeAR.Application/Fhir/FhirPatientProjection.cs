@@ -51,6 +51,16 @@ namespace ChequeAR.Application.Fhir
         /// deriva de lo que sus propios usuarios completaron, así que el encuentro es una
         /// proyección y no un registro con vida propia.
         /// </summary>
+        private static EncounterStatus EncounterStatusOf(ChequeAR.Domain.Enums.ResponseStatus status)
+        {
+            switch (status)
+            {
+                case ChequeAR.Domain.Enums.ResponseStatus.InProgress: return EncounterStatus.InProgress;
+                case ChequeAR.Domain.Enums.ResponseStatus.EnteredInError: return EncounterStatus.EnteredInError;
+                default: return EncounterStatus.Completed;
+            }
+        }
+
         public static Encounter ToEncounter(DomainResponse r)
         {
             if (r == null) return null;
@@ -58,7 +68,7 @@ namespace ChequeAR.Application.Fhir
             return new Encounter
             {
                 Id = r.Id.ToString(),
-                Status = EncounterStatus.Completed,
+                Status = EncounterStatusOf(r.Status),
                 Subject = new ResourceReference
                 {
                     Identifier = new Identifier(HospitalIdSystem, r.PatientHospitalId),

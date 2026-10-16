@@ -127,18 +127,17 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
-        public void LargoMaximoYPatron_SobrevivenElCiclo()
+        public void LargoMaximo_SobreviveElCiclo()
         {
             var original = ConUnaPregunta(new Question
             {
                 LinkId = "dni", Type = QuestionType.String,
-                ValidationJson = "{\"maxLength\":8,\"pattern\":\"^[0-9]{7,8}$\"}"
+                ValidationJson = "{\"maxLength\":8}"
             });
 
             var v = JObject.Parse(Ciclo(original).Questions.Single().ValidationJson);
 
             Assert.Equal(8, (int)v["maxLength"]);
-            Assert.Equal("^[0-9]{7,8}$", (string)v["pattern"]);
         }
 
         [Fact]

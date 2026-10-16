@@ -20,7 +20,7 @@
         </p>
     </div>
     <div class="d-flex gap-2">
-        @if (Model.Status == "completed")
+        @if (Model.Status == "completed" || Model.Status == "amended")
         {
             <a href="@Url.Action("View", new { id = Model.EncounterId })" class="btn btn-outline-secondary"><i class="bi bi-file-text me-1"></i> Ver ficha</a>
         }
@@ -71,6 +71,10 @@
                         <span class="cq-badge @e.BadgeClass"><i class="bi @e.Icon me-1"></i>@e.Label</span>
                         <span class="cq-text-sm">por <strong>@e.Username</strong></span>
                     </div>
+                    @if (!string.IsNullOrEmpty(e.Note))
+                    {
+                        <div class="cq-text-sm mt-1">@e.Note</div>
+                    }
                     @if (e.Changes != null && e.Changes.Count > 0)
                     {
                         <table class="table cq-table mt-2 mb-0">

@@ -26,7 +26,6 @@ namespace ChequeAR.Application.Fhir
         private const string MaxValueUrl = "http://hl7.org/fhir/StructureDefinition/maxValue";
         private const string UnitUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit";
         private const string MimeTypeUrl = "http://hl7.org/fhir/StructureDefinition/mimeType";
-        private const string RegexUrl = "http://hl7.org/fhir/StructureDefinition/regex";
         private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
 
         /// <summary>
@@ -142,7 +141,6 @@ namespace ChequeAR.Application.Fhir
                     case MaxValueUrl: question.Max = Numeric(ext.Value); break;
                     case UnitUrl: question.Unit = (ext.Value as Coding)?.Code; break;
                     case MimeTypeUrl: question.Accept = (ext.Value as Code)?.Value; break;
-                    case RegexUrl: question.Pattern = (ext.Value as FhirString)?.Value; break;
                 }
             }
 
@@ -328,7 +326,6 @@ namespace ChequeAR.Application.Fhir
         public decimal? Min { get; set; }
         public decimal? Max { get; set; }
         public int? MaxLength { get; set; }
-        public string Pattern { get; set; }
         public string Unit { get; set; }
         public string Accept { get; set; }
         public List<RenderableOption> Options { get; set; } = new List<RenderableOption>();

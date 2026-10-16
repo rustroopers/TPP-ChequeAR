@@ -33,7 +33,6 @@ namespace ChequeAR.Application.Fhir
 
         private const string MinValueUrl = "http://hl7.org/fhir/StructureDefinition/minValue";
         private const string MaxValueUrl = "http://hl7.org/fhir/StructureDefinition/maxValue";
-        private const string RegexUrl = "http://hl7.org/fhir/StructureDefinition/regex";
         private const string MimeTypeUrl = "http://hl7.org/fhir/StructureDefinition/mimeType";
         private const string UnitUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit";
         private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
@@ -390,8 +389,6 @@ namespace ChequeAR.Application.Fhir
 
             if (v.MaxLength.HasValue && v.MaxLength.Value > 0) item.MaxLength = v.MaxLength.Value;
 
-            if (!string.IsNullOrWhiteSpace(v.Pattern))
-                item.Extension.Add(new Extension(RegexUrl, new FhirString(v.Pattern)));
 
             if (!string.IsNullOrWhiteSpace(v.Unit))
                 item.Extension.Add(new Extension(UnitUrl, new Coding("http://unitsofmeasure.org", v.Unit, v.Unit)));

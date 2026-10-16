@@ -3,6 +3,7 @@ using System.Linq;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 using Xunit;
 
 namespace ChequeAR.Tests.Application
@@ -57,6 +58,18 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(ficha.Id.ToString(), e.Id);
             Assert.Equal("PAC-000042", e.Subject.Identifier.Value);
             Assert.Contains("2026-08-01", e.ActualPeriod.Start);
+        }
+
+        [Theory]
+        [InlineData(ResponseStatus.InProgress, Hl7.Fhir.Model.EncounterStatus.InProgress)]
+        [InlineData(ResponseStatus.Completed, Hl7.Fhir.Model.EncounterStatus.Completed)]
+        [InlineData(ResponseStatus.Amended, Hl7.Fhir.Model.EncounterStatus.Completed)]
+        [InlineData(ResponseStatus.EnteredInError, Hl7.Fhir.Model.EncounterStatus.EnteredInError)]
+        public void Encuentro_EstadoSegunLaFicha(ResponseStatus ficha, Hl7.Fhir.Model.EncounterStatus esperado)
+        {
+            var e = FhirPatientProjection.ToEncounter(new QuestionnaireResponse { Id = Guid.NewGuid(), PatientHospitalId = "PAC-1", Status = ficha });
+
+            Assert.Equal(esperado, e.Status);
         }
 
         [Fact]

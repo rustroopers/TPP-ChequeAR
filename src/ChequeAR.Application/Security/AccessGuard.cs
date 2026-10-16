@@ -25,8 +25,7 @@ namespace ChequeAR.Application.Security
         public bool Can(string permission)
         {
             if (_user == null || !_user.IsAuthenticated) return false;
-            var roles = Role.All.Where(_user.IsInRole);
-            return RolePolicy.Allows(roles, permission);
+            return RolePolicy.Allows(new[] { _user.Role }, permission);
         }
 
         public void EnsureCan(string permission)

@@ -119,6 +119,14 @@ namespace ChequeAR.Infrastructure.Repositories
             await SaveAsync();
         }
 
+        public async Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items)
+        {
+            var current = await _ctx.QuestionnaireResponseItems.Where(i => i.ResponseId == r.Id).ToListAsync();
+            _ctx.QuestionnaireResponseItems.RemoveRange(current);
+            _ctx.QuestionnaireResponseItems.AddRange(items ?? new List<QuestionnaireResponseItem>());
+            await SaveAsync();
+        }
+
         // Traduce el choque de concurrencia de EF al lenguaje de la aplicación, igual que
         // QuestionnaireRepository.SaveAsync: salta cuando el UPDATE afecta 0 filas porque
         // el ConcurrencyVersion del WHERE ya no coincide (alguien más guardó/tomó el lock

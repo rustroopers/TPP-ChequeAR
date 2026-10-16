@@ -24,7 +24,9 @@
             // Declarado (como hasPendingChanges): sin esto Vue lo deja en $attrs y
             // props.canEdit llega siempre undefined. Default true porque una prop Boolean
             // ausente vale false, y el server siempre la manda.
-            canEdit: { type: Boolean, default: true }
+            canEdit: { type: Boolean, default: true },
+            // linkIds de versiones publicadas: no se proponen para preguntas nuevas.
+            publishedLinkIds: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
             // Estado de persistencia. Para un cuestionario nuevo el id del controller es
@@ -121,7 +123,6 @@
                             min: typeof q.min === 'number' ? q.min : undefined,
                             max: typeof q.max === 'number' ? q.max : undefined,
                             maxLength: typeof q.maxLength === 'number' ? q.maxLength : undefined,
-                            pattern: q.pattern,
                             accept: q.accept,
                             enableWhen: q.enableWhen ? {
                                 question: q.enableWhen.question,
@@ -671,6 +672,7 @@
                 var usados = usedLinkIds();
                 Object.keys(indexQuestions(baseGroups)).forEach(function (l) { usados[l] = true; });
                 Object.keys(reservados || {}).forEach(function (l) { usados[l] = true; });
+                (props.publishedLinkIds || []).forEach(function (l) { usados[l] = true; });
                 var n = 1;
                 while (usados[code + '-' + n]) n++;
                 return code + '-' + n;
@@ -685,7 +687,6 @@
                 q.min = typeof v.min === 'number' ? v.min : undefined;
                 q.max = typeof v.max === 'number' ? v.max : undefined;
                 q.maxLength = typeof v.maxLength === 'number' ? v.maxLength : undefined;
-                q.pattern = v.pattern || undefined;
                 q.accept = v.accept || undefined;
                 q.options = (v.options && v.options.length)
                     ? v.options.map(function (o) { return o.display || o.value; })
@@ -798,7 +799,6 @@
                     min: typeof q.min === 'number' ? q.min : undefined,
                     max: typeof q.max === 'number' ? q.max : undefined,
                     maxLength: typeof q.maxLength === 'number' ? q.maxLength : undefined,
-                    pattern: q.pattern,
                     accept: q.accept,
                     enableWhen: q.enableWhen ? {
                         question: q.enableWhen.question,
@@ -978,8 +978,6 @@
                 if (q.type === 'attachment' && q.accept)
                     out.push(ext(EXT + 'mimeType', 'valueCode', q.accept));
 
-                if ((q.type === 'string' || q.type === 'text') && q.pattern)
-                    out.push(ext(EXT + 'regex', 'valueString', q.pattern));
 
                 // El término de autoría no tiene lugar nativo en FHIR y hasta la feature 009
                 // no viajaba: se guarda aunque todavía no haya código elegido, porque deja
@@ -1377,7 +1375,7 @@
                     options: (q.options || []).slice(),
                     min: numOrNull(q.min), max: numOrNull(q.max),
                     unit: q.unit || null, accept: q.accept || null,
-                    maxLength: numOrNull(q.maxLength), pattern: q.pattern || null,
+                    maxLength: numOrNull(q.maxLength),
                     enableWhen: (q.enableWhen && q.enableWhen.question)
                         ? { question: q.enableWhen.question, op: q.enableWhen.op || '=', value: q.enableWhen.value === undefined ? null : q.enableWhen.value }
                         : null,
@@ -2143,7 +2141,6 @@
                     <dd class="col-7">{{ selected.question.min === undefined ? \'−∞\' : selected.question.min }} – {{ selected.question.max === undefined ? \'∞\' : selected.question.max }}</dd>\
                 </template>\
                 <template v-if="selected.question.maxLength"><dt class="col-5">Largo máximo</dt><dd class="col-7">{{ selected.question.maxLength }}</dd></template>\
-                <template v-if="selected.question.pattern"><dt class="col-5">Patrón</dt><dd class="col-7"><code class="cq-text-xs">{{ selected.question.pattern }}</code></dd></template>\
                 <template v-if="selected.question.accept"><dt class="col-5">Formatos</dt><dd class="col-7">{{ selected.question.accept }}</dd></template>\
                 <template v-if="selected.question.options && selected.question.options.length">\
                     <dt class="col-5">Opciones</dt>\

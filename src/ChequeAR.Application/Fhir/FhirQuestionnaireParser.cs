@@ -26,7 +26,6 @@ namespace ChequeAR.Application.Fhir
     {
         private const string MinValueUrl = "http://hl7.org/fhir/StructureDefinition/minValue";
         private const string MaxValueUrl = "http://hl7.org/fhir/StructureDefinition/maxValue";
-        private const string RegexUrl = "http://hl7.org/fhir/StructureDefinition/regex";
         private const string MimeTypeUrl = "http://hl7.org/fhir/StructureDefinition/mimeType";
         private const string UnitUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-unit";
         private const string ItemControlUrl = "http://hl7.org/fhir/StructureDefinition/questionnaire-itemControl";
@@ -128,6 +127,42 @@ namespace ChequeAR.Application.Fhir
             return question;
         }
 
+        private static readonly HashSet<string> TiposSoportados = new HashSet<string>
+        {
+            "decimal", "string", "text", "date", "dateTime", "boolean", "attachment", "integer", "coding",
+            "choice", "open-choice"
+        };
+
+        /// <summary>
+        /// Lo que el modelo no puede guardar: una sección dentro de otra y los tipos sin
+        /// equivalente. Sin este chequeo se convertían en preguntas de texto y los hijos se
+        /// perdían sin aviso. Se aplica a lo que entra por la API; las versiones ya congeladas
+        /// se siguen leyendo como estén.
+        /// </summary>
+        public static IReadOnlyList<string> UnsupportedItems(FhirQuestionnaire resource)
+        {
+            var errores = new List<string>();
+            foreach (var item in resource?.Item ?? new List<FhirQuestionnaire.ItemComponent>())
+            {
+                if (!EsGrupo(item)) { CheckType(item, errores); continue; }
+                foreach (var hija in item.Item ?? new List<FhirQuestionnaire.ItemComponent>())
+                {
+                    if (EsGrupo(hija))
+                        errores.Add("La sección '" + (hija.Text ?? hija.LinkId) + "' está dentro de otra sección: no se admiten subsecciones.");
+                    else
+                        CheckType(hija, errores);
+                }
+            }
+            return errores;
+        }
+
+        private static void CheckType(FhirQuestionnaire.ItemComponent item, List<string> errores)
+        {
+            var tipo = item?.TypeElement?.ObjectValue as string;
+            if (tipo == null || TiposSoportados.Contains(tipo)) return;
+            errores.Add("La pregunta '" + (item.Text ?? item.LinkId) + "' es de tipo '" + tipo + "', que no se admite.");
+        }
+
         /// <summary>
         /// Inverso de FhirQuestionnaireBuilder.FhirType. Acepta además el vocabulario R4 de
         /// lo publicado antes de la feature 009, por el mismo motivo que el reader.
@@ -182,7 +217,6 @@ namespace ChequeAR.Application.Fhir
                     case MaxValueUrl: Set(v, "max", Numeric(ext.Value)); break;
                     case UnitUrl: SetString(v, "unit", (ext.Value as Coding)?.Code); break;
                     case MimeTypeUrl: SetString(v, "accept", (ext.Value as Code)?.Value); break;
-                    case RegexUrl: SetString(v, "pattern", (ext.Value as FhirString)?.Value); break;
                 }
             }
 

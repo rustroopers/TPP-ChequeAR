@@ -12,7 +12,6 @@ namespace ChequeAR.Application.Services
         public string Unit { get; set; }
         public string Accept { get; set; }
         public int? MaxLength { get; set; }
-        public string Pattern { get; set; }
     }
 
     /// <summary>Condición de visibilidad de una pregunta.</summary>
@@ -64,8 +63,7 @@ namespace ChequeAR.Application.Services
                 Max = AsDecimal(o["max"]),
                 Unit = AsString(o["unit"]),
                 Accept = AsString(o["accept"]),
-                MaxLength = AsInt(o["maxLength"]),
-                Pattern = AsString(o["pattern"])
+                MaxLength = AsInt(o["maxLength"])
             };
         }
 

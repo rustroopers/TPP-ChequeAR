@@ -38,7 +38,6 @@ namespace ChequeAR.Api.Models
         public decimal? Min { get; set; }
         public decimal? Max { get; set; }
         public int? MaxLength { get; set; }
-        public string Pattern { get; set; }
         public string Accept { get; set; }
 
         public string SnomedSystem { get; set; }
@@ -121,7 +120,6 @@ namespace ChequeAR.Api.Models
                 Min = v.MinValue,
                 Max = v.MaxValue,
                 MaxLength = v.MaxLength,
-                Pattern = v.Pattern,
                 Accept = v.Accept,
                 SnomedSystem = v.SnomedSystem,
                 SnomedCode = v.SnomedCode,
@@ -165,7 +163,6 @@ namespace ChequeAR.Api.Models
                 MinValue = d.Min,
                 MaxValue = d.Max,
                 MaxLength = d.MaxLength,
-                Pattern = d.Pattern,
                 Accept = d.Accept,
                 SnomedSystem = d.SnomedSystem,
                 SnomedCode = d.SnomedCode,

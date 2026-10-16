@@ -18,7 +18,7 @@ namespace ChequeAR.Application.Services
             get
             {
                 if (!BirthDate.HasValue) return null;
-                var today = DateTime.UtcNow.Date;
+                var today = ChequeAR.Application.Reports.ArgentinaClock.FromUtc(DateTime.UtcNow).Date;
                 var years = today.Year - BirthDate.Value.Year;
                 if (BirthDate.Value.Date > today.AddYears(-years)) years--;
                 return years + " años";

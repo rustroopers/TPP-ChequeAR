@@ -100,6 +100,7 @@ namespace ChequeAR.Api.Models
         public string FinalizedAt { get; set; }
         /// <summary>Borrador descartado ($abandon): se muestra en lectura, pero no es una ficha finalizada.</summary>
         public bool IsDiscarded { get; set; }
+        public bool IsAmended { get; set; }
         public List<QuestionGroupAnswered> Groups { get; set; } = new List<QuestionGroupAnswered>();
     }
 
@@ -133,6 +134,8 @@ namespace ChequeAR.Api.Models
         public string Label { get; set; }
         public string BadgeClass { get; set; }
         public string Icon { get; set; }
+        /// <summary>Motivo, en las correcciones.</summary>
+        public string Note { get; set; }
         /// <summary>Diff de la sesión, sólo presente en los "Avance guardado" ($save).</summary>
         public List<ChequeAR.Application.Services.ResponseFieldChange> Changes { get; set; } = new List<ChequeAR.Application.Services.ResponseFieldChange>();
     }

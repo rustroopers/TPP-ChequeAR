@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text.RegularExpressions;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Domain.Entities;
 
@@ -14,10 +13,7 @@ namespace ChequeAR.Application.Validation
     /// </summary>
     public static class ResponseValidator
     {
-        private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(200);
 
-        // Grupos "(?" que JavaScript no tiene: modificadores en línea, atómicos, comentarios, condicionales.
-        private static readonly Regex DotNetOnly = new Regex(@"(?<!\\)\(\?(?![:=!]|<[=!]|<[A-Za-z])", RegexOptions.None, RegexTimeout);
 
         /// <summary>
         /// La escala y los decimales se guardan en ValueDecimal, que es donde los buscan los
@@ -38,7 +34,7 @@ namespace ChequeAR.Application.Validation
 
         /// <param name="complete">
         /// False en el guardado parcial: sólo lo que nunca puede ser válido (pregunta inexistente,
-        /// tipo equivocado, opción que no existe). Rango, largo y formato se exigen al finalizar,
+        /// tipo equivocado, opción que no existe). Rango y largo se exigen al finalizar,
         /// porque el autosave guarda lo que se está tipeando.
         /// </param>
         public static List<string> Validate(
@@ -121,15 +117,7 @@ namespace ChequeAR.Application.Validation
         {
             if (q.MaxLength.HasValue && value.Length > q.MaxLength.Value)
                 return "supera los " + q.MaxLength.Value + " caracteres.";
-            if (string.IsNullOrEmpty(q.Pattern) || DotNetOnly.IsMatch(q.Pattern)) return null;
-            // Con la sintaxis de JavaScript, que es la que evalúa el renderer. Un patrón que ahí no
-            // compila es un error de quien armó el cuestionario y no bloquea, igual que en el navegador.
-            try
-            {
-                return Regex.IsMatch(value, q.Pattern, RegexOptions.ECMAScript, RegexTimeout) ? null : "no tiene el formato esperado.";
-            }
-            catch (ArgumentException) { return null; }
-            catch (RegexMatchTimeoutException) { return null; }
+            return null;
         }
 
         private static string Format(decimal v) => v.ToString("0.##", CultureInfo.GetCultureInfo("es-AR"));

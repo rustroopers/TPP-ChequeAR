@@ -37,7 +37,6 @@ namespace ChequeAR.Application.Services
             if (v.MinValue.HasValue) o["min"] = v.MinValue.Value;
             if (v.MaxValue.HasValue) o["max"] = v.MaxValue.Value;
             if (v.MaxLength.HasValue) o["maxLength"] = v.MaxLength.Value;
-            if (v.Pattern != null) o["pattern"] = v.Pattern;
             if (v.Accept != null) o["accept"] = v.Accept;
             return o.Count == 0 ? null : o.ToString(Newtonsoft.Json.Formatting.None);
         }

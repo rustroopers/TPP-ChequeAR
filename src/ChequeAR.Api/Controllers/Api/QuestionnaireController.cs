@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -29,8 +30,14 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         [HttpGet, Route(""), RequiresPermissionApi(Permissions.QuestionnaireRead)]
-        public async Task<IHttpActionResult> Search([FromUri] string status = null, [FromUri(Name = "title:contains")] string titleContains = null, [FromUri] string specialty = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
+        public async Task<IHttpActionResult> Search([FromUri] string status = null, [FromUri(Name = "title:contains")] string titleContains = null, [FromUri] string specialty = null, [FromUri] int _count = 50, [FromUri] int _offset = 0,
+            [FromUri] string url = null, [FromUri] string version = null)
         {
+            // GET recurso devuelve el borrador de trabajo; una versión publicada se lee por su
+            // canonical: url + version (el número de versión publicada).
+            if (!string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(version))
+                return await SearchVersionAsync(url, version);
+
             QuestionnaireStatus? st = null;
             if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
             try
@@ -58,6 +65,24 @@ namespace ChequeAR.Api.Controllers.Api
                 return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
                     "No tenés acceso a esa especialidad."));
             }
+        }
+
+        private async Task<IHttpActionResult> SearchVersionAsync(string url, string version)
+        {
+            var recursos = new List<Hl7.Fhir.Model.Resource>();
+            var ultimo = url.TrimEnd('/').Substring(url.TrimEnd('/').LastIndexOf('/') + 1);
+            if (Guid.TryParse(ultimo, out var id) && int.TryParse(version, out var numero))
+            {
+                try
+                {
+                    var v = await _service.GetVersionAsync(id, numero);
+                    if (v != null) recursos.Add(new Hl7.Fhir.Serialization.FhirJsonParser(
+                        new Hl7.Fhir.Serialization.ParserSettings { PermissiveParsing = true, AcceptUnknownMembers = true, AllowUnrecognizedEnums = true })
+                        .Parse<Hl7.Fhir.Model.Questionnaire>(v.FhirJson));
+                }
+                catch (SpecialtyForbiddenException) { /* fuera de scope: como si no existiera */ }
+            }
+            return Ok(FhirBundles.SearchSet(recursos, recursos.Count, FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireRead)]
@@ -114,6 +139,8 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var q = FhirQuestionnaireParser.ToDomain(body);
             if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
+            EnsureSupported(body);
+
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
@@ -127,6 +154,8 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var patch = FhirQuestionnaireParser.ToDomain(body);
             if (patch == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
+            EnsureSupported(body);
+
 
             // If-Match obligatorio: sin él no hay forma de saber si el cliente vio la última
             // versión, y una edición concurrente pisaría el trabajo ajeno en silencio.
@@ -140,6 +169,12 @@ namespace ChequeAR.Api.Controllers.Api
             var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(updated));
             response.Headers.ETag = ETagFor(updated);
             return ResponseMessage(response);
+        }
+
+        private static void EnsureSupported(Hl7.Fhir.Model.Questionnaire body)
+        {
+            var errores = FhirQuestionnaireParser.UnsupportedItems(body);
+            if (errores.Count > 0) throw new ValidationFailedException(errores);
         }
 
         [HttpPost, Route("{id:guid}/$publish"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]

@@ -114,14 +114,19 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var existing = await _users.GetAsync(model.Username);
                 if (existing == null) return HttpNotFound();
 
-                // DisplayName/IsActive: edición administrativa simple, no toca membresías.
-                existing.DisplayName = model.FullName ?? existing.DisplayName;
-                existing.IsActive = model.Active;
-                await _users.UpsertAsync(existing);
+                // Las reglas se chequean antes de escribir: rol primero (con el usuario todavía
+                // activo) y después la desactivación.
+                if (!model.Active) await _users.EnsureCanDeactivateAsync(existing.Id, User.Identity.Name);
 
                 // Rol: único y global (ver Domain.Enums.Role). SetRoleAsync valida que el
                 // valor sea conocido y que el sistema no se quede sin ningún Administrador.
                 await _users.SetRoleAsync(existing.Id, model.Role, actingUserId: User.Identity.Name);
+
+                // DisplayName/IsActive: edición administrativa simple, no toca membresías.
+                existing = await _users.GetAsync(model.Username);
+                existing.DisplayName = model.FullName ?? existing.DisplayName;
+                existing.IsActive = model.Active;
+                await _users.UpsertAsync(existing);
 
                 // Especialidades: antes Specialties[i].SpecialtyCode se posteaba y se
                 // descartaba en silencio (UpsertAsync ignora colecciones). Ahora se

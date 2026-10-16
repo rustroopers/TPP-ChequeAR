@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
@@ -257,6 +258,10 @@ namespace ChequeAR.Tests.Application
             var q = new Questionnaire { Id = id, Status = QuestionnaireStatus.Active };
             var order = 0;
             foreach (var question in questions) { question.OrderIndex = order++; q.Questions.Add(question); }
+            // La evolución lee las versiones publicadas.
+            var v1 = new QuestionnaireVersion { Id = Guid.NewGuid(), QuestionnaireId = id, VersionNumber = 1, FhirJson = FhirQuestionnaireBuilder.Build(q, 1) };
+            q.Versions.Add(v1);
+            q.CurrentVersionId = v1.Id;
             return q;
         }
 

@@ -17,6 +17,7 @@ namespace ChequeAR.Tests.Security
             mock.Setup(u => u.IsInRole(It.IsAny<string>())).Returns((string r) =>
                 System.Array.IndexOf(roles ?? System.Array.Empty<string>(), r) >= 0);
             mock.SetupGet(u => u.Specialties).Returns((IReadOnlyList<string>)System.Array.Empty<string>());
+            mock.SetupGet(u => u.Role).Returns(roles.Length > 0 ? roles[0] : null);
             return mock.Object;
         }
 
@@ -49,6 +50,19 @@ namespace ChequeAR.Tests.Security
             Assert.True(guard.Can(Permissions.AuditRead));
             Assert.True(guard.Can(Permissions.UserManage));
             Assert.True(guard.Can(Permissions.QuestionnaireDelete));
+        }
+
+        // IsInRole viene expandido por jerarquía: decidir con él haría que un permiso quitado a
+        // Jefe pero que tiene Médico siguiera valiendo para el Jefe.
+        [Fact]
+        public void Permiso_SaleDelRolDelUsuario_NoDeLosHeredados()
+        {
+            var jefe = new Mock<ICurrentUser>();
+            jefe.SetupGet(u => u.IsAuthenticated).Returns(true);
+            jefe.SetupGet(u => u.Role).Returns((string)null);
+            jefe.Setup(u => u.IsInRole(It.IsAny<string>())).Returns(true);
+
+            Assert.False(new AccessGuard(jefe.Object).Can(Permissions.QuestionnaireRead));
         }
 
         [Fact]
