@@ -128,6 +128,42 @@ namespace ChequeAR.Application.Fhir
             return question;
         }
 
+        private static readonly HashSet<string> TiposSoportados = new HashSet<string>
+        {
+            "decimal", "string", "text", "date", "dateTime", "boolean", "attachment", "integer", "coding",
+            "choice", "open-choice"
+        };
+
+        /// <summary>
+        /// Lo que el modelo no puede guardar: una sección dentro de otra y los tipos sin
+        /// equivalente. Sin este chequeo se convertían en preguntas de texto y los hijos se
+        /// perdían sin aviso. Se aplica a lo que entra por la API; las versiones ya congeladas
+        /// se siguen leyendo como estén.
+        /// </summary>
+        public static IReadOnlyList<string> UnsupportedItems(FhirQuestionnaire resource)
+        {
+            var errores = new List<string>();
+            foreach (var item in resource?.Item ?? new List<FhirQuestionnaire.ItemComponent>())
+            {
+                if (!EsGrupo(item)) { CheckType(item, errores); continue; }
+                foreach (var hija in item.Item ?? new List<FhirQuestionnaire.ItemComponent>())
+                {
+                    if (EsGrupo(hija))
+                        errores.Add("La sección '" + (hija.Text ?? hija.LinkId) + "' está dentro de otra sección: no se admiten subsecciones.");
+                    else
+                        CheckType(hija, errores);
+                }
+            }
+            return errores;
+        }
+
+        private static void CheckType(FhirQuestionnaire.ItemComponent item, List<string> errores)
+        {
+            var tipo = item?.TypeElement?.ObjectValue as string;
+            if (tipo == null || TiposSoportados.Contains(tipo)) return;
+            errores.Add("La pregunta '" + (item.Text ?? item.LinkId) + "' es de tipo '" + tipo + "', que no se admite.");
+        }
+
         /// <summary>
         /// Inverso de FhirQuestionnaireBuilder.FhirType. Acepta además el vocabulario R4 de
         /// lo publicado antes de la feature 009, por el mismo motivo que el reader.
