@@ -25,6 +25,8 @@ namespace ChequeAR.Application.Services
             using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
             var raw = Convert.ToBase64String(bytes);
             var hash = Hash(raw);
+            // Los vencidos ya no sirven para nada; sin esto la tabla crece con cada login.
+            await _repo.PurgeExpiredAsync(DateTime.UtcNow);
             await _repo.AddAsync(new RefreshToken
             {
                 Id = Guid.NewGuid(),
