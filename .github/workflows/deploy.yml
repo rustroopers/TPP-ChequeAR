@@ -155,6 +155,7 @@ jobs:
             catch { "Consulta: $($_.Exception.Message)" }
           }
           $r | ConvertTo-Json
+          foreach ($w in $r.Warnings) { "::warning::$w" }
           if ($r.State -ne 'done') { throw "La migración no terminó: $($r.Error)" }
 
       # Que la base responda y no hayan quedado migraciones sin aplicar.
