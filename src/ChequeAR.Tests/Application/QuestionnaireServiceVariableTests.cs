@@ -173,6 +173,7 @@ namespace ChequeAR.Tests.Application
 
             var copiada = copia.Questions.First();
             Assert.Equal(peso.Id, copiada.VariableId);
+            Assert.Equal(pregunta.VariableVersionId, copiada.VariableVersionId);
             Assert.Equal(2, copiada.VariableRevision);
         }
     }

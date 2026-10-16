@@ -476,6 +476,28 @@
             // Deriva: preguntas armadas con una revision anterior a la vigente de su variable.
             // NO se re-sincroniza solo -eso cambiaria un cuestionario que nadie pidio cambiar,
             // y lo publicado debe ser reproducible-: se avisa y el jefe decide.
+            // Toma la definición de la versión vigente sin cambiar el linkId, el enunciado, si es
+            // obligatoria ni la condición. Las condiciones que dejen de tener sentido (por
+            // ejemplo, sobre una opción que ya no existe) aparecen en el panel de problemas.
+            var updatingVariable = Vue.reactive({});
+            function updateToCurrentVersion(q) {
+                if (!q || !q.variableId || updatingVariable[q.linkId]) return;
+                updatingVariable[q.linkId] = true;
+                var token = getToken();
+                var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+                fetch('/api/variables/' + q.variableId + '/versions/' + q.variableCurrentRevision,
+                      { credentials: 'same-origin', headers: headers })
+                    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(function (v) {
+                        applyVariableDefinition(q, v);
+                        dirty.value = true;
+                    })
+                    .catch(function (err) {
+                        window.cqToast && window.cqToast('No se pudo actualizar la pregunta: ' + err.message, 'error');
+                    })
+                    .then(function () { delete updatingVariable[q.linkId]; });
+            }
+
             var staleVariables = Vue.computed(function () {
                 return allQuestions().filter(function (q) {
                     return q.variableId
@@ -620,7 +642,8 @@
                 varPickerError.value = null;
                 var token = getToken();
                 var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-                fetch('/api/variables?_count=50&q=' + encodeURIComponent(varPickerQuery.value || ''),
+                // Sólo publicadas, cada una con la definición de su versión vigente.
+                fetch('/api/variables?_count=50&published=true&q=' + encodeURIComponent(varPickerQuery.value || ''),
                       { credentials: 'same-origin', headers: headers })
                     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                     .then(function (data) { varPickerResults.value = data.results || []; })
@@ -653,6 +676,29 @@
                 return code + '-' + n;
             }
 
+            // Lo que define la variable (de una versión publicada) sobre la pregunta. Viaja en
+            // el payload para que el recurso FHIR sea autocontenido, pero el panel lo muestra
+            // bloqueado y el servidor lo vuelve a tomar del catálogo al guardar.
+            function applyVariableDefinition(q, v) {
+                q.type = v.type;
+                q.unit = v.unit || undefined;
+                q.min = typeof v.min === 'number' ? v.min : undefined;
+                q.max = typeof v.max === 'number' ? v.max : undefined;
+                q.maxLength = typeof v.maxLength === 'number' ? v.maxLength : undefined;
+                q.pattern = v.pattern || undefined;
+                q.accept = v.accept || undefined;
+                q.options = (v.options && v.options.length)
+                    ? v.options.map(function (o) { return o.display || o.value; })
+                    : undefined;
+                q.code = v.snomedCode || undefined;
+                q.codeDisplay = v.snomedDisplay || undefined;
+                q.term = v.term || undefined;
+                q.variableId = v.id;
+                q.variableName = v.name;
+                q.variableRevision = v.currentVersion;
+                q.variableCurrentRevision = v.currentVersion;
+            }
+
             function addQuestionFromVariable(v) {
                 var g = varPickerGroup;
                 if (!g) return;
@@ -661,28 +707,9 @@
                     // El enunciado arranca en el de la variable y es lo unico, junto con
                     // required y enableWhen, que el jefe puede cambiar por cuestionario.
                     text: v.defaultText || v.name,
-                    required: false,
-                    // Lo que sigue lo define la variable: viaja en el payload para que el
-                    // recurso FHIR sea autocontenido, pero el panel lo muestra bloqueado y el
-                    // servidor lo vuelve a pisar desde el catalogo al guardar.
-                    type: v.type,
-                    unit: v.unit || undefined,
-                    min: typeof v.min === 'number' ? v.min : undefined,
-                    max: typeof v.max === 'number' ? v.max : undefined,
-                    maxLength: typeof v.maxLength === 'number' ? v.maxLength : undefined,
-                    pattern: v.pattern || undefined,
-                    accept: v.accept || undefined,
-                    options: (v.options && v.options.length)
-                        ? v.options.map(function (o) { return o.display || o.value; })
-                        : undefined,
-                    code: v.snomedCode || undefined,
-                    codeDisplay: v.snomedDisplay || undefined,
-                    term: v.term || undefined,
-                    variableId: v.id,
-                    variableName: v.name,
-                    variableRevision: v.revision,
-                    variableCurrentRevision: v.revision
+                    required: false
                 };
+                applyVariableDefinition(q, v);
                 g.questions.push(q);
                 selected.value = { group: g, question: q };
                 dirty.value = true;
@@ -965,6 +992,10 @@
                 // lugar nativo es la referencia, y sin ella el parser la pierde en cada
                 // guardado: el editor dejaria de saber de que variable viene cada pregunta.
                 if (q.variableId) out.push(ext(CQ_EXT + 'question-variable-id', 'valueString', q.variableId));
+                // La versión de la variable que usa la pregunta: si es distinta de la guardada
+                // (porque se actualizó o se importó), el servidor aplica esa.
+                if (q.variableId && q.variableRevision > 0)
+                    out.push(ext(CQ_EXT + 'question-variable-version', 'valueInteger', q.variableRevision));
 
                 return out;
             }
@@ -1353,7 +1384,8 @@
                     code: q.code || null, codeDisplay: q.codeDisplay || null, term: q.term || null,
                     // Cambiar una pregunta de variable es un cambio real y tiene que poder
                     // entrar en conflicto como cualquier otro campo.
-                    variableId: q.variableId || null
+                    variableId: q.variableId || null,
+                    variableRevision: q.variableRevision || 0
                 });
             }
 
@@ -1802,7 +1834,7 @@
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
                 selectQuestion: selectQuestion, addGroup: addGroup,
-                staleVariables: staleVariables,
+                staleVariables: staleVariables, updateToCurrentVersion: updateToCurrentVersion, updatingVariable: updatingVariable,
                 varPickerOpen: varPickerOpen, varPickerQuery: varPickerQuery,
                 varPickerLoading: varPickerLoading, varPickerError: varPickerError,
                 varPickerResults: varPickerResults,
@@ -1923,10 +1955,11 @@
 </div>\
 <div v-if="staleVariables.length" class="alert alert-info cq-text-sm" role="status">\
     <i class="bi bi-info-circle me-1"></i>\
-    <strong>{{ staleVariables.length }}</strong> pregunta(s) usan una versión anterior de su variable: el Administrador la editó después de que se armaron.\
-    Lo publicado no cambia. Para tomar la definición nueva hay que quitar la pregunta y volver a agregarla desde el catálogo.\
+    <strong>{{ staleVariables.length }}</strong> pregunta(s) usan una versión anterior de su variable.\
     <ul class="mb-0 mt-1 ps-3">\
-        <li v-for="q in staleVariables" :key="q.linkId">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.variableName }})</span></li>\
+        <li v-for="q in staleVariables" :key="q.linkId">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.variableName }})</span>\
+            <button v-if="!readOnly" type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" :disabled="updatingVariable[q.linkId]" @click="updateToCurrentVersion(q)">Actualizar a v{{ q.variableCurrentRevision }}</button>\
+        </li>\
     </ul>\
 </div>\
 <div v-if="issues.length" class="cq-card mb-2" style="border-left:3px solid var(--cq-warning);">\

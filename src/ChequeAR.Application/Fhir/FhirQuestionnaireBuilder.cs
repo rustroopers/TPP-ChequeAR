@@ -198,6 +198,7 @@ namespace ChequeAR.Application.Fhir
             // Todo lo demás de la variable viaja denormalizado en campos nativos; la referencia
             // en sí no tiene lugar nativo y sin ella el parser la perdería en cada guardado.
             ChequeARExtensions.SetVariableId(item, question.VariableId);
+            ChequeARExtensions.SetVariableVersion(item, question.VariableVersionId.HasValue ? question.VariableRevision : 0);
 
             foreach (var o in (question.Options ?? new List<AnswerOption>()).OrderBy(x => x.OrderIndex))
                 item.AnswerOption.Add(new FhirQuestionnaire.AnswerOptionComponent { Value = OptionCoding(o) });

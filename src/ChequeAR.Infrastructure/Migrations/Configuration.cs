@@ -44,9 +44,26 @@ namespace ChequeAR.Infrastructure.Migrations
         protected override void Seed(ChequeARDbContext context)
         {
             SeedSpecialties(context);
+            // Antes de sembrar: una variable sembrada nace con versión, y el backfill corre sólo
+            // si todavía no hay ninguna.
+            BackfillVariableVersions(context);
             SeedClinicalVariables(context);
             if (DemoUsersEnabled()) SeedDemoUsers(context);
             BackfillResponses(context);
+        }
+
+        private static void BackfillVariableVersions(ChequeARDbContext context)
+        {
+            context.SaveChanges();
+            try
+            {
+                var variables = VariableVersionBackfill.Run(context);
+                if (variables > 0) Trace.TraceInformation("Variables publicadas como versión 1: " + variables + ".");
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError("No se pudieron versionar las variables: " + ex);
+            }
         }
 
         private static void BackfillResponses(ChequeARDbContext context)
@@ -91,8 +108,13 @@ namespace ChequeAR.Infrastructure.Migrations
                 Variable("dolor-escala", "Dolor (0-10)", "Intensidad del dolor en escala 0 a 10", QuestionType.Scale, null, 0m, 10m, "225908003", "Pain score", 90)
             };
 
+            // Las de arranque nacen publicadas: sin versión no se pueden usar en un cuestionario.
             var missing = seed.Where(v => !context.ClinicalVariables.Any(x => x.Code == v.Code)).ToList();
-            foreach (var v in missing) context.ClinicalVariables.Add(v);
+            foreach (var v in missing)
+            {
+                context.ClinicalVariables.Add(v);
+                VariableVersionBackfill.PublishInitial(context, v, "seed");
+            }
 
             // Una variable de opción única, para que el catálogo de arranque muestre también
             // el caso en que el significado clínico está en la respuesta y no en el enunciado.
@@ -104,6 +126,7 @@ namespace ChequeAR.Infrastructure.Migrations
                 AddOption(severidad, "moderada", "Moderada", "6736007", "Moderate");
                 AddOption(severidad, "severa", "Severa", "24484000", "Severe");
                 context.ClinicalVariables.Add(severidad);
+                VariableVersionBackfill.PublishInitial(context, severidad, "seed");
             }
 
             context.SaveChanges();

@@ -16,8 +16,8 @@ namespace ChequeAR.Application.Services
     ///    la base;
     ///  - si la definición se resolviera al leer, editar una variable cambiaría el contenido
     ///    de un cuestionario sin mover su ConcurrencyVersion, o sea que el ETag mentiría.
-    /// Question.VariableRevision guarda contra qué revisión se sacó la copia, que es lo que
-    /// después permite avisar "esta pregunta usa una versión anterior de la variable".
+    /// La copia sale de una versión publicada de la variable; Question.VariableVersionId y
+    /// VariableRevision dicen de cuál, que es lo que permite avisar "hay una versión más nueva".
     ///
     /// Los dos JSON que emite respetan el contrato que ya lee QuestionMetadataReader, así que
     /// ni el builder ni el parser FHIR se enteran de que el origen del dato cambió.
@@ -72,12 +72,14 @@ namespace ChequeAR.Application.Services
         /// Text vacío cae al enunciado por defecto de la variable — es lo que hace que
         /// insertar "Peso" sin escribir nada quede como "Peso corporal" y no en blanco.
         /// </summary>
-        public static void Apply(Question q, ClinicalVariable v)
+        public static void Apply(Question q, VariableDefinition definition, ClinicalVariableVersion version)
         {
-            if (q == null || v == null) return;
+            if (q == null || definition == null || version == null) return;
 
-            q.VariableId = v.Id;
-            q.VariableRevision = v.Revision;
+            var v = definition.ToVariable();
+            q.VariableId = version.VariableId;
+            q.VariableVersionId = version.Id;
+            q.VariableRevision = version.VersionNumber;
             q.Type = v.Type;
             q.RepeatsAllowed = v.RepeatsAllowed;
             q.ValidationJson = ToValidationJson(v);

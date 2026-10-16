@@ -30,6 +30,10 @@ namespace ChequeAR.Api.Models
         public string SnomedDisplay { get; set; }
         public bool IsActive { get; set; }
         public string CreatedAt { get; set; }
+
+        /// <summary>Versión vigente; 0 si nunca se publicó.</summary>
+        public int CurrentVersion { get; set; }
+        public bool HasUnpublishedChanges { get; set; }
     }
 
     /// <summary>
@@ -45,5 +49,18 @@ namespace ChequeAR.Api.Models
     {
         public Guid? Id { get; set; }
         public string PayloadJson { get; set; }
+        public int Revision { get; set; }
+        public int CurrentVersion { get; set; }
+        public bool HasUnpublishedChanges { get; set; }
+        public List<VariableVersionItem> Versions { get; set; } = new List<VariableVersionItem>();
+    }
+
+    public class VariableVersionItem
+    {
+        public int Version { get; set; }
+        public string Date { get; set; }
+        public string Author { get; set; }
+        public string ChangeNote { get; set; }
+        public bool IsCurrent { get; set; }
     }
 }

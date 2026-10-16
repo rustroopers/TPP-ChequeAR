@@ -4,6 +4,8 @@ using System.Data.Entity;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Data.Entity.Infrastructure;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -36,23 +38,24 @@ namespace ChequeAR.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool? active, int skip, int take)
+        public async Task<IReadOnlyList<ClinicalVariable>> ListAsync(string search, QuestionType? type, bool? active, int skip, int take, bool publishedOnly = false)
         {
             // Include primero: en EF6 un Include encadenado después de Skip/Take se ignora en
             // silencio y las opciones vuelven vacías.
-            IQueryable<ClinicalVariable> q = Filter(search, type, active)
+            IQueryable<ClinicalVariable> q = Filter(search, type, active, publishedOnly)
                 .Include(v => v.Options)
                 .OrderByDescending(v => v.CreatedAt).ThenBy(v => v.Name);
             if (skip > 0) q = q.Skip(skip);
             return await q.Take(take <= 0 ? 50 : take).ToListAsync();
         }
 
-        public Task<int> CountAsync(string search, QuestionType? type, bool? active) =>
-            Filter(search, type, active).CountAsync();
+        public Task<int> CountAsync(string search, QuestionType? type, bool? active, bool publishedOnly = false) =>
+            Filter(search, type, active, publishedOnly).CountAsync();
 
-        private IQueryable<ClinicalVariable> Filter(string search, QuestionType? type, bool? active)
+        private IQueryable<ClinicalVariable> Filter(string search, QuestionType? type, bool? active, bool publishedOnly)
         {
             var q = _ctx.ClinicalVariables.AsQueryable();
+            if (publishedOnly) q = q.Where(v => v.CurrentVersionId != null);
             if (active.HasValue) q = q.Where(v => v.IsActive == active.Value);
             if (type.HasValue) q = q.Where(v => v.Type == type.Value);
             if (!string.IsNullOrWhiteSpace(search))
@@ -86,7 +89,7 @@ namespace ChequeAR.Infrastructure.Repositories
             // no deje la variable actualizada con las opciones viejas a medio borrar.
             using (var tx = _ctx.Database.BeginTransaction())
             {
-                await _ctx.SaveChangesAsync();
+                await SaveAsync(v);
 
                 // Borrado explícito: la FK está con WillCascadeOnDelete(false).
                 var old = await _ctx.VariableOptions.Where(o => o.VariableId == v.Id).ToListAsync();
@@ -106,6 +109,83 @@ namespace ChequeAR.Infrastructure.Repositories
 
                 await _ctx.SaveChangesAsync();
                 tx.Commit();
+            }
+        }
+
+        public Task UpdateHeaderAsync(ClinicalVariable v) => SaveAsync(v);
+
+        public async Task AddVersionAsync(ClinicalVariable v, ClinicalVariableVersion version)
+        {
+            _ctx.ClinicalVariableVersions.Add(version);
+            await SaveAsync(v);
+        }
+
+        public Task<ClinicalVariableVersion> GetVersionAsync(Guid versionId) =>
+            _ctx.ClinicalVariableVersions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == versionId);
+
+        public Task<ClinicalVariableVersion> GetVersionAsync(Guid variableId, int versionNumber) =>
+            _ctx.ClinicalVariableVersions.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.VariableId == variableId && x.VersionNumber == versionNumber);
+
+        public async Task<IReadOnlyList<ClinicalVariableVersion>> ListVersionsAsync(Guid variableId)
+        {
+            var rows = await _ctx.ClinicalVariableVersions.AsNoTracking()
+                .Where(x => x.VariableId == variableId)
+                .OrderByDescending(x => x.VersionNumber)
+                .Select(x => new { x.Id, x.VariableId, x.VersionNumber, x.SourceRevision, x.PublishedBy, x.PublishedAt, x.ChangeNote })
+                .ToListAsync();
+            return rows.Select(x => new ClinicalVariableVersion
+            {
+                Id = x.Id, VariableId = x.VariableId, VersionNumber = x.VersionNumber, SourceRevision = x.SourceRevision,
+                PublishedBy = x.PublishedBy, PublishedAt = x.PublishedAt, ChangeNote = x.ChangeNote
+            }).ToList();
+        }
+
+        public async Task<IReadOnlyList<ClinicalVariableVersion>> GetVersionsAsync(IEnumerable<Guid> variableIds)
+        {
+            var ids = variableIds?.Distinct().ToList() ?? new List<Guid>();
+            if (ids.Count == 0) return new List<ClinicalVariableVersion>();
+            return await _ctx.ClinicalVariableVersions.AsNoTracking().Where(x => ids.Contains(x.VariableId)).ToListAsync();
+        }
+
+        public async Task<IReadOnlyDictionary<Guid, ClinicalVariableVersion>> GetCurrentVersionHeadersAsync(IEnumerable<Guid> variableIds)
+        {
+            var ids = variableIds?.Distinct().ToList() ?? new List<Guid>();
+            if (ids.Count == 0) return new Dictionary<Guid, ClinicalVariableVersion>();
+            var rows = await (from v in _ctx.ClinicalVariables
+                              where ids.Contains(v.Id)
+                              join cv in _ctx.ClinicalVariableVersions on v.CurrentVersionId equals cv.Id
+                              select new { cv.Id, cv.VariableId, cv.VersionNumber, cv.SourceRevision }).ToListAsync();
+            return rows.ToDictionary(x => x.VariableId, x => new ClinicalVariableVersion
+            {
+                Id = x.Id, VariableId = x.VariableId, VersionNumber = x.VersionNumber, SourceRevision = x.SourceRevision
+            });
+        }
+
+        public async Task UpdateVersionSourceAsync(ClinicalVariableVersion version)
+        {
+            var row = await _ctx.ClinicalVariableVersions.FirstOrDefaultAsync(x => x.Id == version.Id);
+            if (row == null) return;
+            row.SourceRevision = version.SourceRevision;
+            await _ctx.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Revision es el token de concurrencia: si otro guardó en el medio, el UPDATE no afecta
+        /// filas. Se traduce igual que en QuestionnaireRepository.
+        /// </summary>
+        private async Task SaveAsync(ClinicalVariable v)
+        {
+            try
+            {
+                await _ctx.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                var actual = await _ctx.ClinicalVariables.AsNoTracking()
+                    .Where(x => x.Id == v.Id).Select(x => (int?)x.Revision).FirstOrDefaultAsync();
+                throw new ConcurrencyConflictException(v.Revision, actual ?? v.Revision,
+                    "Otra persona modificó la variable mientras la editabas. Volvé a abrirla para ver sus cambios.");
             }
         }
 

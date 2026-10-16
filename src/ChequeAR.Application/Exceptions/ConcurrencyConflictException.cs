@@ -16,6 +16,13 @@ namespace ChequeAR.Application.Exceptions
             ActualVersion = actualVersion;
         }
 
+        public ConcurrencyConflictException(int expectedVersion, int actualVersion, string message)
+            : base(message)
+        {
+            ExpectedVersion = expectedVersion;
+            ActualVersion = actualVersion;
+        }
+
         public int ExpectedVersion { get; }
         public int ActualVersion { get; }
     }
