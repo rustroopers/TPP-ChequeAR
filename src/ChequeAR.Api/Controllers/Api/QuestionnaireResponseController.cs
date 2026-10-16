@@ -176,13 +176,13 @@ namespace ChequeAR.Api.Controllers.Api
         // abrirla. Sólo lo manda el "Guardar avance" deliberado; con él, ReleaseLock audita un
         // único evento con el diff de lo completado. El cierre pasivo de pestaña no lo manda.
         [HttpPost, Route("{id:guid}/$unlock"), RequiresPermissionApi(Permissions.EncounterWrite)]
-        public async Task<IHttpActionResult> Unlock(Guid id, [FromBody] SaveProgressBody body)
+        public async Task<IHttpActionResult> Unlock(Guid id, [FromBody] UnlockBody body)
         {
             var token = ParseLockToken(Request);
             if (!token.HasValue) return Ok();
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items);
+            await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items, body?.Pending);
             return Ok();
         }
 
@@ -322,6 +322,13 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         public class SaveProgressBody { public List<QuestionnaireResponseItem> Items { get; set; } }
+
+        public class UnlockBody
+        {
+            public List<QuestionnaireResponseItem> Items { get; set; }
+            /// <summary>Respuestas que el autosave no llegó a mandar antes de salir de la página.</summary>
+            public List<QuestionnaireResponseItem> Pending { get; set; }
+        }
 
         public class AmendBody
         {

@@ -80,7 +80,11 @@
             // volver con "atrás" setup() NO se re-ejecuta y el chequeo de arriba no corre.
             // pageshow sí dispara en esa restauración (los listeners sobreviven al
             // congelado del bfcache): ahí re-evaluamos la marca y bloqueamos el formulario.
-            function onPageShow() { applyFinalizedMark(); }
+            // Al volver desde el bfcache, la sesión ya se cerró en el pagehide: se retoma.
+            function onPageShow(e) {
+                applyFinalizedMark();
+                if (e && e.persisted && !blockedByBack.value && responseId.value && !lockToken.value) retryLock();
+            }
             window.addEventListener('pageshow', onPageShow);
             Vue.onUnmounted(function () { window.removeEventListener('pageshow', onPageShow); });
 
@@ -682,24 +686,32 @@
             // keepalive (no sendBeacon, que no permite headers de auth ni X-Lock-Token); si el
             // navegador matan el proceso de golpe puede no llegar, y ahí el TTL libera el lock
             // solo unos minutos después. El chequeo de lockToken evita el doble disparo
-            // (beforeunload + onUnmounted): el segundo ve el token ya en null y no hace nada.
+            // (pagehide + onUnmounted): el segundo ve el token ya en null y no hace nada.
+            // Lo que el autosave todavía no mandó viaja en el mismo pedido (Pending): un PUT
+            // aparte competiría con el $unlock y, si llegaba después, ya no tenía lock.
             function releaseLock() {
                 if (!responseId.value || !lockToken.value) return;
+                if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+                var pending = !amending && savingState.value !== 'idle' ? collectItems() : null;
                 fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$unlock', {
                     method: 'POST',
                     headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
-                    body: JSON.stringify({ Items: sessionBaseline.value }),
+                    body: JSON.stringify({ Items: sessionBaseline.value, Pending: pending }),
                     keepalive: true
                 }).catch(function () { /* nada que hacer del lado del cliente */ });
                 lockToken.value = null;
                 if (lockCountdownTimer) clearInterval(lockCountdownTimer);
             }
 
-            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
-            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
-            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
-            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
-            // cliente estándar esperaría.
+            // Sin ficha creada todavía, o en una corrección (que no autoguarda), lo cargado no
+            // se puede mandar al salir: se pide confirmación.
+            function onBeforeUnload(e) {
+                if (submitting.value || savingState.value === 'idle' || readOnly()) return;
+                if (responseId.value && lockToken.value && !amending) return;
+                e.preventDefault();
+                e.returnValue = '';
+            }
+
             function initAmend() {
                 responseId.value = props.amendResponseId;
                 fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, { headers: authHeaders() }).then(function (r) {
@@ -718,6 +730,11 @@
                 });
             }
 
+            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
+            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
+            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
+            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
+            // cliente estándar esperaría.
             function initSession() {
                 if (amending) { initAmend(); return; }
                 // No bloquea el render con `loading`: el formulario ya es usable de
@@ -753,11 +770,13 @@
                 initSession();
             });
             Vue.onUnmounted(function () {
-                window.removeEventListener('beforeunload', releaseLock);
-                if (autosaveTimer) clearTimeout(autosaveTimer);
+                window.removeEventListener('beforeunload', onBeforeUnload);
+                window.removeEventListener('pagehide', releaseLock);
                 releaseLock();
             });
-            window.addEventListener('beforeunload', releaseLock);
+            // pagehide y no beforeunload: si la persona cancela la salida, la sesión sigue abierta.
+            window.addEventListener('beforeunload', onBeforeUnload);
+            window.addEventListener('pagehide', releaseLock);
 
             function totalQuestions() {
                 var n = 0;
@@ -971,7 +990,7 @@
                         return r.json();
                     });
                 }).then(function () {
-                    // Se anula el lock del lado del cliente para que el beforeunload de la
+                    // Se anula el lock del lado del cliente para que el pagehide de la
                     // recarga no dispare un "Avance guardado" espurio (el diff sería contra un
                     // baseline que ya no corresponde). Al recargar, la sesión se retoma sola en
                     // la versión nueva.
@@ -1012,7 +1031,7 @@
                     });
                 }).then(function () {
                     savingState.value = 'idle';
-                    lockToken.value = null;   // ya liberado; el beforeunload no reintenta
+                    lockToken.value = null;   // ya liberado; el pagehide no reintenta
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
                     window.cqToast && window.cqToast('Avance guardado. Podés retomar esta ficha desde el historial.', 'success');
                     goToHistory();

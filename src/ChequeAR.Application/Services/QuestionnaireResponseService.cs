@@ -622,11 +622,29 @@ namespace ChequeAR.Application.Services
         /// null (cierre pasivo de pestaña) sólo se libera el lock, sin auditar: los datos ya
         /// quedaron por autosave y no fue un guardado deliberado.
         /// </param>
+        /// <param name="pending">
+        /// Lo que el autosave todavía no mandó cuando el médico salió de la página. Viaja en el
+        /// mismo pedido para que no compita con un PUT que llegue después de liberado el lock.
+        /// </param>
         public async Task ReleaseLockAsync(
-            Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
+            Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null,
+            ICollection<QuestionnaireResponseItem> pending = null)
         {
             var r = await LoadForWriteAsync(id);
             if (!r.IsLockHeldBy(userId, lockToken)) return;
+
+            if (pending != null && r.Status == ResponseStatus.InProgress)
+            {
+                try
+                {
+                    await SaveProgressAsync(id, userId, lockToken, null, pending);
+                }
+                catch (ValidationFailedException)
+                {
+                    // Lo inválido no se guarda, pero la sesión se cierra igual.
+                }
+                r = await LoadForWriteAsync(id);
+            }
 
             List<ResponseFieldChange> changes = null;
             if (sessionBaseline != null)
