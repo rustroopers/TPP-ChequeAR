@@ -69,7 +69,7 @@ jobs:
       - name: Build (Release)
         run: msbuild src\ChequeAR.sln -v:minimal -nologo -p:Configuration=Release -m -warnaserror
 
-      # -p:CollectCoverage + Threshold=75 (fijado en el csproj): si la cobertura de
+      # -p:CollectCoverage + umbrales de 85% en líneas y 75% en ramas (en el csproj): si la cobertura de
       # Domain+Application cae por debajo del minimo, dotnet test devuelve exit code
       # distinto de cero y el job se pone en rojo, igual que con -warnaserror arriba.
       - name: Tests unitarios

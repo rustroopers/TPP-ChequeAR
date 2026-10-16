@@ -25,6 +25,21 @@ namespace ChequeAR.Tests.Application
         private static UserService Sut(Mock<IUserRepository> repo)
             => new UserService(repo.Object, TestHelpers.CatalogWith());
 
+        // La página y el total salen del mismo filtro.
+        [Fact]
+        public async Task ListAsync_PaginaYTotalConLosMismosFiltros()
+        {
+            var repo = new Mock<IUserRepository>();
+            repo.Setup(r => r.ListAsync("ana", Role.Medico, "cardio", true, 50, 25))
+                .ReturnsAsync((IReadOnlyList<User>)new List<User> { UserWithRole("ana", Role.Medico) });
+            repo.Setup(r => r.CountAsync("ana", Role.Medico, "cardio", true)).ReturnsAsync(51);
+
+            var page = await Sut(repo).ListAsync("ana", Role.Medico, "cardio", true, 50, 25);
+
+            Assert.Equal(51, page.Total);
+            Assert.Single(page.Items);
+        }
+
         // El hospital puede seguir validando la contraseña de alguien dado de baja acá.
         [Fact]
         public async Task SyncFromHospitalAsync_UsuarioInactivo_NoHaySesion()
