@@ -114,6 +114,8 @@ namespace ChequeAR.Infrastructure.Oracle
             {
                 cmd.BindByName = true;
                 cmd.CommandType = CommandType.Text;
+                // Una vista lenta del hospital no puede dejar el request colgado.
+                cmd.CommandTimeout = 30;
                 foreach (var b in binds) cmd.Parameters.Add(b);
                 await conn.OpenAsync().ConfigureAwait(false);
                 using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))

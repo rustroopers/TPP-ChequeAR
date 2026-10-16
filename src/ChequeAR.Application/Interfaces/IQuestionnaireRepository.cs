@@ -13,6 +13,15 @@ namespace ChequeAR.Application.Interfaces
         Task<IReadOnlyList<Questionnaire>> SearchAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take);
         Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode);
 
+        /// <summary>Igual, pero sólo de esas especialidades, filtrado y paginado en la base.</summary>
+        Task<IReadOnlyList<Questionnaire>> SearchAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode,
+            IReadOnlyCollection<string> withinSpecialties, int skip, int take);
+        Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode,
+            IReadOnlyCollection<string> withinSpecialties);
+
+        /// <summary>Sólo las columnas del cuestionario, sin versiones ni estructura.</summary>
+        Task<IReadOnlyList<Questionnaire>> GetHeadersAsync(IEnumerable<Guid> ids);
+
         /// <summary>
         /// Cantidad de versiones publicadas por cuestionario, en UNA consulta. Los listados la
         /// necesitan por fila, y leer Questionnaire.Versions de cada resultado de SearchAsync

@@ -26,6 +26,8 @@ namespace ChequeAR.Infrastructure.Migrations
             AutomaticMigrationsEnabled = false;
             AutomaticMigrationDataLossAllowed = false;
             ContextKey = "ChequeAR.Infrastructure.EF.ChequeARDbContext";
+            // Las migraciones que recorren todas las fichas tardan más que una consulta normal.
+            CommandTimeout = 600;
         }
 
         private const string SnomedSystem = TerminologyService.SnomedSystem;

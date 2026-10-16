@@ -30,7 +30,25 @@ namespace ChequeAR.Infrastructure.Repositories
                 .FirstOrDefaultAsync(q => q.Id == id && !q.IsDeleted);
         }
 
-        public async Task<IReadOnlyList<Questionnaire>> SearchAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)
+        public Task<IReadOnlyList<Questionnaire>> SearchAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode, int skip, int take)
+            => SearchAsync(status, titleContains, specialtyCode, null, skip, take);
+
+        public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
+            => CountAsync(status, titleContains, specialtyCode, null);
+
+        public async Task<IReadOnlyList<Questionnaire>> SearchAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode,
+            IReadOnlyCollection<string> withinSpecialties, int skip, int take)
+        {
+            var q = Filtered(status, titleContains, specialtyCode, withinSpecialties);
+            return await q.OrderByDescending(x => x.UpdatedAt).Skip(skip).Take(take).ToListAsync();
+        }
+
+        public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode,
+            IReadOnlyCollection<string> withinSpecialties)
+            => Filtered(status, titleContains, specialtyCode, withinSpecialties).CountAsync();
+
+        private IQueryable<Questionnaire> Filtered(QuestionnaireStatus? status, string titleContains, string specialtyCode,
+            IReadOnlyCollection<string> withinSpecialties)
         {
             var q = _ctx.Questionnaires.AsQueryable().Where(x => !x.IsDeleted);
             if (status.HasValue) q = q.Where(x => x.Status == status.Value);
@@ -41,18 +59,27 @@ namespace ChequeAR.Infrastructure.Repositories
             if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(CultureInfo.InvariantCulture); q = q.Where(x => x.Title.ToLower().Contains(t)); }
 #pragma warning restore CA1304, CA1311
             if (!string.IsNullOrEmpty(specialtyCode)) q = q.Where(x => x.SpecialtyCode == specialtyCode);
-            return await q.OrderByDescending(x => x.UpdatedAt).Skip(skip).Take(take).ToListAsync();
+            if (withinSpecialties != null)
+            {
+                var codes = withinSpecialties.ToList();
+                q = q.Where(x => codes.Contains(x.SpecialtyCode));
+            }
+            return q;
         }
 
-        public Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
+        public async Task<IReadOnlyList<Questionnaire>> GetHeadersAsync(IEnumerable<Guid> ids)
         {
-            var q = _ctx.Questionnaires.AsQueryable().Where(x => !x.IsDeleted);
-            if (status.HasValue) q = q.Where(x => x.Status == status.Value);
-#pragma warning disable CA1304, CA1311
-            if (!string.IsNullOrEmpty(titleContains)) { var t = titleContains.ToLower(CultureInfo.InvariantCulture); q = q.Where(x => x.Title.ToLower().Contains(t)); }
-#pragma warning restore CA1304, CA1311
-            if (!string.IsNullOrEmpty(specialtyCode)) q = q.Where(x => x.SpecialtyCode == specialtyCode);
-            return q.CountAsync();
+            var list = (ids ?? Enumerable.Empty<Guid>()).Distinct().ToList();
+            if (list.Count == 0) return new List<Questionnaire>();
+            // Proyección y no la entidad: un proxy cargaría la estructura al tocar una colección.
+            var rows = await _ctx.Questionnaires.Where(q => list.Contains(q.Id))
+                .Select(q => new { q.Id, q.Title, q.Status, q.SpecialtyCode, q.SpecialtyDisplay, q.CurrentVersionId, q.UpdatedAt })
+                .ToListAsync();
+            return rows.Select(r => new Questionnaire
+            {
+                Id = r.Id, Title = r.Title, Status = r.Status, SpecialtyCode = r.SpecialtyCode,
+                SpecialtyDisplay = r.SpecialtyDisplay, CurrentVersionId = r.CurrentVersionId, UpdatedAt = r.UpdatedAt
+            }).ToList();
         }
 
         public async Task<IReadOnlyDictionary<Guid, int>> GetVersionCountsAsync(IEnumerable<Guid> ids)

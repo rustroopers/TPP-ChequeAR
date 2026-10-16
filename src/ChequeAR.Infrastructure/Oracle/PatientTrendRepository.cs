@@ -81,6 +81,7 @@ namespace ChequeAR.Infrastructure.Oracle
                 using (var cmd = new OracleCommand(sql.ToString(), conn))
                 {
                     cmd.BindByName = true;
+                    cmd.CommandTimeout = EF.ChequeARDbContext.CommandTimeoutSeconds;
                     cmd.Parameters.Add(new OracleParameter("PatientHospitalId", OracleDbType.Varchar2, patientHospitalId, ParameterDirection.Input));
                     // El identificador se guarda como RAW(16): el driver no sabe bindear un Guid
                     // directamente (ver OracleReportQueryRunner), hay que pasarle los 16 bytes.
