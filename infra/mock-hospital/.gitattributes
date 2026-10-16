@@ -1,4 +1,0 @@
-# Los scripts de init corren dentro del contenedor Linux (Oracle XE).
-# Forzar LF para evitar "/bin/bash^M: bad interpreter" en checkouts Windows.
-init/*.sh text eol=lf
-init/*.sql text eol=lf

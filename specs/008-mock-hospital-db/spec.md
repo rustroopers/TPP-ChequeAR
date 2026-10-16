@@ -4,7 +4,7 @@
 
 **Created**: 2026-06-25
 
-**Status**: Draft
+**Status**: Implementada; sobre Oracle local, sin Docker
 
 ## Clarifications
 

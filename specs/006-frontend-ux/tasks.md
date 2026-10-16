@@ -17,20 +17,20 @@ Detalle de supuestos sin confirmar: ver `dudas.md`.
 
 ## Fase F0 — Foundations
 
-- [x] T001 [F0] Configurar `BundleConfig` con bundles `~/Content/css` y `~/bundles/vendor`.
+- [ ] T001 [F0] Configurar `BundleConfig` con bundles `~/Content/css` y `~/bundles/vendor`. *(no hecha: CSS y JS se sirven sin bundles)*
 - [x] T002 [F0] Vendor `wwwroot/lib/bootstrap/`, `bootstrap-icons/`, `vue/`, `chart.js/`, `datatables/`, `sortablejs/`.
-- [x] T003 [F0] Crear `Content/theme/_variables.scss` con tokens del design system.
-- [x] T004 [F0] Crear `Content/theme/_components.scss` con overrides Bootstrap (.btn, .form-control, .card, .modal, .table).
-- [x] T005 [F0] Crear `Content/theme/_utilities.scss` con utilidades cq-* (cq-empty, cq-badge-status).
-- [x] T006 [F0] Compilar `chequear-theme.scss` → `Content/theme/chequear-theme.css`.
+- [ ] T003 [F0] Crear `Content/theme/_variables.scss` con tokens del design system. *(no hecha: el tema es un único CSS, sin SCSS)*
+- [ ] T004 [F0] Crear `Content/theme/_components.scss` con overrides Bootstrap (.btn, .form-control, .card, .modal, .table). *(ver T003)*
+- [ ] T005 [F0] Crear `Content/theme/_utilities.scss` con utilidades cq-* (cq-empty, cq-badge-status). *(ver T003)*
+- [ ] T006 [F0] Compilar `chequear-theme.scss` → `Content/theme/chequear-theme.css`. *(ver T003)*
 - [x] T007 [F0] Crear `Views/Shared/_Layout.cshtml` (skeleton con navbar + sidebar + content + toasts).
 - [x] T008 [F0] Crear `Views/Shared/_Navbar.cshtml` con logo Garrahan, perfil, selector de idioma.
 - [x] T009 [F0] Crear `Views/Shared/_Sidebar.cshtml` con módulos por rol.
 - [x] T010 [F0] Crear `Views/Shared/_Toasts.cshtml` con stack y JS de gestión.
 - [x] T011 [F0] Crear `Views/Error/Index.cshtml` (T4) para 404/403/500.
 - [x] T012 [F0] Crear `Scripts/islands/bootstrap.js` (discovery + mount).
-- [x] T013 [F0] [P] Crear helpers `Helpers/CqHtmlHelpers.cs` (CqBadgeStatus, CqEmptyState, CqIcon).
-- [x] T014 [F0] [P] Página de "Style guide" interna en `/styleguide` mostrando todos los componentes (referencia para QA).
+- [ ] T013 [F0] [P] Crear helpers `Helpers/CqHtmlHelpers.cs` (CqBadgeStatus, CqEmptyState, CqIcon). *(no hecha)*
+- [ ] T014 [F0] [P] Página de "Style guide" interna en `/styleguide` mostrando todos los componentes (referencia para QA). *(no hecha)*
 
 ## Fase F1 — Auth + Home
 
@@ -38,7 +38,7 @@ Detalle de supuestos sin confirmar: ver `dudas.md`.
 - [x] T021 [F1][M:A2] `Views/Account/SessionExpired.cshtml`.
 - [x] T022 [F1][M:T2] `Views/Home/Index.cshtml` (dashboard por rol) + `HomeController.Index`.
 - [x] T023 [F1][M:T5] `Views/Account/Profile.cshtml` + acción de actualizar idioma preferido.
-- [x] T024 [F1] Cookie de cultura `chequear_lang` + middleware de resolución (coordinar con spec 007).
+- [ ] T024 [F1] Cookie de cultura `chequear_lang` + middleware de resolución (coordinar con spec 007). *(revertida: la app queda sólo en es-AR (spec 007 descartada))*
 
 ## Fase F2 — Razor screens P1
 
@@ -68,13 +68,13 @@ Detalle de supuestos sin confirmar: ver `dudas.md`.
 - [x] T061 [F4][M:Q4] Modal de lógica condicional `enableWhen`.
 - [x] T062 [F4][M:Q8] Modal gestor de adjuntos por pregunta.
 - [x] T063 [F4][M:Q9] Historial de versiones.
-- [x] T064 [F4][M:R4] Banner pre-carga FHIR.
+- [ ] T064 [F4][M:R4] Banner pre-carga FHIR. *(fuera de alcance (2026-10-15))*
 - [x] T065 [F4][M:R5] Confirmación guardado parcial.
-- [x] T066 [F4][M:F1] Panel salud integraciones.
+- [ ] T066 [F4][M:F1] Panel salud integraciones. *(no hecha: existe /api/integrations, sin panel)*
 - [x] T067 [F4][M:F2] Visor CapabilityStatement.
 - [x] T068 [F4][M:E5] Vista de estadísticas con Chart.js.
 - [x] T069 [F4][M:E6] Modal guardar consulta.
-- [x] T070 [F4][M:A3] Selector de especialidad activa.
+- [ ] T070 [F4][M:A3] Selector de especialidad activa. *(no hecha)*
 - [x] T071 [F4][M:A4] Listado de usuarios.
 - [x] T072 [F4][M:A5] Edición de roles de usuario.
 
@@ -82,12 +82,12 @@ Detalle de supuestos sin confirmar: ver `dudas.md`.
 
 - [x] T080 [F5] Pasada axe-core sobre 18 P1 + fix de findings.
 - [x] T081 [F5] Smoke test screen-reader (NVDA / VoiceOver) sobre T2, R3, Q2.
-- [x] T082 [F5] Traducción completa es/en en `.resx` y `i18n/*.json`.
-- [x] T083 [F5] Tests Playwright para flujos P1 (login → cargar ficha → revisar; armar cuestionario → publicar → completar; armar reporte → exportar).
+- [ ] T082 [F5] Traducción completa es/en en `.resx` y `i18n/*.json`. *(revertida: sólo es-AR)*
+- [ ] T083 [F5] Tests Playwright para flujos P1 (login → cargar ficha → revisar; armar cuestionario → publicar → completar; armar reporte → exportar). *(no hecha)*
 - [x] T084 [F5] Auditoría de PII en `localStorage`/`console` (script de verificación).
 
 ## Cross-cutting
 
-- [x] T090 [P] Documentar componentes en `/styleguide` con ejemplos copy-paste.
-- [x] T091 [P] Generar `.pen` (Pencil) de pantallas estrella: T2, Q2, R3, E2, A1, A6.
+- [ ] T090 [P] Documentar componentes en `/styleguide` con ejemplos copy-paste. *(no hecha)*
+- [ ] T091 [P] Generar `.pen` (Pencil) de pantallas estrella: T2, Q2, R3, E2, A1, A6. *(no hecha)*
 - [x] T092 [P] Capturas finales de pantallas P1 para informe del TPP.

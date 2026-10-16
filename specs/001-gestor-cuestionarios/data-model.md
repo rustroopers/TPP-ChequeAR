@@ -1,5 +1,7 @@
 # Data Model: Gestor y Editor de Cuestionarios
 
+> Los tipos de este documento son de SQL Server. La base es Oracle: los tipos reales están en las migraciones de `src/ChequeAR.Infrastructure/Migrations`.
+
 Persistencia en base de datos del lado ChequeAR (los datos clínicos que persistan residen aquí; los datos hospitalarios pre-existentes se consultan vía FHIR/vista Oracle, ver módulo 003).
 
 Motor sugerido: SQL Server (compatible con .NET 4.7.1 e IIS sobre Windows Server 2016). Se modelan tablas que reflejan el recurso FHIR `Questionnaire` pero permiten queries eficientes y versionado.

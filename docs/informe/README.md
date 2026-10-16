@@ -1,7 +1,7 @@
 # Material para el Informe Final — ChequeAR
 
 Insumos de gestión del Trabajo Profesional, listos para llevar al informe.
-Reconstruidos del historial de commits y del anteproyecto (`EntregaInicial_equipo201`).
+Reconstruidos del historial de commits y del anteproyecto ([`Equipo201_Anteproyecto_ChequeAR.md`](../../Equipo201_Anteproyecto_ChequeAR.md)).
 
 - **Marzo 2026** — anteproyecto (aprobación del informe pre-proyecto; acta del 20-abr).
 - **Abril 2026** — inicio del desarrollo (Scrum, sprints de 2 semanas).

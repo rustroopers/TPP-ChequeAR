@@ -1,6 +1,6 @@
 ---
 name: "run-app"
-description: "Levanta ChequeAR.Api en local: arranca el TNS Listener de Oracle, hace build con MSBuild (VS2022) y corre IIS Express en https://localhost:44301. Verifica Snowstorm. Sin Docker (Oracle es servicio nativo de Windows)."
+description: "Levanta ChequeAR.Api en local: arranca el TNS Listener de Oracle, hace build con MSBuild (encontrado con vswhere) y corre IIS Express en https://localhost:44301. Verifica Snowstorm. Sin Docker (Oracle es servicio nativo de Windows)."
 argument-hint: "Opcional: 'solo-run' para saltear el build si ya compilaste"
 user-invocable: true
 disable-model-invocation: false

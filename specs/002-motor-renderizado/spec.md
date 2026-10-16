@@ -2,7 +2,7 @@
 
 **Feature Branch**: `002-motor-renderizado`
 **Created**: 2026-06-01
-**Status**: Draft
+**Status**: Implementada en parte; pre-carga y cola offline fuera de alcance
 
 ## Contexto
 

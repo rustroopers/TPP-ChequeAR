@@ -64,12 +64,13 @@ namespace ChequeAR.Tests.MockHospital
             Assert.True(long.Parse(count, CultureInfo.InvariantCulture) >= 1);
         }
 
+        // Los turnos se generan relativos al dia de la carga: si falla, re-sembrar.
         [Fact]
         public void ExisteAlMenosUnTurnoFuturo()
         {
             var count = _fx.ScalarString(
                 "SELECT COUNT(*) FROM HOSPITAL_MOCK.VW_TURNO " +
-                "WHERE FECHA_HORA > DATE '2026-06-25'");
+                "WHERE FECHA_HORA > SYSDATE");
             Assert.True(long.Parse(count, CultureInfo.InvariantCulture) >= 1);
         }
 
@@ -87,9 +88,11 @@ namespace ChequeAR.Tests.MockHospital
         public void TodosLosPacientesEnEdadPediatrica()
         {
             var fueraRango = _fx.ScalarString(
-                "SELECT COUNT(*) FROM HOSPITAL_MOCK.VW_PACIENTE " +
-                "WHERE FECHA_NACIMIENTO < DATE '2026-06-25' - INTERVAL '18' YEAR " +
-                "OR FECHA_NACIMIENTO > DATE '2026-06-25'");
+                "SELECT COUNT(*) FROM HOSPITAL_MOCK.VW_PACIENTE p " +
+                "WHERE p.FECHA_NACIMIENTO > SYSDATE " +
+                "OR EXISTS (SELECT 1 FROM HOSPITAL_MOCK.VW_EPISODIO e " +
+                "           WHERE e.ID_PACIENTE = p.ID_PACIENTE " +
+                "           AND e.FECHA_INICIO >= p.FECHA_NACIMIENTO + INTERVAL '18' YEAR)");
             Assert.Equal(0L, long.Parse(fueraRango, CultureInfo.InvariantCulture));
         }
     }

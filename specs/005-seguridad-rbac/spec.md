@@ -2,7 +2,7 @@
 
 **Feature Branch**: `005-seguridad-rbac`
 **Created**: 2026-06-01
-**Status**: Draft
+**Status**: Implementada; login local (no hay API del hospital)
 
 ## Contexto
 

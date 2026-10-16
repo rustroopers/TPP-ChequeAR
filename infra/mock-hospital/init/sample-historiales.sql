@@ -1,14 +1,9 @@
 -- =====================================================================
 -- sample-historiales.sql — Reporte de 5 historiales para stakeholder review.
 -- =====================================================================
--- Stand-alone: NO se ejecuta en el entrypoint del contenedor (los archivos
--- numerados 0X- y 99- ya cubren ese flujo). Se invoca a mano con:
+-- Stand-alone: cargar.sql no lo incluye. Se invoca a mano, desde init/:
 --
---   docker compose exec mock-hospital sqlplus -S \
---     CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 \
---     @/container-entrypoint-initdb.d/sample-historiales.sql
---
--- (El archivo se monta como volumen ro junto al resto de los SQL.)
+--   sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 @sample-historiales.sql
 --
 -- Selecciona 5 pacientes con la semilla 20260101 (DISTINTA a la del seed,
 -- para que la muestra no privilegie ni los pacientes "1" ni "2" siempre).
