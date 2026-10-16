@@ -147,6 +147,7 @@
     <Compile Include="Models\ClinicalVariableDtos.cs" />
     <Compile Include="Models\ProfileViewModel.cs" />
     <Compile Include="Controllers\Api\AuthController.cs" />
+    <Compile Include="Controllers\Api\HealthController.cs" />
     <Compile Include="Controllers\Api\MetadataController.cs" />
     <Compile Include="Controllers\Api\TerminologyController.cs" />
     <Compile Include="Controllers\Api\QuestionnaireController.cs" />

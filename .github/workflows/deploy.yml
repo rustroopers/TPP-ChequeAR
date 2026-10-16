@@ -117,8 +117,25 @@ jobs:
           }
 
       - name: Deploy a Azure App Service
+        id: azure
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: ${{ env.PUBLISH_DIR }}
+
+      # El primer uso de la base aplica las migraciones: si fallan, el deploy queda en rojo.
+      - name: Smoke
+        shell: pwsh
+        env:
+          APP_URL: ${{ steps.azure.outputs.webapp-url }}
+        run: |
+          $url = $env:APP_URL.TrimEnd('/') + '/api/health'
+          for ($i = 1; $i -le 20; $i++) {
+            try {
+              $r = Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 60
+              if ($r.StatusCode -eq 200) { "OK: $url"; exit 0 }
+            } catch { "Intento ${i}: $($_.Exception.Message)" }
+            Start-Sleep -Seconds 15
+          }
+          throw "La app no responde en $url"
