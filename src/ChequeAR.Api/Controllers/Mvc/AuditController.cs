@@ -141,7 +141,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             });
 
             var result = new ReportResult { Total = rows.Count, Rows = rows };
-            var dateSuffix = DateTime.Now.ToString("yyyy-MM-dd");
+            var dateSuffix = ArgentinaTime.From(DateTime.UtcNow).ToString("yyyy-MM-dd");
             if ((format ?? "xlsx").ToLowerInvariant() == "csv")
                 return File(CsvExporter.Export(result), "text/csv", $"auditoria_{dateSuffix}.csv");
             return File(XlsxExporter.Export(result),
