@@ -176,6 +176,17 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(3, built.Parameters.Count(p => p.Name.StartsWith("p1_", StringComparison.Ordinal)));
         }
 
+        [Theory]
+        [InlineData("peso", "contains")]
+        [InlineData("fiebre", ">")]
+        [InlineData("obs", "between")]
+        public void OperadorQueNoCorrespondeAlTipo_Explota(string linkId, string op)
+        {
+            var schema = ReportSchemaTests.SchemaCon(("peso", QuestionType.Decimal), ("fiebre", QuestionType.Boolean), ("obs", QuestionType.Text));
+
+            Assert.Throws<ArgumentException>(() => new QueryBuilder().Build(Query(Un(linkId, op, "1")), schema));
+        }
+
         [Fact]
         public void Between_GeneraDosBinds()
         {

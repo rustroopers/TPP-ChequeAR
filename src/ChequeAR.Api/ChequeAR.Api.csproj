@@ -137,6 +137,7 @@
     <Compile Include="Controllers\Mvc\AdminController.cs" />
     <Compile Include="Fhir\CapabilityCatalog.cs" />
     <Compile Include="Fhir\FhirErrorHandler.cs" />
+    <Compile Include="Fhir\FhirHttp.cs" />
     <Compile Include="Fhir\FhirModelState.cs" />
     <Compile Include="Fhir\FhirMediaTypeFormatter.cs" />
     <Compile Include="Models\HomeViewModel.cs" />

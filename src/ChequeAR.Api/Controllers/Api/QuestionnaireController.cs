@@ -62,7 +62,7 @@ namespace ChequeAR.Api.Controllers.Api
                 var versiones = await _service.GetVersionCountsAsync(ids);
                 var recursos = completos.Select(q => (Hl7.Fhir.Model.Resource)FhirQuestionnaireBuilder.ToResource(
                     q, versiones.TryGetValue(q.Id, out var n) ? n : 0));
-                return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl(), Request.RequestUri,
+                return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl(), Request.RequestUri,
                     FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count)));
             }
             catch (SpecialtyForbiddenException)
@@ -89,7 +89,7 @@ namespace ChequeAR.Api.Controllers.Api
                 }
                 catch (SpecialtyForbiddenException) { /* fuera de scope: como si no existiera */ }
             }
-            return Ok(FhirBundles.SearchSet(recursos, recursos.Count, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, recursos.Count, Request.FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireRead)]
@@ -122,23 +122,9 @@ namespace ChequeAR.Api.Controllers.Api
         private static Hl7.Fhir.Model.Questionnaire ToFhir(Questionnaire q)
             => FhirQuestionnaireBuilder.ToResource(q, q.Versions?.Count ?? 0);
 
-        /// <summary>Base del servidor FHIR, para el fullUrl de cada entrada del Bundle.</summary>
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
-
         private static EntityTagHeaderValue ETagFor(Questionnaire q)
         {
-            // Weak ETag: identifica la versión del recurso, no una representación byte a byte.
-            return new EntityTagHeaderValue("\"" + q.ConcurrencyVersion + "\"", true);
-        }
-
-        // Acepta W/"3" y "3". Devuelve null si no hay un número adentro.
-        private static int? ParseIfMatch(HttpRequestMessage request)
-        {
-            var tag = request.Headers.IfMatch?.FirstOrDefault();
-            if (tag == null) return null;
-            var raw = (tag.Tag ?? string.Empty).Trim('"');
-            return int.TryParse(raw, out var version) ? version : (int?)null;
+            return FhirHttp.WeakETag(q.ConcurrencyVersion);
         }
 
         [HttpPost, Route(""), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
@@ -149,11 +135,10 @@ namespace ChequeAR.Api.Controllers.Api
             if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
 
-
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
             var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
-            response.Headers.Location = new Uri(FhirBaseUrl() + "/Questionnaire/" + created.Id);
+            response.Headers.Location = new Uri(Request.FhirBaseUrl() + "/Questionnaire/" + created.Id);
             response.Headers.ETag = ETagFor(created);
             return ResponseMessage(response);
         }
@@ -169,11 +154,10 @@ namespace ChequeAR.Api.Controllers.Api
             if (patch == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
 
-
             // If-Match obligatorio: sin él no hay forma de saber si el cliente vio la última
             // versión, y una edición concurrente pisaría el trabajo ajeno en silencio.
             // 428 Precondition Required (RFC 6585) existe justamente para este caso.
-            var expectedVersion = ParseIfMatch(Request);
+            var expectedVersion = Request.IfMatchVersion();
             if (!expectedVersion.HasValue)
                 return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
 
@@ -195,7 +179,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             // Mismo contrato que el PUT: publicar congela lo que está en la base, así que hay
             // que demostrar que se vio la última versión del registro.
-            var expectedVersion = ParseIfMatch(Request);
+            var expectedVersion = Request.IfMatchVersion();
             if (!expectedVersion.HasValue)
                 return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
 

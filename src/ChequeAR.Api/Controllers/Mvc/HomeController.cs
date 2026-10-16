@@ -25,7 +25,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.PageId = "home";
 
             var name = User != null && User.Identity != null && User.Identity.IsAuthenticated
-                ? User.Identity.Name
+                ? ChequeAR.Api.Auth.CurrentUser.DisplayName(User as System.Security.Claims.ClaimsPrincipal)
                 : "Doctor";
 
             var model = new HomeViewModel

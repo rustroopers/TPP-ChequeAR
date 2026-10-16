@@ -131,6 +131,7 @@
                 if (!id) return Promise.resolve();
                 // Las preguntas de las versiones publicadas, que son contra las que se cargaron las fichas.
                 return fetch('/api/reports/questionnaires/' + id + '/structure', { headers: authHeaders() })
+                    .then(window.ChequeARIslands.http.ensureOk)
                     .then(function (r) { return r.json(); })
                     .then(function (q) { if (vigente()) questions.value = flattenItems(q.item, []); })
                     .catch(function () { /* sin preguntas: se puede filtrar igual por fecha */ });
@@ -208,6 +209,20 @@
                     })
                     .filter(function (g) { return g.items.length; });
             });
+            // Todas las páginas del Bundle, siguiendo el link "next": con una sola página, lo
+            // que pasaba de ahí no aparecía en el selector.
+            function fetchAllEntries(url, acc) {
+                acc = acc || [];
+                return fetch(url, { headers: authHeaders() })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        acc = acc.concat((data && data.entry) || []);
+                        var next = ((data && data.link) || []).filter(function (l) { return l.relation === 'next'; })[0];
+                        return next ? fetchAllEntries(next.url, acc) : acc;
+                    });
+            }
+
             function pickQuestionnaire(q) { selectedId.value = q.id; qSearch.value = ''; qOpen.value = false; }
 
             Vue.onMounted(function () {
@@ -215,11 +230,8 @@
                 document.addEventListener('click', function (e) {
                     if (qOpen.value && qBox.value && !qBox.value.contains(e.target)) qOpen.value = false;
                 });
-                fetch('/fhir/r5/Questionnaire?_count=100', { headers: authHeaders() })
-                    .then(function (r) { return r.json(); })
-                    .then(function (data) {
-                        // Bundle conforme: cada resultado viene envuelto en entry[].resource.
-                        var list = (data && data.entry) ? data.entry : [];
+                fetchAllEntries('/fhir/r5/Questionnaire?_count=200')
+                    .then(function (list) {
                         questionnaires.value = list
                             .map(function (e) { return e.resource; })
                             .filter(Boolean)

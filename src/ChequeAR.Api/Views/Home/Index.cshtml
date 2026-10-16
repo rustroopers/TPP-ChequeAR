@@ -8,7 +8,7 @@
     var canWriteQuestionnaires = Cq.Can(Permissions.QuestionnaireWrite);
     ViewBag.Title = Cq.T("sidebar.home");
     ViewBag.PageId = "home";
-    var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctor";
+    var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? ChequeAR.Api.Auth.CurrentUser.DisplayName(User as System.Security.Claims.ClaimsPrincipal) : "Doctor";
     // "Ficha reciente" muestra la última fila de RecentEncounters. Si no hay, el card
     // se renderiza vacío (empty state) pero sigue mostrando el bloque para que la UI
     // se sienta habitada aún sin data.

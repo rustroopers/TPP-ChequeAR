@@ -432,7 +432,7 @@ else
             Array.prototype.forEach.call(labels, function (el) {
                 var when = lastByQ[(el.getAttribute("data-qid") || "").toLowerCase()];
                 el.textContent = when
-                    ? "Última carga para este paciente: " + String(when).slice(0, 10)
+                    ? "Última carga para este paciente: " + new Date(when).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })
                     : "Nunca cargado";
             });
         }).catch(function () { /* sin dato: se deja vacío */ });
