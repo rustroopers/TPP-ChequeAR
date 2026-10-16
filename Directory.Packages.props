@@ -1,0 +1,48 @@
+<Project>
+
+  <!-- Versiones de todos los paquetes del repo. Los csproj sólo nombran el paquete. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="coverlet.msbuild" Version="6.0.4" />
+    <PackageVersion Include="EntityFramework" Version="6.5.1" />
+    <PackageVersion Include="Hl7.Fhir.R5" Version="5.13.4" />
+    <PackageVersion Include="Hl7.Fhir.Specification.Data.R5" Version="5.13.4" />
+    <PackageVersion Include="Hl7.Fhir.Specification.R5" Version="5.13.4" />
+    <PackageVersion Include="Jint" Version="3.1.6" />
+    <PackageVersion Include="Microsoft.AspNet.Mvc" Version="5.2.9" />
+    <PackageVersion Include="Microsoft.AspNet.Razor" Version="3.2.9" />
+    <PackageVersion Include="Microsoft.AspNet.WebApi" Version="5.2.9" />
+    <PackageVersion Include="Microsoft.AspNet.WebApi.Client" Version="5.2.9" />
+    <PackageVersion Include="Microsoft.AspNet.WebApi.Core" Version="5.2.9" />
+    <PackageVersion Include="Microsoft.AspNet.WebApi.Owin" Version="5.2.9" />
+    <PackageVersion Include="Microsoft.AspNet.WebApi.WebHost" Version="5.2.9" />
+    <PackageVersion Include="Microsoft.AspNet.WebPages" Version="3.2.9" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="6.35.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+    <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
+    <PackageVersion Include="Microsoft.Owin" Version="4.2.2" />
+    <PackageVersion Include="Microsoft.Owin.Host.SystemWeb" Version="4.2.2" />
+    <PackageVersion Include="Microsoft.Owin.Security" Version="4.2.2" />
+    <PackageVersion Include="Microsoft.Owin.Security.Jwt" Version="4.2.2" />
+    <PackageVersion Include="Microsoft.Owin.Security.OAuth" Version="4.2.2" />
+    <PackageVersion Include="Moq" Version="4.20.70" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageVersion Include="Oracle.ManagedDataAccess" Version="21.17.0" />
+    <PackageVersion Include="Oracle.ManagedDataAccess.EntityFramework" Version="21.17.0" />
+    <PackageVersion Include="Owin" Version="1.0" />
+    <PackageVersion Include="Serilog" Version="4.2.0" />
+    <PackageVersion Include="Serilog.Sinks.Debug" Version="3.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
+    <PackageVersion Include="SimpleInjector.Integration.Web.Mvc" Version="5.5.0" />
+    <PackageVersion Include="SimpleInjector.Integration.WebApi" Version="5.5.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
+    <PackageVersion Include="WebGrease" Version="1.6.0" />
+    <PackageVersion Include="xunit" Version="2.7.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.5.7" />
+  </ItemGroup>
+
+</Project>

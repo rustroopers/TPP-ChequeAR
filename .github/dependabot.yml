@@ -7,7 +7,7 @@ updates:
     schedule:
       interval: weekly
   - package-ecosystem: nuget
-    directory: /src
+    directory: /
     target-branch: dev
     schedule:
       interval: weekly
