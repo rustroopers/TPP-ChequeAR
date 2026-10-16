@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
@@ -56,6 +57,24 @@ namespace ChequeAR.Tests.Application
 
             Assert.NotNull(capturado);
             Assert.True(capturado.IsUnrestricted);
+        }
+
+        [Fact]
+        public async Task KpisAsync_Jefe_CuentaSoloSusEspecialidades()
+        {
+            _questionnaires.Setup(q => q.GetSpecialtyCodesAsync()).ReturnsAsync((IReadOnlyList<string>)new List<string> { "general", "cardio" });
+            _questionnaires.Setup(q => q.CountAsync(null, null, null, It.Is<IReadOnlyCollection<string>>(c => c.Count == 1 && c.Any(x => x == "general")))).ReturnsAsync(3);
+            _responses.Setup(r => r.CountAsync(null, null, null, It.Is<SpecialtyScope>(s => s.Allows("general") && !s.Allows("cardio")))).ReturnsAsync(40);
+            _users.Setup(u => u.ListAsync(null, null, "general", true, 0, int.MaxValue))
+                  .ReturnsAsync((IReadOnlyList<User>)new List<User> { new User { Id = "a" }, new User { Id = "b" } });
+
+            var k = await Sut(TestHelpers.GuardFor("general")).KpisAsync();
+
+            Assert.Equal(3, k.Questionnaires);
+            Assert.Equal(40, k.Encounters);
+            Assert.Equal(2, k.Users);
+            Assert.Equal(1, k.Specialties);
+            _questionnaires.Verify(q => q.CountAsync(null, null, null), Times.Never);
         }
     }
 
