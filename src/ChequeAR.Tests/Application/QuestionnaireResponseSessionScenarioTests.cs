@@ -484,6 +484,8 @@ namespace ChequeAR.Tests.Application
                 return Task.CompletedTask;
             }
 
+            public void DiscardChanges() { }
+
             public Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items)
             {
                 r.Items = items.ToList();

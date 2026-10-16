@@ -635,15 +635,27 @@ namespace ChequeAR.Application.Services
 
             if (pending != null && r.Status == ResponseStatus.InProgress)
             {
-                try
+                // Un autosave en vuelo puede ganarle la escritura: se relee y se reintenta una vez.
+                for (var intento = 0; intento < 2; intento++)
                 {
-                    await SaveProgressAsync(id, userId, lockToken, null, pending);
+                    try
+                    {
+                        await SaveProgressAsync(id, userId, lockToken, null, pending);
+                        break;
+                    }
+                    catch (ValidationFailedException)
+                    {
+                        // Lo inválido no se guarda, pero la sesión se cierra igual.
+                        break;
+                    }
+                    catch (ConcurrencyConflictException)
+                    {
+                        _repo.DiscardChanges();
+                    }
                 }
-                catch (ValidationFailedException)
-                {
-                    // Lo inválido no se guarda, pero la sesión se cierra igual.
-                }
+                _repo.DiscardChanges();
                 r = await LoadForWriteAsync(id);
+                if (!r.IsLockHeldBy(userId, lockToken)) return;
             }
 
             List<ResponseFieldChange> changes = null;

@@ -83,7 +83,10 @@
             // Al volver desde el bfcache, la sesión ya se cerró en el pagehide: se retoma.
             function onPageShow(e) {
                 applyFinalizedMark();
-                if (e && e.persisted && !blockedByBack.value && responseId.value && !lockToken.value) retryLock();
+                if (!e || !e.persisted || blockedByBack.value || !responseId.value || lockToken.value) return;
+                // El cierre subió la versión de la ficha: se relee antes de retomar, sin el aviso
+                // de "otro usuario la modificó".
+                reloadFromServer().then(retryLock).catch(function () { retryLock(); });
             }
             window.addEventListener('pageshow', onPageShow);
             Vue.onUnmounted(function () { window.removeEventListener('pageshow', onPageShow); });
@@ -183,16 +186,20 @@
             var parseNumeric = EnableWhen.parseNumeric;
 
             // Lo que entra en la base: ver ResponseValidator.
-            var MAX_DECIMALS = 6, MAX_TEXT = 2000, MAX_TEXT_BYTES = 4000;
+            var MAX_DECIMALS = 6, MAX_TEXT = 2000, MAX_TEXT_BYTES = 4000, MAX_NUMBER = 1e16;
             function maxLengthOf(q) { return Math.min(q.maxLength || MAX_TEXT, MAX_TEXT); }
 
             // Un valor que no entra en la columna no se manda en el autosave: el servidor lo
             // rechaza y conserva el último guardado.
             function storageError(q, value) {
                 if (value === undefined || value === null || value === '') return null;
-                if (q.type === 'decimal') {
-                    var decimales = (String(value).trim().replace(',', '.').split('.')[1] || '').length;
-                    if (decimales > MAX_DECIMALS) return 'Hasta ' + MAX_DECIMALS + ' decimales';
+                if (q.type === 'decimal' || q.type === 'integer') {
+                    var n = parseNumeric(value);
+                    if (isNaN(n)) return null;
+                    if (!isFinite(n) || Math.abs(n) >= MAX_NUMBER) return 'Número demasiado grande';
+                    var s = String(value).trim().replace(',', '.');
+                    if (/e/i.test(s)) s = n.toFixed(20).replace(/0+$/, '');
+                    if (q.type === 'decimal' && (s.split('.')[1] || '').length > MAX_DECIMALS) return 'Hasta ' + MAX_DECIMALS + ' decimales';
                 }
                 if ((q.type === 'string' || q.type === 'text') && typeof value === 'string') {
                     var max = maxLengthOf(q);
@@ -524,6 +531,7 @@
                         Object.keys(errors).forEach(function (k) { delete errors[k]; });
                         applyExistingItems(items);
                         sessionBaseline.value = fhirItemsToDomain(items);
+                        lastSaved = null;
                         concurrencyVersion.value = versionOf(resource);
                         savingState.value = 'idle';
                     });
@@ -578,13 +586,14 @@
             // meta.versionId); el vencimiento del lock, sin lugar nativo en FHIR, viaja en
             // un header propio.
             function putProgress(isRetry) {
+                var sent = collectItems();
                 return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, {
                     method: 'PUT',
                     headers: Object.assign({}, authHeaders(), {
                         'If-Match': 'W/"' + concurrencyVersion.value + '"',
                         'X-Lock-Token': lockToken.value
                     }),
-                    body: JSON.stringify({ Items: collectItems() })
+                    body: JSON.stringify({ Items: sent })
                 }).then(function (r) {
                     if (r.status === 409) {
                         return r.json().then(function (body) {
@@ -613,7 +622,9 @@
                             lockExpiresAt.value = new Date(lockExpiresHeader);
                             showRenewPrompt.value = false;
                         }
-                        savingState.value = 'idle';
+                        lastSaved = byLinkId(sent);
+                        // Si se siguió tipeando durante el PUT, ya hay otro autosave programado.
+                        if (!autosaveTimer) savingState.value = 'idle';
                     });
                 });
             }
@@ -689,14 +700,33 @@
             // (pagehide + onUnmounted): el segundo ve el token ya en null y no hace nada.
             // Lo que el autosave todavía no mandó viaja en el mismo pedido (Pending): un PUT
             // aparte competiría con el $unlock y, si llegaba después, ya no tenía lock.
+            // Lo último que aceptó el servidor, por linkId: al salir se manda sólo lo que cambió,
+            // porque keepalive no admite cuerpos de más de 64 KiB.
+            var lastSaved = null;
+            function byLinkId(items) {
+                var map = {};
+                items.forEach(function (it) { (map[it.LinkId] = map[it.LinkId] || []).push(it); });
+                Object.keys(map).forEach(function (k) { map[k] = JSON.stringify(map[k]); });
+                return map;
+            }
+            function unsavedItems() {
+                var current = collectItems();
+                if (!lastSaved) return current;
+                var now = byLinkId(current);
+                return current.filter(function (it) { return now[it.LinkId] !== lastSaved[it.LinkId]; });
+            }
+
             function releaseLock() {
                 if (!responseId.value || !lockToken.value) return;
+                var pending = !amending && hasUnsaved() ? unsavedItems() : null;
                 if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
-                var pending = !amending && savingState.value !== 'idle' ? collectItems() : null;
+                var body = JSON.stringify({ Items: sessionBaseline.value, Pending: pending });
+                // Si no entra, se resigna el baseline (sólo sirve para el diff de auditoría).
+                if (new TextEncoder().encode(body).length > 60000) body = JSON.stringify({ Pending: pending });
                 fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$unlock', {
                     method: 'POST',
                     headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
-                    body: JSON.stringify({ Items: sessionBaseline.value, Pending: pending }),
+                    body: body,
                     keepalive: true
                 }).catch(function () { /* nada que hacer del lado del cliente */ });
                 lockToken.value = null;
@@ -705,9 +735,11 @@
 
             // Sin ficha creada todavía, o en una corrección (que no autoguarda), lo cargado no
             // se puede mandar al salir: se pide confirmación.
+            function hasUnsaved() { return !!autosaveTimer || savingState.value !== 'idle'; }
+
             function onBeforeUnload(e) {
-                if (submitting.value || savingState.value === 'idle' || readOnly()) return;
-                if (responseId.value && lockToken.value && !amending) return;
+                if (submitting.value || !hasUnsaved() || readOnly()) return;
+                if (responseId.value && lockToken.value && !amending && savingState.value !== 'error') return;
                 e.preventDefault();
                 e.returnValue = '';
             }
@@ -852,7 +884,6 @@
 
             function submit() {
                 if (submitting.value || readOnly()) return;
-                if (amending) { submitAmend(); return; }
 
                 var allErrors = [];
                 questionnaire.value.groups.forEach(function (g) {
@@ -870,6 +901,7 @@
                     window.cqToast && window.cqToast('No hay sesión: no se puede guardar la ficha.', 'error');
                     return;
                 }
+                if (amending) { submitAmend(); return; }
 
                 submitting.value = true;
                 savingState.value = 'saving';

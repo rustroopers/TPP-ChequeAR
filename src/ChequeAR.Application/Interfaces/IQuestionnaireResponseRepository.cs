@@ -37,6 +37,9 @@ namespace ChequeAR.Application.Interfaces
 
         /// <summary>Reemplaza todas las respuestas de la ficha y guarda la cabecera en la misma operación.</summary>
         Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items);
+
+        /// <summary>Descarta lo leído y lo pendiente, para volver a leer de la base después de un conflicto.</summary>
+        void DiscardChanges();
         /// <summary>Cuestionarios de las fichas que referencian el adjunto.</summary>
         Task<IReadOnlyList<Guid>> FindQuestionnaireIdsByAttachmentAsync(Guid attachmentId);
         /// <summary>¿Hay respuestas cargadas contra este cuestionario? Decide si se puede borrar.</summary>

@@ -119,6 +119,12 @@ namespace ChequeAR.Infrastructure.Repositories
             await SaveAsync();
         }
 
+        public void DiscardChanges()
+        {
+            foreach (var entry in _ctx.ChangeTracker.Entries().ToList())
+                entry.State = EntityState.Detached;
+        }
+
         public async Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items)
         {
             var current = await _ctx.QuestionnaireResponseItems.Where(i => i.ResponseId == r.Id).ToListAsync();
