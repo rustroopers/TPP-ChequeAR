@@ -22,7 +22,7 @@ namespace ChequeAR.Api.Tests
             var repo = new Mock<ISpecialtyRepository>();
             repo.Setup(r => r.ListAsync(false)).ReturnsAsync((IReadOnlyList<Specialty>)new List<Specialty>());
 
-            var result = await new HealthController(repo.Object).Get();
+            var result = await new HealthController(repo.Object, new Mock<ISchemaMigrator>().Object).Get();
 
             Assert.Equal(typeof(OkNegotiatedContentResult<>), result.GetType().GetGenericTypeDefinition());
         }
@@ -34,7 +34,7 @@ namespace ChequeAR.Api.Tests
             var repo = new Mock<ISpecialtyRepository>();
             repo.Setup(r => r.ListAsync(false)).ThrowsAsync(new InvalidOperationException("ORA-12541"));
 
-            var result = await new HealthController(repo.Object).Get();
+            var result = await new HealthController(repo.Object, new Mock<ISchemaMigrator>().Object).Get();
 
             var status = (HttpStatusCode)result.GetType().GetProperty("StatusCode").GetValue(result);
             Assert.Equal(HttpStatusCode.ServiceUnavailable, status);

@@ -8,17 +8,22 @@ using ChequeAR.Application.Interfaces;
 namespace ChequeAR.Api.Controllers.Api
 {
     /// <summary>
-    /// Para el smoke del deploy: la primera consulta aplica las migraciones pendientes, así que
-    /// si fallan, el deploy se entera acá y no con el primer usuario.
+    /// Para el smoke del deploy: que la base responda y, en producción, que no hayan quedado
+    /// migraciones sin aplicar.
     /// </summary>
     [RoutePrefix("api/health")]
     public class HealthController : ApiController
     {
-        private readonly ISpecialtyRepository _specialties;
+        private static bool AutomaticMigrations => !string.Equals(
+            System.Configuration.ConfigurationManager.AppSettings["Migrations:Automatic"], "false", StringComparison.OrdinalIgnoreCase);
 
-        public HealthController(ISpecialtyRepository specialties)
+        private readonly ISpecialtyRepository _specialties;
+        private readonly ISchemaMigrator _migrator;
+
+        public HealthController(ISpecialtyRepository specialties, ISchemaMigrator migrator)
         {
             _specialties = specialties;
+            _migrator = migrator;
         }
 
         [HttpGet, Route(""), AllowAnonymous]
@@ -27,6 +32,10 @@ namespace ChequeAR.Api.Controllers.Api
             try
             {
                 await _specialties.ListAsync();
+                // En producción las migraciones las aplica el deploy: si quedaron pendientes,
+                // el smoke tiene que fallar.
+                if (!AutomaticMigrations && _migrator.Pending().Count > 0)
+                    return Content(HttpStatusCode.ServiceUnavailable, new { status = "migraciones pendientes" });
                 return Ok(new { status = "ok" });
             }
             catch (Exception ex)

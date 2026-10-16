@@ -13,8 +13,10 @@
         public override void Up()
         {
             AlterColumn("CHEQUEAR.RefreshToken", "TokenHash", c => c.String(maxLength: 64, unicode: false));
-            CreateIndex("CHEQUEAR.QuestionnaireResponse", new[] { "PatientHospitalId", "AuthoredAt" }, name: "IX_Response_Patient");
-            CreateIndex("CHEQUEAR.RefreshToken", "TokenHash", unique: true, name: "UX_RefreshToken_Hash");
+            // SQL y no CreateIndex: el proveedor de Oracle ignora el nombre y genera otro, y
+            // después el Down no lo encuentra.
+            Sql(@"CREATE INDEX ""CHEQUEAR"".""IX_Response_Patient"" ON ""CHEQUEAR"".""QuestionnaireResponse"" (""PatientHospitalId"", ""AuthoredAt"")");
+            Sql(@"CREATE UNIQUE INDEX ""CHEQUEAR"".""UX_RefreshToken_Hash"" ON ""CHEQUEAR"".""RefreshToken"" (""TokenHash"")");
             // Redundante con IX_Response_Questionnaire (QuestionnaireId, Status).
             Sql(@"DROP INDEX ""CHEQUEAR"".""IX_QuestionnaireResponse_Questionnaire""");
             Sql(@"ALTER TABLE ""CHEQUEAR"".""QuestionnaireResponse"" ADD CONSTRAINT ""FK_Response_Questionnaire""
@@ -28,8 +30,8 @@
             Sql(@"CREATE INDEX ""IX_QuestionnaireResponse_Questionnaire"" ON CHEQUEAR.""QuestionnaireResponse""(""QuestionnaireId"")");
             Sql(@"ALTER TABLE ""CHEQUEAR"".""QuestionnaireResponse"" DROP CONSTRAINT ""FK_Response_Version""");
             Sql(@"ALTER TABLE ""CHEQUEAR"".""QuestionnaireResponse"" DROP CONSTRAINT ""FK_Response_Questionnaire""");
-            DropIndex("CHEQUEAR.RefreshToken", "UX_RefreshToken_Hash");
-            DropIndex("CHEQUEAR.QuestionnaireResponse", "IX_Response_Patient");
+            Sql(@"DROP INDEX ""CHEQUEAR"".""UX_RefreshToken_Hash""");
+            Sql(@"DROP INDEX ""CHEQUEAR"".""IX_Response_Patient""");
             AlterColumn("CHEQUEAR.RefreshToken", "TokenHash", c => c.String(maxLength: 2000, unicode: false));
         }
     }

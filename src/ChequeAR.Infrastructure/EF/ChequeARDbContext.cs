@@ -14,8 +14,9 @@ namespace ChequeAR.Infrastructure.EF
 {
     public class ChequeARDbContext : DbContext
     {
-        // Aplica las migraciones pendientes la primera vez que se usa el contexto, para
-        // que un deploy no necesite un paso manual contra la base.
+        // En desarrollo aplica las migraciones pendientes la primera vez que se usa el contexto.
+        // En producción (Migrations:Automatic=false) las aplica el deploy, con un export
+        // previo, por /api/deploy/migrate: un usuario nunca dispara un cambio de esquema.
         //
         // Va aca y no en Application_Start por dos razones: ChequeAR.Api no referencia
         // EntityFramework (solo Infrastructure, y en csproj clasico las referencias no son
@@ -23,9 +24,14 @@ namespace ChequeAR.Infrastructure.EF
         // pantallas que la tocan en vez de tumbar el arranque entero de la app.
         static ChequeARDbContext()
         {
-            Database.SetInitializer(
-                new MigrateDatabaseToLatestVersion<ChequeARDbContext, Migrations.Configuration>());
+            if (AutomaticMigrations)
+                Database.SetInitializer(new MigrateDatabaseToLatestVersion<ChequeARDbContext, Migrations.Configuration>());
+            else
+                Database.SetInitializer<ChequeARDbContext>(null);
         }
+
+        public static bool AutomaticMigrations => !string.Equals(
+            System.Configuration.ConfigurationManager.AppSettings["Migrations:Automatic"], "false", StringComparison.OrdinalIgnoreCase);
 
         // ODP.NET no tiene límite por defecto: una espera de lock dejaba el request colgado.
         public const int CommandTimeoutSeconds = 30;
