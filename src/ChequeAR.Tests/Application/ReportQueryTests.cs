@@ -353,7 +353,7 @@ namespace ChequeAR.Tests.Application
 
             var built = new QueryBuilder().Build(Query(Un("dx", op, valor)), schema);
 
-            Assert.Contains("NOT EXISTS (SELECT 1 FROM \"QuestionnaireResponseItem\" qri", built.Sql);
+            Assert.Contains("NOT EXISTS (SELECT 1 FROM \"CHEQUEAR\".\"QuestionnaireResponseItem\" qri", built.Sql);
             Assert.Contains(positiva, built.Sql);
             Assert.DoesNotContain("!=", built.Sql);
         }

@@ -214,12 +214,49 @@ namespace ChequeAR.Tests.Application
             var repo = new Mock<IUserRepository>();
             repo.Setup(r => r.GetAsync("admin1")).ReturnsAsync(UserWithRole("admin1", Role.Administrador));
             repo.Setup(r => r.CountAsync(null, Role.Administrador, null, true)).ReturnsAsync(2);
+            repo.Setup(r => r.KeepingAnAdminAsync(It.IsAny<Func<Task>>())).Returns<Func<Task>>(async cambio => { await cambio(); return true; });
             var sut = Sut(repo);
 
             await sut.SetRoleAsync("admin1", Role.Jefe, actingUserId: "otro.admin");
 
             repo.Verify(r => r.SyncFromHospitalAsync("admin1", It.IsAny<string>(), null,
                 It.Is<IReadOnlyList<string>>(roles => roles.SequenceEqual(new[] { Role.Jefe })), null), Times.Once);
+        }
+
+        // Dos degradaciones simultáneas pasaban las dos el conteo; el resguardo de la base
+        // ataja la segunda.
+        [Fact]
+        public async Task SetRoleAsync_OtroAdminSeDegradoEnElMedio_Lanza()
+        {
+            var repo = new Mock<IUserRepository>();
+            repo.Setup(r => r.GetAsync("admin1")).ReturnsAsync(UserWithRole("admin1", Role.Administrador));
+            repo.Setup(r => r.CountAsync(null, Role.Administrador, null, true)).ReturnsAsync(2);
+            repo.Setup(r => r.KeepingAnAdminAsync(It.IsAny<Func<Task>>())).ReturnsAsync(false);
+
+            await Assert.ThrowsAsync<BusinessRuleException>(
+                () => Sut(repo).SetRoleAsync("admin1", Role.Jefe, actingUserId: "otro.admin"));
+        }
+
+        [Fact]
+        public async Task UpsertAsync_DesactivarAlUltimoAdmin_Lanza()
+        {
+            var repo = new Mock<IUserRepository>();
+            repo.Setup(r => r.GetAsync("admin1")).ReturnsAsync(UserWithRole("admin1", Role.Administrador));
+            repo.Setup(r => r.KeepingAnAdminAsync(It.IsAny<Func<Task>>())).ReturnsAsync(false);
+            var cambio = UserWithRole("admin1", Role.Administrador, active: false);
+
+            await Assert.ThrowsAsync<BusinessRuleException>(() => Sut(repo).UpsertAsync(cambio));
+        }
+
+        [Fact]
+        public async Task UpsertAsync_SinTocarAdmins_NoUsaElResguardo()
+        {
+            var repo = new Mock<IUserRepository>();
+
+            await Sut(repo).UpsertAsync(UserWithRole("m1", Role.Medico));
+
+            repo.Verify(r => r.UpsertAsync(It.IsAny<User>()), Times.Once);
+            repo.Verify(r => r.KeepingAnAdminAsync(It.IsAny<Func<Task>>()), Times.Never);
         }
     }
 }
