@@ -128,9 +128,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     return HttpNotFound();
                 }
-                ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
+                if (q == null) return HttpNotFound();
+                ViewBag.QuestionnaireTitle = q.Title;
 
-                var current = q?.CurrentVersion();
+                var current = q.CurrentVersion();
                 if (current == null)
                 {
                     ViewBag.Version = 0;
@@ -145,7 +146,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // quedaría fuera de sincronía con lo que efectivamente se persiste/valida. La
                 // versión nueva rige para fichas nuevas. Sin borrador previo, se usa la vigente.
                 var draft = await GetResumeDraftAsync(patientId, questionnaireId);
-                var version = (draft == null ? null : q?.FindVersion(draft.QuestionnaireVersionId)) ?? current;
+                // Archivado: no admite fichas nuevas, pero un borrador ya empezado se termina.
+                if (draft == null && q.Status == QuestionnaireStatus.Retired)
+                {
+                    ViewBag.Version = current.VersionNumber;
+                    ViewBag.LoadError = "El cuestionario está archivado: no admite fichas nuevas.";
+                    return View();
+                }
+                var version = (draft == null ? null : q.FindVersion(draft.QuestionnaireVersionId)) ?? current;
                 // El botón "Detalle" (historial de la ficha) sólo tiene sentido si ya hay una
                 // ficha con eventos: una carga nueva todavía no generó ninguno.
                 ViewBag.ExistingResponseId = draft?.Id;

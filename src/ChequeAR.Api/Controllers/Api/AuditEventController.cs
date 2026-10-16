@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
@@ -25,7 +26,7 @@ namespace ChequeAR.Api.Controllers.Api
                 skip: FhirBundles.ClampOffset(_offset), take: FhirBundles.ClampCount(_count));
 
             var recursos = pagina.Items.Select(e => (Resource)FhirAuditEventBuilder.Build(e));
-            return Ok(FhirBundles.SearchSet(recursos, pagina.Total, FhirBaseUrl(), Request.RequestUri,
+            return Ok(FhirBundles.SearchSet(recursos, pagina.Total, Request.FhirBaseUrl(), Request.RequestUri,
                 FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count)));
         }
 
@@ -38,7 +39,5 @@ namespace ChequeAR.Api.Controllers.Api
             return Ok(FhirAuditEventBuilder.Build(evento));
         }
 
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
     }
 }

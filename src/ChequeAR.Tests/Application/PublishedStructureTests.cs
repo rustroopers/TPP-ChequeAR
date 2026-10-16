@@ -38,6 +38,27 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("Talla (cm)", union.Questions.Single(x => x.LinkId == "talla").Text);
         }
 
+        // Una opción que la versión nueva de la variable quitó sigue teniendo etiqueta: las
+        // fichas viejas guardaron su código.
+        [Fact]
+        public void Union_SumaLasOpcionesRetiradas()
+        {
+            var q = new Questionnaire { Id = Guid.NewGuid(), Title = "Control" };
+            var v1 = new Question { LinkId = "sev", Text = "Severidad", Type = QuestionType.Choice };
+            v1.Options.Add(new AnswerOption { Code = "leve", Display = "Leve" });
+            v1.Options.Add(new AnswerOption { Code = "grave", Display = "Grave" });
+            Version(q, 1, v1);
+            var v2 = new Question { LinkId = "sev", Text = "Severidad", Type = QuestionType.Choice };
+            v2.Options.Add(new AnswerOption { Code = "leve", Display = "Leve" });
+            v2.Options.Add(new AnswerOption { Code = "moderada", Display = "Moderada" });
+            q.CurrentVersionId = Version(q, 2, v2).Id;
+
+            var schema = ReportSchema.From(PublishedStructure.Union(q));
+
+            Assert.Equal("Grave", schema.LabelFor("sev", "grave"));
+            Assert.Equal("Moderada", schema.LabelFor("sev", "moderada"));
+        }
+
         [Fact]
         public void SinVersiones_NoHayPreguntas()
         {

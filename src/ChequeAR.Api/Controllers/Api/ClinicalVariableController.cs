@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Api.Auth;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Exceptions;
@@ -106,7 +107,7 @@ namespace ChequeAR.Api.Controllers.Api
         [HttpPost, Route("{id:guid}/$publish"), RequiresPermissionApi(Permissions.VariableManage)]
         public async Task<IHttpActionResult> Publish(Guid id, [FromBody] PublishVariableDto body)
         {
-            var version = await _service.PublishAsync(id, UserId, body?.Note, ParseIfMatch(Request));
+            var version = await _service.PublishAsync(id, UserId, body?.Note, Request.IfMatchVersion());
             if (version == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             return Ok(new { version = version.VersionNumber });
         }
@@ -131,7 +132,7 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] ClinicalVariableDto body)
         {
             if (body == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
-            var actualizada = await _service.UpdateAsync(id, ClinicalVariableDtoMap.ToEntity(body), UserId, ParseIfMatch(Request));
+            var actualizada = await _service.UpdateAsync(id, ClinicalVariableDtoMap.ToEntity(body), UserId, Request.IfMatchVersion());
             if (actualizada == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             var estado = await _service.GetPublicationAsync(new[] { actualizada });
             return Ok(ClinicalVariableDtoMap.ToDto(actualizada, estado[actualizada.Id]));
@@ -148,14 +149,6 @@ namespace ChequeAR.Api.Controllers.Api
             var ok = await _service.SetActiveAsync(id, active, UserId);
             if (!ok) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             return StatusCode(HttpStatusCode.NoContent);
-        }
-
-        // Acepta W/"3" y "3".
-        private static int? ParseIfMatch(HttpRequestMessage request)
-        {
-            var tag = request.Headers.IfMatch?.FirstOrDefault();
-            if (tag == null) return null;
-            return int.TryParse((tag.Tag ?? string.Empty).Trim('"'), out var revision) ? revision : (int?)null;
         }
 
         [HttpDelete, Route("{id:guid}"), RequiresPermissionApi(Permissions.VariableManage)]

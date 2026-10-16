@@ -11,6 +11,10 @@ namespace ChequeAR.Api.Auth
             principal?.FindFirst("sub")?.Value
             ?? principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
+        /// <summary>El nombre para mostrar (claim "name"); el id si no viene.</summary>
+        public static string DisplayName(ClaimsPrincipal principal) =>
+            principal?.FindFirst("name")?.Value ?? principal?.Identity?.Name;
+
         /// <summary>Roles EXPANDIDOS por jerarquía (ver RoleHierarchy): un Jefe trae [Jefe, Medico].</summary>
         public static IReadOnlyList<string> Roles(ClaimsPrincipal principal) =>
             principal?.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList() ?? new List<string>();

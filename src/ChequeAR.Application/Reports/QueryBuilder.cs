@@ -182,6 +182,7 @@ namespace ChequeAR.Application.Reports
                 // El tipo sale de la PREGUNTA, no del valor que mando el cliente. Tambien
                 // valida que el linkId pertenezca al cuestionario.
                 var col = schema.ColumnFor(p.LinkId);
+                EnsureOperatorFits(p.Op, schema.TypeOf(p.LinkId));
                 var idx = ps.Count;
 
                 // Una condición negativa ("no sea", "no contenga", "no esté respondida") es la
@@ -198,6 +199,23 @@ namespace ChequeAR.Application.Reports
                 sql.Append(" AND ").Append(Predicate(Positiva(p), schema, col, idx, ps)).Append(')');
             }
             sql.Append(')');
+        }
+
+        /// <summary>
+        /// "Contenga" sobre un número o "mayor que" sobre un sí/no daban un error de Oracle o un
+        /// resultado sin sentido: se rechaza antes de armar la consulta.
+        /// </summary>
+        private static void EnsureOperatorFits(string op, Domain.Enums.QuestionType tipo)
+        {
+            var o = op.ToLowerInvariant();
+            var texto = tipo == Domain.Enums.QuestionType.String || tipo == Domain.Enums.QuestionType.Text;
+            var ordenable = tipo == Domain.Enums.QuestionType.Integer || tipo == Domain.Enums.QuestionType.Decimal
+                || tipo == Domain.Enums.QuestionType.Scale || tipo == Domain.Enums.QuestionType.Date
+                || tipo == Domain.Enums.QuestionType.DateTime;
+            if ((o == "contains" || o == "notcontains") && !texto)
+                throw new ArgumentException("'Contiene' sólo se puede usar con preguntas de texto.");
+            if ((o == ">" || o == "<" || o == ">=" || o == "<=" || o == "between") && !ordenable)
+                throw new ArgumentException("El operador '" + op + "' sólo se puede usar con números y fechas.");
         }
 
         /// <summary>"exists" con valor false es "no esté respondida"; el resto se reconoce por el operador.</summary>

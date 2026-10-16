@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 
@@ -30,7 +31,7 @@ namespace ChequeAR.Api.Controllers.Api
             var recursos = FhirPatientProjection.ToPatients(hits).Cast<Hl7.Fhir.Model.Resource>();
             // Con el tope alcanzado puede haber más coincidencias: el total no se conoce.
             var total = hits.Count < PatientService.MaxSearchResults ? hits.Count : (int?)null;
-            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl()));
         }
 
         [HttpGet, Route("{hospitalId}"), Authorize]
@@ -41,7 +42,5 @@ namespace ChequeAR.Api.Controllers.Api
             return Ok(FhirPatientProjection.ToPatient(p));
         }
 
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
     }
 }

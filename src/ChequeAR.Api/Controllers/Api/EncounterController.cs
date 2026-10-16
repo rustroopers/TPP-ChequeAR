@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 
@@ -30,10 +31,8 @@ namespace ChequeAR.Api.Controllers.Api
             var total = await _svc.CountEncountersAsync(subject);
 
             var recursos = FhirPatientProjection.ToEncounters(fichas).Cast<Hl7.Fhir.Model.Resource>();
-            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl()));
         }
 
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
     }
 }
