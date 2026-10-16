@@ -56,7 +56,20 @@ namespace ChequeAR.Application.Services
             return new UserPage { Total = total, Items = items };
         }
 
-        public Task UpsertAsync(User u) => _repo.UpsertAsync(u);
+        /// <summary>Desactivar a un administrador pasa por el mismo resguardo que degradarlo.</summary>
+        public async Task UpsertAsync(User u)
+        {
+            var actual = u.IsActive ? null : await _repo.GetAsync(u.Id);
+            var desactivaAdmin = actual != null && actual.IsActive
+                && string.Equals(RoleHierarchy.Principal(actual.Roles?.Select(r => r.Role)), Role.Administrador, StringComparison.Ordinal);
+            if (!desactivaAdmin)
+            {
+                await _repo.UpsertAsync(u);
+                return;
+            }
+            if (!await _repo.KeepingAnAdminAsync(() => _repo.UpsertAsync(u)))
+                throw new BusinessRuleException("Debe existir al menos un Administrador activo en el sistema.");
+        }
 
         /// <summary>
         /// Reconcilia el espejo local (AppUser/UserRole/UserSpecialty) con lo que acaba de
@@ -169,7 +182,16 @@ namespace ChequeAR.Application.Services
                     throw new BusinessRuleException("Debe existir al menos un Administrador activo en el sistema.");
             }
 
-            await _repo.SyncFromHospitalAsync(userId, user.DisplayName, null, new List<string> { role }, null);
+            var esAdmin = string.Equals(currentRole, Role.Administrador, StringComparison.Ordinal);
+            if (!esAdmin || string.Equals(role, Role.Administrador, StringComparison.Ordinal))
+            {
+                await _repo.SyncFromHospitalAsync(userId, user.DisplayName, null, new List<string> { role }, null);
+                return;
+            }
+            // El chequeo de arriba evita el viaje en el caso común; éste ataja dos
+            // degradaciones simultáneas que lo pasaron las dos.
+            if (!await _repo.KeepingAnAdminAsync(() => _repo.SyncFromHospitalAsync(userId, user.DisplayName, null, new List<string> { role }, null)))
+                throw new BusinessRuleException("Debe existir al menos un Administrador activo en el sistema.");
         }
     }
 

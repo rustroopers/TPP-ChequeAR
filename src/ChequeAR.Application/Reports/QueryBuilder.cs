@@ -61,7 +61,7 @@ namespace ChequeAR.Application.Reports
 
             var sql = new StringBuilder();
             sql.AppendLine("SELECT " + Projection);
-            sql.AppendLine("FROM \"vw_FlatResponses\" v");
+            sql.AppendLine("FROM \"CHEQUEAR\".\"vw_FlatResponses\" v");
             sql.AppendLine("WHERE " + where.Replace(Alias, "v"));
 
             if (paginate)
@@ -75,7 +75,7 @@ namespace ChequeAR.Application.Reports
                 sql.AppendLine("  AND v.\"ResponseId\" IN (");
                 sql.AppendLine("    SELECT \"ResponseId\" FROM (");
                 sql.AppendLine("      SELECT DISTINCT p.\"ResponseId\", p.\"AuthoredAt\"");
-                sql.AppendLine("      FROM \"vw_FlatResponses\" p");
+                sql.AppendLine("      FROM \"CHEQUEAR\".\"vw_FlatResponses\" p");
                 sql.AppendLine("      WHERE " + where.Replace(Alias, "p"));
                 sql.AppendLine("      ORDER BY p.\"AuthoredAt\" DESC, p.\"ResponseId\"");
                 sql.AppendLine("      OFFSET :Skip ROWS FETCH NEXT :Take ROWS ONLY");
@@ -92,7 +92,7 @@ namespace ChequeAR.Application.Reports
 
             // Total real de fichas de la cohorte, independiente de la pagina traida. Antes
             // se informaba rows.Count del formato largo, o sea fichas x preguntas.
-            var countSql = "SELECT COUNT(DISTINCT v.\"ResponseId\") FROM \"vw_FlatResponses\" v WHERE "
+            var countSql = "SELECT COUNT(DISTINCT v.\"ResponseId\") FROM \"CHEQUEAR\".\"vw_FlatResponses\" v WHERE "
                            + where.Replace(Alias, "v");
 
             return new BuiltQuery { Sql = sql.ToString(), CountSql = countSql, Parameters = ps };
@@ -191,7 +191,7 @@ namespace ChequeAR.Application.Reports
                 // afuera, porque no tiene ninguna respuesta con la que comparar.
                 var negada = EsNegativa(p);
                 sql.Append(negada ? "NOT EXISTS" : "EXISTS")
-                   .Append(" (SELECT 1 FROM \"QuestionnaireResponseItem\" qri")
+                   .Append(" (SELECT 1 FROM \"CHEQUEAR\".\"QuestionnaireResponseItem\" qri")
                    .Append(" WHERE qri.\"ResponseId\" = ").Append(Alias).Append(".\"ResponseId\"")
                    .Append(" AND qri.\"LinkId\" = :li").Append(idx);
                 ps.Add(QueryParameter.Text("li" + idx, p.LinkId));

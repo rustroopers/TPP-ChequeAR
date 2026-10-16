@@ -39,7 +39,7 @@ BEGIN
   h := DBMS_DATAPUMP.OPEN(operation => 'EXPORT', job_mode => 'SCHEMA');
   DBMS_DATAPUMP.ADD_FILE(h, :archivo || '.dmp', 'DATA_PUMP_DIR', reusefile => 1);
   DBMS_DATAPUMP.ADD_FILE(h, :archivo || '.log', 'DATA_PUMP_DIR', filetype => DBMS_DATAPUMP.KU$_FILE_TYPE_LOG_FILE, reusefile => 1);
-  DBMS_DATAPUMP.METADATA_FILTER(h, 'SCHEMA_EXPR', 'IN (''' || SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') || ''')');
+  DBMS_DATAPUMP.METADATA_FILTER(h, 'SCHEMA_EXPR', 'IN (''CHEQUEAR'')');
   DBMS_DATAPUMP.START_JOB(h);
   DBMS_DATAPUMP.WAIT_FOR_JOB(h, estado);
   IF estado <> 'COMPLETED' THEN

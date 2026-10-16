@@ -62,7 +62,7 @@ namespace ChequeAR.Infrastructure.Oracle
             // Fecha de finalización (FR-008); AuthoredAt sólo por si faltara.
             sql.AppendLine("SELECT v.\"ResponseId\", COALESCE(v.\"CompletedAt\", v.\"AuthoredAt\") AS \"CompletedAt\", v.\"LinkId\",");
             sql.AppendLine("       v.\"ValueDecimal\", v.\"ValueInteger\", v.\"ValueDate\"");
-            sql.AppendLine("FROM \"vw_FlatResponses\" v");
+            sql.AppendLine("FROM \"CHEQUEAR\".\"vw_FlatResponses\" v");
             sql.AppendLine("WHERE v.\"PatientHospitalId\" = :PatientHospitalId");
             sql.AppendLine("  AND v.\"QuestionnaireId\" = :QuestionnaireId");
             sql.Append("  AND v.\"LinkId\" IN (");
