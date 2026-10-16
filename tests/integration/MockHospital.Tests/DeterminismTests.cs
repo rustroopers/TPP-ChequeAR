@@ -10,9 +10,9 @@ namespace ChequeAR.Tests.MockHospital
     ///
     ///   SELECT TO_CHAR(STANDARD_HASH(LISTAGG(...), 'SHA256')) FROM ...
     ///
-    /// El test "Reset_RegeneraDatasetIdentico" valida que `docker compose down -v &&
-    /// up -d --wait` deja la base con los mismos hashes — cubre FR-017. Está marcado
-    /// como Skip por defecto porque toca el contenedor; correr a mano con la env var
+    /// El test "Reset_RegeneraDatasetIdentico" valida que borrar y volver a cargar el
+    /// mock (borrar.sql + cargar.sql) deja la base con los mismos hashes — cubre FR-017. Está marcado
+    /// como Skip por defecto porque necesita recargar la base; correr a mano con la env var
     /// `MOCK_HOSPITAL_RUN_RESET=1` antes de la sesión.
     /// </summary>
     [Collection("MockHospital")]
@@ -55,7 +55,7 @@ namespace ChequeAR.Tests.MockHospital
         public void Reset_RegeneraDatasetIdentico()
         {
             // Para correr: setear MOCK_HOSPITAL_RUN_RESET=1 y previamente ejecutar
-            // `docker compose down -v && up -d --wait`. Sin esa env var, el test pasa
+            // borrar.sql y cargar.sql. Sin esa env var, el test pasa
             // trivialmente (no-op) para no romper la suite por defecto.
             if (System.Environment.GetEnvironmentVariable("MOCK_HOSPITAL_RUN_RESET") != "1")
                 return;

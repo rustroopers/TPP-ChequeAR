@@ -89,10 +89,10 @@ Nada se da por terminado sin build + tests en verde. Mismos comandos que usa el 
 (ver también la skill `run-app`):
 
 ```bash
-MSBUILD="C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe"
-VSTEST="C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/Extensions/TestPlatform/vstest.console.exe"
+VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+MSBUILD=$("$VSWHERE" -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe')
 "$MSBUILD" "src/ChequeAR.sln" -t:Build -p:Configuration=Debug -m -clp:ErrorsOnly -nologo
-"$VSTEST" "src/ChequeAR.Tests/bin/Debug/net471/ChequeAR.Tests.dll"
+dotnet test "src/ChequeAR.Tests/ChequeAR.Tests.csproj" --no-build
 ```
 
 - Para JS de las islas (`Scripts/islands/**`): `node --check <archivo>` (no hay bundler).

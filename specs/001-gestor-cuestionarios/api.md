@@ -1,5 +1,8 @@
 # API Contracts: Gestor y Editor de Cuestionarios
 
+> **Desactualizado.** El contrato vigente es `specs/009-conformidad-fhir-capas/contracts/fhir-api.md`.
+> `$clone` está implementado; `$count` y `_history` no existen.
+
 ## Estado de implementación (2026-06-10)
 
 | Endpoint | Estado | Notas |

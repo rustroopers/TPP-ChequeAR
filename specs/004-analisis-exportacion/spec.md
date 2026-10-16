@@ -2,7 +2,7 @@
 
 **Feature Branch**: `004-analisis-exportacion`
 **Created**: 2026-06-01
-**Status**: Draft
+**Status**: Implementada; exportación asincrónica fuera de alcance
 
 ## User Scenarios & Testing
 

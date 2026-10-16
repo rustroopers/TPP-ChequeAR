@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-10
 
-**Status**: Draft
+**Status**: Implementada
 
 **Input**: User description: "Evolución longitudinal de parámetros por paciente (gráficos de tendencia): desde el historial de un paciente, elegir un cuestionario y uno o más parámetros numéricos/fecha de ese cuestionario para ver su evolución en el tiempo a través de las fichas finalizadas del paciente, un gráfico por parámetro, con franja de rango normal, sin límite de parámetros seleccionables, mismo cuestionario únicamente, mismos permisos que el historial del paciente hoy."
 

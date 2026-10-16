@@ -228,9 +228,9 @@ END;
 
 | Cambio probable del hospital | Archivos a tocar |
 |---|---|
-| Renombrar tablas/columnas | `infra/mock-hospital/init/01-schema.sql`, `02-views.sql`, `src/ChequeAR.Infrastructure/OracleMappings/*.yaml` |
+| Renombrar tablas/columnas | `infra/mock-hospital/init/01-schema.sql`, `02-views.sql`, `allowlist.yaml`, `PatientService`, `MockHospitalFhirClient` y `MockOracleViewClient` |
 | Nuevas vistas autorizadas | `infra/mock-hospital/init/99-grants.sql`, `src/ChequeAR.Infrastructure/Oracle/allowlist.yaml` |
-| Nuevas columnas que ChequeAR consume | `*.yaml` del mapping + tests de `MappingCompatibilityTests` |
-| Cambio de codificación (de CIE-10 a otra) | catálogos en `03-seed.sql` + mapping YAML |
+| Nuevas columnas que ChequeAR consume | `PatientService` / `MockHospitalFhirClient` + datos en memoria de `MockOracleViewClient` |
+| Cambio de codificación (de CIE-10 a otra) | catálogos en `03-seed.sql` + `MockHospitalFhirClient` |
 
-El borrado del mock ya no afecta a la aplicación: basta con `git rm -r infra/mock-hospital/` y apuntar el connection string al Oracle real.
+El borrado del mock ya no afecta a la aplicación: basta con `git rm -r infra/mock-hospital/` y apuntar `Oracle:ConnectionString` al Oracle real.

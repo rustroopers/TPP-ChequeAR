@@ -1,5 +1,7 @@
 # Data Model: Módulo de Análisis y Exportación
 
+> Los tipos de este documento son de SQL Server. La base es Oracle: los tipos reales están en las migraciones de `src/ChequeAR.Infrastructure/Migrations`.
+
 ## Lecturas
 
 El módulo lee principalmente de `QuestionnaireResponseItem` (ver módulo 002) que está indexada por (`ResponseId`, `LinkId`) y por (`LinkId`, `ValueCode`).

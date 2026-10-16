@@ -1,17 +1,13 @@
 -- =====================================================================
 -- 01-schema.sql — Mock Hospital DB (PROVISIONAL)
 -- =====================================================================
--- Crea los usuarios HOSPITAL_MOCK (owner) y CHEQUEAR_RO (consumidor),
--- más las tablas HOSP_* que el hospital expondrá vía vistas VW_*.
+-- Tablas HOSP_* que el hospital expondrá vía vistas VW_*. Los usuarios
+-- HOSPITAL_MOCK (owner) y CHEQUEAR_RO (consumidor) los crea 00-users.sql.
 --
--- Ejecutado por el entrypoint de gvenzl/oracle-xe como SYS.
--- Las passwords se leen de variables de entorno definidas en docker-compose.
+-- Se corre como SYSDBA (ver README).
 -- =====================================================================
 
 ALTER SESSION SET CONTAINER = XEPDB1;
-
--- Los usuarios HOSPITAL_MOCK y CHEQUEAR_RO se crean en 00-users.sh
--- (las passwords vienen por env vars, sqlplus no las interpola por sí solo).
 
 -- ----- Tablas internas HOSPITAL_MOCK.HOSP_* --------------------------
 

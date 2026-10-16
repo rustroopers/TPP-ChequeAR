@@ -2,7 +2,7 @@
 
 **Feature Branch**: `006-frontend-ux`
 **Created**: 2026-06-10
-**Status**: Draft
+**Status**: Implementada en parte (ver marcas en tasks.md)
 
 ## Contexto
 

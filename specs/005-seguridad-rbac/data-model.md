@@ -1,5 +1,7 @@
 # Data Model: Seguridad y Control de Accesos
 
+> Los tipos de este documento son de SQL Server. La base es Oracle: los tipos reales están en las migraciones de `src/ChequeAR.Infrastructure/Migrations`.
+
 ## Entidades
 
 ### `User` (`AppUser` en Oracle — `User` es palabra reservada)
