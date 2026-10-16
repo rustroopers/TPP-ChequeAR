@@ -47,7 +47,6 @@
                     };
                 }).filter(function (g) { return g.questions.length > 0; })
             });
-            var loading = Vue.ref(false);
             var loadError = Vue.ref(
                 (props.groups && props.groups.length) ? null : 'La versión publicada no tiene preguntas.');
 
@@ -111,6 +110,16 @@
             var concurrencyVersion = Vue.ref(null);
             var lockToken = Vue.ref(null);
             var lockExpiresAt = Vue.ref(null);
+            // Diferencia entre el reloj del server (header Date) y el del equipo: el
+            // vencimiento del lock se compara con la hora local.
+            var clockSkewMs = 0;
+            function noteServerTime(r) {
+                var server = Date.parse(r.headers.get('Date'));
+                if (!isNaN(server)) clockSkewMs = server - Date.now();
+            }
+            function localExpiry(iso) {
+                return new Date(Date.parse(iso) - clockSkewMs);
+            }
             // Respuestas tal como estaban al ABRIR esta sesión (lo resumido, o [] si la ficha
             // es nueva), en forma interna (LinkId/ValueXxx). Se manda al cerrar
             // deliberadamente (guardar avance / finalizar) para que el server audite UN solo
@@ -592,10 +601,11 @@
                         throw silentError();
                     }
                     if (!r.ok) return errorFrom(r, 'no se pudo abrir la sesión de edición');
+                    noteServerTime(r);
                     return r.json();
                 }).then(function (body) {
                     lockToken.value = body.lockToken;
-                    lockExpiresAt.value = new Date(body.expiresAt);
+                    lockExpiresAt.value = localExpiry(body.expiresAt);
                     lockedByOther.value = null;
                     scheduleLockCountdown();
                     var fresh = Number(body.concurrencyVersion);
@@ -642,10 +652,11 @@
                     }
                     if (!r.ok) return errorFrom(r, 'error del servidor');
                     var lockExpiresHeader = r.headers.get('X-Lock-Expires-At');
+                    noteServerTime(r);
                     return r.json().then(function (updated) {
                         concurrencyVersion.value = versionOf(updated);
                         if (lockExpiresHeader) {
-                            lockExpiresAt.value = new Date(lockExpiresHeader);
+                            lockExpiresAt.value = localExpiry(lockExpiresHeader);
                             showRenewPrompt.value = false;
                         }
                         lastSaved = byLinkId(sent);
@@ -697,10 +708,11 @@
                         headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
                     }).then(function (r) {
                         if (!r.ok) return errorFrom(r, 'no se pudo extender la sesión de edición');
+                        noteServerTime(r);
                         return r.json();
                     }).then(function (body) {
                         if (body && body.expiresAt) {
-                            lockExpiresAt.value = new Date(body.expiresAt);
+                            lockExpiresAt.value = localExpiry(body.expiresAt);
                             showRenewPrompt.value = false;
                             if (body.concurrencyVersion !== undefined) concurrencyVersion.value = Number(body.concurrencyVersion);
                         }
@@ -797,7 +809,7 @@
             // cliente estándar esperaría.
             function initSession() {
                 if (amending) { initAmend(); return; }
-                // No bloquea el render con `loading`: el formulario ya es usable de
+                // No bloquea el render: el formulario ya es usable de
                 // entrada (ficha nueva) y, si había algo para resumir, se completa solo
                 // un instante después sin parpadeo de spinner.
                 var query = '/fhir/r5/QuestionnaireResponse?subject=' + encodeURIComponent(props.patientId) +
@@ -1109,7 +1121,7 @@
             return {
                 questionnaire: questionnaire, answers: answers, errors: errors,
                 savingState: savingState, submitting: submitting,
-                loading: loading, loadError: loadError, blockedByBack: blockedByBack,
+                loadError: loadError, blockedByBack: blockedByBack,
                 completedResponseId: completedResponseId,
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
@@ -1136,11 +1148,6 @@
         <div class="cq-empty__title">Ya se cargó esta ficha</div>\
         <div class="cq-empty__desc">Si se necesita otra, entrar de nuevo desde Pacientes.</div>\
         <a v-if="completedResponseId" :href="\'/Encounters/View/\' + completedResponseId" class="btn btn-outline-secondary">Ver ficha cargada</a>\
-    </div>\
-</div>\
-<div v-else-if="loading" class="cq-card">\
-    <div class="cq-loading"><div class="cq-spinner cq-spinner--lg"></div>\
-        <div class="cq-loading__label">Cargando cuestionario…</div>\
     </div>\
 </div>\
 <div v-else-if="loadError" class="alert alert-danger" role="alert">\

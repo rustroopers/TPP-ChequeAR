@@ -179,12 +179,6 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
-        [Authorize, HttpPost, ValidateAntiForgeryToken]
-        public ActionResult SaveProfile()
-        {
-            return RedirectToAction("Profile");
-        }
-
         /// <summary>Renueva el JWT de las islas. GET: otro origen puede dispararlo pero no leer la respuesta.</summary>
         [Authorize, HttpGet]
         [OutputCache(NoStore = true, Duration = 0, Location = System.Web.UI.OutputCacheLocation.None)]

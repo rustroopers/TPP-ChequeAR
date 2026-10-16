@@ -59,7 +59,7 @@ namespace ChequeAR.Infrastructure.Oracle
             {
                 foreach (var kv in filters)
                 {
-                    var column = ValidateColumnName(kv.Key);
+                    var column = EnsureColumnExists(viewName, ValidateColumnName(kv.Key));
                     rows = rows.Where(r => Matches(r, column, kv.Value)).ToList();
                 }
             }
@@ -72,7 +72,8 @@ namespace ChequeAR.Infrastructure.Oracle
         {
             var rows = Rows(ValidateViewName(viewName));
 
-            var safeColumns = (columns ?? Enumerable.Empty<string>()).Select(ValidateColumnName).ToList();
+            var safeColumns = (columns ?? Enumerable.Empty<string>())
+                .Select(c => EnsureColumnExists(viewName, ValidateColumnName(c))).ToList();
             if (safeColumns.Count == 0)
                 throw new ArgumentException("Se requiere al menos una columna de busqueda", nameof(columns));
 
@@ -112,6 +113,16 @@ namespace ChequeAR.Infrastructure.Oracle
         {
             if (string.IsNullOrWhiteSpace(column) || !IdentifierPattern.IsMatch(column))
                 throw new ArgumentException("Nombre de columna inválido: " + column, nameof(column));
+            return column;
+        }
+
+        // Oracle responde ORA-00904 ante una columna que la vista no tiene; devolver vacío
+        // escondía el error hasta usar la base real.
+        private static string EnsureColumnExists(string viewName, string column)
+        {
+            var sample = Rows(viewName).FirstOrDefault();
+            if (sample != null && !sample.ContainsKey(column))
+                throw new InvalidOperationException("La vista " + viewName + " no tiene la columna " + column + ".");
             return column;
         }
 
