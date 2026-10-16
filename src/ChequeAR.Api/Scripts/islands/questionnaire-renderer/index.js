@@ -178,6 +178,25 @@
             // (un input[type=number] la descarta y entrega '', sin forma de saber qué se tipeó).
             var parseNumeric = EnableWhen.parseNumeric;
 
+            // Lo que entra en la base: ver ResponseValidator.
+            var MAX_DECIMALS = 6, MAX_TEXT = 2000, MAX_TEXT_BYTES = 4000;
+            function maxLengthOf(q) { return Math.min(q.maxLength || MAX_TEXT, MAX_TEXT); }
+
+            // Un valor que no entra en la columna no se manda en el autosave: el servidor lo
+            // rechaza y conserva el último guardado.
+            function storageError(q, value) {
+                if (value === undefined || value === null || value === '') return null;
+                if (q.type === 'decimal') {
+                    var decimales = (String(value).trim().replace(',', '.').split('.')[1] || '').length;
+                    if (decimales > MAX_DECIMALS) return 'Hasta ' + MAX_DECIMALS + ' decimales';
+                }
+                if ((q.type === 'string' || q.type === 'text') && typeof value === 'string') {
+                    var max = maxLengthOf(q);
+                    if (value.length > max || new TextEncoder().encode(value).length > MAX_TEXT_BYTES) return 'Máximo ' + max + ' caracteres';
+                }
+                return null;
+            }
+
             function validate(q, value) {
                 if (!isVisible(q)) { delete errors[q.linkId]; return; }
                 // Una subida fallida bloquea antes que cualquier otra regla: la pregunta
@@ -196,6 +215,10 @@
                     if (isNaN(n)) { errors[q.linkId] = 'Debe ser un número'; return; }
                     // parseInt() truncaba 1,8 a 1 sin avisar. Mejor pedir el valor entero.
                     if (q.type === 'integer' && n !== Math.trunc(n)) { errors[q.linkId] = 'Debe ser un número entero'; return; }
+                }
+                var storage = storageError(q, value);
+                if (storage) { errors[q.linkId] = storage; return; }
+                if ((q.type === 'integer' || q.type === 'decimal') && value !== undefined && value !== '') {
                     if (q.min !== undefined && n < q.min) { errors[q.linkId] = 'Mín ' + q.min; return; }
                     if (q.max !== undefined && n > q.max) { errors[q.linkId] = 'Máx ' + q.max; return; }
                 }
@@ -328,6 +351,7 @@
                         // la pregunta se ocultara terminaba en la ficha finalizada. El valor sigue
                         // en `answers`: si la condición vuelve a cumplirse, reaparece.
                         if (!isVisible(q)) { items.push({ LinkId: q.linkId, QuestionType: q.type }); return; }
+                        if (storageError(q, answers[q.linkId])) return;
                         toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });
@@ -1020,7 +1044,8 @@
                 retargetPreview: retargetPreview, showRetargetModal: showRetargetModal,
                 retargeting: retargeting, openRetargetPreview: openRetargetPreview,
                 closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget,
-                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend
+                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend,
+                maxLengthOf: maxLengthOf
             };
         },
         template: '\
@@ -1101,7 +1126,7 @@
                     <div v-if="isVisible(q)" class="mb-3">\
                         <label class="form-label">{{ q.text }}<span v-if="q.required" class="text-danger" aria-label="obligatorio"> *</span></label>\
 \
-                        <input v-if="q.type === \'string\'" type="text" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <input v-if="q.type === \'string\'" type="text" class="form-control" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <div v-else-if="q.type === \'integer\' || q.type === \'decimal\'" class="input-group" style="max-width:260px;">\
@@ -1126,7 +1151,7 @@
                             <option v-for="opt in q.options" :key="opt.code" :value="opt.code">{{ opt.display }}</option>\
                         </select>\
 \
-                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                   :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)"></textarea>\
 \
                         <div v-else-if="q.type === \'scale\'" class="d-flex align-items-center gap-3" style="max-width:360px;">\

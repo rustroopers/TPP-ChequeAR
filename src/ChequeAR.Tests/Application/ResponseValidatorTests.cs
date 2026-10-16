@@ -91,6 +91,23 @@ namespace ChequeAR.Tests.Application
             Assert.Empty(Validar(true, new QuestionnaireResponseItem { LinkId = "dni", ValueString = "12a45" }));
         }
 
+        // Lo que no entra en la columna se rechaza también en el autosave: Oracle lo redondeaba
+        // o el guardado fallaba entero.
+        [Fact]
+        public void MasDeSeisDecimales_SeRechazaSiempre()
+        {
+            Assert.Single(Validar(false, new QuestionnaireResponseItem { LinkId = "temp", ValueDecimal = 37.1234567m }));
+            Assert.Empty(Validar(true, new QuestionnaireResponseItem { LinkId = "temp", ValueDecimal = 37.123456m }));
+        }
+
+        [Fact]
+        public void TextoMasLargoQueLaColumna_SeRechazaSiempre()
+        {
+            Assert.Single(Validar(false, new QuestionnaireResponseItem { LinkId = "obs", ValueString = new string('a', 2001) }));
+            Assert.Single(Validar(false, new QuestionnaireResponseItem { LinkId = "obs", ValueString = new string('€', 1500) }));
+            Assert.Empty(Validar(true, new QuestionnaireResponseItem { LinkId = "obs", ValueString = new string('á', 2000) }));
+        }
+
         [Fact]
         public void OpcionInexistente_SeRechazaSiempre()
         {

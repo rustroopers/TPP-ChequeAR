@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
+using ChequeAR.Application.Validation;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 
@@ -423,6 +424,8 @@ namespace ChequeAR.Application.Services
 
             if (v.MaxLength.HasValue && v.MaxLength <= 0)
                 errors.Add("El largo máximo debe ser mayor que cero.");
+            if (v.MaxLength > ResponseValidator.MaxTextLength)
+                errors.Add("El largo máximo no puede superar los " + ResponseValidator.MaxTextLength + " caracteres.");
 
 
             if (v.SnomedCode != null)
