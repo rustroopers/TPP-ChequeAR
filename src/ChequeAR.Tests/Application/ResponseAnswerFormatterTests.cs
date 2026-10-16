@@ -39,6 +39,13 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("2026-10-06", ResponseAnswerFormatter.Format(new QuestionnaireResponseItem { ValueDate = new DateTime(2026, 10, 6) }));
         }
 
+        // Un cambio sólo de hora tiene que verse en el detalle y en el diff de auditoría.
+        [Fact]
+        public void FechaYHora_IncluyeLaHora()
+        {
+            Assert.Equal("2026-10-06 14:30", ResponseAnswerFormatter.Format(new QuestionnaireResponseItem { ValueDate = new DateTime(2026, 10, 6, 14, 30, 0) }));
+        }
+
         [Fact]
         public void OpcionMultiple_SeparaPorComa_YOmiteLosVacios()
         {

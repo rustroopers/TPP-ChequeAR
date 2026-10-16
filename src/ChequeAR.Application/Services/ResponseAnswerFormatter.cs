@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -35,7 +36,9 @@ namespace ChequeAR.Application.Services
             if (item.ValueBoolean.HasValue) return item.ValueBoolean.Value ? "Sí" : "No";
             if (item.ValueInteger.HasValue) return item.ValueInteger.Value.ToString(Culture);
             if (item.ValueDecimal.HasValue) return item.ValueDecimal.Value.ToString(Culture);
-            if (item.ValueDate.HasValue) return item.ValueDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            if (item.ValueDate.HasValue)
+                return item.ValueDate.Value.ToString(
+                    item.ValueDate.Value.TimeOfDay == TimeSpan.Zero ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             if (!string.IsNullOrEmpty(item.ValueString)) return item.ValueString;
             if (!string.IsNullOrEmpty(item.ValueCode))
                 return question?.FindOption(item.ValueCode)?.Display ?? item.ValueCode;

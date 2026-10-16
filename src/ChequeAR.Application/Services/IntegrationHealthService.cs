@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Net.Http;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
 
@@ -14,13 +13,17 @@ namespace ChequeAR.Application.Services
         private readonly IHospitalFhirClient _fhir;
         private readonly IOracleViewClient _oracle;
         private readonly string _hospitalAuthUrl;
-        private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        private readonly IHttpProbe _http;
+        private readonly IFhirValidator _validator;
 
-        public IntegrationHealthService(IHospitalFhirClient fhir, IOracleViewClient oracle, string hospitalAuthUrl)
+        public IntegrationHealthService(IHospitalFhirClient fhir, IOracleViewClient oracle, string hospitalAuthUrl,
+            IHttpProbe http, IFhirValidator validator)
         {
             _fhir = fhir;
             _oracle = oracle;
             _hospitalAuthUrl = hospitalAuthUrl;
+            _http = http;
+            _validator = validator;
         }
 
         public async Task<IReadOnlyList<IntegrationStatus>> ProbeAllAsync()
@@ -64,26 +67,25 @@ namespace ChequeAR.Application.Services
             var sw = Stopwatch.StartNew();
             try
             {
-                using (var resp = await _http.GetAsync(_hospitalAuthUrl))
-                {
-                    sw.Stop();
-                    // Cualquier respuesta HTTP (incluso 4xx) indica que el servicio está vivo.
-                    return Ok("Auth Hospital", sw.ElapsedMilliseconds);
-                }
+                // Cualquier respuesta HTTP (incluso 4xx) indica que el servicio está vivo.
+                await _http.PingAsync(_hospitalAuthUrl);
+                sw.Stop();
+                return Ok("Auth Hospital", sw.ElapsedMilliseconds);
             }
             catch (Exception ex) { return Down("Auth Hospital", ex.Message); }
         }
 
-        private static IntegrationStatus ProbeValidator()
+        /// <summary>Valida un recurso mínimo: si el validador no carga sus perfiles, falla acá.</summary>
+        private IntegrationStatus ProbeValidator()
         {
-            return new IntegrationStatus
+            var sw = Stopwatch.StartNew();
+            try
             {
-                Name = "Validador FHIR",
-                Status = "ok",
-                LastPingUtc = DateTime.UtcNow,
-                LatencyMs = 0,
-                Detail = "embebido"
-            };
+                _validator.Validate("{\"resourceType\":\"Questionnaire\",\"status\":\"draft\"}");
+                sw.Stop();
+                return Ok("Validador FHIR", sw.ElapsedMilliseconds);
+            }
+            catch (Exception ex) { return Down("Validador FHIR", ex.Message); }
         }
 
         private static IntegrationStatus Ok(string name, long ms) => new IntegrationStatus

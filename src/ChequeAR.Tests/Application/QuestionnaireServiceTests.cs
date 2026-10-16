@@ -99,10 +99,10 @@ namespace ChequeAR.Tests.Application
                 () => _sut.UpdateAsync(id, new Questionnaire { Title = "x" }, "u"));
         }
 
-        // Al editar, solo se pisan los campos que vienen con valor en el patch; los que vienen
-        // null conservan el valor original (actualización parcial).
+        // El PUT es un reemplazo: una descripción que no viene se borra. Título y especialidad
+        // nulos sí se conservan (el título no puede quedar vacío y mover de especialidad tiene sus reglas).
         [Fact]
-        public async Task UpdateAsync_MergesNonNullFields_KeepsExistingWhenNull()
+        public async Task UpdateAsync_ReemplazaLaDescripcion()
         {
             var id = Guid.NewGuid();
             var existing = new Questionnaire { Id = id, Title = "old", Description = "desc", SpecialtyCode = "REU", Status = QuestionnaireStatus.Active };
@@ -111,9 +111,8 @@ namespace ChequeAR.Tests.Application
             var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "new" }, "u");
 
             Assert.Equal("new", updated.Title);
-            Assert.Equal("desc", updated.Description);   // unchanged because patch was null
+            Assert.Null(updated.Description);
             Assert.Equal("REU", updated.SpecialtyCode);
-            _repo.Verify(r => r.UpdateAsync(existing), Times.Once);
         }
 
         // La codificación clínica del cuestionario se persiste igual que el resto: viene en el
@@ -266,9 +265,9 @@ namespace ChequeAR.Tests.Application
                 It.IsAny<System.Collections.Generic.ICollection<Question>>()), Times.Once);
         }
 
-        // Un patch sin estructura (el binder deja las colecciones vacías) no borra lo guardado.
+        // Un recurso sin ítems deja el cuestionario sin estructura: el PUT reemplaza.
         [Fact]
-        public async Task UpdateAsync_WithoutStructure_KeepsQuestions()
+        public async Task UpdateAsync_SinEstructura_LaReemplazaPorVacia()
         {
             var id = Guid.NewGuid();
             var existing = new Questionnaire { Id = id, Title = "old", Status = QuestionnaireStatus.Draft };
@@ -278,10 +277,9 @@ namespace ChequeAR.Tests.Application
             await _sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u");
 
             _repo.Verify(r => r.UpdateWithStructureAsync(
-                It.IsAny<Questionnaire>(),
-                It.IsAny<System.Collections.Generic.ICollection<QuestionGroup>>(),
-                It.IsAny<System.Collections.Generic.ICollection<Question>>()), Times.Never);
-            Assert.Single(existing.Questions);
+                existing,
+                It.Is<System.Collections.Generic.ICollection<QuestionGroup>>(g => g.Count == 0),
+                It.Is<System.Collections.Generic.ICollection<Question>>(q => q.Count == 0)), Times.Once);
         }
 
         // Publicar apaga el flag de pendientes: lo que estaba sin publicar acaba de quedar

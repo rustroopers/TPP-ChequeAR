@@ -423,7 +423,7 @@ namespace ChequeAR.Application.Services
                 throw new ValidationFailedException(TitleRequiredError);
 
             q.Title = patch.Title ?? q.Title;
-            q.Description = patch.Description ?? q.Description;
+            q.Description = patch.Description;
             var cat = await _catalog.GetAsync();
             if (patch.SpecialtyCode != null)
             {
@@ -442,32 +442,27 @@ namespace ChequeAR.Application.Services
             q.HasPendingChanges = true;
             q.ConcurrencyVersion++;
 
-            // Estructura (secciones/preguntas/opciones): si el patch trae alguna, reemplaza
-            // por completo la existente. Un patch sin estructura (colecciones vacías, que es
-            // lo que deja el binder cuando el cliente no manda "questions") no la toca.
-            var hasStructure = (patch.Groups != null && patch.Groups.Count > 0)
-                            || (patch.Questions != null && patch.Questions.Count > 0);
-            if (hasStructure)
+            // Estructura (secciones/preguntas/opciones): el PUT es un reemplazo completo, así
+            // que la que llega reemplaza a la existente, aunque venga vacía.
+            var replacement = new Questionnaire
             {
-                var replacement = new Questionnaire { Id = q.Id, Groups = patch.Groups, Questions = patch.Questions };
-                // Las variables que el cuestionario YA usaba se aceptan aunque estén dadas de
-                // baja: que el Administrador desactive una variable no debe romper el guardado
-                // de un borrador ajeno que la tenía desde antes. Lo que se bloquea es el uso nuevo.
-                var persistidas = AllQuestions(q);
-                var yaEnUso = new HashSet<Guid>(persistidas.Where(x => x.VariableId.HasValue).Select(x => x.VariableId.Value));
-                var previas = persistidas.Where(x => x.LinkId != null)
-                                         .GroupBy(x => x.LinkId)
-                                         .ToDictionary(g => g.Key, g => g.First());
-                await BindVariablesAsync(replacement, yaEnUso, previas);
-                EnsureStructure(QuestionnaireStructureRules.CheckForSave(replacement.Groups, AllQuestions(replacement)));
-                EnsureStructure(PublishedLinkIds.Conflicts(PublishedLinkIds.From(q), AllQuestions(replacement)));
-                AssignChildIds(replacement);
-                await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
-            }
-            else
-            {
-                await _repo.UpdateAsync(q);
-            }
+                Id = q.Id,
+                Groups = patch.Groups ?? new List<QuestionGroup>(),
+                Questions = patch.Questions ?? new List<Question>()
+            };
+            // Las variables que el cuestionario YA usaba se aceptan aunque estén dadas de
+            // baja: que el Administrador desactive una variable no debe romper el guardado
+            // de un borrador ajeno que la tenía desde antes. Lo que se bloquea es el uso nuevo.
+            var persistidas = AllQuestions(q);
+            var yaEnUso = new HashSet<Guid>(persistidas.Where(x => x.VariableId.HasValue).Select(x => x.VariableId.Value));
+            var previas = persistidas.Where(x => x.LinkId != null)
+                                     .GroupBy(x => x.LinkId)
+                                     .ToDictionary(g => g.Key, g => g.First());
+            await BindVariablesAsync(replacement, yaEnUso, previas);
+            EnsureStructure(QuestionnaireStructureRules.CheckForSave(replacement.Groups, AllQuestions(replacement)));
+            EnsureStructure(PublishedLinkIds.Conflicts(PublishedLinkIds.From(q), AllQuestions(replacement)));
+            AssignChildIds(replacement);
+            await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
 
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id, userId));
             return q;
@@ -565,6 +560,12 @@ namespace ChequeAR.Application.Services
             if (source == null) throw new NotFoundException("El cuestionario no existe.");
             _guard.EnsureAllows(source.SpecialtyCode);
 
+            var variableIds = AllQuestions(source).Where(x => x.VariableId.HasValue).Select(x => x.VariableId.Value).Distinct();
+            var inactivas = (await _variables.GetManyAsync(variableIds)).Where(v => !v.IsActive).ToList();
+            if (inactivas.Count > 0)
+                throw new ValidationFailedException(inactivas.Select(v =>
+                    "La variable '" + v.Name + "' está inactiva: no se puede usar en un cuestionario nuevo."));
+
             var copy = new Questionnaire
             {
                 Title = string.IsNullOrWhiteSpace(newTitle) ? source.Title + " (copia)" : newTitle,
@@ -599,8 +600,6 @@ namespace ChequeAR.Application.Services
             copy.UpdatedAt = DateTime.UtcNow;
             AssignChildIds(copy);
             await _repo.AddAsync(copy);
-            _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + copy.Id, userId));
-
             _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + copy.Id + "$clone-from-" + id, userId));
             return copy;
         }
