@@ -465,12 +465,6 @@ namespace ChequeAR.Tests.Application
 
             public Task UpdateAsync(QuestionnaireResponse r) => Task.CompletedTask;
 
-            public Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items)
-            {
-                foreach (var item in items) _store[item.ResponseId].Items.Add(item);
-                return Task.CompletedTask;
-            }
-
             public Task SaveProgressAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> replacementItems)
             {
                 var touched = new HashSet<string>(replacementItems.Select(i => i.LinkId));

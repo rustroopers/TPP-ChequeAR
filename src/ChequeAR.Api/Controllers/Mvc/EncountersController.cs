@@ -332,7 +332,6 @@ namespace ChequeAR.Api.Controllers.Mvc
                             {
                                 Text = question.Text,
                                 Answer = ResponseAnswerFormatter.Format(items, question),
-                                Prefilled = items != null && items.Any(i => i.WasPrefilled),
                                 AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
                         }
@@ -357,7 +356,6 @@ namespace ChequeAR.Api.Controllers.Mvc
                         {
                             Text = entry.Value,
                             Answer = ResponseAnswerFormatter.Format(items, question),
-                            Prefilled = items != null && items.Any(i => i.WasPrefilled),
                             AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
                     }

@@ -98,30 +98,6 @@ namespace ChequeAR.Tests.Application
         }
     }
 
-    public class PrefillServiceTests
-    {
-        [Fact]
-        public async Task ResolveAsync_CadaFuenteVaASuCliente()
-        {
-            var fhir = new Mock<IHospitalFhirClient>();
-            fhir.Setup(f => f.GetLastObservationAsync("PAC-1", "8302-2")).ReturnsAsync("{\"valueQuantity\":{\"value\":120}}");
-            var oracle = new Mock<IOracleViewClient>();
-            oracle.Setup(o => o.QueryAsync("VW_ESPECIALIDAD", It.Is<IReadOnlyDictionary<string, object>>(d => (string)d["ID_PACIENTE"] == "PAC-1")))
-                  .ReturnsAsync((IReadOnlyList<IDictionary<string, object>>)new List<IDictionary<string, object>>());
-
-            var result = await new PrefillService(fhir.Object, oracle.Object).ResolveAsync("PAC-1", new List<PrefillRequest>
-            {
-                new PrefillRequest { LinkId = "talla", Source = "fhir-observation", Code = "8302-2" },
-                new PrefillRequest { LinkId = "esp", Source = "oracle-view", ViewName = "VW_ESPECIALIDAD" },
-                new PrefillRequest { LinkId = "otro", Source = "desconocida" }
-            });
-
-            Assert.Contains("120", (string)result["talla"]);
-            Assert.True(result.ContainsKey("esp"));
-            Assert.False(result.ContainsKey("otro"));
-        }
-    }
-
     public class TerminologyServiceTests
     {
         [Fact]

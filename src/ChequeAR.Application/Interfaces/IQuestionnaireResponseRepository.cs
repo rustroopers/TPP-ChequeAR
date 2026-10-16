@@ -20,7 +20,6 @@ namespace ChequeAR.Application.Interfaces
         Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take, SpecialtyScope scope = null);
         Task AddAsync(QuestionnaireResponse r);
         Task UpdateAsync(QuestionnaireResponse r);
-        Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items);
         /// <summary>
         /// Guardado parcial: reemplaza, dentro de la misma transacción que la cabecera
         /// (r ya trae seteados FhirJson/ConcurrencyVersion/lock/etc.), los items cuyo
