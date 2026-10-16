@@ -147,6 +147,27 @@ ficha vuelve a `in-progress` y se responde `422` + `OperationOutcome`.
 
 Finalizar algo ya completado es idempotente: devuelve el recurso sin error.
 
+### Sesión de edición y guardado parcial (spec 013)
+
+La ficha se completa en varias sesiones. Una sola persona edita a la vez (lock pesimista con
+vencimiento) y cada escritura lleva además `If-Match` (`ConcurrencyVersion` como ETag débil).
+Roles: Administrador, Jefe, Médico.
+
+| Operación | Headers | Respuesta |
+|---|---|---|
+| `POST {id}/$lock` | — | `{ lockToken, expiresAt, concurrencyVersion }` + ETag; `409` con `lock-holder` / `lock-expires` si la tiene otro |
+| `POST {id}/$renew-lock` | `X-Lock-Token` | `{ expiresAt, concurrencyVersion }` |
+| `POST {id}/$unlock` | `X-Lock-Token` (opcional) | `200`; idempotente |
+| `POST {id}/$save-progress` | `X-Lock-Token`, `If-Match` | `QuestionnaireResponse` + ETag + `X-Lock-Expires-At` |
+| `POST {id}/$finalize` | `X-Lock-Token` | `QuestionnaireResponse` |
+| `POST {id}/$amend` / `$amend-commit` | `X-Lock-Token` (en el commit) | Corrección de una ficha finalizada, con motivo |
+| `POST {id}/$abandon` | — | Descarta un borrador `in-progress` |
+| `GET {id}/$retarget-preview` · `POST {id}/$retarget-version` | `X-Lock-Token` (en el POST) | Pasa la ficha a la versión vigente del cuestionario |
+
+Sin el header requerido → `428` + `OperationOutcome`. El cuerpo de `$save-progress`,
+`$finalize`, `$unlock` y `$amend-commit` es la forma interna de guardado (`Items` con
+`LinkId`/`ValueXxx`), no un recurso: las lecturas sí devuelven el `QuestionnaireResponse` FHIR.
+
 ---
 
 ## `Patient` ⚠️ nuevo
@@ -218,7 +239,11 @@ existiendo** — en particular los adjuntos, que las fichas referencian por dire
 | `/api/reports`, `/api/reports/saved` | Consultas y exportación; sin recurso FHIR natural |
 | `/api/users` | Espejo del padrón hospitalario |
 | `/api/attachments` | Binarios; destino de `valueAttachment.url` |
-| `/api/integrations` | Diagnóstico operativo |
+| `/api/integrations`, `/api/health` | Diagnóstico operativo |
+| `/api/variables` | Catálogo de variables clínicas (spec 014) |
+| `/api/specialties` | Catálogo de especialidades |
+| `/api/patients/{id}/trend*` | Series para la pantalla de evolución (spec 010) |
+| `/api/deploy` | Migraciones desde el CD |
 
 ---
 
@@ -228,6 +253,10 @@ existiendo** — en particular los adjuntos, que las fichas referencian por dire
 |---|---|---|---|
 | `https://chequear.garrahan/StructureDefinition/question-term` | `Questionnaire.item` | `valueString` | Semilla clínica de autoría. Sin ella se pierde en cada guardado |
 | `https://chequear.garrahan/StructureDefinition/questionnaire-version-id` | `QuestionnaireResponse` | `valueString` (identificador único) | Ancla la ficha a la versión con la que se completó |
+| `…/questionnaire-term` | `Questionnaire` | `valueString` | Semilla de autoría del cuestionario entero |
+| `…/question-variable-id`, `…/question-variable-version` | `Questionnaire.item` | `valueString`, `valueInteger` | Variable clínica de la que sale la pregunta (spec 014) |
+| `…/option-snomed-display` | `answerOption.valueCoding` | `valueString` | Término SNOMED cuando la etiqueta visible es otra |
+| `…/lock-holder`, `…/lock-expires` | `OperationOutcome` (409) | `valueString`, `valueDateTime` | Quién tiene la sesión de edición y hasta cuándo |
 
 ## Perfiles declarados
 
@@ -236,5 +265,4 @@ existiendo** — en particular los adjuntos, que las fichas referencian por dire
 | `https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaire` | `Questionnaire` |
 | `https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaireResponse` | `QuestionnaireResponse` |
 
-⚠️ La primera ya se **declara** hoy en `meta.profile`, pero **no existe como artefacto**. Esta
-feature la crea (FR-011).
+Los dos existen como artefacto en `src/ChequeAR.Infrastructure/Fhir/Profiles/`.

@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-15
 
-**Status**: Draft
+**Status**: Implementada
 
 **Input**: Decisión del dueño a partir de CLI-10 del análisis integral: "las variables vamos a versionarlas también, de forma similar a los cuestionarios". Decisiones del 2026-10-15: publicación explícita, aviso con botón para actualizar en los cuestionarios, código y tipo fijos desde la primera publicación.
 

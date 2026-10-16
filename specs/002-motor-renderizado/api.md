@@ -1,5 +1,8 @@
 # API Contracts: Motor de Renderizado Dinámico
 
+> **Desactualizado.** El contrato vigente es `specs/009-conformidad-fhir-capas/contracts/fhir-api.md`.
+> `$populate` no existe (fuera de alcance) y los pacientes se buscan en `/fhir/r5/Patient`, no en `/api/patients`.
+
 ## Estado de implementación (2026-06-10)
 
 | Endpoint | Estado | Notas |

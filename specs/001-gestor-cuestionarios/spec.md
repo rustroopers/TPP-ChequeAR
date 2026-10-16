@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-gestor-cuestionarios`
 **Created**: 2026-06-01
-**Status**: Draft
+**Status**: Implementada (ver marcas en tasks.md)
 **Input**: Anteproyecto ChequeAR + Respuestas GP 201
 
 ## User Scenarios & Testing
