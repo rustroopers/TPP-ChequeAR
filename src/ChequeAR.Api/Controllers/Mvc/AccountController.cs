@@ -40,7 +40,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
-                ModelState.AddModelError("", "Ingresá usuario y contraseña.");
+                ModelState.AddModelError("", "Ingrese usuario y contraseña.");
                 return View("Login");
             }
 
@@ -64,7 +64,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             catch (Exception ex)
             {
                 Helpers.HandledErrors.Log(this, ex);
-                ModelState.AddModelError("", "No se pudo iniciar sesión. Intentá nuevamente.");
+                ModelState.AddModelError("", "No se pudo iniciar sesión. Intente nuevamente.");
                 return View("Login");
             }
         }
@@ -97,7 +97,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 Helpers.HandledErrors.Log(this, ex);
                 Response.StatusCode = 500;
-                return Json(new { error = "No se pudo iniciar sesión. Intentá nuevamente." });
+                return Json(new { error = "No se pudo iniciar sesión. Intente nuevamente." });
             }
         }
 
@@ -109,7 +109,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 Serilog.Log.Warning("Login rechazado por exceso de intentos desde {Ip}", ip);
                 Response.StatusCode = 429;
-                return "Demasiados intentos de inicio de sesión. Esperá unos minutos y volvé a probar.";
+                return "Demasiados intentos de inicio de sesión. Espere unos minutos y vuelva a probar.";
             }
 
             // Mismo mensaje para usuario inexistente, inactivo, sin contraseña configurada,
@@ -195,7 +195,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Title = "Cambiar contraseña";
             if (string.IsNullOrEmpty(current) || string.IsNullOrEmpty(replacement))
             {
-                ModelState.AddModelError("", "Completá la contraseña actual y la nueva.");
+                ModelState.AddModelError("", "Complete la contraseña actual y la nueva.");
                 return View("Password");
             }
             if (replacement != confirmation)
@@ -217,13 +217,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             catch (Exception ex)
             {
                 Helpers.HandledErrors.Log(this, ex);
-                ModelState.AddModelError("", "No se pudo cambiar la contraseña. Intentá nuevamente.");
+                ModelState.AddModelError("", "No se pudo cambiar la contraseña. Intente nuevamente.");
                 return View("Password");
             }
 
             SessionRevalidation.Invalidate(id);
             FormsAuthentication.SignOut();
-            TempData["Toast"] = "Contraseña cambiada. Ingresá con la nueva.";
+            TempData["Toast"] = "Contraseña cambiada. Ingrese con la nueva.";
             TempData["ToastLevel"] = "success";
             return RedirectToAction("Login");
         }

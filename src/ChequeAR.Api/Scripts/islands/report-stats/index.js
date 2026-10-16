@@ -161,7 +161,7 @@
             function exportStats() {
                 if (!stats.value || !lastQuery.value) return;
                 var linkIds = selectedLinkIds();
-                if (!linkIds.length) { exportError.value = 'Seleccioná al menos una pregunta.'; return; }
+                if (!linkIds.length) { exportError.value = 'Seleccione al menos una pregunta.'; return; }
 
                 // El Excel tiene que coincidir con lo que la persona ya eligio en pantalla
                 // (barra/torta por pregunta), no con un tipo fijo elegido de antemano.

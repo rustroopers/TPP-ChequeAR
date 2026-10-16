@@ -11,7 +11,7 @@ namespace ChequeAR.Application.Exceptions
     public class SpecialtyForbiddenException : Exception
     {
         public SpecialtyForbiddenException(string specialtyCode)
-            : base("No tenés acceso a la especialidad '" + (specialtyCode ?? "(sin especialidad)") + "'.")
+            : base("No tiene acceso a la especialidad '" + (specialtyCode ?? "(sin especialidad)") + "'.")
         {
             SpecialtyCode = specialtyCode;
         }

@@ -146,9 +146,9 @@
      */
     function verifyCode(code) {
         code = (code || '').trim();
-        if (!code) return Promise.resolve({ ok: false, msg: 'Escribí un código para verificar.' });
+        if (!code) return Promise.resolve({ ok: false, msg: 'Escriba un código para verificar.' });
         if (!/^[0-9]{6,18}$/.test(code)) {
-            return Promise.resolve({ ok: false, msg: 'Un código SNOMED CT son solo dígitos (6-18). Revisá lo tipeado.' });
+            return Promise.resolve({ ok: false, msg: 'Un código SNOMED CT son solo dígitos (6-18). Revise lo tipeado.' });
         }
         return expand(code, 5)
             .then(function (data) {

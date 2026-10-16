@@ -216,11 +216,11 @@
                 { key: 'meta',      label: 'Metadatos',    icon: 'bi-info-circle',
                   help: 'Ponele un título que un colega reconozca desde el listado. La especialidad determina bajo qué grupo aparece en los reportes.' },
                 { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3',
-                  help: 'Agregá secciones y elegí variables del catálogo. De cada una podés cambiar el enunciado y si es obligatoria; el tipo, la unidad, el rango y el código los define el Administrador. Podés condicionar preguntas a otras anteriores.' },
+                  help: 'Agregue secciones y elija variables del catálogo. De cada una puede cambiar el enunciado y si es obligatoria; el tipo, la unidad, el rango y el código los define el Administrador. Puede condicionar preguntas a otras anteriores.' },
                 { key: 'preview',   label: 'Vista previa', icon: 'bi-eye',
                   help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revisá sus condiciones.' },
                 { key: 'publish',   label: 'Publicación',  icon: 'bi-send',
-                  help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guardá los cambios antes.' }
+                  help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guarde los cambios antes.' }
             ];
             var step = Vue.ref(props.isNew ? 'meta' : 'structure');
             var stepIndex = Vue.computed(function () {
@@ -277,13 +277,13 @@
             var nextBlockedReason = Vue.computed(function () {
                 if (canGoNext.value || stepIndex.value >= STEPS.length - 1) return '';
                 var i = stepIndex.value;
-                if (i === 0) return 'Cargá un título para continuar.';
+                if (i === 0) return 'Cargue un título para continuar.';
                 if (i === 1) {
                     var sinTitulo = groups.value.some(function (g) { return !g.title || !g.title.trim(); });
                     if (sinTitulo) return 'Todas las secciones necesitan un título.';
-                    return 'Agregá al menos una pregunta para continuar.';
+                    return 'Agregue al menos una pregunta para continuar.';
                 }
-                if (i === 2) return 'Abrí la vista previa para continuar.';
+                if (i === 2) return 'Abra la vista previa para continuar.';
                 return '';
             });
 
@@ -301,7 +301,7 @@
                 var out = [];
                 if (isArchived.value) out.push('El cuestionario está archivado y no se puede publicar. Reactivalo desde el listado.');
                 if (conflict.value)   out.push('Hay un conflicto de edición sin resolver.');
-                if (dirty.value)      out.push('Hay cambios sin guardar. Guardá antes de publicar.');
+                if (dirty.value)      out.push('Hay cambios sin guardar. Guarde antes de publicar.');
                 if (isNew.value)      out.push('El cuestionario todavía no se guardó por primera vez.');
                 if (issues.value.length) out.push('Hay ' + issues.value.length + ' problema(s) en la estructura: ver el aviso de arriba.');
                 if (!allQuestionsFlat.value.length) out.push('No hay preguntas cargadas.');
@@ -1672,7 +1672,7 @@
                 dirty.value = true;
                 save({ explicit: true }).then(function (ok) {
                     if (ok) toast(silent
-                        ? 'Se combinaron tus cambios con los de la otra persona.'
+                        ? 'Se combinaron sus cambios con los de la otra persona.'
                         : 'Cambios combinados y guardados.', 'success');
                 });
             }
@@ -1729,7 +1729,7 @@
                         // Otra persona guardó después de nuestro último guardado: se combina como
                         // en un guardado, y recién después se puede publicar.
                         beginMerge();
-                        throw new Error('otra persona guardó cambios. Revisá la combinación y volvé a publicar.');
+                        throw new Error('otra persona guardó cambios. Revise la combinación y vuelva a publicar.');
                     }
                     // El API devuelve 422 con OperationOutcome cuando la publicación no es
                     // válida (una regla de negocio, o el perfil de conformidad).
@@ -1939,7 +1939,7 @@
 <div v-if="importOpen" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeImport">\
     <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
         <h2 class="cq-section-title" style="margin-top:0;">Importar preguntas de otro cuestionario</h2>\
-        <p class="cq-text-sm cq-text-muted">Se agregan las preguntas del cuestionario elegido (misma especialidad) a la estructura actual. Después podés editar, reordenar o quitar lo que quieras.</p>\
+        <p class="cq-text-sm cq-text-muted">Se agregan las preguntas del cuestionario elegido (misma especialidad) a la estructura actual. Después puede editar, reordenar o quitar lo que quiera.</p>\
         <div v-if="importLoading" class="cq-text-sm cq-text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> Cargando…</div>\
         <div v-else-if="importError" class="cq-text-sm text-danger py-2">{{ importError }}</div>\
         <div v-else-if="!importCandidates.length" class="cq-text-sm cq-text-muted py-3">No hay otros cuestionarios de esta especialidad para importar.</div>\
@@ -1988,7 +1988,7 @@
 </div>\
 <div v-if="!canEdit && !isArchived" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
     <i class="bi bi-eye" style="color:var(--cq-info);"></i>\
-    <span class="cq-text-sm">Estás viendo este cuestionario en <strong>modo lectura</strong>: tu rol no permite editarlo.</span>\
+    <span class="cq-text-sm">Está viendo este cuestionario en <strong>modo lectura</strong>: su rol no permite editarlo.</span>\
 </div>\
 <ol class="cq-timeline mb-3" aria-label="Pasos para crear un cuestionario">\
     <li v-for="(s, i) in STEPS" :key="s.key"\
@@ -1999,7 +1999,7 @@
                 @click="gotoStep(s.key)"\
                 :disabled="!stepReachable(i) && step !== s.key"\
                 :aria-label="(i + 1) + \'. \' + s.label + (stepStatus(i) === \'locked\' ? \' (bloqueado)\' : \'\')"\
-                :title="stepStatus(i) === \'locked\' ? \'Completá los pasos anteriores para desbloquear\' : s.label">\
+                :title="stepStatus(i) === \'locked\' ? \'Complete los pasos anteriores para desbloquear\' : s.label">\
             <i v-if="isStepDone(i) && step !== s.key" class="bi bi-check-lg"></i>\
             <i v-else-if="stepStatus(i) === \'locked\'" class="bi bi-lock-fill"></i>\
             <span v-else>{{ i + 1 }}</span>\
@@ -2034,7 +2034,7 @@
                      "Cargando…" + "(fuera de catálogo)", que es la foto de ANTES del fetch. -->\
                 <select v-model="specialtyCode" class="form-select" :disabled="specialtiesLoading" data-cq-noenhance>\
                     <option v-if="specialtiesLoading" value="">Cargando…</option>\
-                    <option v-if="!specialtiesLoading && !specialtyCode" value="" disabled>Elegí una especialidad</option>\
+                    <option v-if="!specialtiesLoading && !specialtyCode" value="" disabled>Elija una especialidad</option>\
                     <option v-for="s in specialties" :key="s.code" :value="s.code">{{ s.name }}</option>\
                     <option v-if="specialtyCode && !specialties.some(function(s){return s.code===specialtyCode;})" :value="specialtyCode">{{ specialtyCode }} (fuera de catálogo)</option>\
                 </select>\
@@ -2126,7 +2126,7 @@
     <div class="col-lg-6">\
         <div class="d-flex justify-content-between align-items-center mb-2" style="min-height:31px;">\
             <h3 class="m-0">Propiedades</h3>\
-            <span v-if="!selected" class="cq-text-xs cq-text-muted">Elegí una pregunta</span>\
+            <span v-if="!selected" class="cq-text-xs cq-text-muted">Elija una pregunta</span>\
         </div>\
         <div v-if="selected" class="cq-card" style="position:sticky; top:84px;">\
             <div class="mb-2">\
@@ -2177,13 +2177,13 @@
                 <div class="col-8">\
                     <select v-if="conditionSource && conditionSource.type === \'boolean\'" class="form-select form-select-sm"\
                             :value="String(selected.question.enableWhen.value)" @change="onConditionValue($event.target.value)">\
-                        <option value="" disabled>Elegí…</option>\
+                        <option value="" disabled>Elija…</option>\
                         <option value="true">Sí</option>\
                         <option value="false">No</option>\
                     </select>\
                     <select v-else-if="conditionSource && conditionSource.options && conditionSource.options.length" class="form-select form-select-sm"\
                             :value="selected.question.enableWhen.value" @change="onConditionValue($event.target.value)">\
-                        <option value="" disabled>Elegí…</option>\
+                        <option value="" disabled>Elija…</option>\
                         <option v-for="opt in conditionSource.options" :key="opt" :value="opt">{{ opt }}</option>\
                     </select>\
                     <input v-else class="form-control form-control-sm" :value="selected.question.enableWhen.value"\
@@ -2199,7 +2199,7 @@
 </div>\
 \
 <div v-if="step === \'preview\'">\
-    <div v-if="!groups.length || !allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para previsualizar. Volvé al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a>.</div>\
+    <div v-if="!groups.length || !allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para previsualizar. Vuelva al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a>.</div>\
     <div v-else>\
         <div class="cq-card">\
             <div style="border-bottom:1px solid var(--cq-neutral-200); padding-bottom:16px;">\
