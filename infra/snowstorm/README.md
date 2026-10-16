@@ -55,7 +55,11 @@ un branch hijo.)
 
 ## 3. Importar el release
 
-Snowstorm importa vía su API REST de administración. Con el `.zip` en tu disco:
+Snowstorm importa vía su API REST de administración, que por omisión queda en sólo lectura.
+Antes de importar, poné `SNOWSTORM_READONLY=false` en el `.env` y relanzá
+(`docker compose up -d snowstorm`); al terminar, sacalo y relanzá de nuevo.
+
+Con el `.zip` en tu disco:
 
 ```bash
 # a) Crear el job de import sobre la rama MAIN
