@@ -167,8 +167,11 @@ namespace ChequeAR.Application.Services
         public Task<IReadOnlyList<QuestionnaireTitle>> ListTitlesAsync()
             => _repo.ListTitlesAsync();
 
-        public Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber)
-            => _repo.GetVersionAsync(questionnaireId, versionNumber);
+        public async Task<QuestionnaireVersion> GetVersionAsync(Guid questionnaireId, int versionNumber)
+        {
+            _guard.EnsureAllows(await _repo.GetSpecialtyCodeAsync(questionnaireId));
+            return await _repo.GetVersionAsync(questionnaireId, versionNumber);
+        }
 
         /// <summary>
         /// Especialidad obligatoria, tiene que existir y estar activa en el catálogo, y el

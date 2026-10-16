@@ -127,7 +127,8 @@
             function loadQuestions(id) {
                 questions.value = [];
                 if (!id) return Promise.resolve();
-                return fetch('/fhir/r5/Questionnaire/' + id, { headers: authHeaders() })
+                // Las preguntas de las versiones publicadas, que son contra las que se cargaron las fichas.
+                return fetch('/api/reports/questionnaires/' + id + '/structure', { headers: authHeaders() })
                     .then(function (r) { return r.json(); })
                     .then(function (q) { questions.value = flattenItems(q.item, []); })
                     .catch(function () { /* sin preguntas: se puede filtrar igual por fecha */ });
