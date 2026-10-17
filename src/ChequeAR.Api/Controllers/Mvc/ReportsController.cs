@@ -83,7 +83,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // E3
         public async Task<ActionResult> Preview(Guid id, int? page = null)
         {
-            ViewBag.Title = "Preview";
+            ViewBag.Title = "Vista previa";
             ViewBag.PageId = "reports";
             ViewBag.ReportId = id;
 
@@ -134,16 +134,19 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         // E5
-        public async Task<ActionResult> Stats(Guid id)
+        public async Task<ActionResult> Stats(Guid? id)
         {
             ViewBag.Title = "Estadísticas";
             ViewBag.PageId = "reports";
             ViewBag.ReportId = id;
 
-            var model = new ReportStatsViewModel { ReportId = id };
+            // Sin reporte se muestra el estado vacío (antes, un 500 por el id requerido).
+            if (!id.HasValue) return View(new ReportStatsViewModel());
+
+            var model = new ReportStatsViewModel { ReportId = id.Value };
             try
             {
-                var resultado = await _saved.GetForUserAsync(id, User.Identity.Name);
+                var resultado = await _saved.GetForUserAsync(id.Value, User.Identity.Name);
                 if (resultado.Outcome != SavedReportOutcome.Ok) return HttpNotFound();
                 var saved = resultado.Report;
                 model.ReportName = saved.Name;

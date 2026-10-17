@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net471</TargetFramework>
+    <RootNamespace>ChequeAR.Infrastructure.Tests</RootNamespace>
+    <AssemblyName>ChequeAR.Infrastructure.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="EntityFramework" />
+    <PackageReference Include="Oracle.ManagedDataAccess" />
+    <PackageReference Include="Oracle.ManagedDataAccess.EntityFramework" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\ChequeAR.Domain\ChequeAR.Domain.csproj" />
+    <ProjectReference Include="..\..\..\src\ChequeAR.Application\ChequeAR.Application.csproj" />
+    <ProjectReference Include="..\..\..\src\ChequeAR.Infrastructure\ChequeAR.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

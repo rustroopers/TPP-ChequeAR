@@ -1,5 +1,7 @@
 # Implementation Plan: Mock de la base de datos del lado Hospital (provisorio)
 
+> Escrito para Oracle XE en Docker. Hoy el mock se carga en el Oracle local con `infra/mock-hospital/init/cargar.sql` (ver su README).
+
 **Branch**: `008-mock-hospital-db` | **Date**: 2026-06-25 | **Spec**: ./spec.md
 
 **Input**: Feature specification from `/specs/008-mock-hospital-db/spec.md`

@@ -1,5 +1,8 @@
 # API Contracts: Capa de Interoperabilidad y Almacenamiento
 
+> **Desactualizado.** El contrato vigente es `specs/009-conformidad-fhir-capas/contracts/fhir-api.md`.
+> El CapabilityStatement está en `/fhir/r5/metadata` y las vistas del hospital son las `VW_*` de `infra/mock-hospital`, no `VW_PACIENTE_*`.
+
 ## Estado de implementación (2026-06-10)
 
 | Endpoint | Estado | Notas |

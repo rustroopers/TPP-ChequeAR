@@ -1,5 +1,8 @@
 # API Contracts: Módulo de Análisis y Exportación
 
+> **Desactualizado** en: formato de los grupos de filtros (ver `ReportQuery`), `sortBy` (no existe) y
+> códigos de error (las consultas inválidas devuelven 422, no 400/413). No hay exportación asincrónica.
+
 ## Estado de implementación (2026-06-10)
 
 | Endpoint | Estado | Notas |

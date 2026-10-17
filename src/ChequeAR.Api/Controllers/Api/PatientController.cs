@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 
@@ -17,20 +18,33 @@ namespace ChequeAR.Api.Controllers.Api
     public class PatientController : ApiController
     {
         private readonly PatientService _svc;
-        public PatientController(PatientService svc) { _svc = svc; }
+        private readonly AccessAuditService _audit;
+
+        public PatientController(PatientService svc, AccessAuditService audit)
+        {
+            _svc = svc;
+            _audit = audit;
+        }
 
         [HttpGet, Route(""), Authorize]
-        public async Task<IHttpActionResult> Search([FromUri] string name = null, [FromUri] string q = null)
+        public async Task<IHttpActionResult> Search([FromUri] string name = null, [FromUri] string q = null,
+            [FromUri] int _count = PatientService.MaxSearchResults, [FromUri] int _offset = 0)
         {
             // 'name' es el parámetro de búsqueda del estándar; 'q' se acepta por
             // compatibilidad con lo que usaban las pantallas antes de la feature 009.
             var texto = !string.IsNullOrWhiteSpace(name) ? name : q;
-            var hits = await _svc.SearchAsync(texto);
+            var count = FhirBundles.ClampCount(_count);
+            var offset = Math.Min(FhirBundles.ClampOffset(_offset), PatientService.MaxSearchWindow - 1);
+            // Uno de más para saber si hay otra página: la vista no da un total.
+            var window = Math.Min(offset + count + 1, PatientService.MaxSearchWindow);
+            var hits = await _svc.SearchAsync(texto, window);
+            await _audit.PatientsSearched(texto, hits.Count);
 
-            var recursos = FhirPatientProjection.ToPatients(hits).Cast<Hl7.Fhir.Model.Resource>();
-            // Con el tope alcanzado puede haber más coincidencias: el total no se conoce.
-            var total = hits.Count < PatientService.MaxSearchResults ? hits.Count : (int?)null;
-            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+            var pagina = hits.Skip(offset).Take(count).ToList();
+            var recursos = FhirPatientProjection.ToPatients(pagina).Cast<Hl7.Fhir.Model.Resource>();
+            var total = hits.Count < window ? hits.Count : (int?)null;
+            return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl(), Request.RequestUri, offset, count,
+                hasMore: hits.Count > offset + count));
         }
 
         [HttpGet, Route("{hospitalId}"), Authorize]
@@ -38,10 +52,9 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var p = await _svc.GetAsync(hospitalId);
             if (p == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
+            await _audit.PatientRead(hospitalId);
             return Ok(FhirPatientProjection.ToPatient(p));
         }
 
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
     }
 }

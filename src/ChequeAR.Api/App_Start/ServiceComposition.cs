@@ -45,6 +45,7 @@ namespace ChequeAR.Api.App_Start
     public static class ServiceComposition
     {
         private static AuditDispatcher _audit;
+        private static OrphanAttachmentSweeper _orphans;
 
         public static Container Container { get; private set; }
 
@@ -116,28 +117,38 @@ namespace ChequeAR.Api.App_Start
             _audit = new AuditDispatcher(
                 () => new AuditRepository(new ChequeARDbContext(), ownsContext: true), 1000,
                 (ex, message) => Log.Error(ex, "{AuditMessage}", message));
+            _audit.AgentIpProvider = () => System.Web.HttpContext.Current?.Request.UserHostAddress;
             container.RegisterInstance(_audit);
 
             // Mismo criterio: contexto propio por recarga. El catálogo cambia rarísimo, así que
             // un TTL de minutos alcanza sin pegarle a la base en cada request.
             container.RegisterInstance(new SpecialtyCatalogService(
-                () => new SpecialtyRepository(new ChequeARDbContext()), specialtiesCacheTtlMinutes));
+                () => new SpecialtyRepository(new ChequeARDbContext(), ownsContext: true), specialtiesCacheTtlMinutes));
 
             // ===== Por request: unidad de trabajo =====
             container.Register<ChequeARDbContext>(() => new ChequeARDbContext(), Lifestyle.Scoped);
+            container.RegisterInstance<ISchemaMigrator>(new ChequeAR.Infrastructure.Migrations.SchemaMigrator());
 
             container.Register<IQuestionnaireRepository, QuestionnaireRepository>(Lifestyle.Scoped);
             container.Register<IQuestionnaireResponseRepository, QuestionnaireResponseRepository>(Lifestyle.Scoped);
             container.Register<IUserRepository, UserRepository>(Lifestyle.Scoped);
             container.Register<IRefreshTokenRepository, RefreshTokenRepository>(Lifestyle.Scoped);
             container.Register<ISavedReportRepository, SavedReportRepository>(Lifestyle.Scoped);
-            container.Register<ISpecialtyRepository, SpecialtyRepository>(Lifestyle.Scoped);
+            container.Register<ISpecialtyRepository>(() => new SpecialtyRepository(container.GetInstance<ChequeARDbContext>(), ownsContext: false), Lifestyle.Scoped);
             container.Register<IClinicalVariableRepository, ClinicalVariableRepository>(Lifestyle.Scoped);
             // No es dueño del contexto: el del request lo libera SimpleInjector.
             container.Register<IAuditRepository>(
                 () => new AuditRepository(container.GetInstance<ChequeARDbContext>(), ownsContext: false), Lifestyle.Scoped);
             container.Register<IAttachmentStore>(
                 () => new FileShareAttachmentStore(attachmentsRoot, container.GetInstance<ChequeARDbContext>()), Lifestyle.Scoped);
+            _orphans = new OrphanAttachmentSweeper(async cutoff =>
+                {
+                    using (var ctx = new ChequeARDbContext())
+                        return await new FileShareAttachmentStore(attachmentsRoot, ctx).PurgeOrphansAsync(cutoff);
+                },
+                TimeSpan.FromMinutes(10), TimeSpan.FromHours(12),
+                n => Log.Information("Adjuntos sin uso borrados: {Count}", n),
+                ex => Log.Error(ex, "No se pudieron borrar los adjuntos sin uso"));
 
             // ===== Integraciones externas =====
             // Allowlist de vistas autorizadas, copiada a la salida (bin/Oracle/allowlist.yaml).
@@ -156,6 +167,9 @@ namespace ChequeAR.Api.App_Start
             }
             else
             {
+                // Sin el archivo se aceptaría cualquier VW_* de la base del hospital.
+                if (allowedViews == null)
+                    throw new InvalidOperationException("Falta " + allowlistPath + ": no se consultan vistas del hospital sin allowlist.");
                 container.Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
             }
 
@@ -202,10 +216,11 @@ namespace ChequeAR.Api.App_Start
             container.Register<IAccessGuard, AccessGuard>();
 
             // ===== Servicios de aplicación =====
-            container.Register<RefreshTokenService>(() => new RefreshTokenService(container.GetInstance<IRefreshTokenRepository>(), refreshTtlHours));
+            container.Register<RefreshTokenService>(() => new RefreshTokenService(container.GetInstance<IRefreshTokenRepository>(), refreshTtlHours, SystemClock.Instance));
             container.Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 container.GetInstance<IHospitalFhirClient>(), container.GetInstance<IOracleViewClient>(), hospitalAuthUrl,
                 new ChequeAR.Infrastructure.Fhir.HttpProbe(), container.GetInstance<IFhirValidator>()));
+            container.RegisterInstance<IClock>(SystemClock.Instance);
             container.Register<QuestionnaireService>();
             container.Register<QuestionnaireResponseService>();
             container.Register<AuditQueryService>();
@@ -215,13 +230,15 @@ namespace ChequeAR.Api.App_Start
             container.Register<ClinicalVariableService>();
             container.Register<TerminologyService>();
             container.Register<HomeDashboardService>();
-            container.Register<PrefillService>();
             container.Register<QueryBuilder>();
             container.Register<ReportExecutor>();
             container.Register<PatientTrendService>();
             container.Register<PatientService>();
             container.Register<IPatientDemographicsSource, PatientService>();
             container.Register<AttachmentService>();
+            var attachmentsQuota = long.TryParse(ConfigurationManager.AppSettings["Attachments:DailyQuotaBytes"], out var q)
+                ? q : AttachmentService.DefaultDailyQuotaBytes;
+            container.RegisterInitializer<AttachmentService>(s => s.DailyQuotaBytes = attachmentsQuota);
 
             // ===== Controllers =====
             container.RegisterMvcControllers(Assembly.GetExecutingAssembly());
@@ -259,9 +276,19 @@ namespace ChequeAR.Api.App_Start
             }
         }
 
+        /// <summary>Un 403: alguien intentó algo que su rol o su especialidad no le permiten.</summary>
+        public static void AuditForbidden(string userId, string path)
+        {
+            if (_audit == null) return;
+            var entityRef = "Http/" + (path ?? string.Empty).TrimStart('/');
+            if (entityRef.Length > 255) entityRef = entityRef.Substring(0, 255);
+            _audit.Enqueue(AuditEventBuilder.For("execute", entityRef, userId, "4", UserService.AuditCategory));
+        }
+
         /// <summary>Vacía la cola de auditoría y libera los singletons antes de que el proceso termine (Application_End).</summary>
         public static void Shutdown()
         {
+            _orphans?.Dispose();
             _audit?.Dispose();
             Container?.Dispose();
         }

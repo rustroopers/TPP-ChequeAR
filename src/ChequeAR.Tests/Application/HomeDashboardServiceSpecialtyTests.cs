@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
@@ -56,6 +57,83 @@ namespace ChequeAR.Tests.Application
 
             Assert.NotNull(capturado);
             Assert.True(capturado.IsUnrestricted);
+        }
+
+        [Fact]
+        public async Task KpisAsync_Jefe_CuentaSoloSusEspecialidades()
+        {
+            _questionnaires.Setup(q => q.GetSpecialtyCodesAsync()).ReturnsAsync((IReadOnlyList<string>)new List<string> { "general", "cardio" });
+            _questionnaires.Setup(q => q.CountAsync(null, null, null, It.Is<IReadOnlyCollection<string>>(c => c.Count == 1 && c.Any(x => x == "general")))).ReturnsAsync(3);
+            _responses.Setup(r => r.CountAsync(null, null, null, It.Is<SpecialtyScope>(s => s.Allows("general") && !s.Allows("cardio")))).ReturnsAsync(40);
+            _users.Setup(u => u.ListAsync(null, null, "general", true, 0, int.MaxValue))
+                  .ReturnsAsync((IReadOnlyList<User>)new List<User> { new User { Id = "a" }, new User { Id = "b" } });
+
+            var k = await Sut(TestHelpers.GuardFor("general")).KpisAsync();
+
+            Assert.Equal(3, k.Questionnaires);
+            Assert.Equal(40, k.Encounters);
+            Assert.Equal(2, k.Users);
+            Assert.Equal(1, k.Specialties);
+            _questionnaires.Verify(q => q.CountAsync(null, null, null), Times.Never);
+        }
+    }
+
+    public class HomeDashboardServiceTests
+    {
+        private readonly Mock<IQuestionnaireResponseRepository> _responses = new Mock<IQuestionnaireResponseRepository>();
+        private readonly Mock<IQuestionnaireRepository> _questionnaires = new Mock<IQuestionnaireRepository>();
+        private readonly Mock<IUserRepository> _users = new Mock<IUserRepository>();
+
+        private HomeDashboardService Sut()
+            => new HomeDashboardService(_responses.Object, _questionnaires.Object, _users.Object,
+                                        TestHelpers.CatalogWith(), TestHelpers.UnrestrictedGuard());
+
+        // Título y especialidad salen de una sola consulta liviana; sin nombre embebido, la HC.
+        [Fact]
+        public async Task RecentEncounters_ResuelveCuestionarioYPaciente()
+        {
+            var qid = Guid.NewGuid();
+            _responses.Setup(r => r.SearchAsync(null, null, null, 0, 5, It.IsAny<SpecialtyScope>()))
+                .ReturnsAsync((IReadOnlyList<QuestionnaireResponse>)new List<QuestionnaireResponse>
+                {
+                    new QuestionnaireResponse { Id = Guid.NewGuid(), QuestionnaireId = qid, PatientHospitalId = "PAC-1", Status = ResponseStatus.Completed },
+                    new QuestionnaireResponse { Id = Guid.NewGuid(), QuestionnaireId = Guid.NewGuid(), PatientHospitalId = "PAC-2" }
+                });
+            _questionnaires.Setup(q => q.GetHeadersAsync(It.IsAny<IEnumerable<Guid>>()))
+                .ReturnsAsync((IReadOnlyList<Questionnaire>)new List<Questionnaire> { new Questionnaire { Id = qid, Title = "Control", SpecialtyCode = "cardio" } });
+
+            var recientes = await Sut().RecentEncountersAsync();
+
+            Assert.Equal("Control", recientes[0].QuestionnaireTitle);
+            Assert.Equal("PAC-1", recientes[0].PatientName);
+            Assert.Equal(recientes[1].QuestionnaireId.ToString(), recientes[1].QuestionnaireTitle);
+            _questionnaires.Verify(q => q.GetAsync(It.IsAny<Guid>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RecentEncounters_SinFichas_NoConsultaCuestionarios()
+        {
+            _responses.Setup(r => r.SearchAsync(null, null, null, 0, 5, It.IsAny<SpecialtyScope>()))
+                .ReturnsAsync((IReadOnlyList<QuestionnaireResponse>)new List<QuestionnaireResponse>());
+
+            Assert.Empty(await Sut().RecentEncountersAsync());
+            _questionnaires.Verify(q => q.GetHeadersAsync(It.IsAny<IEnumerable<Guid>>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Kpis_CuentaEnLaBase()
+        {
+            _questionnaires.Setup(q => q.CountAsync(null, null, null)).ReturnsAsync(4);
+            _users.Setup(u => u.CountAsync(null, null, null, true)).ReturnsAsync(12);
+            _responses.Setup(r => r.CountAsync(null, null, null, null)).ReturnsAsync(250);
+            _questionnaires.Setup(q => q.GetSpecialtyCodesAsync()).ReturnsAsync((IReadOnlyList<string>)new List<string> { "cardio", "onco" });
+
+            var k = await Sut().KpisAsync();
+
+            Assert.Equal(4, k.Questionnaires);
+            Assert.Equal(12, k.Users);
+            Assert.Equal(250, k.Encounters);
+            Assert.Equal(2, k.Specialties);
         }
     }
 }

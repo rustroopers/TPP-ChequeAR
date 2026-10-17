@@ -13,28 +13,36 @@ Spec completa: [`specs/008-mock-hospital-db/spec.md`](../../specs/008-mock-hospi
 
 ## Prerrequisitos
 
-- Docker Engine ≥ 20.10 y Docker Compose v2 (`docker compose version`).
-- Puerto local `1521` libre.
-- ≥ 4 GB de RAM asignados a Docker (≥ 6 GB en Apple Silicon).
+- Oracle XE 21c instalado como servicio de Windows, con la PDB `XEPDB1` (la misma
+  base que usa ChequeAR en desarrollo).
+- `sqlplus` en el PATH y acceso local como SYSDBA (`sqlplus "/ as sysdba"`).
 
-## Quickstart
+## Cargar
 
 ```bash
-cd infra/mock-hospital
-cp .env.example .env          # opcional; los defaults sirven para dev local
-docker compose up -d --wait
+cd infra/mock-hospital/init
+sqlplus -S "/ as sysdba" @cargar.sql
 ```
 
-`--wait` bloquea hasta que el contenedor reporte `healthy`. El healthcheck sólo
-pasa cuando `HOSP_PACIENTE` tiene ≥ 50 filas (es decir, el seed terminó).
+`cargar.sql` corre en orden `00-users`, `01-schema`, `02-views`, `03-seed`,
+`04-verify` y `99-grants`, y corta en el primer error. Tarda unos segundos.
+`04-verify.sql` falla con `ORA-2000x` si el seed no cumple alguna invariante.
 
-Tiempo esperado: **< 3 min en amd64**, **< 8 min en Apple Silicon** (todo dentro
-del SC-001 ≤ 10 min).
+Usuarios que crea (contraseñas de desarrollo, las mismas que usan los tests por
+omisión):
+
+| Usuario | Contraseña | Rol |
+|---|---|---|
+| `HOSPITAL_MOCK` | `hospitalmockdev` | Dueño de las tablas `HOSP_*` y las vistas `VW_*` |
+| `CHEQUEAR_RO` | `devdev` | Consumidor: sólo `SELECT` sobre las `VW_*` |
+
+Las fechas del seed son relativas al día de la carga, así siempre hay turnos
+futuros. Si la base quedó cargada hace meses, conviene recargarla (ver **Reset**).
 
 ## Verificar el dataset
 
 ```bash
-docker compose exec mock-hospital sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 <<'SQL'
+sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 <<'SQL'
 SELECT COUNT(*) AS pacientes      FROM HOSPITAL_MOCK.VW_PACIENTE;
 SELECT COUNT(*) AS episodios      FROM HOSPITAL_MOCK.VW_EPISODIO;
 SELECT COUNT(*) AS observaciones  FROM HOSPITAL_MOCK.VW_OBSERVACION_LAB;
@@ -45,14 +53,20 @@ Resultados esperados: ≥ 50, ≥ 150, ≥ 500 (SC-006).
 
 ## Conectar ChequeAR al mock
 
-`src/ChequeAR.Api/Web.config` ya viene apuntando al mock con la connection string:
+La API lee la conexión de `Oracle:ConnectionString` en
+`src/ChequeAR.Api/Web.Secrets.config` (no versionado):
 
+```xml
+<add key="Oracle:ConnectionString"
+     value="User Id=CHEQUEAR_RO;Password=devdev;Data Source=localhost:1521/XEPDB1;" />
 ```
-User Id=CHEQUEAR_RO;Password=devdev;Data Source=localhost:1521/XEPDB1;
-```
+
+Con el valor vacío, la API registra `MockOracleViewClient`, que sirve las mismas
+vistas desde memoria con datos de demostración. Es lo que corre en Azure, donde no
+hay base del hospital.
 
 El bootstrap de DI (`ServiceComposition.cs`) carga la allowlist desde
-`src/ChequeAR.Infrastructure/Oracle/allowlist.yaml` y la pasa al `OracleViewClient`.
+`src/ChequeAR.Infrastructure/Oracle/allowlist.yaml` y la pasa al cliente.
 Cualquier consulta a una vista fuera de la lista es rechazada antes de tocar la base.
 
 ## Auditar grants (FR-005..FR-007, CHK021)
@@ -60,7 +74,8 @@ Cualquier consulta a una vista fuera de la lista es rechazada antes de tocar la 
 Verificar que `CHEQUEAR_RO` sólo tiene `SELECT` sobre las `VW_*` y nada más:
 
 ```bash
-docker compose exec mock-hospital sqlplus -S system/oraclesys@//localhost:1521/XEPDB1 <<'SQL'
+sqlplus -S "/ as sysdba" <<'SQL'
+ALTER SESSION SET CONTAINER = XEPDB1;
 SELECT TABLE_NAME, PRIVILEGE
 FROM   DBA_TAB_PRIVS
 WHERE  GRANTEE = 'CHEQUEAR_RO'
@@ -77,7 +92,7 @@ es una **regresión** de FR-005/007.
 Verificar que las tablas `HOSP_*` son inalcanzables desde `CHEQUEAR_RO`:
 
 ```bash
-docker compose exec mock-hospital sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 <<'SQL'
+sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 <<'SQL'
 SELECT COUNT(*) FROM HOSPITAL_MOCK.HOSP_PACIENTE;
 SQL
 # Esperado: ORA-00942: table or view does not exist
@@ -86,12 +101,14 @@ SQL
 ## Reset
 
 ```bash
-docker compose down -v   # borra el volumen → próximo `up` re-sembra
-docker compose up -d --wait
+cd infra/mock-hospital/init
+sqlplus -S "/ as sysdba" @borrar.sql
+sqlplus -S "/ as sysdba" @cargar.sql
 ```
 
-Como el seed es determinístico (`DBMS_RANDOM.SEED(20260625)`), el dataset
-resultante es idéntico al anterior (SC-002).
+Como el seed es determinístico (`DBMS_RANDOM.SEED(20260625)`), los pacientes,
+episodios y resultados son los mismos; sólo se corren las fechas al día de la
+nueva carga (SC-002). `DeterminismTests` lo verifica con hashes fijos.
 
 ## Stakeholder review (US3, SC-005)
 
@@ -101,8 +118,8 @@ laboratorio) con una semilla distinta a la del seed (`20260101`), así la muestr
 no privilegia siempre los mismos pacientes.
 
 ```bash
-docker compose exec mock-hospital sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 \
-  @/container-entrypoint-initdb.d/sample-historiales.sql
+cd infra/mock-hospital/init
+sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 @sample-historiales.sql
 ```
 
 Procedimiento sugerido para la review:
@@ -128,80 +145,41 @@ catálogos embebidos (CIE-10, LOINC).
 
 ```bash
 cd tests/integration/MockHospital.Tests
-dotnet test
+dotnet test --filter "Requires=Oracle"
 ```
 
-La suite asume que el contenedor está corriendo y `healthy`. Si no, los tests
-fallan con un mensaje claro indicando cómo levantarlo.
+Los tests marcados `Requires=Oracle` necesitan una base con el esquema del mock y
+**no corren en CI**: los runners no tienen Oracle. En CI sólo corren los que no
+necesitan base (`--filter "Requires!=Oracle"`). Si la base no está, los tests
+fallan con un mensaje que dice cómo cargarla.
 
-### Wiring de la suite del módulo 003
-
-Cuando el módulo 003 cree su suite `tests/integration/Oracle.Tests/` (todavía
-no existe en el repo), debe respetar la siguiente convención para apuntarse
-al mock sin cambios de código:
+Para apuntar a otra base sin tocar código:
 
 | Variable de entorno | Valor por defecto |
 |---|---|
 | `MOCK_HOSPITAL_CONN` | `User Id=CHEQUEAR_RO;Password=devdev;Data Source=localhost:1521/XEPDB1;` |
 | `MOCK_HOSPITAL_OWNER_CONN` | `User Id=HOSPITAL_MOCK;Password=hospitalmockdev;Data Source=localhost:1521/XEPDB1;` |
 
-Cualquier test que necesite acceso al lado hospital lee esa variable. Esto
-cierra SC-008.
+(SC-008)
 
 ## Comandos útiles
 
 | Acción | Comando |
 |---|---|
-| Logs del seed | `docker compose logs -f mock-hospital` |
-| Conexión como app (RO) | `docker compose exec mock-hospital sqlplus CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1` |
-| Conexión como owner | `docker compose exec mock-hospital sqlplus HOSPITAL_MOCK/hospitalmockdev@//localhost:1521/XEPDB1` |
-| Parar sin perder datos | `docker compose stop` |
-| Ver salud | `docker compose ps` |
+| Conexión como app (RO) | `sqlplus CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1` |
+| Conexión como owner | `sqlplus HOSPITAL_MOCK/hospitalmockdev@//localhost:1521/XEPDB1` |
+| Volver a correr sólo la verificación | `sqlplus -S "/ as sysdba" @04-verify.sql` |
 
 ## Troubleshooting
 
-- **`unhealthy` después de 10 min**: revisar `docker compose logs mock-hospital`.
-  Si aparece `ORA-2000x`, el seed falló alguna invariante de `04-verify.sql`.
-  Hacer `down -v` y volver a levantar.
-- **Apple Silicon muy lento**: confirmar que el compose declara
-  `platform: linux/amd64`. Subir la memoria asignada a Docker Desktop a ≥ 6 GB.
-- **Puerto 1521 ocupado**: editar `ports:` en `docker-compose.yml` y reflejarlo
-  en el `Web.config` de la API.
-- **Seed no se ejecutó**: si arrancaste el contenedor antes y los archivos de
-  init cambiaron, los scripts no se re-ejecutan (es comportamiento de la
-  imagen `gvenzl/oracle-xe`). Hacer `down -v` para borrar el volumen y forzar
-  re-inicialización.
-
-## Smoke manual cronometrado (SC-001)
-
-Para evidenciar el SC-001 ("< 10 min de setup en máquina razonable") en un
-commit/PR concreto:
-
-1. En una máquina limpia (o tras `git clean -fdx` + `docker system prune -a`),
-   clonar el repo desde cero.
-2. Cronometrar:
-   ```bash
-   cd infra/mock-hospital
-   cp .env.example .env
-   time docker compose up -d --wait
-   ```
-3. Anotar el tiempo `real` reportado por `time`. Debe ser `<10m0.000s`.
-4. Registrar el resultado en el cuerpo del commit/PR como:
-   ```
-   smoke SC-001: <tiempo> en <CPU, RAM, OS, plataforma docker>
-   ```
-   Ejemplo: `smoke SC-001: 2m44s en MBP M2 16GB, Docker Desktop 4.30 (Apple Silicon, QEMU)`.
-
-Si el tiempo supera 10 min, abrir un issue con `[SC-001]` y revisar
-healthcheck (`docker compose logs`), tamaño del seed o RAM asignada a Docker
-antes de mergear.
-
-## Apple Silicon (M1/M2/M3)
-
-Oracle XE no tiene imagen ARM64 oficial. Docker Desktop usa emulación
-QEMU/Rosetta automáticamente porque el compose declara `platform: linux/amd64`.
-El primer arranque pasa de ~30 s (en amd64) a ~2 min. Funcional, pero asignar
-≥ 6 GB de RAM a Docker para evitar OOM durante el seed.
+- **`ORA-01920: user name conflicts`** al cargar: el mock ya estaba. Correr
+  `borrar.sql` antes de `cargar.sql`.
+- **`ORA-2000x`** en `04-verify.sql`: el seed no cumplió una invariante; el mensaje
+  dice cuál.
+- **`ORA-12541: no listener`**: el servicio `OracleOraDB21Home1TNSListener` está
+  parado (`net start OracleOraDB21Home1TNSListener` como administrador).
+- **Falla `ExisteAlMenosUnTurnoFuturo`**: la carga es vieja y los turnos ya
+  pasaron. Recargar.
 
 ---
 
@@ -212,7 +190,7 @@ Cuando el Hospital Garrahan entregue el diseño real de sus tablas/vistas:
 1. **Borrar `init/01-schema.sql`** — el DDL real lo provee el hospital.
 2. **Borrar `init/03-seed.sql` y `init/04-verify.sql`** — los datos reales no
    se siembran desde acá; vienen del hospital. Si el equipo quiere mantener
-   un dataset de testing reducido, mover el seed a `tests/integration/Oracle.Tests/`
+   un dataset de testing reducido, mover el seed a `tests/integration/MockHospital.Tests/`
    bajo otro schema.
 3. **Reemplazar `init/02-views.sql`** por las vistas reales que el hospital
    exponga. Mantener los nombres en `VW_*` o ajustar la allowlist en el
@@ -222,13 +200,12 @@ Cuando el Hospital Garrahan entregue el diseño real de sus tablas/vistas:
 5. **Actualizar `init/99-grants.sql`** con los grants exactos del hospital
    (esto puede no necesitarse si el hospital provee directamente el usuario
    read-only con permisos pre-configurados).
-6. **Ajustar `src/ChequeAR.Infrastructure/OracleMappings/*.yaml`** con los
-   nombres reales de columnas. Cuando los YAML existan, los tests
-   `MappingCompatibilityTests.cs` empezarán a validar automáticamente.
-7. **Re-baselinear `tests/integration/MockHospital.Tests/DeterminismTests.cs`**
-   si quedaron hashes anclados.
-8. **Borrar este directorio entero** y apuntar la connection string de
-   `Web.config` al servidor Oracle real del hospital.
+6. **Ajustar `MockOracleViewClient`** (datos en memoria) a las columnas reales:
+   `MockViewColumnsTests` compara sus columnas con las de cada vista.
+7. **Borrar `tests/integration/MockHospital.Tests/DeterminismTests.cs`**: sus
+   hashes son los del seed sintético.
+8. **Borrar este directorio entero** y apuntar `Oracle:ConnectionString` de
+   `Web.Secrets.config` (o de las App Settings de Azure) al Oracle real del hospital.
 9. **Actualizar el banner** "PROVISORIO" en cualquier README que aún
    referencie el mock.
 

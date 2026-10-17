@@ -35,13 +35,103 @@
     var STATUS_LABEL = { draft: 'Borrador', active: 'Publicado', retired: 'Archivado' };
     var STATUS_ORDER = ['active', 'draft', 'retired'];
 
+    // Etiquetas en palabras para que cada condición se lea como una frase:
+    // "PCR sea mayor a 5", "Tratamiento actual sea Corticoides".
+    function opsFor(q) {
+        var type = q && q.type;
+        var ops;
+        if (type === 'integer' || type === 'decimal')
+            ops = [{ v: '=', l: 'sea igual a' }, { v: '!=', l: 'sea distinto de' }, { v: '>', l: 'sea mayor a' }, { v: '>=', l: 'sea mayor o igual a' }, { v: '<', l: 'sea menor a' }, { v: '<=', l: 'sea menor o igual a' }, { v: 'between', l: 'esté entre' }];
+        else if (type === 'choice')
+            ops = [{ v: '=', l: 'sea' }, { v: '!=', l: 'no sea' }, { v: 'in', l: 'sea alguna de' }];
+        else if (type === 'boolean')
+            ops = [{ v: '=', l: 'sea' }];
+        else if (type === 'date')
+            ops = [{ v: '=', l: 'sea del' }, { v: '>=', l: 'sea desde' }, { v: '<=', l: 'sea hasta' }, { v: 'between', l: 'esté entre' }];
+        else
+            // Texto libre: lo que se escribe a mano casi nunca coincide letra por
+            // letra, así que el default es "contenga". Las tres ignoran mayúsculas
+            // y tildes (lo resuelve el servidor).
+            ops = [{ v: 'contains', l: 'contenga' }, { v: 'notcontains', l: 'no contenga' }, { v: '=', l: 'sea exactamente' }];
+
+        // Una pregunta obligatoria siempre está respondida en una ficha finalizada:
+        // ofrecerlo ahí sería un filtro que no filtra nada.
+        if (q && !q.required)
+            ops = ops.concat([{ v: ANSWERED, l: 'esté respondida' }, { v: UNANSWERED, l: 'no esté respondida' }]);
+        return ops;
+    }
+    // "Esté respondida" no compara contra un valor, así que no lleva campo de valor.
+    function needsValue(op) { return op !== ANSWERED && op !== UNANSWERED; }
+
+    function newCondition(q) {
+        return { linkId: q.linkId, op: opsFor(q)[0].v, value: q.type === 'boolean' ? 'true' : '', value2: '', values: [] };
+    }
+
+    // Una condición: pregunta, operador y valor (dos para "entre", varias opciones para
+    // "sea alguna de"). Se usa suelta y dentro de un grupo.
+    var FilterRow = {
+        props: { f: { type: Object, required: true }, questions: { type: Array, required: true } },
+        emits: ['remove'],
+        setup: function (props) {
+            function question() {
+                return props.questions.find(function (q) { return q.linkId === props.f.linkId; }) || {};
+            }
+            function onQuestionChange() {
+                var c = newCondition(question());
+                props.f.op = c.op; props.f.value = c.value; props.f.value2 = ''; props.f.values = [];
+            }
+            function inputType() {
+                var t = question().type;
+                return t === 'date' ? 'date' : (t === 'integer' || t === 'decimal' ? 'number' : 'text');
+            }
+            return { question: question, onQuestionChange: onQuestionChange, inputType: inputType, opsFor: opsFor, needsValue: needsValue };
+        },
+        template: '\
+<div class="row g-2 align-items-center mb-2">\
+    <div class="col-auto cq-text-muted pe-0" style="width:1.2rem;">•</div>\
+    <div class="col-md-4">\
+        <select v-model="f.linkId" @change="onQuestionChange" class="form-select form-select-sm" aria-label="Pregunta">\
+            <option v-for="q in questions" :key="q.linkId" :value="q.linkId">{{ q.text }}</option>\
+        </select>\
+    </div>\
+    <div class="col-md-3">\
+        <select v-model="f.op" class="form-select form-select-sm" aria-label="Condición">\
+            <option v-for="o in opsFor(question())" :key="o.v" :value="o.v">{{ o.l }}</option>\
+        </select>\
+    </div>\
+    <div class="col-md-4">\
+        <span v-if="!needsValue(f.op)"></span>\
+        <select v-else-if="question().type === \'boolean\'" v-model="f.value" class="form-select form-select-sm" aria-label="Valor">\
+            <option value="true">Sí</option><option value="false">No</option>\
+        </select>\
+        <select v-else-if="question().type === \'choice\' && f.op === \'in\'" v-model="f.values" multiple class="form-select form-select-sm" aria-label="Opciones" size="3">\
+            <option v-for="o in question().options" :key="o.value" :value="o.value">{{ o.display }}</option>\
+        </select>\
+        <select v-else-if="question().type === \'choice\'" v-model="f.value" class="form-select form-select-sm" aria-label="Valor">\
+            <option value="">—</option>\
+            <option v-for="o in question().options" :key="o.value" :value="o.value">{{ o.display }}</option>\
+        </select>\
+        <div v-else-if="f.op === \'between\'" class="d-flex align-items-center gap-1">\
+            <input v-model="f.value" class="form-control form-control-sm" :type="inputType()" aria-label="Desde" />\
+            <span class="cq-text-sm cq-text-muted">y</span>\
+            <input v-model="f.value2" class="form-control form-control-sm" :type="inputType()" aria-label="Hasta" />\
+        </div>\
+        <input v-else v-model="f.value" class="form-control form-control-sm" :type="inputType()" aria-label="Valor" />\
+    </div>\
+    <div class="col-md-auto text-end">\
+        <button type="button" class="cq-icon-btn cq-icon-btn--danger" @click="$emit(\'remove\')" aria-label="Eliminar condición" title="Eliminar condición"><i class="bi bi-trash cq-icon-btn__idle"></i><i class="bi bi-trash-fill cq-icon-btn__hover"></i></button>\
+    </div>\
+</div>'
+    };
+
     var ReportBuilder = {
+        components: { 'cq-filter-row': FilterRow },
         props: { reportId: { type: String, default: null } },
         setup: function (props) {
             var questionnaires = Vue.ref([]);
             var selectedId = Vue.ref(null);
             var questions = Vue.ref([]);      // preguntas del cuestionario elegido
-            var filters = Vue.ref([]);        // [{ linkId, op, value }]
+            var filters = Vue.ref([]);        // condiciones y grupos { group, logic, items }
             var combineMode = Vue.ref('AND');
             var dateFrom = Vue.ref('');
             var dateTo = Vue.ref('');
@@ -70,33 +160,6 @@
 
             function toast(m, k) { if (window.cqToast) window.cqToast(m, k); }
 
-            // Etiquetas en palabras para que cada condición se lea como una frase:
-            // "PCR sea mayor a 5", "Tratamiento actual sea Corticoides".
-            function opsFor(q) {
-                var type = q && q.type;
-                var ops;
-                if (type === 'integer' || type === 'decimal')
-                    ops = [{ v: '=', l: 'sea igual a' }, { v: '!=', l: 'sea distinto de' }, { v: '>', l: 'sea mayor a' }, { v: '>=', l: 'sea mayor o igual a' }, { v: '<', l: 'sea menor a' }, { v: '<=', l: 'sea menor o igual a' }];
-                else if (type === 'choice')
-                    ops = [{ v: '=', l: 'sea' }, { v: '!=', l: 'no sea' }];
-                else if (type === 'boolean')
-                    ops = [{ v: '=', l: 'sea' }];
-                else if (type === 'date')
-                    ops = [{ v: '=', l: 'sea del' }, { v: '>=', l: 'sea desde' }, { v: '<=', l: 'sea hasta' }];
-                else
-                    // Texto libre: lo que se escribe a mano casi nunca coincide letra por
-                    // letra, así que el default es "contenga". Las tres ignoran mayúsculas
-                    // y tildes (lo resuelve el servidor).
-                    ops = [{ v: 'contains', l: 'contenga' }, { v: 'notcontains', l: 'no contenga' }, { v: '=', l: 'sea exactamente' }];
-
-                // Una pregunta obligatoria siempre está respondida en una ficha finalizada:
-                // ofrecerlo ahí sería un filtro que no filtra nada.
-                if (q && !q.required)
-                    ops = ops.concat([{ v: ANSWERED, l: 'esté respondida' }, { v: UNANSWERED, l: 'no esté respondida' }]);
-                return ops;
-            }
-            // "Esté respondida" no compara contra un valor, así que no lleva campo de valor.
-            function needsValue(op) { return op !== ANSWERED && op !== UNANSWERED; }
             function questionByLink(linkId) {
                 return questions.value.find(function (q) { return q.linkId === linkId; });
             }
@@ -124,13 +187,16 @@
                 return out;
             }
 
+            var questionsSeq = window.ChequeARIslands.http.latest();
             function loadQuestions(id) {
+                var vigente = questionsSeq();
                 questions.value = [];
                 if (!id) return Promise.resolve();
                 // Las preguntas de las versiones publicadas, que son contra las que se cargaron las fichas.
                 return fetch('/api/reports/questionnaires/' + id + '/structure', { headers: authHeaders() })
+                    .then(window.ChequeARIslands.http.ensureOk)
                     .then(function (r) { return r.json(); })
-                    .then(function (q) { questions.value = flattenItems(q.item, []); })
+                    .then(function (q) { if (vigente()) questions.value = flattenItems(q.item, []); })
                     .catch(function () { /* sin preguntas: se puede filtrar igual por fecha */ });
             }
 
@@ -153,16 +219,7 @@
                             }
                             if (query.filters) {
                                 combineMode.value = query.filters.logic || 'AND';
-                                filters.value = (query.filters.predicates || []).map(function (p) {
-                                    var q = questionByLink(p.linkId);
-                                    // El select de un booleano espera el string 'true'/'false';
-                                    // guardado viene como bool.
-                                    var val = (q && q.type === 'boolean') ? String(p.value) : p.value;
-                                    // 'exists' viaja con true/false; en pantalla son dos opciones.
-                                    if (p.op === 'exists')
-                                        return { linkId: p.linkId, op: (p.value === false || p.value === 'false') ? UNANSWERED : ANSWERED, value: '' };
-                                    return { linkId: p.linkId, op: p.op, value: val };
-                                });
+                                filters.value = (query.filters.predicates || []).map(fromPredicate);
                             }
                             rehydrating = false;
                             // Cargar desde el server es el estado "sin cambios pendientes"
@@ -206,6 +263,20 @@
                     })
                     .filter(function (g) { return g.items.length; });
             });
+            // Todas las páginas del Bundle, siguiendo el link "next": con una sola página, lo
+            // que pasaba de ahí no aparecía en el selector.
+            function fetchAllEntries(url, acc) {
+                acc = acc || [];
+                return fetch(url, { headers: authHeaders() })
+                    .then(window.ChequeARIslands.http.ensureOk)
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        acc = acc.concat((data && data.entry) || []);
+                        var next = ((data && data.link) || []).filter(function (l) { return l.relation === 'next'; })[0];
+                        return next ? fetchAllEntries(next.url, acc) : acc;
+                    });
+            }
+
             function pickQuestionnaire(q) { selectedId.value = q.id; qSearch.value = ''; qOpen.value = false; }
 
             Vue.onMounted(function () {
@@ -213,11 +284,11 @@
                 document.addEventListener('click', function (e) {
                     if (qOpen.value && qBox.value && !qBox.value.contains(e.target)) qOpen.value = false;
                 });
-                fetch('/fhir/r5/Questionnaire?_count=100', { headers: authHeaders() })
-                    .then(function (r) { return r.json(); })
-                    .then(function (data) {
-                        // Bundle conforme: cada resultado viene envuelto en entry[].resource.
-                        var list = (data && data.entry) ? data.entry : [];
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') qOpen.value = false;
+                });
+                fetchAllEntries('/fhir/r5/Questionnaire?_count=200')
+                    .then(function (list) {
                         questionnaires.value = list
                             .map(function (e) { return e.resource; })
                             .filter(Boolean)
@@ -266,15 +337,48 @@
             Vue.watch(filters, markDirty, { deep: true });
 
             function addFilter() {
-                if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar', 'info'); return; }
-                var q = questions.value[0];
-                filters.value.push({ linkId: q.linkId, op: opsFor(q)[0].v, value: q.type === 'boolean' ? 'true' : '' });
+                if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar.', 'info'); return; }
+                filters.value.push(newCondition(questions.value[0]));
             }
+            // Un grupo es un paréntesis: sus condiciones se combinan entre sí con su propio
+            // "todas / al menos una", y el grupo entero cuenta como una condición más.
+            function addGroup() {
+                if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar.', 'info'); return; }
+                filters.value.push({ group: true, logic: 'OR', items: [newCondition(questions.value[0]), newCondition(questions.value[0])] });
+            }
+            function addToGroup(g) { g.items.push(newCondition(questions.value[0])); }
             function removeFilter(i) { filters.value.splice(i, 1); }
-            function onQuestionChange(f) {
+
+            function fromPredicate(p) {
+                if (p.group) return { group: true, logic: p.group.logic || 'AND', items: (p.group.predicates || []).map(fromPredicate) };
+                var q = questionByLink(p.linkId);
+                // 'exists' viaja con true/false; en pantalla son dos opciones.
+                if (p.op === 'exists')
+                    return { linkId: p.linkId, op: (p.value === false || p.value === 'false') ? UNANSWERED : ANSWERED, value: '', value2: '', values: [] };
+                if (p.op === 'between')
+                    return { linkId: p.linkId, op: p.op, value: (p.value || [])[0], value2: (p.value || [])[1], values: [] };
+                if (p.op === 'in')
+                    return { linkId: p.linkId, op: p.op, value: '', value2: '', values: (p.value || []).slice() };
+                // El select de un booleano espera el string 'true'/'false'; guardado viene como bool.
+                var val = (q && q.type === 'boolean') ? String(p.value) : p.value;
+                return { linkId: p.linkId, op: p.op, value: val, value2: '', values: [] };
+            }
+
+            function toPredicate(f) {
+                if (f.group) {
+                    var internos = f.items.map(toPredicate).filter(Boolean);
+                    return internos.length ? { group: { logic: f.logic, predicates: internos } } : null;
+                }
                 var q = questionByLink(f.linkId);
-                f.op = opsFor(q)[0].v;
-                f.value = q.type === 'boolean' ? 'true' : '';
+                if (!q || !f.op) return null;
+                if (!needsValue(f.op)) return { linkId: f.linkId, op: 'exists', value: f.op === ANSWERED };
+                if (f.op === 'between') {
+                    if (f.value === '' || f.value == null || f.value2 === '' || f.value2 == null) return null;
+                    return { linkId: f.linkId, op: 'between', value: [coerce(q, f.value), coerce(q, f.value2)] };
+                }
+                if (f.op === 'in') return f.values && f.values.length ? { linkId: f.linkId, op: 'in', value: f.values.slice() } : null;
+                if (q.type !== 'boolean' && (f.value === '' || f.value == null)) return null;
+                return { linkId: f.linkId, op: f.op, value: coerce(q, f.value) };
             }
 
             function coerce(q, raw) {
@@ -299,12 +403,7 @@
                         to: dateTo.value ? dateTo.value + 'T23:59:59' : null
                     };
                 }
-                var preds = filters.value
-                    .filter(function (f) { var q = questionByLink(f.linkId); return q && f.op && (!needsValue(f.op) || q.type === 'boolean' || (f.value !== '' && f.value != null)); })
-                    .map(function (f) {
-                        if (!needsValue(f.op)) return { linkId: f.linkId, op: 'exists', value: f.op === ANSWERED };
-                        return { linkId: f.linkId, op: f.op, value: coerce(questionByLink(f.linkId), f.value) };
-                    });
+                var preds = filters.value.map(toPredicate).filter(Boolean);
                 if (preds.length) query.filters = { logic: combineMode.value, predicates: preds };
                 if (format) query.format = format;
                 return query;
@@ -313,7 +412,7 @@
             // El boton "Previsualizar" pasa el Event como argumento (no un numero): en ese
             // caso arranca en la pagina 1. Anterior/Siguiente pasan el numero de pagina.
             function preview(goToPage) {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 var p = (typeof goToPage === 'number' && goToPage > 0) ? goToPage : 1;
                 loading.value = true; error.value = null;
                 var q = buildQuery();
@@ -337,12 +436,12 @@
             // /query: pedirlas por id de cuestionario daria numeros que no corresponden a
             // los filtros que la persona tiene puestos en pantalla.
             function stats() {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 window.dispatchEvent(new CustomEvent('cq:report-query', { detail: buildQuery() }));
             }
 
             function openSave() {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 showSave.value = true;
             }
 
@@ -351,9 +450,9 @@
             // vez y PUT sobre la misma si ya existia. El backend solo deja actualizar al
             // dueño (403 si no).
             function saveReport() {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 var name = (reportName.value || '').trim();
-                if (!name) { toast('Ingrese un nombre para el reporte', 'error'); return; }
+                if (!name) { toast('Ingrese un nombre para el reporte.', 'error'); return; }
                 if (saving.value) return;
 
                 saving.value = true;
@@ -382,7 +481,7 @@
                         }
                         showSave.value = false;
                         dirty.value = false;
-                        toast(editing ? 'Reporte actualizado' : 'Reporte guardado', 'success');
+                        toast(editing ? 'Cambios guardados.' : 'Reporte guardado.', 'success');
                     })
                     .catch(function (e) { toast('No se pudo guardar: ' + e.message, 'error'); })
                     .then(function () { saving.value = false; });
@@ -399,7 +498,7 @@
             }
 
             function exportFile(format, filename) {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 exporting.value = true;
                 fetch('/api/reports/export', { method: 'POST', headers: authHeaders(), body: JSON.stringify(buildQuery(format)) })
                     .then(window.ChequeARIslands.http.ensureOk)
@@ -409,13 +508,25 @@
                         var a = document.createElement('a');
                         a.href = url; a.download = filename; document.body.appendChild(a); a.click();
                         document.body.removeChild(a); URL.revokeObjectURL(url);
-                        toast('Exportación lista', 'success');
+                        toast('Archivo descargado.', 'success');
                     })
-                    .catch(function (e) { toast('Error al exportar: ' + e.message, 'error'); })
+                    .catch(function (e) { toast('No se pudo exportar: ' + e.message, 'error'); })
                     .then(function () { exporting.value = false; });
             }
 
+            // Sólo para mostrar: fechas y decimales como en el resto de la app (dd/mm/aaaa, coma).
+            // El export conserva el formato del servidor.
+            function formatCell(v) {
+                if (typeof v === 'number') v = String(v);
+                if (typeof v !== 'string') return v;
+                var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+                if (d) return d[3] + '/' + d[2] + '/' + d[1];
+                if (/^-?\d+\.\d+$/.test(v)) return v.replace('.', ',');
+                return v;
+            }
+
             return {
+                formatCell: formatCell,
                 questionnaires: questionnaires, groupedQuestionnaires: groupedQuestionnaires, selectedId: selectedId,
                 qSearch: qSearch, qOpen: qOpen, qBox: qBox, selectedTitle: selectedTitle,
                 filteredGroups: filteredGroups, pickQuestionnaire: pickQuestionnaire,
@@ -428,8 +539,7 @@
                 currentReportId: currentReportId, reportName: reportName,
                 saving: saving, showSave: showSave, openSave: openSave, saveReport: saveReport,
                 dirty: dirty,
-                opsFor: opsFor, needsValue: needsValue, questionByLink: questionByLink,
-                addFilter: addFilter, removeFilter: removeFilter, onQuestionChange: onQuestionChange,
+                addFilter: addFilter, addGroup: addGroup, addToGroup: addToGroup, removeFilter: removeFilter,
                 preview: preview,
                 exportXlsx: function () { exportFile('xlsx', exportFilename('xlsx')); },
                 exportCsv: function () { exportFile('csv', exportFilename('csv')); }
@@ -463,36 +573,22 @@
     </div>\
 \
     <h3 class="cq-section-title">Mostrar solo las fichas que:</h3>\
-    <div v-for="(f, i) in filters" :key="i" class="row g-2 align-items-center mb-2">\
-        <div class="col-auto cq-text-muted pe-0" style="width:1.2rem;">•</div>\
-        <div class="col-md-4">\
-            <select v-model="f.linkId" @change="onQuestionChange(f)" class="form-select form-select-sm">\
-                <option v-for="q in questions" :key="q.linkId" :value="q.linkId">{{ q.text }}</option>\
-            </select>\
+    <template v-for="(f, i) in filters" :key="i">\
+        <div v-if="f.group" class="border rounded p-2 mb-2">\
+            <div class="d-flex align-items-center gap-3 cq-text-sm mb-2">\
+                <span class="cq-text-muted">Grupo: las fichas deben</span>\
+                <label><input type="radio" v-model="f.logic" value="AND" /> cumplir todas</label>\
+                <label><input type="radio" v-model="f.logic" value="OR" /> cumplir al menos una</label>\
+                <button type="button" class="cq-icon-btn cq-icon-btn--danger ms-auto" @click="removeFilter(i)" aria-label="Eliminar grupo" title="Eliminar grupo"><i class="bi bi-trash cq-icon-btn__idle"></i><i class="bi bi-trash-fill cq-icon-btn__hover"></i></button>\
+            </div>\
+            <cq-filter-row v-for="(g, j) in f.items" :key="j" :f="g" :questions="questions" @remove="f.items.splice(j, 1)"></cq-filter-row>\
+            <button class="btn btn-sm btn-secondary" @click="addToGroup(f)"><i class="bi bi-plus-lg me-1"></i> Agregar condición al grupo</button>\
         </div>\
-        <div class="col-md-3">\
-            <select v-model="f.op" class="form-select form-select-sm">\
-                <option v-for="o in opsFor(questionByLink(f.linkId))" :key="o.v" :value="o.v">{{ o.l }}</option>\
-            </select>\
-        </div>\
-        <div class="col-md-3">\
-            <span v-if="!needsValue(f.op)"></span>\
-            <select v-else-if="questionByLink(f.linkId).type === \'boolean\'" v-model="f.value" class="form-select form-select-sm">\
-                <option value="true">Sí</option><option value="false">No</option>\
-            </select>\
-            <select v-else-if="questionByLink(f.linkId).type === \'choice\'" v-model="f.value" class="form-select form-select-sm">\
-                <option value="">—</option>\
-                <option v-for="o in questionByLink(f.linkId).options" :key="o.value" :value="o.value">{{ o.display }}</option>\
-            </select>\
-            <input v-else v-model="f.value" class="form-control form-control-sm"\
-                   :type="questionByLink(f.linkId).type === \'date\' ? \'date\' : (questionByLink(f.linkId).type === \'integer\' || questionByLink(f.linkId).type === \'decimal\' ? \'number\' : \'text\')" />\
-        </div>\
-        <div class="col-md-1 text-end">\
-            <button class="btn btn-sm btn-link text-danger" @click="removeFilter(i)" aria-label="Eliminar filtro"><i class="bi bi-x-lg"></i></button>\
-        </div>\
-    </div>\
+        <cq-filter-row v-else :f="f" :questions="questions" @remove="removeFilter(i)"></cq-filter-row>\
+    </template>\
     <div class="d-flex align-items-center gap-3 mb-3">\
         <button class="btn btn-sm btn-primary" @click="addFilter"><i class="bi bi-plus-lg me-1"></i> Agregar condición</button>\
+        <button class="btn btn-sm btn-secondary" @click="addGroup"><i class="bi bi-collection me-1"></i> Agregar grupo</button>\
         <div v-if="filters.length > 1" class="d-inline-flex gap-3 cq-text-sm">\
             <span class="cq-text-muted">Las fichas deben:</span>\
             <label><input type="radio" v-model="combineMode" value="AND" /> cumplir todas</label>\
@@ -528,15 +624,15 @@
     <div v-if="error" class="alert alert-danger mt-3 mb-0">{{ error }}</div>\
 \
     <div v-if="rows.length" class="table-responsive mt-3" style="max-height:420px; overflow:auto;">\
-        <table class="table table-sm table-striped">\
+        <table class="cq-table">\
             <thead><tr><th v-for="c in columns" :key="c">{{ c }}</th></tr></thead>\
             <tbody>\
                 <tr v-for="(row, i) in rows" :key="i">\
-                    <td v-for="c in columns" :key="c">{{ row[c] }}</td>\
+                    <td v-for="c in columns" :key="c">{{ formatCell(row[c]) }}</td>\
                 </tr>\
             </tbody>\
         </table>\
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">\
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">\
             <span class="cq-text-xs cq-text-muted">Mostrando {{ rows.length }} de {{ total }} fichas.</span>\
             <div v-if="totalPages > 1" class="btn-group btn-group-sm">\
                 <button class="btn btn-outline-secondary" :disabled="page <= 1 || loading" @click="preview(page - 1)"><i class="bi bi-chevron-left"></i> Anterior</button>\
@@ -548,7 +644,6 @@
         <div class="cq-empty">\
             <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>\
             <div class="cq-empty__title">No hay fichas</div>\
-            <div class="cq-empty__desc">Pruebe ampliando el rango de fechas o sacando condiciones.</div>\
         </div>\
     </div>\
 \

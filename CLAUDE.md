@@ -22,10 +22,10 @@ El proyecto usa [Spec Kit](https://github.com/github/spec-kit). Cada módulo tie
 `specs/` con `spec.md`, `plan.md` y `tasks.md`.
 
 <!-- SPECKIT START -->
-**Feature activa**: [`specs/009-conformidad-fhir-capas/plan.md`](specs/009-conformidad-fhir-capas/plan.md)
+**Feature activa**: ninguna. La última es [`specs/014-versionado-variables/plan.md`](specs/014-versionado-variables/plan.md); el estado de todas está en [`specs/README.md`](specs/README.md).
 <!-- SPECKIT END -->
 
 ## Levantar la app
 
 Usar la skill `/run-app`: arranca el TNS Listener de Oracle (servicio nativo de Windows, sin
-Docker), compila con MSBuild de VS2022 y levanta IIS Express en `https://localhost:44301`.
+Docker), compila con el MSBuild que encuentra `vswhere` y levanta IIS Express en `https://localhost:44301`.

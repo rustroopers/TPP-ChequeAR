@@ -1,3 +1,5 @@
+using System;
+using System.Text;
 using ChequeAR.Application.Security;
 using Xunit;
 
@@ -11,8 +13,38 @@ namespace ChequeAR.Tests.Application
             var hash = PasswordHasher.Hash("Chequear.2026!");
             var parts = hash.Split('$');
             Assert.Equal(4, parts.Length);
-            Assert.Equal("pbkdf2-sha1", parts[0]);
-            Assert.Equal("210000", parts[1]);
+            Assert.Equal("pbkdf2-sha256", parts[0]);
+            Assert.Equal("600000", parts[1]);
+        }
+
+        // Vector de RFC 7914 §11 (PBKDF2-HMAC-SHA256, c = 1).
+        [Fact]
+        public void Verify_VectorConocidoSha256()
+        {
+            var esperado = new byte[]
+            {
+                0x55, 0xac, 0x04, 0x6e, 0x56, 0xe3, 0x08, 0x9f, 0xec, 0x16, 0x91, 0xc2, 0x25, 0x44, 0xb6, 0x05,
+                0xf9, 0x41, 0x85, 0x21, 0x6d, 0xde, 0x04, 0x65, 0xe6, 0x8b, 0x9d, 0x57, 0xc2, 0x0d, 0xac, 0xbc,
+            };
+            var hash = "pbkdf2-sha256$1$" + Convert.ToBase64String(Encoding.ASCII.GetBytes("salt")) + "$" + Convert.ToBase64String(esperado);
+
+            Assert.True(PasswordHasher.Verify("passwd", hash));
+            Assert.False(PasswordHasher.Verify("password", hash));
+        }
+
+        [Fact]
+        public void Verify_HashSha1Anterior_SigueValiendoYPideRehash()
+        {
+            var salt = new byte[16];
+#pragma warning disable CA5379, CA5387 // formato de los hashes anteriores
+            using (var kdf = new System.Security.Cryptography.Rfc2898DeriveBytes("vieja", salt, 1000))
+#pragma warning restore CA5379, CA5387
+            {
+                var hash = "pbkdf2-sha1$1000$" + Convert.ToBase64String(salt) + "$" + Convert.ToBase64String(kdf.GetBytes(32));
+
+                Assert.True(PasswordHasher.Verify("vieja", hash));
+                Assert.True(PasswordHasher.NeedsRehash(hash));
+            }
         }
 
         [Fact]

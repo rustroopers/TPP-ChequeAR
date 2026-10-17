@@ -47,7 +47,6 @@
                     };
                 }).filter(function (g) { return g.questions.length > 0; })
             });
-            var loading = Vue.ref(false);
             var loadError = Vue.ref(
                 (props.groups && props.groups.length) ? null : 'La versión publicada no tiene preguntas.');
 
@@ -66,10 +65,9 @@
                 } catch (e) { return null; }
             }
             var blockedByBack = Vue.ref(false);
-            var completedResponseId = Vue.ref(null);
             function applyFinalizedMark() {
                 var m = finalizedMark();
-                if (m) { blockedByBack.value = true; completedResponseId.value = m.responseId; }
+                if (m) blockedByBack.value = true;
             }
             // Caso recarga real: si el navegador respeta no-store, "atrás" re-ejecuta
             // setup() con el formulario vacío y la marca del historial todavía puesta.
@@ -80,7 +78,14 @@
             // volver con "atrás" setup() NO se re-ejecuta y el chequeo de arriba no corre.
             // pageshow sí dispara en esa restauración (los listeners sobreviven al
             // congelado del bfcache): ahí re-evaluamos la marca y bloqueamos el formulario.
-            function onPageShow() { applyFinalizedMark(); }
+            // Al volver desde el bfcache, la sesión ya se cerró en el pagehide: se retoma.
+            function onPageShow(e) {
+                applyFinalizedMark();
+                if (!e || !e.persisted || blockedByBack.value || !responseId.value || lockToken.value) return;
+                // El cierre subió la versión de la ficha: se relee antes de retomar, sin el aviso
+                // de "otro usuario la modificó".
+                reloadFromServer().then(retryLock).catch(function () { retryLock(); });
+            }
             window.addEventListener('pageshow', onPageShow);
             Vue.onUnmounted(function () { window.removeEventListener('pageshow', onPageShow); });
 
@@ -104,6 +109,16 @@
             var concurrencyVersion = Vue.ref(null);
             var lockToken = Vue.ref(null);
             var lockExpiresAt = Vue.ref(null);
+            // Diferencia entre el reloj del server (header Date) y el del equipo: el
+            // vencimiento del lock se compara con la hora local.
+            var clockSkewMs = 0;
+            function noteServerTime(r) {
+                var server = Date.parse(r.headers.get('Date'));
+                if (!isNaN(server)) clockSkewMs = server - Date.now();
+            }
+            function localExpiry(iso) {
+                return new Date(Date.parse(iso) - clockSkewMs);
+            }
             // Respuestas tal como estaban al ABRIR esta sesión (lo resumido, o [] si la ficha
             // es nueva), en forma interna (LinkId/ValueXxx). Se manda al cerrar
             // deliberadamente (guardar avance / finalizar) para que el server audite UN solo
@@ -178,6 +193,39 @@
             // (un input[type=number] la descarta y entrega '', sin forma de saber qué se tipeó).
             var parseNumeric = EnableWhen.parseNumeric;
 
+            // Lo que entra en la base: ver ResponseValidator.
+            var MAX_DECIMALS = 6, MAX_TEXT = 2000, MAX_TEXT_BYTES = 4000, MAX_NUMBER = 1e16;
+            function maxLengthOf(q) { return Math.min(q.maxLength || MAX_TEXT, MAX_TEXT); }
+
+            // Ids para enlazar cada pregunta con su etiqueta y su error (lectores de pantalla).
+            function fieldId(q) { return 'q_' + String(q.linkId).replace(/[^A-Za-z0-9_-]/g, '_'); }
+            function isGroup(q) { return q.type === 'boolean' || q.type === 'openChoice'; }
+            // Sin control propio (grupo, o adjunto ya cargado) la etiqueta no apunta a nada.
+            function labelFor(q) {
+                if (isGroup(q)) return null;
+                if (q.type === 'attachment' && answers[q.linkId] && answers[q.linkId].attachmentId) return null;
+                return fieldId(q);
+            }
+
+            // Un valor que no entra en la columna no se manda en el autosave: el servidor lo
+            // rechaza y conserva el último guardado.
+            function storageError(q, value) {
+                if (value === undefined || value === null || value === '') return null;
+                if (q.type === 'decimal' || q.type === 'integer') {
+                    var n = parseNumeric(value);
+                    if (isNaN(n)) return null;
+                    if (!isFinite(n) || Math.abs(n) >= MAX_NUMBER) return 'Número demasiado grande';
+                    var s = String(value).trim().replace(',', '.');
+                    if (/e/i.test(s)) s = n.toFixed(20).replace(/0+$/, '');
+                    if (q.type === 'decimal' && (s.split('.')[1] || '').length > MAX_DECIMALS) return 'Hasta ' + MAX_DECIMALS + ' decimales';
+                }
+                if ((q.type === 'string' || q.type === 'text') && typeof value === 'string') {
+                    var max = maxLengthOf(q);
+                    if (value.length > max || new TextEncoder().encode(value).length > MAX_TEXT_BYTES) return 'Máximo ' + max + ' caracteres';
+                }
+                return null;
+            }
+
             function validate(q, value) {
                 if (!isVisible(q)) { delete errors[q.linkId]; return; }
                 // Una subida fallida bloquea antes que cualquier otra regla: la pregunta
@@ -196,6 +244,10 @@
                     if (isNaN(n)) { errors[q.linkId] = 'Debe ser un número'; return; }
                     // parseInt() truncaba 1,8 a 1 sin avisar. Mejor pedir el valor entero.
                     if (q.type === 'integer' && n !== Math.trunc(n)) { errors[q.linkId] = 'Debe ser un número entero'; return; }
+                }
+                var storage = storageError(q, value);
+                if (storage) { errors[q.linkId] = storage; return; }
+                if ((q.type === 'integer' || q.type === 'decimal') && value !== undefined && value !== '') {
                     if (q.min !== undefined && n < q.min) { errors[q.linkId] = 'Mín ' + q.min; return; }
                     if (q.max !== undefined && n > q.max) { errors[q.linkId] = 'Máx ' + q.max; return; }
                 }
@@ -225,7 +277,7 @@
             var uploading = Vue.reactive({});
             function onFile(q, file) {
                 if (!file) return;
-                if (!token()) { window.cqToast && window.cqToast('No hay sesión: no se puede subir.', 'error'); return; }
+                if (!token()) { window.cqToast && window.cqToast('No hay una sesión activa. Vuelva a ingresar.', 'error'); return; }
                 // Elegir otro archivo es el reintento: se limpia el bloqueo anterior.
                 delete uploadErrors[q.linkId];
                 delete errors[q.linkId];
@@ -328,6 +380,7 @@
                         // la pregunta se ocultara terminaba en la ficha finalizada. El valor sigue
                         // en `answers`: si la condición vuelve a cumplirse, reaparece.
                         if (!isVisible(q)) { items.push({ LinkId: q.linkId, QuestionType: q.type }); return; }
+                        if (storageError(q, answers[q.linkId])) return;
                         toItems(q).forEach(function (it) { items.push(it); });
                     });
                 });
@@ -496,6 +549,7 @@
                         Object.keys(errors).forEach(function (k) { delete errors[k]; });
                         applyExistingItems(items);
                         sessionBaseline.value = fhirItemsToDomain(items);
+                        lastSaved = null;
                         concurrencyVersion.value = versionOf(resource);
                         savingState.value = 'idle';
                     });
@@ -505,10 +559,25 @@
                 return reloadFromServer().then(function () {
                     if (!closedByOther.value) {
                         window.cqToast && window.cqToast(
-                            'Otro usuario modificó esta ficha. Se cargaron los datos actuales: revisalos antes de seguir.', 'warning');
+                            'Otro usuario modificó esta ficha. Se cargaron los datos actuales: revíselos antes de seguir.', 'warning');
                     }
                     throw silentError();
                 });
+            }
+
+            // El 409 de una sesión de edición ajena es un OperationOutcome con code lock-error;
+            // quién la tiene y hasta cuándo viajan como extensiones.
+            function lockHolder(body) {
+                var issue = body && body.issue && body.issue[0];
+                if (!issue || issue.code !== 'lock-error') return null;
+                var ext = body.extension || [];
+                var find = function (sufijo) {
+                    return ext.filter(function (e) { return (e.url || '').slice(-sufijo.length) === sufijo; })[0] || {};
+                };
+                return { userId: find('/lock-holder').valueString || null, expiresAt: find('/lock-expires').valueInstant || null };
+            }
+            function issueText(body) {
+                return body && body.issue && body.issue[0] && body.issue[0].diagnostics;
             }
 
             function ensureLock() {
@@ -522,8 +591,8 @@
                 }).then(function (r) {
                     if (r.status === 409) {
                         return r.json().then(function (body) {
-                            lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
-                            throw new Error(body.error || 'Lo está completando otro usuario.');
+                            lockedByOther.value = lockHolder(body) || { userId: null, expiresAt: null };
+                            throw new Error(issueText(body) || 'Lo está completando otro usuario.');
                         });
                     }
                     if (r.status === 422) {
@@ -531,10 +600,11 @@
                         throw silentError();
                     }
                     if (!r.ok) return errorFrom(r, 'no se pudo abrir la sesión de edición');
+                    noteServerTime(r);
                     return r.json();
                 }).then(function (body) {
                     lockToken.value = body.lockToken;
-                    lockExpiresAt.value = new Date(body.expiresAt);
+                    lockExpiresAt.value = localExpiry(body.expiresAt);
                     lockedByOther.value = null;
                     scheduleLockCountdown();
                     var fresh = Number(body.concurrencyVersion);
@@ -550,20 +620,22 @@
             // meta.versionId); el vencimiento del lock, sin lugar nativo en FHIR, viaja en
             // un header propio.
             function putProgress(isRetry) {
-                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, {
-                    method: 'PUT',
+                var sent = collectItems();
+                return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$save-progress', {
+                    method: 'POST',
                     headers: Object.assign({}, authHeaders(), {
                         'If-Match': 'W/"' + concurrencyVersion.value + '"',
                         'X-Lock-Token': lockToken.value
                     }),
-                    body: JSON.stringify({ Items: collectItems() })
+                    body: JSON.stringify({ Items: sent })
                 }).then(function (r) {
                     if (r.status === 409) {
                         return r.json().then(function (body) {
-                            if (body.lockedBy) {
-                                lockedByOther.value = { userId: body.lockedBy, expiresAt: body.expiresAt };
+                            var holder = lockHolder(body);
+                            if (holder) {
+                                lockedByOther.value = holder;
                                 lockToken.value = null;
-                                throw new Error(body.error || 'Lo está completando otro usuario.');
+                                throw new Error(issueText(body) || 'Lo está completando otro usuario.');
                             }
                             return reloadAfterForeignChange();
                         });
@@ -579,13 +651,16 @@
                     }
                     if (!r.ok) return errorFrom(r, 'error del servidor');
                     var lockExpiresHeader = r.headers.get('X-Lock-Expires-At');
+                    noteServerTime(r);
                     return r.json().then(function (updated) {
                         concurrencyVersion.value = versionOf(updated);
                         if (lockExpiresHeader) {
-                            lockExpiresAt.value = new Date(lockExpiresHeader);
+                            lockExpiresAt.value = localExpiry(lockExpiresHeader);
                             showRenewPrompt.value = false;
                         }
-                        savingState.value = 'idle';
+                        lastSaved = byLinkId(sent);
+                        // Si se siguió tipeando durante el PUT, ya hay otro autosave programado.
+                        if (!autosaveTimer) savingState.value = 'idle';
                     });
                 });
             }
@@ -630,15 +705,18 @@
                     return fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$renew-lock', {
                         method: 'POST',
                         headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value })
-                    }).then(function (r) { return r.ok ? r.json() : null; })
-                      .then(function (body) {
-                          if (body && body.expiresAt) {
-                              lockExpiresAt.value = new Date(body.expiresAt);
-                              showRenewPrompt.value = false;
-                              if (body.concurrencyVersion !== undefined) concurrencyVersion.value = Number(body.concurrencyVersion);
-                          }
-                      });
-                }).catch(function () { });
+                    }).then(function (r) {
+                        if (!r.ok) return errorFrom(r, 'no se pudo extender la sesión de edición');
+                        noteServerTime(r);
+                        return r.json();
+                    }).then(function (body) {
+                        if (body && body.expiresAt) {
+                            lockExpiresAt.value = localExpiry(body.expiresAt);
+                            showRenewPrompt.value = false;
+                            if (body.concurrencyVersion !== undefined) concurrencyVersion.value = Number(body.concurrencyVersion);
+                        }
+                    });
+                }).catch(function (err) { notifyError('No se pudo extender la sesión', err); });
             }
 
             function retryLock() {
@@ -658,24 +736,53 @@
             // keepalive (no sendBeacon, que no permite headers de auth ni X-Lock-Token); si el
             // navegador matan el proceso de golpe puede no llegar, y ahí el TTL libera el lock
             // solo unos minutos después. El chequeo de lockToken evita el doble disparo
-            // (beforeunload + onUnmounted): el segundo ve el token ya en null y no hace nada.
+            // (pagehide + onUnmounted): el segundo ve el token ya en null y no hace nada.
+            // Lo que el autosave todavía no mandó viaja en el mismo pedido (Pending): un PUT
+            // aparte competiría con el $unlock y, si llegaba después, ya no tenía lock.
+            // Lo último que aceptó el servidor, por linkId: al salir se manda sólo lo que cambió,
+            // porque keepalive no admite cuerpos de más de 64 KiB.
+            var lastSaved = null;
+            function byLinkId(items) {
+                var map = {};
+                items.forEach(function (it) { (map[it.LinkId] = map[it.LinkId] || []).push(it); });
+                Object.keys(map).forEach(function (k) { map[k] = JSON.stringify(map[k]); });
+                return map;
+            }
+            function unsavedItems() {
+                var current = collectItems();
+                if (!lastSaved) return current;
+                var now = byLinkId(current);
+                return current.filter(function (it) { return now[it.LinkId] !== lastSaved[it.LinkId]; });
+            }
+
             function releaseLock() {
                 if (!responseId.value || !lockToken.value) return;
+                var pending = !amending && hasUnsaved() ? unsavedItems() : null;
+                if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+                var body = JSON.stringify({ Items: sessionBaseline.value, Pending: pending });
+                // Si no entra, se resigna el baseline (sólo sirve para el diff de auditoría).
+                if (new TextEncoder().encode(body).length > 60000) body = JSON.stringify({ Pending: pending });
                 fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value + '/$unlock', {
                     method: 'POST',
                     headers: Object.assign({}, authHeaders(), { 'X-Lock-Token': lockToken.value }),
-                    body: JSON.stringify({ Items: sessionBaseline.value }),
+                    body: body,
                     keepalive: true
                 }).catch(function () { /* nada que hacer del lado del cliente */ });
                 lockToken.value = null;
                 if (lockCountdownTimer) clearInterval(lockCountdownTimer);
             }
 
-            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
-            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
-            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
-            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
-            // cliente estándar esperaría.
+            // Sin ficha creada todavía, o en una corrección (que no autoguarda), lo cargado no
+            // se puede mandar al salir: se pide confirmación.
+            function hasUnsaved() { return !!autosaveTimer || savingState.value !== 'idle'; }
+
+            function onBeforeUnload(e) {
+                if (submitting.value || !hasUnsaved() || readOnly()) return;
+                if (responseId.value && lockToken.value && !amending && savingState.value !== 'error') return;
+                e.preventDefault();
+                e.returnValue = '';
+            }
+
             function initAmend() {
                 responseId.value = props.amendResponseId;
                 fetch('/fhir/r5/QuestionnaireResponse/' + responseId.value, { headers: authHeaders() }).then(function (r) {
@@ -694,9 +801,14 @@
                 });
             }
 
+            // Busca una ficha InProgress ya empezada para este paciente+cuestionario (ej.
+            // se completó parte en el consultorio y ahora sigue por teléfono) y la resume;
+            // si no hay ninguna, se crea recién en el primer autosave. El Bundle y sus
+            // entries son recursos FHIR reales (entry[].resource), igual que cualquier
+            // cliente estándar esperaría.
             function initSession() {
                 if (amending) { initAmend(); return; }
-                // No bloquea el render con `loading`: el formulario ya es usable de
+                // No bloquea el render: el formulario ya es usable de
                 // entrada (ficha nueva) y, si había algo para resumir, se completa solo
                 // un instante después sin parpadeo de spinner.
                 var query = '/fhir/r5/QuestionnaireResponse?subject=' + encodeURIComponent(props.patientId) +
@@ -729,11 +841,13 @@
                 initSession();
             });
             Vue.onUnmounted(function () {
-                window.removeEventListener('beforeunload', releaseLock);
-                if (autosaveTimer) clearTimeout(autosaveTimer);
+                window.removeEventListener('beforeunload', onBeforeUnload);
+                window.removeEventListener('pagehide', releaseLock);
                 releaseLock();
             });
-            window.addEventListener('beforeunload', releaseLock);
+            // pagehide y no beforeunload: si la persona cancela la salida, la sesión sigue abierta.
+            window.addEventListener('beforeunload', onBeforeUnload);
+            window.addEventListener('pagehide', releaseLock);
 
             function totalQuestions() {
                 var n = 0;
@@ -809,7 +923,6 @@
 
             function submit() {
                 if (submitting.value || readOnly()) return;
-                if (amending) { submitAmend(); return; }
 
                 var allErrors = [];
                 questionnaire.value.groups.forEach(function (g) {
@@ -820,13 +933,14 @@
                     });
                 });
                 if (allErrors.length) {
-                    window.cqToast && window.cqToast('Hay ' + allErrors.length + ' campos con error', 'error');
+                    window.cqToast && window.cqToast(allErrors.length === 1 ? 'Hay 1 campo con error. Revíselo antes de continuar.' : 'Hay ' + allErrors.length + ' campos con error. Revíselos antes de continuar.', 'error');
                     return;
                 }
                 if (!token()) {
-                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar la ficha.', 'error');
+                    window.cqToast && window.cqToast('No hay una sesión activa. Vuelva a ingresar.', 'error');
                     return;
                 }
+                if (amending) { submitAmend(); return; }
 
                 submitting.value = true;
                 savingState.value = 'saving';
@@ -852,7 +966,7 @@
                     savingState.value = 'idle';
                     lockToken.value = null;   // $finalize ya liberó el lock del lado del server
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Ficha finalizada', 'success');
+                    window.cqFlash && window.cqFlash('Ficha finalizada.', 'success');
                     // Marca esta entrada del historial ANTES de redirigir: si la persona
                     // vuelve con "atrás", el renderer la lee y muestra el aviso en vez de
                     // dejar re-finalizar. Se guarda el id para poder linkear a la ficha.
@@ -891,7 +1005,7 @@
                 }).then(function () {
                     lockToken.value = null;
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Ficha corregida', 'success');
+                    window.cqFlash && window.cqFlash('Corrección guardada.', 'success');
                     window.location.href = '/Encounters/View/' + responseId.value;
                 }).catch(function (err) {
                     savingState.value = 'dirty';
@@ -916,6 +1030,7 @@
             // eliminó) y se recarga la página para renderizar el formulario nuevo.
             var retargetPreview = Vue.ref(null);
             var showRetargetModal = Vue.ref(false);
+            var retargetDialog = Vue.ref(null);
             var retargeting = Vue.ref(false);
 
             function openRetargetPreview() {
@@ -928,6 +1043,7 @@
                 }).then(function (preview) {
                     retargetPreview.value = preview;
                     showRetargetModal.value = true;
+                    Vue.nextTick(function () { if (retargetDialog.value) retargetDialog.value.focus(); });
                 }).catch(function (err) {
                     notifyError('No se pudo calcular la vista previa', err);
                 });
@@ -947,13 +1063,13 @@
                         return r.json();
                     });
                 }).then(function () {
-                    // Se anula el lock del lado del cliente para que el beforeunload de la
+                    // Se anula el lock del lado del cliente para que el pagehide de la
                     // recarga no dispare un "Avance guardado" espurio (el diff sería contra un
                     // baseline que ya no corresponde). Al recargar, la sesión se retoma sola en
                     // la versión nueva.
                     lockToken.value = null;
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Ficha actualizada a la versión v' + props.newerVersion, 'success');
+                    window.cqFlash && window.cqFlash('Ficha actualizada a la v' + props.newerVersion + '.', 'success');
                     window.location.reload();
                 }).catch(function (err) {
                     retargeting.value = false;
@@ -968,7 +1084,7 @@
             function finishPartial() {
                 if (submitting.value || readOnly()) return;
                 if (!token()) {
-                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar.', 'error');
+                    window.cqToast && window.cqToast('No hay una sesión activa. Vuelva a ingresar.', 'error');
                     return;
                 }
                 // Nada cargado y ni siquiera se creó la ficha: no tiene sentido crear una vacía.
@@ -988,9 +1104,9 @@
                     });
                 }).then(function () {
                     savingState.value = 'idle';
-                    lockToken.value = null;   // ya liberado; el beforeunload no reintenta
+                    lockToken.value = null;   // ya liberado; el pagehide no reintenta
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Avance guardado. Podés retomar esta ficha desde el historial.', 'success');
+                    window.cqFlash && window.cqFlash('Avance guardado. Puede retomar esta ficha desde el historial.', 'success');
                     goToHistory();
                 }).catch(function (err) {
                     if (err && err.silent) return;
@@ -1004,8 +1120,8 @@
             return {
                 questionnaire: questionnaire, answers: answers, errors: errors,
                 savingState: savingState, submitting: submitting,
-                loading: loading, loadError: loadError, blockedByBack: blockedByBack,
-                completedResponseId: completedResponseId,
+                loadError: loadError, blockedByBack: blockedByBack,
+
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
                 viewAttachment: viewAttachment, viewingAttachment: viewingAttachment,
@@ -1020,7 +1136,8 @@
                 retargetPreview: retargetPreview, showRetargetModal: showRetargetModal,
                 retargeting: retargeting, openRetargetPreview: openRetargetPreview,
                 closeRetargetModal: closeRetargetModal, confirmRetarget: confirmRetarget,
-                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend
+                amending: amending, amendReason: amendReason, cancelAmend: cancelAmend,
+                maxLengthOf: maxLengthOf, fieldId: fieldId, isGroup: isGroup, labelFor: labelFor, retargetDialog: retargetDialog
             };
         },
         template: '\
@@ -1028,13 +1145,6 @@
     <div class="cq-empty">\
         <div class="cq-empty__icon"><i class="bi bi-check2-circle"></i></div>\
         <div class="cq-empty__title">Ya se cargó esta ficha</div>\
-        <div class="cq-empty__desc">Si se necesita otra, entrar de nuevo desde Pacientes.</div>\
-        <a v-if="completedResponseId" :href="\'/Encounters/View/\' + completedResponseId" class="btn btn-outline-secondary">Ver ficha cargada</a>\
-    </div>\
-</div>\
-<div v-else-if="loading" class="cq-card">\
-    <div class="cq-loading"><div class="cq-spinner cq-spinner--lg"></div>\
-        <div class="cq-loading__label">Cargando cuestionario…</div>\
     </div>\
 </div>\
 <div v-else-if="loadError" class="alert alert-danger" role="alert">\
@@ -1046,7 +1156,7 @@
         <div class="alert alert-secondary d-flex align-items-center gap-2 mb-0">\
             <i class="bi bi-info-circle"></i>\
             <div class="flex-grow-1">Esta ficha ya no está en curso: otro usuario la finalizó o la descartó.</div>\
-            <button class="btn btn-sm btn-outline-secondary" @click="goToHistory">Ir al historial</button>\
+            <button class="btn btn-sm btn-secondary" @click="goToHistory">Ir al historial</button>\
         </div>\
     </div>\
     <div v-else-if="lockedByOther" class="col-12">\
@@ -1055,13 +1165,13 @@
             <div class="flex-grow-1">Lo está completando <strong>{{ lockedByOther.userId }}</strong>\
                 <span v-if="lockedByOther.expiresAt"> hasta las {{ formatTime(lockedByOther.expiresAt) }}</span>.\
             </div>\
-            <button class="btn btn-sm btn-outline-secondary" @click="retryLock">Reintentar</button>\
+            <button class="btn btn-sm btn-secondary" @click="retryLock">Reintentar</button>\
         </div>\
     </div>\
     <div v-else-if="showRenewPrompt" class="col-12">\
         <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
             <i class="bi bi-clock-history"></i>\
-            <div class="flex-grow-1">Su sesión de edición se cierra en {{ lockSecondsLeft }}s por inactividad.</div>\
+            <div class="flex-grow-1">{{ lockSecondsLeft > 0 ? \'Su sesión de edición se cierra en \' + lockSecondsLeft + \'s por inactividad.\' : \'Su sesión de edición venció por inactividad. Si nadie más la tomó, se retoma al seguir completando.\' }}</div>\
             <button class="btn btn-sm btn-primary" @click="renewLock">Seguir completando</button>\
         </div>\
     </div>\
@@ -1069,7 +1179,7 @@
         <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
             <i class="bi bi-arrow-up-circle"></i>\
             <div class="flex-grow-1">Hay una versión más nueva (<strong>v{{ newerVersion }}</strong>) de este cuestionario. Esta ficha se sigue completando en la v{{ questionnaire.version }}, con la que se inició.</div>\
-            <button class="btn btn-sm btn-outline-primary" @click="openRetargetPreview">Ver cambios y actualizar</button>\
+            <button class="btn btn-sm btn-secondary" @click="openRetargetPreview">Ver cambios y actualizar</button>\
         </div>\
     </div>\
     <aside class="col-lg-3">\
@@ -1099,44 +1209,44 @@
                 <h2 class="cq-section-title" style="margin-top:0;">{{ g.title }}</h2>\
                 <template v-for="q in g.questions" :key="q.linkId">\
                     <div v-if="isVisible(q)" class="mb-3">\
-                        <label class="form-label">{{ q.text }}<span v-if="q.required" class="text-danger" aria-label="obligatorio"> *</span></label>\
+                        <label class="form-label" :id="fieldId(q) + \'_label\'" :for="labelFor(q)">{{ q.text }}<span v-if="q.required" class="text-danger" aria-label="obligatorio"> *</span></label>\
 \
-                        <input v-if="q.type === \'string\'" type="text" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <input v-if="q.type === \'string\'" type="text" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <div v-else-if="q.type === \'integer\' || q.type === \'decimal\'" class="input-group" style="max-width:260px;">\
                             <input :type="q.type === \'integer\' ? \'number\' : \'text\'"\
                                    :inputmode="q.type === \'integer\' ? \'numeric\' : \'decimal\'"\
                                    :step="q.type === \'integer\' ? \'1\' : null"\
-                                   class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                                   class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                    :value="answers[q.linkId] ?? \'\'" @input="onChange(q, $event.target.value)" />\
                             <span v-if="q.unit" class="input-group-text">{{ q.unit }}</span>\
                         </div>\
 \
-                        <div v-else-if="q.type === \'boolean\'" class="btn-group" role="group">\
+                        <div v-else-if="q.type === \'boolean\'" class="btn-group" role="group" :aria-labelledby="fieldId(q) + \'_label\'">\
                             <input :id="q.linkId + \'_y\'" type="radio" class="btn-check" :name="q.linkId" :checked="answers[q.linkId] === true" @change="onChange(q, true)" />\
                             <label class="btn btn-outline-secondary" :for="q.linkId + \'_y\'">Sí</label>\
                             <input :id="q.linkId + \'_n\'" type="radio" class="btn-check" :name="q.linkId" :checked="answers[q.linkId] === false" @change="onChange(q, false)" />\
                             <label class="btn btn-outline-secondary" :for="q.linkId + \'_n\'">No</label>\
                         </div>\
 \
-                        <select v-else-if="q.type === \'choice\'" class="form-select" style="max-width:340px;" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <select v-else-if="q.type === \'choice\'" class="form-select" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:340px;" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                 :value="answers[q.linkId] || \'\'" @change="onChange(q, $event.target.value)">\
                             <option value="">Seleccione…</option>\
                             <option v-for="opt in q.options" :key="opt.code" :value="opt.code">{{ opt.display }}</option>\
                         </select>\
 \
-                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :class="{ \'is-invalid\': errors[q.linkId] }"\
+                        <textarea v-else-if="q.type === \'text\'" rows="4" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" :maxlength="maxLengthOf(q)" :class="{ \'is-invalid\': errors[q.linkId] }"\
                                   :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)"></textarea>\
 \
                         <div v-else-if="q.type === \'scale\'" class="d-flex align-items-center gap-3" style="max-width:360px;">\
-                            <input type="range" class="form-range" :min="q.min !== undefined ? q.min : 0" :max="q.max !== undefined ? q.max : 10"\
+                            <input type="range" class="form-range" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" @click="onChange(q, Number($event.target.value))" :min="q.min !== undefined ? q.min : 0" :max="q.max !== undefined ? q.max : 10"\
                                    :value="answers[q.linkId] !== undefined && answers[q.linkId] !== \'\' ? answers[q.linkId] : (q.min !== undefined ? q.min : 0)"\
                                    @input="onChange(q, Number($event.target.value))" />\
                             <span class="cq-text-sm fw-semibold" style="min-width:2.5rem; text-align:right;">{{ answers[q.linkId] !== undefined && answers[q.linkId] !== \'\' ? answers[q.linkId] : \'—\' }}</span>\
                         </div>\
 \
-                        <div v-else-if="q.type === \'openChoice\'" :class="{ \'is-invalid\': errors[q.linkId] }">\
+                        <div v-else-if="q.type === \'openChoice\'" role="group" :aria-labelledby="fieldId(q) + \'_label\'" :class="{ \'is-invalid\': errors[q.linkId] }">\
                             <div v-for="opt in q.options" :key="opt.code" class="form-check">\
                                 <input class="form-check-input" type="checkbox" :id="q.linkId + \'_\' + opt.code"\
                                        :checked="(answers[q.linkId] || []).indexOf(opt.code) >= 0" @change="onToggleMulti(q, opt.code, $event.target.checked)" />\
@@ -1144,10 +1254,10 @@
                             </div>\
                         </div>\
 \
-                        <input v-else-if="q.type === \'date\'" type="date" class="form-control" style="max-width:240px;"\
+                        <input v-else-if="q.type === \'date\'" type="date" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:240px;"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
-                        <input v-else-if="q.type === \'dateTime\'" type="datetime-local" class="form-control" style="max-width:260px;"\
+                        <input v-else-if="q.type === \'dateTime\'" type="datetime-local" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:260px;"\
                                :value="answers[q.linkId] || \'\'" @input="onChange(q, $event.target.value)" />\
 \
                         <div v-else-if="q.type === \'attachment\'">\
@@ -1158,7 +1268,7 @@
                                 <button class="btn btn-sm btn-link text-danger" @click="clearFile(q)">Quitar</button>\
                             </div>\
                             <div v-else class="d-flex align-items-center gap-2">\
-                                <input type="file" class="form-control" style="max-width:340px;" :accept="q.accept"\
+                                <input type="file" class="form-control" :id="fieldId(q)" :aria-invalid="errors[q.linkId] ? \'true\' : null" :aria-describedby="errors[q.linkId] ? fieldId(q) + \'_error\' : null" style="max-width:340px;" :accept="q.accept"\
                                        :disabled="uploading[q.linkId]" @change="onFile(q, $event.target.files[0])" />\
                                 <span v-if="uploading[q.linkId]" class="cq-spinner"></span>\
                             </div>\
@@ -1166,7 +1276,7 @@
 \
                         <input v-else type="text" class="form-control" disabled placeholder="Tipo no soportado" />\
 \
-                        <div v-if="errors[q.linkId]" class="invalid-feedback d-block">{{ errors[q.linkId] }}</div>\
+                        <div v-if="errors[q.linkId]" :id="fieldId(q) + \'_error\'" class="invalid-feedback d-block">{{ errors[q.linkId] }}</div>\
                     </div>\
                 </template>\
             </section>\
@@ -1176,13 +1286,13 @@
                 <label class="form-label" for="amendReason">Motivo de la corrección<span class="text-danger"> *</span></label>\
                 <textarea id="amendReason" rows="2" maxlength="2000" class="form-control" v-model="amendReason" :disabled="readOnly()"></textarea>\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mt-3">\
-                    <button class="btn btn-outline-secondary" :disabled="submitting" @click="cancelAmend">Cancelar</button>\
+                    <button class="btn btn-neutral" :disabled="submitting" @click="cancelAmend">Cancelar</button>\
                     <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete() || !amendReason.trim()" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Guardar corrección\' }}</button>\
                 </div>\
             </div>\
             <div v-else class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
-                    <button class="btn btn-outline-secondary" :disabled="submitting || readOnly()" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
+                    <button class="btn btn-secondary" :disabled="submitting || readOnly()" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
                     <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
                 </div>\
             </div>\
@@ -1190,8 +1300,8 @@
     </div>\
 \
     <div v-if="showRetargetModal && retargetPreview" class="col-12" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeRetargetModal">\
-        <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
-            <h2 class="cq-section-title" style="margin-top:0;">Pasar a la versión v{{ retargetPreview.ToVersion }}</h2>\
+        <div ref="retargetDialog" class="cq-card" role="dialog" aria-modal="true" aria-labelledby="retargetTitle" tabindex="-1" @keydown.esc="closeRetargetModal" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
+            <h2 id="retargetTitle" class="cq-section-title" style="margin-top:0;">Pasar a la versión v{{ retargetPreview.ToVersion }}</h2>\
             <p class="cq-text-sm cq-text-muted">Está completando la v{{ retargetPreview.FromVersion }}. Así queda su ficha si pasa a la v{{ retargetPreview.ToVersion }}:</p>\
             <div class="mb-3">\
                 <div class="cq-text-sm fw-semibold"><i class="bi bi-check2 text-success me-1"></i>Se conservan ({{ retargetPreview.Carried.length }})</div>\
@@ -1214,7 +1324,7 @@
                 <p class="cq-text-xs text-danger mb-0 mt-1">Estas respuestas se perderán al actualizar.</p>\
             </div>\
             <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-3">\
-                <button class="btn btn-outline-secondary" :disabled="retargeting" @click="closeRetargetModal">Seguir en v{{ retargetPreview.FromVersion }}</button>\
+                <button class="btn btn-secondary" :disabled="retargeting" @click="closeRetargetModal">Seguir en v{{ retargetPreview.FromVersion }}</button>\
                 <button class="btn btn-primary" :disabled="retargeting" @click="confirmRetarget"><i class="bi bi-arrow-up-circle me-1"></i>{{ retargeting ? \'Actualizando…\' : \'Actualizar a v\' + retargetPreview.ToVersion }}</button>\
             </div>\
         </div>\

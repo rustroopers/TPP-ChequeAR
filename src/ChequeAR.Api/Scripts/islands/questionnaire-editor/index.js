@@ -216,11 +216,11 @@
                 { key: 'meta',      label: 'Metadatos',    icon: 'bi-info-circle',
                   help: 'Ponele un título que un colega reconozca desde el listado. La especialidad determina bajo qué grupo aparece en los reportes.' },
                 { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3',
-                  help: 'Agregá secciones y elegí variables del catálogo. De cada una podés cambiar el enunciado y si es obligatoria; el tipo, la unidad, el rango y el código los define el Administrador. Podés condicionar preguntas a otras anteriores.' },
+                  help: 'Agregue secciones y elija variables del catálogo. De cada una puede cambiar el enunciado y si es obligatoria; el tipo, la unidad, el rango y el código los define el Administrador. Puede condicionar preguntas a otras anteriores.' },
                 { key: 'preview',   label: 'Vista previa', icon: 'bi-eye',
-                  help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revisá sus condiciones.' },
+                  help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revise sus condiciones.' },
                 { key: 'publish',   label: 'Publicación',  icon: 'bi-send',
-                  help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guardá los cambios antes.' }
+                  help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guarde los cambios antes.' }
             ];
             var step = Vue.ref(props.isNew ? 'meta' : 'structure');
             var stepIndex = Vue.computed(function () {
@@ -277,13 +277,13 @@
             var nextBlockedReason = Vue.computed(function () {
                 if (canGoNext.value || stepIndex.value >= STEPS.length - 1) return '';
                 var i = stepIndex.value;
-                if (i === 0) return 'Cargá un título para continuar.';
+                if (i === 0) return 'Cargue un título para continuar.';
                 if (i === 1) {
                     var sinTitulo = groups.value.some(function (g) { return !g.title || !g.title.trim(); });
                     if (sinTitulo) return 'Todas las secciones necesitan un título.';
-                    return 'Agregá al menos una pregunta para continuar.';
+                    return 'Agregue al menos una pregunta para continuar.';
                 }
-                if (i === 2) return 'Abrí la vista previa para continuar.';
+                if (i === 2) return 'Abra la vista previa para continuar.';
                 return '';
             });
 
@@ -299,12 +299,14 @@
             // Blockers para publicar, calculados una vez y reusados en el paso 5.
             var publishBlockers = Vue.computed(function () {
                 var out = [];
-                if (isArchived.value) out.push('El cuestionario está archivado y no se puede publicar. Reactivalo desde el listado.');
+                if (isArchived.value) out.push('El cuestionario está archivado: publíquelo desde el listado para reactivarlo.');
                 if (conflict.value)   out.push('Hay un conflicto de edición sin resolver.');
-                if (dirty.value)      out.push('Hay cambios sin guardar. Guardá antes de publicar.');
+                if (dirty.value)      out.push('Hay cambios sin guardar. Guarde antes de publicar.');
                 if (isNew.value)      out.push('El cuestionario todavía no se guardó por primera vez.');
                 if (issues.value.length) out.push('Hay ' + issues.value.length + ' problema(s) en la estructura: ver el aviso de arriba.');
                 if (!allQuestionsFlat.value.length) out.push('No hay preguntas cargadas.');
+                if (isPublished.value && !dirty.value && !hasPendingChanges.value)
+                    out.push('No hay cambios respecto de la versión publicada.');
                 return out;
             });
 
@@ -855,7 +857,7 @@
                         importOpen.value = false;
                         var msg = 'Se importaron ' + count + ' pregunta(s) de "' + (candidate.title || 'otro cuestionario') + '"';
                         if (dropped) msg += ' — ' + dropped + ' condición(es) que apuntaban afuera quedaron sin efecto';
-                        toast(msg, 'success');
+                        toast(msg + '.', 'success');
                     })
                     .catch(function (err) { importError.value = 'No se pudo importar: ' + err.message; })
                     .then(function () { importBusy.value = false; });
@@ -910,7 +912,8 @@
             // la define es el Administrador desde el catalogo.
             var questionnaireSnomed = window.ChequeARSnomed.createSearch(
                 function () { return questionnaireCoding; },
-                function () { dirty.value = true; });
+                function () { dirty.value = true; },
+                'questionnaire');
 
             Vue.watch(function () { return questionnaireCoding.term; }, function (t) {
                 questionnaireSnomed.schedule(t);
@@ -1143,9 +1146,11 @@
             // explicit = lo pidió el usuario (botón Guardar) -> confirmamos con un toast.
             // El autosave guarda en silencio: para eso está el indicador "Guardado hh:mm"
             // en el header. Los errores avisan siempre, vengan de donde vengan.
+            // Un autosave que llega con otro guardado en vuelo no se pierde: se repite al terminar.
+            var saveAgain = false;
             function save(options) {
                 var explicit = !!(options && options.explicit);
-                if (saving.value) return Promise.resolve(false);
+                if (saving.value) { saveAgain = true; return Promise.resolve(false); }
                 // Nada cambió desde el último guardado: no hay razón para pegarle al
                 // server. Un cuestionario nuevo siempre tiene que crearse la primera vez,
                 // aunque todavía no se haya tocado nada.
@@ -1153,7 +1158,7 @@
                     // El usuario apreto Guardar pero no hay nada pendiente. No es
                     // un error: confirmamos con verde y wording positivo, en vez
                     // del azul info que se leia como cartel de bug.
-                    if (explicit) toast('Ya esta todo guardado', 'success');
+                    if (explicit) toast('Ya está todo guardado.', 'success');
                     return Promise.resolve(true);
                 }
                 // El backend rechaza cualquier escritura sobre un archivado (500 si no se
@@ -1164,7 +1169,7 @@
                     return Promise.resolve(false);
                 }
                 if (!canEdit) {
-                    if (explicit) toast('Tu rol no permite editar cuestionarios.', 'error');
+                    if (explicit) toast('Su rol no permite editar cuestionarios.', 'error');
                     return Promise.resolve(false);
                 }
                 // Con un conflicto sin resolver no se vuelve a intentar: reintentar sólo
@@ -1180,7 +1185,7 @@
                 }
                 var token = getToken();
                 if (!token) {
-                    toast('No hay sesión: no se puede guardar (token ausente).', 'error');
+                    toast('No hay una sesión activa. Vuelva a ingresar.', 'error');
                     return Promise.resolve(false);
                 }
 
@@ -1212,11 +1217,13 @@
 
                 // Devuelve una promesa que resuelve en true/false: publicar necesita saber
                 // si el guardado previo salió bien antes de congelar una versión.
+                var pendientes = null;
                 return fetch(url, {
                     method: creating ? 'POST' : 'PUT',
                     headers: headers,
                     body: body
                 }).then(function (res) {
+                    pendientes = res.headers.get('X-ChequeAR-Pending-Changes');
                     if (res.status === 409) {
                         return res.json().catch(function () { return null; }).then(function (body) {
                             var err = new Error(diagnostico(body, 'Conflicto de edición'));
@@ -1256,12 +1263,12 @@
                     // para no pisar una edición hecha mientras el guardado viajaba.
                     // Se guardó un cambio sobre un publicado: a partir de ahora hay que
                     // dejar publicar aunque "dirty" ya esté en false.
-                    if (isPublished.value) hasPendingChanges.value = true;
-                    if (creating) toast('Cuestionario creado', 'success');
+                    if (isPublished.value) hasPendingChanges.value = pendientes !== 'false';
+                    if (creating) toast('Cuestionario creado.', 'success');
                     else if (explicit) {
-                        toast(isPublished.value
-                            ? 'Cambios guardados. Publique de nuevo para que lleguen a los clínicos.'
-                            : 'Cambios guardados', 'success');
+                        toast(!isPublished.value ? 'Cambios guardados.'
+                            : hasPendingChanges.value ? 'Cambios guardados. Publique de nuevo para que lleguen a los clínicos.'
+                            : 'Cambios guardados. Quedó igual a la versión publicada.', 'success');
                     }
                     return true;
                 }).catch(function (err) {
@@ -1274,11 +1281,15 @@
                         // se intenta combinar los dos trabajos (con descarte siempre disponible).
                         beginMerge();
                     } else {
-                        toast('Error al guardar: ' + err.message, 'error');
+                        toast('No se pudo guardar: ' + err.message, 'error');
                     }
                     return false;
                 }).then(function (ok) {
                     saving.value = false;
+                    if (saveAgain) {
+                        saveAgain = false;
+                        if (dirty.value && !conflict.value) { clearTimeout(debounce); debounce = setTimeout(save, 0); }
+                    }
                     return ok;
                 });
             }
@@ -1666,7 +1677,7 @@
                 dirty.value = true;
                 save({ explicit: true }).then(function (ok) {
                     if (ok) toast(silent
-                        ? 'Se combinaron tus cambios con los de la otra persona.'
+                        ? 'Se combinaron sus cambios con los de la otra persona.'
                         : 'Cambios combinados y guardados.', 'success');
                 });
             }
@@ -1680,7 +1691,7 @@
                 // ni guardado antes sin publicar): publicar de nuevo sólo crearía una
                 // versión idéntica a la actual.
                 if (isPublished.value && !dirty.value && !hasPendingChanges.value) {
-                    toast('No hay cambios para publicar', 'info');
+                    toast('No hay cambios para publicar.', 'info');
                     return;
                 }
                 if (conflict.value) {
@@ -1691,7 +1702,7 @@
                 // vuelve una pregunta que nadie va a poder ver, y ya no hay forma de
                 // corregir esa versión.
                 if (issues.value.length) {
-                    toast('Hay ' + issues.value.length + ' problema(s) en la estructura del cuestionario. Resolvelos antes de publicar.', 'error');
+                    toast('Hay ' + issues.value.length + ' problema(s) en la estructura del cuestionario. Resuélvalos antes de publicar.', 'error');
                     return;
                 }
                 // Publicar exige haber guardado antes: no queremos congelar en una versión
@@ -1704,7 +1715,7 @@
                     return;
                 }
                 var token = getToken();
-                if (!token) { toast('No hay sesión: no se puede publicar (token ausente).', 'error'); return; }
+                if (!token) { toast('No hay una sesión activa. Vuelva a ingresar.', 'error'); return; }
 
                 publishing.value = true;
                 fetch('/fhir/r5/Questionnaire/' + currentId.value + '/$publish', {
@@ -1718,20 +1729,22 @@
                     },
                     body: '{}'
                 }).then(function (res) {
-                    if (res.ok) return null;
+                    if (res.ok) return res.json().catch(function () { return null; });
                     if (res.status === 409) {
                         // Otra persona guardó después de nuestro último guardado: se combina como
                         // en un guardado, y recién después se puede publicar.
                         beginMerge();
-                        throw new Error('otra persona guardó cambios. Revisá la combinación y volvé a publicar.');
+                        throw new Error('otra persona guardó cambios. Revise la combinación y vuelva a publicar.');
                     }
                     // El API devuelve 422 con OperationOutcome cuando la publicación no es
                     // válida (una regla de negocio, o el perfil de conformidad).
                     return res.json().catch(function () { return null; }).then(function (body) {
                         throw new Error(diagnostico(body, 'HTTP ' + res.status));
                     });
-                }).then(function () {
+                }).then(function (data) {
                     dirty.value = false;
+                    window.cqFlash && window.cqFlash(data && data.version
+                        ? 'Cuestionario publicado (v' + data.version + ').' : 'Cuestionario publicado.', 'success');
                     // Publicar es un punto final del flujo de edición: volver al listado en
                     // vez de recargar el editor, que es donde se ve el resultado (versión,
                     // estado) sobre todos los cuestionarios, no sólo este.
@@ -1775,6 +1788,13 @@
                 return '';
             }
 
+            // Escape cierra los paneles superpuestos, como los modales de Bootstrap.
+            function onEscape(e) {
+                if (e.key !== 'Escape') return;
+                if (varPickerOpen.value) closeVariablePicker();
+                else if (importOpen.value && !importBusy.value) closeImport();
+            }
+
             // Engancha los botones del header (viven fuera de la isla). Ojo: el listener
             // recibe el Event, así que va el wrapper y no save directamente.
             Vue.onMounted(function () {
@@ -1784,6 +1804,7 @@
                 var pub = document.getElementById('publishBtn');
                 if (pub) pub.addEventListener('click', publish);
                 window.addEventListener('beforeunload', beforeUnload);
+                document.addEventListener('keydown', onEscape);
 
                 // Deshabilita los botones mientras hay un guardado/publicación en curso:
                 // sin esto, clickear varias veces mientras el primer POST todavía no
@@ -1816,6 +1837,7 @@
                 var pub = document.getElementById('publishBtn');
                 if (pub) pub.removeEventListener('click', publish);
                 window.removeEventListener('beforeunload', beforeUnload);
+                document.removeEventListener('keydown', onEscape);
             });
 
             return {
@@ -1933,7 +1955,7 @@
 <div v-if="importOpen" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeImport">\
     <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
         <h2 class="cq-section-title" style="margin-top:0;">Importar preguntas de otro cuestionario</h2>\
-        <p class="cq-text-sm cq-text-muted">Se agregan las preguntas del cuestionario elegido (misma especialidad) a la estructura actual. Después podés editar, reordenar o quitar lo que quieras.</p>\
+        <p class="cq-text-sm cq-text-muted">Se agregan las preguntas del cuestionario elegido (misma especialidad) a la estructura actual. Después puede editar, reordenar o quitar lo que quiera.</p>\
         <div v-if="importLoading" class="cq-text-sm cq-text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> Cargando…</div>\
         <div v-else-if="importError" class="cq-text-sm text-danger py-2">{{ importError }}</div>\
         <div v-else-if="!importCandidates.length" class="cq-text-sm cq-text-muted py-3">No hay otros cuestionarios de esta especialidad para importar.</div>\
@@ -1947,7 +1969,7 @@
             </li>\
         </ul>\
         <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-3">\
-            <button class="btn btn-outline-secondary" @click="closeImport">Cerrar</button>\
+            <button class="btn btn-secondary" @click="closeImport">Cerrar</button>\
         </div>\
     </div>\
 </div>\
@@ -1968,7 +1990,7 @@
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(i, ix) in issues" :key="ix">{{ i.detail }}</li>\
             </ul>\
-            <button v-if="conditionIssues.length" class="btn btn-sm btn-outline-secondary-cq mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Quitar las condiciones que no se pueden cumplir</button>\
+            <button v-if="conditionIssues.length" class="btn btn-sm btn-secondary mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Quitar las condiciones que no se pueden cumplir</button>\
         </div>\
     </div>\
 </div>\
@@ -1982,7 +2004,7 @@
 </div>\
 <div v-if="!canEdit && !isArchived" class="cq-card mb-2 d-flex align-items-center gap-2" style="border-left:3px solid var(--cq-info);">\
     <i class="bi bi-eye" style="color:var(--cq-info);"></i>\
-    <span class="cq-text-sm">Estás viendo este cuestionario en <strong>modo lectura</strong>: tu rol no permite editarlo.</span>\
+    <span class="cq-text-sm">Está viendo este cuestionario en <strong>modo lectura</strong>: su rol no permite editarlo.</span>\
 </div>\
 <ol class="cq-timeline mb-3" aria-label="Pasos para crear un cuestionario">\
     <li v-for="(s, i) in STEPS" :key="s.key"\
@@ -1993,7 +2015,7 @@
                 @click="gotoStep(s.key)"\
                 :disabled="!stepReachable(i) && step !== s.key"\
                 :aria-label="(i + 1) + \'. \' + s.label + (stepStatus(i) === \'locked\' ? \' (bloqueado)\' : \'\')"\
-                :title="stepStatus(i) === \'locked\' ? \'Completá los pasos anteriores para desbloquear\' : s.label">\
+                :title="stepStatus(i) === \'locked\' ? \'Complete los pasos anteriores para desbloquear\' : s.label">\
             <i v-if="isStepDone(i) && step !== s.key" class="bi bi-check-lg"></i>\
             <i v-else-if="stepStatus(i) === \'locked\'" class="bi bi-lock-fill"></i>\
             <span v-else>{{ i + 1 }}</span>\
@@ -2006,7 +2028,7 @@
 </ol>\
 <div class="cq-wizard-nav mb-3">\
     <div class="cq-wizard-help__nav">\
-        <button class="btn btn-sm btn-outline-secondary-cq" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
+        <button class="btn btn-sm btn-secondary" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
         <button class="btn btn-sm btn-secondary" :disabled="!canGoNext" @click="stepNext" :title="nextBlockedReason">Siguiente <i class="bi bi-chevron-right"></i></button>\
     </div>\
 </div>\
@@ -2028,7 +2050,7 @@
                      "Cargando…" + "(fuera de catálogo)", que es la foto de ANTES del fetch. -->\
                 <select v-model="specialtyCode" class="form-select" :disabled="specialtiesLoading" data-cq-noenhance>\
                     <option v-if="specialtiesLoading" value="">Cargando…</option>\
-                    <option v-if="!specialtiesLoading && !specialtyCode" value="" disabled>Elegí una especialidad</option>\
+                    <option v-if="!specialtiesLoading && !specialtyCode" value="" disabled>Elija una especialidad</option>\
                     <option v-for="s in specialties" :key="s.code" :value="s.code">{{ s.name }}</option>\
                     <option v-if="specialtyCode && !specialties.some(function(s){return s.code===specialtyCode;})" :value="specialtyCode">{{ specialtyCode }} (fuera de catálogo)</option>\
                 </select>\
@@ -2037,7 +2059,7 @@
             <hr class="my-2" />\
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica del cuestionario <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
             <div class="row g-2">\
-                <div class="col-7">\
+                <div class="col-7" data-snomed-area="questionnaire">\
                     <label class="form-label cq-text-sm">Término clínico</label>\
                     <div class="input-group input-group-sm">\
                         <input v-model="questionnaireCoding.term" class="form-control form-control-sm" placeholder="ej: control cardiológico" />\
@@ -2068,7 +2090,7 @@
     </div>\
     <div class="cq-card mt-3" v-if="!readOnly">\
         <h3 class="cq-section-title mt-0">Importar desde otro cuestionario</h3>\
-        <button class="btn btn-sm btn-outline-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
+        <button class="btn btn-sm btn-secondary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
     </div>\
 </div>\
 \
@@ -2120,7 +2142,7 @@
     <div class="col-lg-6">\
         <div class="d-flex justify-content-between align-items-center mb-2" style="min-height:31px;">\
             <h3 class="m-0">Propiedades</h3>\
-            <span v-if="!selected" class="cq-text-xs cq-text-muted">Elegí una pregunta</span>\
+            <span v-if="!selected" class="cq-text-xs cq-text-muted">Elija una pregunta</span>\
         </div>\
         <div v-if="selected" class="cq-card" style="position:sticky; top:84px;">\
             <div class="mb-2">\
@@ -2171,13 +2193,13 @@
                 <div class="col-8">\
                     <select v-if="conditionSource && conditionSource.type === \'boolean\'" class="form-select form-select-sm"\
                             :value="String(selected.question.enableWhen.value)" @change="onConditionValue($event.target.value)">\
-                        <option value="" disabled>Elegí…</option>\
+                        <option value="" disabled>Elija…</option>\
                         <option value="true">Sí</option>\
                         <option value="false">No</option>\
                     </select>\
                     <select v-else-if="conditionSource && conditionSource.options && conditionSource.options.length" class="form-select form-select-sm"\
                             :value="selected.question.enableWhen.value" @change="onConditionValue($event.target.value)">\
-                        <option value="" disabled>Elegí…</option>\
+                        <option value="" disabled>Elija…</option>\
                         <option v-for="opt in conditionSource.options" :key="opt" :value="opt">{{ opt }}</option>\
                     </select>\
                     <input v-else class="form-control form-control-sm" :value="selected.question.enableWhen.value"\
@@ -2193,7 +2215,7 @@
 </div>\
 \
 <div v-if="step === \'preview\'">\
-    <div v-if="!groups.length || !allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para previsualizar. Volvé al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a>.</div>\
+    <div v-if="!groups.length || !allQuestionsFlat.length" class="cq-card cq-text-sm cq-text-muted">No hay preguntas para previsualizar. Vuelva al paso <a href="javascript:" @click="gotoStep(\'structure\')">Estructura</a>.</div>\
     <div v-else>\
         <div class="cq-card">\
             <div style="border-bottom:1px solid var(--cq-neutral-200); padding-bottom:16px;">\
@@ -2231,7 +2253,7 @@
     <div class="cq-card mb-2">\
         <h3 class="cq-section-title mt-0"><i class="bi bi-send me-1"></i>Publicación</h3>\
         <div v-if="publishBlockers.length" class="cq-card mb-0" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
-            <div class="cq-text-sm"><strong>Antes de publicar, resolvé:</strong></div>\
+            <div class="cq-text-sm"><strong>Todavía no se puede publicar:</strong></div>\
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(b, bi) in publishBlockers" :key="bi">{{ b }}</li>\
             </ul>\

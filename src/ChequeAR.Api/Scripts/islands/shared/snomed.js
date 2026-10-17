@@ -36,7 +36,9 @@
                     throw err;
                 }
                 if (!res.ok) throw new Error(diagnostico(body, 'HTTP ' + res.status));
-                return body;
+                // ValueSet: los conceptos vienen en expansion.contains.
+                var contains = (body && body.expansion && body.expansion.contains) || [];
+                return contains.map(function (c) { return { code: c.code, display: c.display }; });
             });
         });
     }
@@ -47,8 +49,11 @@
      *
      * `onChange` se llama cada vez que el buscador modifica el objeto, para que cada isla
      * marque su propio estado sucio (el editor tiene autosave; el ABM, no).
+     *
+     * `area`: valor del atributo data-snomed-area del bloque que contiene el término y la
+     * lista. Un clic fuera de ese bloque, o Escape, cierra la lista.
      */
-    function createSearch(getActive, onChange) {
+    function createSearch(getActive, onChange, area) {
         var Vue = window.Vue;
         var results = Vue.ref([]);
         var searching = Vue.ref(false);
@@ -93,7 +98,7 @@
 
             expand(term, 15, abort ? abort.signal : undefined)
                 .then(function (data) {
-                    results.value = (data && data.results) || [];
+                    results.value = data;
                     open.value = true;
                 })
                 .catch(function (err) {
@@ -128,7 +133,21 @@
             touched();
         }
 
-        function cancel() { clearTimeout(debounce); if (abort) abort.abort(); }
+        function onOutside(e) {
+            if (!open.value) return;
+            if (e.type === 'keydown') { if (e.key === 'Escape') open.value = false; return; }
+            var el = e.target && e.target.closest ? e.target.closest('[data-snomed-area]') : null;
+            if (!el || el.getAttribute('data-snomed-area') !== (area || 'default')) open.value = false;
+        }
+        document.addEventListener('mousedown', onOutside);
+        document.addEventListener('keydown', onOutside);
+
+        function cancel() {
+            clearTimeout(debounce);
+            if (abort) abort.abort();
+            document.removeEventListener('mousedown', onOutside);
+            document.removeEventListener('keydown', onOutside);
+        }
 
         // reactive y no un objeto plano: al exponerse anidado en el return de setup, Vue NO
         // desenvuelve los refs sueltos —`.searching` llegaría al template como el objeto Ref,
@@ -144,13 +163,13 @@
      */
     function verifyCode(code) {
         code = (code || '').trim();
-        if (!code) return Promise.resolve({ ok: false, msg: 'Escribí un código para verificar.' });
+        if (!code) return Promise.resolve({ ok: false, msg: 'Escriba un código para verificar.' });
         if (!/^[0-9]{6,18}$/.test(code)) {
-            return Promise.resolve({ ok: false, msg: 'Un código SNOMED CT son solo dígitos (6-18). Revisá lo tipeado.' });
+            return Promise.resolve({ ok: false, msg: 'Un código SNOMED CT son solo dígitos (6-18). Revise lo tipeado.' });
         }
         return expand(code, 5)
             .then(function (data) {
-                var results = (data && data.results) || [];
+                var results = data;
                 for (var i = 0; i < results.length; i++) {
                     // Match exacto: $expand con filtro numérico puede devolver conceptos cuyo
                     // código apenas contiene lo tipeado, y aceptar el primero codificaría algo

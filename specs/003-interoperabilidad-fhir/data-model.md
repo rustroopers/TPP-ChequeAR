@@ -1,5 +1,7 @@
 # Data Model: Capa de Interoperabilidad y Almacenamiento
 
+> Los tipos de este documento son de SQL Server. La base es Oracle: los tipos reales están en las migraciones de `src/ChequeAR.Infrastructure/Migrations`.
+
 ## Persistencia interna
 
 ### Estrategia general

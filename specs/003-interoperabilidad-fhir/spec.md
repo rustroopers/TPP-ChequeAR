@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-interoperabilidad-fhir`
 **Created**: 2026-06-01
-**Status**: Draft
+**Status**: Implementada en parte; sin API del hospital, la integración es por vistas VW_*
 
 
 > ## ✅ Cerrada por la spec 009

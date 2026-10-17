@@ -64,9 +64,20 @@ namespace ChequeAR.Application.Services
             _timer = new Timer(_ => OnTimer(), null, flushIntervalMs, flushIntervalMs);
         }
 
+        /// <summary>IP de quien origina el evento; null fuera de un pedido.</summary>
+        public Func<string> AgentIpProvider { get; set; }
+
         public void Enqueue(AuditEvent evt)
         {
+            StampIp(evt);
             _queue.Enqueue(new Pending(evt));
+        }
+
+        private void StampIp(AuditEvent evt)
+        {
+            if (evt == null || evt.AgentIp != null || AgentIpProvider == null) return;
+            try { evt.AgentIp = AgentIpProvider(); }
+            catch (Exception) { /* sin contexto de pedido */ }
         }
 
         /// <summary>
@@ -76,6 +87,7 @@ namespace ChequeAR.Application.Services
         /// </summary>
         public async Task PersistImmediatelyAsync(AuditEvent evt)
         {
+            StampIp(evt);
             try
             {
                 await WithRepositoryAsync(r => r.AddAsync(evt));

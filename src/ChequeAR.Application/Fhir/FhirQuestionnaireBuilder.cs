@@ -8,6 +8,7 @@ using ChequeAR.Domain.Enums;
 using Hl7.Fhir.Model;
 using Hl7.Fhir.Serialization;
 using Hl7.Fhir.Utility;
+using Newtonsoft.Json.Linq;
 using DomainQuestionnaire = ChequeAR.Domain.Entities.Questionnaire;
 using FhirQuestionnaire = Hl7.Fhir.Model.Questionnaire;
 
@@ -46,6 +47,24 @@ namespace ChequeAR.Application.Fhir
         {
             var resource = Compose(q, versionNumber, PublicationStatus.Active, publishedAt ?? DateTime.UtcNow);
             return new FhirJsonSerializer().SerializeToString(resource);
+        }
+
+        /// <summary>
+        /// Si dos recursos congelados dicen lo mismo, ignorando lo que cambia con cada escritura
+        /// o publicación (meta.versionId, version y date).
+        /// </summary>
+        public static bool SameContent(string fhirJsonA, string fhirJsonB)
+        {
+            if (string.IsNullOrEmpty(fhirJsonA) || string.IsNullOrEmpty(fhirJsonB)) return false;
+            var a = JObject.Parse(fhirJsonA);
+            var b = JObject.Parse(fhirJsonB);
+            foreach (var o in new[] { a, b })
+            {
+                o.Remove("meta");
+                o.Remove("version");
+                o.Remove("date");
+            }
+            return JToken.DeepEquals(a, b);
         }
 
         /// <summary>

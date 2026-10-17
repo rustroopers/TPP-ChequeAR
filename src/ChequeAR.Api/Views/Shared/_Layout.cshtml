@@ -12,7 +12,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <title>ChequeAR</title>
+    <title>@(string.IsNullOrEmpty(ViewBag.Title as string) ? "ChequeAR" : ViewBag.Title + " · ChequeAR")</title>
     <link rel="icon" type="image/png" href="@asset("~/Content/img/favicon-512.png")" />
 
     @* Token Bearer para que las islas Vue llamen a la API. Solo para sesion iniciada:
@@ -25,6 +25,8 @@
            islas Vue (p. ej. questionnaire-editor) decidan qué mostrar sin tener que
            decodificar el JWT. La autorización real sigue del lado del server. *@
         <meta name="cq-role" content="@ChequeAR.Api.Auth.CurrentUser.PrincipalRole(User as System.Security.Claims.ClaimsPrincipal)" />
+        @* Para volver a entrar desde el aviso de sesión vencida (cq-session.js). *@
+        <meta name="cq-user" content="@User.Identity.Name" />
         @* Tiene que cargar antes que cualquier script que use fetch. *@
         <script src="@asset("~/Scripts/cq-session.js")"></script>
     }

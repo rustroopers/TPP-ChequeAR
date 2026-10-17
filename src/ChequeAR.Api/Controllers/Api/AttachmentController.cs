@@ -16,7 +16,13 @@ namespace ChequeAR.Api.Controllers.Api
     public class AttachmentController : ApiController
     {
         private readonly AttachmentService _attachments;
-        public AttachmentController(AttachmentService attachments) { _attachments = attachments; }
+        private readonly AccessAuditService _audit;
+
+        public AttachmentController(AttachmentService attachments, AccessAuditService audit)
+        {
+            _attachments = attachments;
+            _audit = audit;
+        }
 
         /// <summary>Jpeg, png o pdf; el tipo se verifica por el contenido, no por el nombre.</summary>
         [HttpPost, Route(""), Authorize]
@@ -39,6 +45,7 @@ namespace ChequeAR.Api.Controllers.Api
                 if (attachment == null)
                     return Content(HttpStatusCode.UnsupportedMediaType,
                         new { error = "Solo se aceptan imágenes JPG o PNG y documentos PDF." });
+                await _audit.AttachmentUploaded(attachment.Id);
 
                 return Content(HttpStatusCode.Created, new
                 {
@@ -61,6 +68,7 @@ namespace ChequeAR.Api.Controllers.Api
 
             var stream = await _attachments.OpenReadAsync(id);
             if (stream == null) return Request.CreateResponse(HttpStatusCode.NotFound);
+            await _audit.AttachmentDownloaded(id);
 
             var resp = Request.CreateResponse(HttpStatusCode.OK);
             resp.Content = new StreamContent(stream);

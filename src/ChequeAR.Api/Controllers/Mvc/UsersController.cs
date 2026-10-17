@@ -114,39 +114,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var existing = await _users.GetAsync(model.Username);
                 if (existing == null) return HttpNotFound();
 
-                // Las reglas se chequean antes de escribir: rol primero (con el usuario todavía
-                // activo) y después la desactivación.
-                if (!model.Active) await _users.EnsureCanDeactivateAsync(existing.Id, User.Identity.Name);
-
-                // Rol: único y global (ver Domain.Enums.Role). SetRoleAsync valida que el
-                // valor sea conocido y que el sistema no se quede sin ningún Administrador.
-                await _users.SetRoleAsync(existing.Id, model.Role, actingUserId: User.Identity.Name);
-
-                // DisplayName/IsActive: edición administrativa simple, no toca membresías.
-                existing = await _users.GetAsync(model.Username);
-                existing.DisplayName = model.FullName ?? existing.DisplayName;
-                existing.IsActive = model.Active;
-                await _users.UpsertAsync(existing);
-
-                // Especialidades: antes Specialties[i].SpecialtyCode se posteaba y se
-                // descartaba en silencio (UpsertAsync ignora colecciones). Ahora se
-                // reconcilia de verdad vía el mismo camino que el sync on-login, con una
-                // lista EXPLÍCITA (nunca null: eso significaría "no la toques", que es lo
-                // que se necesita para el sync del hospital pero no para un ABM manual,
-                // donde el admin siempre manda el estado completo deseado). Roles = null:
-                // ya se manejó arriba, y null significa "no tocar roles" para este método.
-                var codes = (model.Specialties ?? new List<UserSpecialtyItem>())
-                    .Select(s => s.SpecialtyCode)
+                // Sin ninguna casilla marcada el formulario no manda el campo: quedan sin especialidades.
+                var codes = (model.SpecialtyCodes ?? new List<string>())
                     .Where(c => !string.IsNullOrWhiteSpace(c))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Distinct()
                     .ToList();
-                await _users.SyncFromHospitalAsync(new UserInfo
-                {
-                    Id = existing.Id,
-                    DisplayName = existing.DisplayName,
-                    Roles = null,
-                    Specialties = codes
-                });
+                await _users.UpdateByAdminAsync(existing.Id, model.FullName, model.Active, model.Role, codes,
+                    CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
 
                 SessionRevalidation.Invalidate(existing.Id);
 
@@ -163,8 +137,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = ex.Message;
                 TempData["ToastLevel"] = "error";
             }
-            catch (System.Exception)
+            catch (System.Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudieron guardar los cambios.";
                 TempData["ToastLevel"] = "error";
             }

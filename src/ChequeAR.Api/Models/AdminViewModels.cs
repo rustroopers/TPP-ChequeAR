@@ -42,6 +42,7 @@ namespace ChequeAR.Api.Models
         public string ActionBadge { get; set; }
         public string ActionIcon { get; set; }
         public string Resource { get; set; }
+        public string Ip { get; set; }
 
         // Diff de versiones (solo para publicaciones de un cuestionario).
         public bool HasVersionDiff { get; set; }
@@ -98,6 +99,9 @@ namespace ChequeAR.Api.Models
         /// <summary>Rol único y global del usuario (Administrador/Jefe/Medico). Ver Domain.Enums.Role.</summary>
         public string Role { get; set; }
         public List<UserSpecialtyItem> Specialties { get; set; } = new List<UserSpecialtyItem>();
+
+        /// <summary>Códigos marcados en el formulario al guardar.</summary>
+        public List<string> SpecialtyCodes { get; set; }
     }
 
     /// <summary>

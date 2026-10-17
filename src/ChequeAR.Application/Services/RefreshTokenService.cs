@@ -13,10 +13,13 @@ namespace ChequeAR.Application.Services
         private readonly IRefreshTokenRepository _repo;
         private readonly int _ttlHours;
 
-        public RefreshTokenService(IRefreshTokenRepository repo, int ttlHours = 8)
+        private readonly IClock _clock;
+
+        public RefreshTokenService(IRefreshTokenRepository repo, int ttlHours = 8, IClock clock = null)
         {
             _repo = repo;
             _ttlHours = ttlHours;
+            _clock = clock ?? SystemClock.Instance;
         }
 
         public async Task<string> IssueAsync(string userId, string userAgent, string ip)
@@ -25,13 +28,15 @@ namespace ChequeAR.Application.Services
             using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
             var raw = Convert.ToBase64String(bytes);
             var hash = Hash(raw);
+            // Los vencidos ya no sirven para nada; sin esto la tabla crece con cada login.
+            await _repo.PurgeExpiredAsync(_clock.UtcNow);
             await _repo.AddAsync(new RefreshToken
             {
                 Id = Guid.NewGuid(),
                 UserId = userId,
                 TokenHash = hash,
-                IssuedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.AddHours(_ttlHours),
+                IssuedAt = _clock.UtcNow,
+                ExpiresAt = _clock.UtcNow.AddHours(_ttlHours),
                 UserAgent = userAgent,
                 Ip = ip
             });
@@ -42,7 +47,7 @@ namespace ChequeAR.Application.Services
         {
             var hash = Hash(raw);
             var t = await _repo.GetByHashAsync(hash);
-            return t != null && t.IsActive() ? t : null;
+            return t != null && t.IsActive(_clock.UtcNow) ? t : null;
         }
 
         public Task RevokeAsync(string raw)

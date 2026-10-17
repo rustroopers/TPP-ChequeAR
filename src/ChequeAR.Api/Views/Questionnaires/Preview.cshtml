@@ -17,9 +17,9 @@
         <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
         @if (canWrite && Model.Status != "archived")
         {
-            <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-outline-secondary"><i class="bi bi-pencil me-1"></i> Editar</a>
+            <a href="@Url.Action("Edit", new { id = Model.Id })" class="btn btn-secondary"><i class="bi bi-pencil me-1"></i> Editar</a>
         }
-        <a href="@Url.Action("History", new { id = Model.Id })" class="btn btn-primary"><i class="bi bi-clock-history me-1"></i> Historial</a>
+        <a href="@Url.Action("History", new { id = Model.Id })" class="btn btn-secondary"><i class="bi bi-clock-history me-1"></i> Historial</a>
     </div>
 </header>
 
@@ -37,7 +37,7 @@
     @if (Model.SnapshotVersion.HasValue)
     {
         <div class="alert alert-info cq-text-sm mt-3 mb-0">
-            Estás viendo la versión @Model.SnapshotVersion tal como se publicó.
+            Está viendo la versión @Model.SnapshotVersion tal como se publicó.
             @if (Model.SnapshotVersion.Value != Model.Version)
             {
                 <text>La vigente es la v@(Model.Version).</text>

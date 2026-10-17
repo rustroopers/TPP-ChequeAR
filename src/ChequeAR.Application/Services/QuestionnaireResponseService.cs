@@ -35,6 +35,7 @@ namespace ChequeAR.Application.Services
         private readonly IAccessGuard _access;
         private readonly IAttachmentStore _attachments;
         private readonly IPatientDemographicsSource _demographics;
+        private readonly IClock _clock;
 
         public QuestionnaireResponseService(
             IQuestionnaireResponseRepository repo,
@@ -44,9 +45,11 @@ namespace ChequeAR.Application.Services
             ISpecialtyGuard guard,
             IAccessGuard access,
             IAttachmentStore attachments,
-            IPatientDemographicsSource demographics = null)
+            IPatientDemographicsSource demographics = null,
+            IClock clock = null)
         {
             _demographics = demographics;
+            _clock = clock ?? SystemClock.Instance;
             _repo = repo;
             _qRepo = qRepo;
             _validator = validator;
@@ -73,7 +76,7 @@ namespace ChequeAR.Application.Services
             {
                 var meta = await _attachments.GetAsync(id);
                 if (meta == null || !string.Equals(meta.UploadedBy, userId, StringComparison.OrdinalIgnoreCase))
-                    throw new ValidationFailedException(new List<string> { "Uno de los adjuntos no está disponible. Volvé a adjuntar el archivo." });
+                    throw new ValidationFailedException(new List<string> { "Uno de los adjuntos no está disponible. Vuelva a adjuntar el archivo." });
             }
         }
 
@@ -175,8 +178,8 @@ namespace ChequeAR.Application.Services
             await EnsureAttachmentsOwnedAsync(r.Items, null, userId);
 
             r.Id = Guid.NewGuid();
-            r.AuthoredAt = DateTime.UtcNow;
-            r.LastSavedAt = DateTime.UtcNow;
+            r.AuthoredAt = _clock.UtcNow;
+            r.LastSavedAt = _clock.UtcNow;
             r.AuthorUserId = userId;
             if (r.Status == 0) r.Status = ResponseStatus.InProgress;
 
@@ -238,7 +241,7 @@ namespace ChequeAR.Application.Services
             if (r.Status != ResponseStatus.InProgress)
                 return r;
 
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);
 
             // Se regenera con status completed antes de validar: el recurso guardado al
@@ -321,7 +324,7 @@ namespace ChequeAR.Application.Services
         public async Task<QuestionnaireResponse> BeginAmendAsync(Guid id, string userId)
         {
             var r = await LoadFinalizedForWriteAsync(id);
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             if (!r.CanBeLockedBy(userId, now))
                 throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
 
@@ -345,7 +348,7 @@ namespace ChequeAR.Application.Services
                 throw new ValidationFailedException(new List<string> { "El motivo no puede superar los 2000 caracteres." });
 
             var r = await LoadFinalizedForWriteAsync(id);
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);
             if (expectedVersion.HasValue && r.ConcurrencyVersion != expectedVersion.Value)
                 throw new ConcurrencyConflictException(expectedVersion.Value, r.ConcurrencyVersion);
@@ -411,7 +414,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await LoadInProgressForWriteAsync(id);
 
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             if (!r.CanBeLockedBy(userId, now))
                 throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
 
@@ -489,7 +492,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await LoadInProgressForWriteAsync(id);
 
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);
 
             var q = await _qRepo.GetAsync(r.QuestionnaireId);
@@ -589,7 +592,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await LoadInProgressForWriteAsync(id);
 
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             if (!r.CanBeLockedBy(userId, now))
                 throw new LockConflictException(r.LockedByUserId, r.LockExpiresAt);
 
@@ -606,7 +609,7 @@ namespace ChequeAR.Application.Services
         public async Task<QuestionnaireResponse> RenewLockAsync(Guid id, string userId, Guid lockToken)
         {
             var r = await LoadForWriteAsync(id);
-            EnsureLockOwnedOrRenew(r, userId, lockToken, DateTime.UtcNow);
+            EnsureLockOwnedOrRenew(r, userId, lockToken, _clock.UtcNow);
             r.ConcurrencyVersion++;
             await _repo.UpdateAsync(r);
             return r;
@@ -622,11 +625,41 @@ namespace ChequeAR.Application.Services
         /// null (cierre pasivo de pestaña) sólo se libera el lock, sin auditar: los datos ya
         /// quedaron por autosave y no fue un guardado deliberado.
         /// </param>
+        /// <param name="pending">
+        /// Lo que el autosave todavía no mandó cuando el médico salió de la página. Viaja en el
+        /// mismo pedido para que no compita con un PUT que llegue después de liberado el lock.
+        /// </param>
         public async Task ReleaseLockAsync(
-            Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null)
+            Guid id, string userId, Guid lockToken, ICollection<QuestionnaireResponseItem> sessionBaseline = null,
+            ICollection<QuestionnaireResponseItem> pending = null)
         {
             var r = await LoadForWriteAsync(id);
             if (!r.IsLockHeldBy(userId, lockToken)) return;
+
+            if (pending != null && r.Status == ResponseStatus.InProgress)
+            {
+                // Un autosave en vuelo puede ganarle la escritura: se relee y se reintenta una vez.
+                for (var intento = 0; intento < 2; intento++)
+                {
+                    try
+                    {
+                        await SaveProgressAsync(id, userId, lockToken, null, pending);
+                        break;
+                    }
+                    catch (ValidationFailedException)
+                    {
+                        // Lo inválido no se guarda, pero la sesión se cierra igual.
+                        break;
+                    }
+                    catch (ConcurrencyConflictException)
+                    {
+                        _repo.DiscardChanges();
+                    }
+                }
+                _repo.DiscardChanges();
+                r = await LoadForWriteAsync(id);
+                if (!r.IsLockHeldBy(userId, lockToken)) return;
+            }
 
             List<ResponseFieldChange> changes = null;
             if (sessionBaseline != null)
@@ -661,7 +694,7 @@ namespace ChequeAR.Application.Services
         {
             var r = await LoadInProgressForWriteAsync(id);
 
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             EnsureLockOwnedOrRenew(r, userId, lockToken, now);
 
             // Chequeo temprano, igual criterio que QuestionnaireService.UpdateAsync: la

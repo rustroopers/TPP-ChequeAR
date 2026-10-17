@@ -38,8 +38,22 @@ namespace ChequeAR.Api.Controllers.Mvc
         // R1 — pantalla de pacientes (buscador). El action se llama Index para que
         // la URL canónica sea /Pacientes (via ruta nombrada) o /Encounters como
         // fallback, en vez del ex "/Encounters/Search" que exponía el verbo interno.
-        public async Task<ActionResult> Index(string q = null)
+        /// <summary>
+        /// La búsqueda llega por POST y se guarda en TempData: el nombre o el DNI no quedan en
+        /// la URL ni en los logs de IIS.
+        /// </summary>
+        [HttpPost, ValidateAntiForgeryToken]
+        public ActionResult Search(string q)
         {
+            TempData[PatientQueryKey] = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
+            return RedirectToAction("Index");
+        }
+
+        private const string PatientQueryKey = "PatientQuery";
+
+        public async Task<ActionResult> Index()
+        {
+            var q = TempData.Peek(PatientQueryKey) as string;
             ViewBag.Title = "Pacientes";
             ViewBag.PageId = "encounters";
 
@@ -76,6 +90,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var cat = await _specialties.GetAsync();
                 var hits = await _patients.SearchAsync(q);
+                await _accessAudit.PatientsSearched(q, hits.Count);
                 foreach (var h in hits)
                 {
                     model.Results.Add(new PatientSearchItem
@@ -128,9 +143,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     return HttpNotFound();
                 }
-                ViewBag.QuestionnaireTitle = q?.Title ?? "Cuestionario";
+                if (q == null) return HttpNotFound();
+                ViewBag.QuestionnaireTitle = q.Title;
 
-                var current = q?.CurrentVersion();
+                var current = q.CurrentVersion();
                 if (current == null)
                 {
                     ViewBag.Version = 0;
@@ -145,7 +161,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // quedaría fuera de sincronía con lo que efectivamente se persiste/valida. La
                 // versión nueva rige para fichas nuevas. Sin borrador previo, se usa la vigente.
                 var draft = await GetResumeDraftAsync(patientId, questionnaireId);
-                var version = (draft == null ? null : q?.FindVersion(draft.QuestionnaireVersionId)) ?? current;
+                // Archivado: no admite fichas nuevas, pero un borrador ya empezado se termina.
+                if (draft == null && q.Status == QuestionnaireStatus.Retired)
+                {
+                    ViewBag.Version = current.VersionNumber;
+                    ViewBag.LoadError = "El cuestionario está archivado: no admite fichas nuevas.";
+                    return View();
+                }
+                var version = (draft == null ? null : q.FindVersion(draft.QuestionnaireVersionId)) ?? current;
                 // El botón "Detalle" (historial de la ficha) sólo tiene sentido si ya hay una
                 // ficha con eventos: una carga nueva todavía no generó ninguno.
                 ViewBag.ExistingResponseId = draft?.Id;
@@ -324,7 +347,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                             {
                                 Text = question.Text,
                                 Answer = ResponseAnswerFormatter.Format(items, question),
-                                Prefilled = items != null && items.Any(i => i.WasPrefilled),
+                                Unit = items != null && items.Count > 0 ? question?.Unit : null,
                                 AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
                         }
@@ -349,7 +372,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         {
                             Text = entry.Value,
                             Answer = ResponseAnswerFormatter.Format(items, question),
-                            Prefilled = items != null && items.Any(i => i.WasPrefilled),
+                            Unit = items != null && items.Count > 0 ? question?.Unit : null,
                             AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
                     }
@@ -497,6 +520,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var cat = await _specialties.GetAsync();
                 var p = await _patients.GetAsync(patientId);
+                await _accessAudit.PatientHistoryViewed(patientId);
                 model.Patient = new PatientSearchItem { HC = patientId, FullName = p?.FullName, AgeLabel = p?.AgeLabel, SpecialtyCode = cat.CodeOrDefault(p?.SpecialtyCode), SpecialtyLabel = p?.SpecialtyLabel ?? cat.DefaultLabel };
 
                 // El historial de UN paciente está intrínsecamente acotado (no crece sin
@@ -602,6 +626,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 if (questionnaireId.HasValue &&
                     !model.AvailableQuestionnaires.Any(o => o.Value == questionnaireId.Value.ToString()))
                     model.SelectedQuestionnaireId = null;
+
+                // Con un solo cuestionario posible no hay nada que elegir.
+                if (!model.SelectedQuestionnaireId.HasValue && model.AvailableQuestionnaires.Count == 1)
+                    model.SelectedQuestionnaireId = Guid.Parse(model.AvailableQuestionnaires[0].Value);
             }
             catch (Exception ex)
             {

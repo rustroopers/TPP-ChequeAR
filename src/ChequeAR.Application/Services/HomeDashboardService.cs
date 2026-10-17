@@ -69,19 +69,10 @@ namespace ChequeAR.Application.Services
             var recientes = await _responses.SearchAsync(null, null, null, 0, take, scope);
             if (recientes.Count == 0) return new List<RecentEncounterDto>();
 
-            // Una sola consulta en lugar de una por ficha. El cache manual del controller
-            // amortiguaba el N+1 dentro de la página, pero seguía siendo una consulta por
-            // cuestionario distinto.
-            var ids = recientes.Select(r => r.QuestionnaireId).Distinct().ToList();
-            var porId = new Dictionary<Guid, ChequeAR.Domain.Entities.Questionnaire>();
-            foreach (var id in ids)
-            {
-                // Recorre por id directo (no vía QuestionnaireService): el scope ya se aplicó
-                // en SearchAsync, así que estos cuestionarios son los de las fichas que el
-                // usuario tiene permitido ver -- acá sólo se resuelven sus títulos.
-                var q = await _questionnaires.GetAsync(id);
-                if (q != null) porId[id] = q;
-            }
+            // Una sola consulta, sólo con la cabecera de cada cuestionario. Va directo al
+            // repositorio: el scope ya se aplicó al buscar las fichas.
+            var porId = (await _questionnaires.GetHeadersAsync(recientes.Select(r => r.QuestionnaireId)))
+                .ToDictionary(q => q.Id);
 
             var cat = await _specialties.GetAsync();
             return recientes.Select(r =>
@@ -106,14 +97,33 @@ namespace ChequeAR.Application.Services
 
         public async Task<DashboardKpis> KpisAsync()
         {
+            var scope = _guard.Scope;
+            var especialidades = await _questionnaires.GetSpecialtyCodesAsync();
+            if (scope.IsUnrestricted)
+            {
+                return new DashboardKpis
+                {
+                    Questionnaires = await _questionnaires.CountAsync(null, null, null),
+                    Users = await _users.CountAsync(null, null, null, true),
+                    // COUNT en la base: antes se traían hasta 1000 fichas completas para contarlas,
+                    // y pasado ese número el indicador quedaba clavado en 1000.
+                    Encounters = await _responses.CountAsync(),
+                    Specialties = especialidades.Count
+                };
+            }
+
+            // Un usuario puede tener varias especialidades: se cuentan ids distintos.
+            var usuarios = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var codigo in scope.Codes)
+                foreach (var u in await _users.ListAsync(null, null, codigo, true, 0, int.MaxValue))
+                    usuarios.Add(u.Id);
+
             return new DashboardKpis
             {
-                Questionnaires = await _questionnaires.CountAsync(null, null, null),
-                Users = await _users.CountAsync(null, null, null, true),
-                // COUNT en la base: antes se traían hasta 1000 fichas completas para contarlas,
-                // y pasado ese número el indicador quedaba clavado en 1000.
-                Encounters = await _responses.CountAsync(),
-                Specialties = (await _questionnaires.GetSpecialtyCodesAsync()).Count
+                Questionnaires = scope.IsEmpty ? 0 : await _questionnaires.CountAsync(null, null, null, scope.Codes),
+                Users = usuarios.Count,
+                Encounters = scope.IsEmpty ? 0 : await _responses.CountAsync(scope: scope),
+                Specialties = especialidades.Count(scope.Allows)
             };
         }
     }

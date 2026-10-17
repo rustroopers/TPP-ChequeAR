@@ -20,7 +20,6 @@ namespace ChequeAR.Application.Interfaces
         Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take, SpecialtyScope scope = null);
         Task AddAsync(QuestionnaireResponse r);
         Task UpdateAsync(QuestionnaireResponse r);
-        Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items);
         /// <summary>
         /// Guardado parcial: reemplaza, dentro de la misma transacción que la cabecera
         /// (r ya trae seteados FhirJson/ConcurrencyVersion/lock/etc.), los items cuyo
@@ -37,6 +36,9 @@ namespace ChequeAR.Application.Interfaces
 
         /// <summary>Reemplaza todas las respuestas de la ficha y guarda la cabecera en la misma operación.</summary>
         Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items);
+
+        /// <summary>Descarta lo leído y lo pendiente, para volver a leer de la base después de un conflicto.</summary>
+        void DiscardChanges();
         /// <summary>Cuestionarios de las fichas que referencian el adjunto.</summary>
         Task<IReadOnlyList<Guid>> FindQuestionnaireIdsByAttachmentAsync(Guid attachmentId);
         /// <summary>¿Hay respuestas cargadas contra este cuestionario? Decide si se puede borrar.</summary>

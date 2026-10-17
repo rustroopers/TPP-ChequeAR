@@ -10,7 +10,7 @@ namespace ChequeAR.Application.Exceptions
     public class PermissionForbiddenException : Exception
     {
         public PermissionForbiddenException(string permission)
-            : base("No tenés permiso para '" + (permission ?? "(desconocido)") + "'.")
+            : base("No tiene permiso para '" + (permission ?? "(desconocido)") + "'.")
         {
             Permission = permission;
         }

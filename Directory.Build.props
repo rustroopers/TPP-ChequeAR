@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    Analizadores de .NET (Roslyn) para todo el repo, incluido tests/integration. Con
+    -warnaserror en CI sus avisos rompen el build, así que el nivel va fijo: con "latest",
+    una regla nueva del SDK o de la imagen del runner rompía el build sin tocar código.
+  -->
+  <PropertyGroup>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>9.0</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+  </PropertyGroup>
+
+  <!--
+    packages.lock.json por proyecto: el restore resuelve siempre lo mismo. En CI va con
+    RestoreLockedMode, que falla si el lock no coincide con los csproj.
+  -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+</Project>

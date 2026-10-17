@@ -33,7 +33,7 @@ namespace ChequeAR.Infrastructure.Repositories
         {
             if (scope != null && !scope.IsUnrestricted && scope.IsEmpty) return new List<QuestionnaireResponse>();
             return await Filtered(patientHospitalId, questionnaireId, status, scope)
-                .OrderByDescending(x => x.AuthoredAt).Skip(skip).Take(take).ToListAsync();
+                .OrderByDescending(x => x.AuthoredAt).ThenBy(x => x.Id).Skip(skip).Take(take).ToListAsync();
         }
 
         public async Task<int> CountAsync(string patientHospitalId = null, Guid? questionnaireId = null, ResponseStatus? status = null, SpecialtyScope scope = null)
@@ -68,12 +68,6 @@ namespace ChequeAR.Infrastructure.Repositories
         }
 
         public Task UpdateAsync(QuestionnaireResponse r) => SaveAsync();
-
-        public async Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items)
-        {
-            _ctx.QuestionnaireResponseItems.AddRange(items);
-            await _ctx.SaveChangesAsync();
-        }
 
         public Task<bool> HasResponsesAsync(Guid questionnaireId)
         {
@@ -117,6 +111,12 @@ namespace ChequeAR.Infrastructure.Repositories
             // Cabecera (nueva versión anclada + FhirJson + ConcurrencyVersion) y borrado de
             // items en el mismo SaveChanges, por el mismo motivo que SaveProgressAsync.
             await SaveAsync();
+        }
+
+        public void DiscardChanges()
+        {
+            foreach (var entry in _ctx.ChangeTracker.Entries().ToList())
+                entry.State = EntityState.Detached;
         }
 
         public async Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items)

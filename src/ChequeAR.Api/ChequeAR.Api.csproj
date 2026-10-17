@@ -59,43 +59,43 @@
       Local es redundante (VS ya instala el targeting pack), pero en el runner de CI
       no esta garantizado y sin esto el build falla con MSB3644.
     -->
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="All" />
     <!--
       Este proyecto es old-style (no importa Microsoft.NET.Sdk), asi que no recibe los
       analizadores que trae el SDK para los otros cuatro proyectos via EnableNETAnalyzers
       (Directory.Build.props). Se agrega como paquete explicito para que tambien lo cubra.
     -->
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.AspNet.Mvc" Version="5.2.9" />
-    <PackageReference Include="Microsoft.AspNet.Razor" Version="3.2.9" />
-    <PackageReference Include="Microsoft.AspNet.WebApi" Version="5.2.9" />
-    <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="5.2.9" />
-    <PackageReference Include="Microsoft.AspNet.WebApi.Core" Version="5.2.9" />
-    <PackageReference Include="Microsoft.AspNet.WebApi.WebHost" Version="5.2.9" />
-    <PackageReference Include="Microsoft.AspNet.WebApi.Owin" Version="5.2.9" />
-    <PackageReference Include="Microsoft.AspNet.WebPages" Version="3.2.9" />
-    <PackageReference Include="Microsoft.Owin" Version="4.2.2" />
-    <PackageReference Include="Microsoft.Owin.Host.SystemWeb" Version="4.2.2" />
-    <PackageReference Include="Microsoft.Owin.Security" Version="4.2.2" />
-    <PackageReference Include="Microsoft.Owin.Security.Jwt" Version="4.2.2" />
-    <PackageReference Include="Microsoft.Owin.Security.OAuth" Version="4.2.2" />
-    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="6.35.0" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNet.Mvc" />
+    <PackageReference Include="Microsoft.AspNet.Razor" />
+    <PackageReference Include="Microsoft.AspNet.WebApi" />
+    <PackageReference Include="Microsoft.AspNet.WebApi.Client" />
+    <PackageReference Include="Microsoft.AspNet.WebApi.Core" />
+    <PackageReference Include="Microsoft.AspNet.WebApi.WebHost" />
+    <PackageReference Include="Microsoft.AspNet.WebApi.Owin" />
+    <PackageReference Include="Microsoft.AspNet.WebPages" />
+    <PackageReference Include="Microsoft.Owin" />
+    <PackageReference Include="Microsoft.Owin.Host.SystemWeb" />
+    <PackageReference Include="Microsoft.Owin.Security" />
+    <PackageReference Include="Microsoft.Owin.Security.Jwt" />
+    <PackageReference Include="Microsoft.Owin.Security.OAuth" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <!-- 13.0.4 es el minimo que exige Hl7.Fhir.Base; con 13.0.3 el restore falla (NU1605). -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Owin" Version="1.0" />
-    <PackageReference Include="WebGrease" Version="1.6.0" />
-    <PackageReference Include="Serilog" Version="4.2.0" />
-    <PackageReference Include="SimpleInjector.Integration.Web.Mvc" Version="5.5.0" />
-    <PackageReference Include="SimpleInjector.Integration.WebApi" Version="5.5.0" />
-    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
-    <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Owin" />
+    <PackageReference Include="WebGrease" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="SimpleInjector.Integration.Web.Mvc" />
+    <PackageReference Include="SimpleInjector.Integration.WebApi" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.Debug" />
     <!--
       Necesario para el MediaTypeFormatter que serializa recursos FHIR.
       Los POCOs de Firely NO se pueden serializar con Newtonsoft: hay que usar
       FhirJsonSerializer/FhirJsonParser. Misma version pinneada (research.md R1).
     -->
-    <PackageReference Include="Hl7.Fhir.R5" Version="5.13.4" />
+    <PackageReference Include="Hl7.Fhir.R5" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App_Start\RouteConfig.cs" />
@@ -136,6 +136,9 @@
     <Compile Include="Controllers\Mvc\VariablesController.cs" />
     <Compile Include="Controllers\Mvc\AdminController.cs" />
     <Compile Include="Fhir\CapabilityCatalog.cs" />
+    <Compile Include="Fhir\FhirErrorHandler.cs" />
+    <Compile Include="Fhir\FhirHttp.cs" />
+    <Compile Include="Fhir\FhirModelState.cs" />
     <Compile Include="Fhir\FhirMediaTypeFormatter.cs" />
     <Compile Include="Models\HomeViewModel.cs" />
     <Compile Include="Models\QuestionnaireListItem.cs" />
@@ -147,6 +150,9 @@
     <Compile Include="Models\ClinicalVariableDtos.cs" />
     <Compile Include="Models\ProfileViewModel.cs" />
     <Compile Include="Controllers\Api\AuthController.cs" />
+    <Compile Include="Controllers\Api\DeployController.cs" />
+    <Compile Include="Controllers\Api\FhirNotFoundController.cs" />
+    <Compile Include="Controllers\Api\HealthController.cs" />
     <Compile Include="Controllers\Api\MetadataController.cs" />
     <Compile Include="Controllers\Api\TerminologyController.cs" />
     <Compile Include="Controllers\Api\QuestionnaireController.cs" />
@@ -185,7 +191,7 @@
     <Content Include="Content\img\favicon-512.png" />
     <Content Include="Content\i18n\es-AR.json" />
     <Content Include="Views\Account\Login.cshtml" />
-    <Content Include="Views\Account\SessionExpired.cshtml" />
+    <Content Include="Views\Account\Password.cshtml" />
     <Content Include="Views\Account\Profile.cshtml" />
     <Content Include="Views\Questionnaires\Index.cshtml" />
     <Content Include="Views\Questionnaires\Edit.cshtml" />

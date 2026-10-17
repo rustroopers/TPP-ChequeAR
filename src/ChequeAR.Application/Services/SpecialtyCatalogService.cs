@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Application.Services
 {
@@ -44,7 +46,10 @@ namespace ChequeAR.Application.Services
 
                 try
                 {
-                    var items = await _repoFactory().ListAsync(includeInactive: true).ConfigureAwait(false);
+                    var repo = _repoFactory();
+                    IReadOnlyList<Specialty> items;
+                    try { items = await repo.ListAsync(includeInactive: true).ConfigureAwait(false); }
+                    finally { (repo as IDisposable)?.Dispose(); }
                     _snapshot = new SpecialtyCatalog(items);
                     _loadedAtUtc = DateTime.UtcNow;
                 }

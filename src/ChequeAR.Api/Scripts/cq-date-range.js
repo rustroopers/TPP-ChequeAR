@@ -207,7 +207,7 @@
                 if (isEnd) el.classList.add('is-end');
                 if (isStart || isEnd) el.classList.add('is-selected');
             });
-            if (this._hintEl) this._hintEl.textContent = this._picking ? 'Elegí la fecha final' : '';
+            if (this._hintEl) this._hintEl.textContent = this._picking ? 'Elija la fecha final' : '';
         }
 
         _renderLabel() {

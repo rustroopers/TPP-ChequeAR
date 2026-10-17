@@ -185,7 +185,7 @@ namespace ChequeAR.Infrastructure.Repositories
                 var actual = await _ctx.ClinicalVariables.AsNoTracking()
                     .Where(x => x.Id == v.Id).Select(x => (int?)x.Revision).FirstOrDefaultAsync();
                 throw new ConcurrencyConflictException(v.Revision, actual ?? v.Revision,
-                    "Otra persona modificó la variable mientras la editabas. Volvé a abrirla para ver sus cambios.");
+                    "Otra persona modificó la variable mientras usted la editaba. Vuelva a abrirla para ver sus cambios.");
             }
         }
 

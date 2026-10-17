@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Security;
+using ChequeAR.Application.Validation;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
 
@@ -229,6 +230,16 @@ namespace ChequeAR.Application.Services
             foreach (var o in options) { o.Id = Guid.NewGuid(); o.VariableId = id; }
 
             await _repo.UpdateWithOptionsAsync(v, options);
+
+            // Si lo guardado volvió a ser igual a la vigente, no queda nada para publicar.
+            var current = v.CurrentVersionId.HasValue ? await _repo.GetVersionAsync(v.CurrentVersionId.Value) : null;
+            patch.Options = options;
+            if (current != null && VariableDefinition.From(patch).SameAs(VariableDefinition.Parse(current.DefinitionJson)))
+            {
+                current.SourceRevision = v.Revision;
+                await _repo.UpdateVersionSourceAsync(current);
+            }
+
             _audit.Enqueue(AuditEventBuilder.For("update", "ClinicalVariable/" + id, userId));
             return v;
         }
@@ -323,7 +334,7 @@ namespace ChequeAR.Application.Services
         {
             if (expected.HasValue && expected.Value != v.Revision)
                 throw new ConcurrencyConflictException(expected.Value, v.Revision,
-                    "Otra persona modificó la variable mientras la editabas. Volvé a abrirla para ver sus cambios.");
+                    "Otra persona modificó la variable mientras usted la editaba. Vuelva a abrirla para ver sus cambios.");
         }
 
         /// <summary>
@@ -423,6 +434,8 @@ namespace ChequeAR.Application.Services
 
             if (v.MaxLength.HasValue && v.MaxLength <= 0)
                 errors.Add("El largo máximo debe ser mayor que cero.");
+            if (v.MaxLength > ResponseValidator.MaxTextLength)
+                errors.Add("El largo máximo no puede superar los " + ResponseValidator.MaxTextLength + " caracteres.");
 
 
             if (v.SnomedCode != null)

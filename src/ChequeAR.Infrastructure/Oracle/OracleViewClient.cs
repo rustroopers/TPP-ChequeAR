@@ -100,6 +100,8 @@ namespace ChequeAR.Infrastructure.Oracle
             return await ExecuteAsync(sql.ToString(), binds).ConfigureAwait(false);
         }
 
+        public Task PingAsync() => ExecuteAsync("SELECT 1 FROM DUAL", new List<OracleParameter>());
+
         internal static string EscapeLike(string term)
             => term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
@@ -112,6 +114,8 @@ namespace ChequeAR.Infrastructure.Oracle
             {
                 cmd.BindByName = true;
                 cmd.CommandType = CommandType.Text;
+                // Una vista lenta del hospital no puede dejar el request colgado.
+                cmd.CommandTimeout = 30;
                 foreach (var b in binds) cmd.Parameters.Add(b);
                 await conn.OpenAsync().ConfigureAwait(false);
                 using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))

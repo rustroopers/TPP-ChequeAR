@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -17,6 +18,8 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IQuestionnaireRepository> _repo = new Mock<IQuestionnaireRepository>();
         private readonly Mock<IQuestionnaireResponseRepository> _responses = new Mock<IQuestionnaireResponseRepository>();
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
+        private readonly List<AuditEvent> _auditados = new List<AuditEvent>();
+        private readonly AuditDispatcher _audit;
         private readonly QuestionnaireService _sut;
 
         // Variable del catálogo con la que se arman las preguntas de estos tests. Desde que el
@@ -26,9 +29,8 @@ namespace ChequeAR.Tests.Application
 
         public QuestionnaireServiceTests()
         {
-            _sut = new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(),
-                TestHelpers.UnrestrictedGuard(), TestHelpers.CatalogWith(), TestHelpers.UnrestrictedAccess(),
-                TestHelpers.VariableRepoWith(_peso));
+            _audit = TestHelpers.CapturingAuditDispatcher(_auditados);
+            _sut = TestHelpers.QuestionnaireService(_repo, _responses, _validator, TestHelpers.VariableRepoWith(_peso), audit: _audit);
         }
 
         // Al crear: arranca en estado Draft, se le asigna Id y datos de auditoría (creador/fecha)
@@ -212,6 +214,10 @@ namespace ChequeAR.Tests.Application
             // dos SaveChanges y una caída en el medio dejaba la versión huérfana.
             _repo.Verify(r => r.PublishAsync(q, It.Is<QuestionnaireVersion>(v => v.VersionNumber == 1)), Times.Once);
             _repo.Verify(r => r.UpdateAsync(It.IsAny<Questionnaire>()), Times.Never);
+            await _audit.FlushAsync();
+            var evt = Assert.Single(_auditados);
+            Assert.Equal("Questionnaire/" + id + "$publish", evt.EntityRef);
+            Assert.Equal("u", evt.AgentUserId);
         }
 
         // Publicar desde el listado no manda JSON: el service lo arma desde la base. Sin esto
@@ -325,6 +331,32 @@ namespace ChequeAR.Tests.Application
 
             Assert.True(updated.HasPendingChanges);
             Assert.True(updated.HasUnpublishedChanges());
+        }
+
+        // Guardar algo igual a la versión vigente (por ejemplo, deshacer a mano lo editado)
+        // no deja nada para publicar.
+        [Fact]
+        public async Task UpdateAsync_IgualALaVersionVigente_NoDejaPendientes()
+        {
+            var id = Guid.NewGuid();
+            var publicada = new Questionnaire { Id = id, Title = "Control" };
+            var version = new QuestionnaireVersion
+            {
+                Id = Guid.NewGuid(), QuestionnaireId = id, VersionNumber = 1,
+                PublishedAt = new DateTime(2026, 5, 4, 13, 0, 0, DateTimeKind.Utc)
+            };
+            version.FhirJson = FhirQuestionnaireBuilder.Build(publicada, 1, version.PublishedAt);
+            var existing = new Questionnaire
+            {
+                Id = id, Title = "Control editado", Status = QuestionnaireStatus.Active,
+                CurrentVersionId = version.Id, HasPendingChanges = true, ConcurrencyVersion = 7,
+                Versions = new System.Collections.Generic.List<QuestionnaireVersion> { version }
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "Control" }, "u");
+
+            Assert.False(updated.HasUnpublishedChanges());
         }
 
         // Concurrencia optimista: si el cliente trae una versión vieja (alguien más guardó

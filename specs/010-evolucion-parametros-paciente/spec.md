@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-10
 
-**Status**: Draft
+**Status**: Implementada
 
 **Input**: User description: "Evolución longitudinal de parámetros por paciente (gráficos de tendencia): desde el historial de un paciente, elegir un cuestionario y uno o más parámetros numéricos/fecha de ese cuestionario para ver su evolución en el tiempo a través de las fichas finalizadas del paciente, un gráfico por parámetro, con franja de rango normal, sin límite de parámetros seleccionables, mismo cuestionario únicamente, mismos permisos que el historial del paciente hoy."
 
@@ -80,7 +80,7 @@ El profesional quiere, al mirar la evolución de un parámetro, ubicar de un vis
 - **FR-009**: El sistema DEBE mostrar, para cada parámetro cuya pregunta tenga configurado un rango normal (mínimo y/o máximo), una franja de referencia visual con ese rango dentro de su gráfico.
 - **FR-010**: El sistema DEBE mostrar el gráfico igualmente para parámetros sin rango normal configurado, simplemente sin la franja de referencia.
 - **FR-011**: El sistema DEBE indicar de forma clara cuándo no hay datos suficientes para graficar un cuestionario o un parámetro elegido, en vez de mostrar un gráfico vacío sin explicación.
-- **FR-012**: El sistema DEBE restringir el acceso a esta funcionalidad al mismo conjunto de roles que hoy puede acceder al historial del paciente, sin agregar restricciones adicionales.
+- **FR-012**: El sistema DEBE restringir el acceso a esta funcionalidad al mismo conjunto de roles que hoy puede acceder al historial del paciente, y sólo a fichas de cuestionarios de las especialidades del usuario (spec 005 FR-005: un médico nunca ve información de otra especialidad).
 - **FR-013**: El sistema NO DEBE permitir combinar en una misma vista parámetros de cuestionarios distintos ni comparar la evolución de más de un paciente a la vez.
 
 ### Key Entities

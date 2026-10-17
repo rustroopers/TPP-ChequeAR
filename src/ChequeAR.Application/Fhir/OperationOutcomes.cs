@@ -23,7 +23,7 @@ namespace ChequeAR.Application.Fhir
 
         public static OperationOutcome Forbidden(string diagnostics = null)
             => Single(OperationOutcome.IssueType.Forbidden,
-                      diagnostics ?? "No tenés permiso para realizar esta operación.");
+                      diagnostics ?? "No tiene permiso para realizar esta operación.");
 
         public static OperationOutcome Invalid(string diagnostics = null)
             => Single(OperationOutcome.IssueType.Invalid,
@@ -38,6 +38,23 @@ namespace ChequeAR.Application.Fhir
         /// cliente vio la última versión, y una edición concurrente pisaría trabajo ajeno
         /// en silencio.
         /// </summary>
+        public const string LockHolderUrl = "https://chequear.garrahan/StructureDefinition/lock-holder";
+        public const string LockExpiresUrl = "https://chequear.garrahan/StructureDefinition/lock-expires";
+
+        /// <summary>
+        /// 409 por la sesión de edición de otro usuario. Quién la tiene y hasta cuándo no tienen
+        /// lugar en el OperationOutcome: van como extensiones, que el renderer lee para avisar.
+        /// </summary>
+        public static OperationOutcome LockConflict(string diagnostics, string lockedBy, System.DateTime? expiresAt)
+        {
+            var outcome = Single(OperationOutcome.IssueType.LockError, diagnostics);
+            if (!string.IsNullOrEmpty(lockedBy)) outcome.Extension.Add(new Extension(LockHolderUrl, new FhirString(lockedBy)));
+            if (expiresAt.HasValue)
+                outcome.Extension.Add(new Extension(LockExpiresUrl, new Instant(new System.DateTimeOffset(
+                    System.DateTime.SpecifyKind(expiresAt.Value, System.DateTimeKind.Utc)))));
+            return outcome;
+        }
+
         public static OperationOutcome PreconditionRequired(string diagnostics = null)
             => Single(OperationOutcome.IssueType.Required,
                       diagnostics ?? "Falta el header If-Match con la versión del recurso (ej: If-Match: W/\"3\").");
@@ -48,8 +65,8 @@ namespace ChequeAR.Application.Fhir
         /// </summary>
         public static OperationOutcome Conflict(int expectedVersion, int actualVersion)
             => Single(OperationOutcome.IssueType.Conflict,
-                      "Otra persona modificó este recurso mientras lo editabas. " +
-                      "Tu versión era la " + expectedVersion + " y la actual es la " + actualVersion + ".");
+                      "Otra persona modificó este recurso mientras usted lo editaba. " +
+                      "Su versión era la " + expectedVersion + " y la actual es la " + actualVersion + ".");
 
         /// <summary>
         /// Fallo temporal de un servicio externo (terminología, hospital). Se distingue de un
@@ -59,7 +76,7 @@ namespace ChequeAR.Application.Fhir
         {
             var text = diagnostics;
             if (retryAfterSeconds.HasValue && retryAfterSeconds.Value > 0)
-                text += " Reintentá en " + retryAfterSeconds.Value + " segundos.";
+                text += " Reintente en " + retryAfterSeconds.Value + " segundos.";
             return Single(OperationOutcome.IssueType.Transient, text);
         }
 

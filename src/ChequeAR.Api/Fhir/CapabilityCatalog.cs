@@ -22,11 +22,18 @@ namespace ChequeAR.Api.Fhir
             public string Definition { get; set; }
         }
 
+        public sealed class SearchParamCap
+        {
+            public string Name { get; set; }
+            public string Type { get; set; }
+        }
+
         public sealed class ResourceCap
         {
             public string Type { get; set; }
             public IList<string> Interactions { get; set; } = new List<string>();
             public IList<OperationCap> Operations { get; set; } = new List<OperationCap>();
+            public IList<SearchParamCap> SearchParams { get; set; } = new List<SearchParamCap>();
 
             /// <summary>
             /// Nota para quien integra. Se usa sobre todo para declarar explícitamente lo que
@@ -45,27 +52,62 @@ namespace ChequeAR.Api.Fhir
                 Operations = new List<OperationCap>
                 {
                     new OperationCap { Name = "publish", Definition = "https://chequear.garrahan/OperationDefinition/publish" },
-                    new OperationCap { Name = "archive", Definition = "https://chequear.garrahan/OperationDefinition/archive" }
-                }
+                    new OperationCap { Name = "archive", Definition = "https://chequear.garrahan/OperationDefinition/archive" },
+                    new OperationCap { Name = "clone", Definition = "https://chequear.garrahan/OperationDefinition/clone" }
+                },
+                SearchParams = new List<SearchParamCap>
+                {
+                    new SearchParamCap { Name = "status", Type = "token" },
+                    new SearchParamCap { Name = "title", Type = "string" },
+                    new SearchParamCap { Name = "url", Type = "uri" },
+                    new SearchParamCap { Name = "version", Type = "token" }
+                },
+                Documentation = "GET por id devuelve el borrador de trabajo; una versión publicada se lee con url y version."
             },
             new ResourceCap
             {
                 Type = "QuestionnaireResponse",
-                Interactions = new List<string> { "read", "search-type", "create", "update" },
+                // Sin update: el guardado parcial recibe la forma interna, no un recurso ($save-progress).
+                Interactions = new List<string> { "read", "search-type", "create" },
                 Operations = new List<OperationCap>
                 {
-                    new OperationCap { Name = "finalize", Definition = "https://chequear.garrahan/OperationDefinition/finalize" }
+                    new OperationCap { Name = "lock", Definition = "https://chequear.garrahan/OperationDefinition/lock" },
+                    new OperationCap { Name = "renew-lock", Definition = "https://chequear.garrahan/OperationDefinition/renew-lock" },
+                    new OperationCap { Name = "unlock", Definition = "https://chequear.garrahan/OperationDefinition/unlock" },
+                    new OperationCap { Name = "save-progress", Definition = "https://chequear.garrahan/OperationDefinition/save-progress" },
+                    new OperationCap { Name = "finalize", Definition = "https://chequear.garrahan/OperationDefinition/finalize" },
+                    new OperationCap { Name = "amend", Definition = "https://chequear.garrahan/OperationDefinition/amend" },
+                    new OperationCap { Name = "amend-commit", Definition = "https://chequear.garrahan/OperationDefinition/amend-commit" },
+                    new OperationCap { Name = "abandon", Definition = "https://chequear.garrahan/OperationDefinition/abandon" },
+                    new OperationCap { Name = "retarget-preview", Definition = "https://chequear.garrahan/OperationDefinition/retarget-preview" },
+                    new OperationCap { Name = "retarget-version", Definition = "https://chequear.garrahan/OperationDefinition/retarget-version" }
+                },
+                SearchParams = new List<SearchParamCap>
+                {
+                    new SearchParamCap { Name = "subject", Type = "reference" },
+                    new SearchParamCap { Name = "questionnaire", Type = "reference" },
+                    new SearchParamCap { Name = "status", Type = "token" },
+                    new SearchParamCap { Name = "_summary", Type = "token" }
                 }
             },
             new ResourceCap
             {
                 Type = "AuditEvent",
-                Interactions = new List<string> { "read", "search-type" }
+                Interactions = new List<string> { "read", "search-type" },
+                SearchParams = new List<SearchParamCap>
+                {
+                    new SearchParamCap { Name = "agent.who", Type = "reference" },
+                    new SearchParamCap { Name = "entity.what", Type = "reference" }
+                }
             },
             new ResourceCap
             {
                 Type = "Patient",
                 Interactions = new List<string> { "read", "search-type" },
+                SearchParams = new List<SearchParamCap>
+                {
+                    new SearchParamCap { Name = "name", Type = "string" }
+                },
                 Documentation = "Sólo lectura. ChequeAR no posee la entidad: la deriva de la vista "
                               + "del hospital y, cuando esa fuente no responde, de sus propias fichas."
             },
@@ -75,6 +117,10 @@ namespace ChequeAR.Api.Fhir
                 // estable que se pueda prometer como dirección individual.
                 Type = "Encounter",
                 Interactions = new List<string> { "search-type" },
+                SearchParams = new List<SearchParamCap>
+                {
+                    new SearchParamCap { Name = "subject", Type = "reference" }
+                },
                 Documentation = "Sólo búsqueda por paciente. Derivado de las fichas cargadas; "
                               + "ChequeAR no registra episodios de atención."
             },
@@ -82,6 +128,15 @@ namespace ChequeAR.Api.Fhir
             {
                 // Declarado SIN interacciones a propósito: es la forma de decir "conozco este
                 // tipo y no lo soporto". Omitirlo del catálogo se leería como un olvido.
+                Type = "ValueSet",
+                Operations = new List<OperationCap>
+                {
+                    new OperationCap { Name = "expand", Definition = "http://hl7.org/fhir/OperationDefinition/ValueSet-expand" }
+                },
+                Documentation = "Sólo $expand sobre SNOMED CT (filter, count), para el autocompletado del editor."
+            },
+            new ResourceCap
+            {
                 Type = "Observation",
                 Documentation = "NO SOPORTADO. ChequeAR no produce observaciones; las consume del "
                               + "servidor FHIR del hospital al precargar datos de una ficha."

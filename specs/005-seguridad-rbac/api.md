@@ -1,5 +1,9 @@
 # API Contracts: Seguridad y Control de Accesos
 
+> **Desactualizado.** `[ChequeARSpecialty]` y `AuditMiddleware` no existen: los permisos van por
+> `[RequiresPermissionApi]`, el filtro por especialidad está en los servicios y los `AuditEvent` se emiten desde ellos.
+> El login es local; no hay API del hospital.
+
 ## Estado de implementación (2026-06-10)
 
 | Endpoint | Estado | Notas |

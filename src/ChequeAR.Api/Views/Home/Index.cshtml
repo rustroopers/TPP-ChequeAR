@@ -8,7 +8,7 @@
     var canWriteQuestionnaires = Cq.Can(Permissions.QuestionnaireWrite);
     ViewBag.Title = Cq.T("sidebar.home");
     ViewBag.PageId = "home";
-    var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? User.Identity.Name : "Doctor";
+    var name = User != null && User.Identity != null && User.Identity.IsAuthenticated ? ChequeAR.Api.Auth.CurrentUser.DisplayName(User as System.Security.Claims.ClaimsPrincipal) : "Doctor";
     // "Ficha reciente" muestra la última fila de RecentEncounters. Si no hay, el card
     // se renderiza vacío (empty state) pero sigue mostrando el bloque para que la UI
     // se sienta habitada aún sin data.
@@ -46,7 +46,6 @@
             <div id="reportEmpty" class="cq-empty" hidden>
                 <div class="cq-empty__icon"><i class="bi bi-bar-chart"></i></div>
                 <div class="cq-empty__title">No hay reportes aún</div>
-                <div class="cq-empty__desc cq-text-xs cq-text-muted">Guardá una consulta desde Reportes para verla acá.</div>
             </div>
             @* margin-bottom negativo = el gap de 12px que .cq-demo-card (flex column) deja entre
    el cuerpo y el pie. Absorbiéndolo, el borde inferior del svg -donde apoyan las
@@ -146,7 +145,7 @@
             {
                 <div class="d-flex align-items-center gap-2">
                     <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
-                    <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Podés editarlo cuantas veces quieras y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+                    <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Puede editarlo cuantas veces quiera y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
                 </div>
             }
         </div>
@@ -166,8 +165,6 @@
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
             <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
-            <div class="cq-empty__desc">@Cq.T("home.empty.desc")</div>
-            <a href="@Url.Action("Index", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("home.empty.cta")</a>
         </div>
     </div>
 }
@@ -258,12 +255,7 @@ else
         var caption = document.getElementById("reportCaption");
         if (!picker) return;
 
-        function authHeaders() {
-            var h = { "Content-Type": "application/json" };
-            var m = document.querySelector('meta[name="cq-token"]');
-            if (m) h["Authorization"] = "Bearer " + m.getAttribute("content");
-            return h;
-        }
+        var jsonHeaders = { "Content-Type": "application/json" };
 
         // [hidden] tiene prioridad sobre display:flex/none inline, así que no hace
         // falta pelearse con !important de las clases utility de Bootstrap.
@@ -380,7 +372,7 @@ else
             try { q = JSON.parse(rep.QueryJson || rep.queryJson || "{}"); } catch (e) { q = {}; }
             if (!q.questionnaireId) q.questionnaireId = rep.QuestionnaireId || rep.questionnaireId;
             if (!q.questionnaireId) { showEmpty("Reporte sin cuestionario asociado"); return; }
-            fetch("/api/reports/stats", { method: "POST", headers: authHeaders(), body: JSON.stringify(q) })
+            fetch("/api/reports/stats", { method: "POST", headers: jsonHeaders, body: JSON.stringify(q) })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (data) {
                     if (!data || !data.Questions || !data.Questions.length) { showEmpty("No hay datos para este reporte"); return; }
@@ -425,7 +417,7 @@ else
         }
 
         // Bootstrap: traigo la lista y armo el picker.
-        fetch("/api/reports/saved", { headers: authHeaders() })
+        fetch("/api/reports/saved", { headers: jsonHeaders })
             .then(function (r) { return r.ok ? r.json() : { results: [] }; })
             .then(function (data) {
                 var results = (data && data.results) || [];

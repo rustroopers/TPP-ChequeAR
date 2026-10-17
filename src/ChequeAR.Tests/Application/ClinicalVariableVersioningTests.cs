@@ -178,6 +178,36 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
+        public async Task Update_IgualALaVigente_NoDejaCambiosSinPublicar()
+        {
+            var vigente = new ClinicalVariableVersion { Id = Guid.NewGuid(), VersionNumber = 1, SourceRevision = 1 };
+            var v = Severidad(revision: 2, vigente: vigente);
+            var patch = new ClinicalVariable
+            {
+                Code = "severidad", Name = "Severidad", Type = QuestionType.Choice,
+                Options = v.Options.Select(o => new VariableOption { Value = o.Value, Display = o.Display, Code = o.Code, OrderIndex = o.OrderIndex }).ToList()
+            };
+
+            var updated = await _sut.UpdateAsync(v.Id, patch, "admin");
+
+            Assert.Equal(updated.Revision, vigente.SourceRevision);
+            _repo.Verify(r => r.UpdateVersionSourceAsync(vigente), Times.Once);
+        }
+
+        [Fact]
+        public async Task Update_DistintaDeLaVigente_DejaCambiosSinPublicar()
+        {
+            var vigente = new ClinicalVariableVersion { Id = Guid.NewGuid(), VersionNumber = 1, SourceRevision = 1 };
+            var v = Severidad(revision: 1, vigente: vigente);
+            var patch = new ClinicalVariable { Code = "severidad", Name = "Severidad clínica", Type = QuestionType.Choice, Options = v.Options.ToList() };
+
+            var updated = await _sut.UpdateAsync(v.Id, patch, "admin");
+
+            Assert.NotEqual(updated.Revision, vigente.SourceRevision);
+            _repo.Verify(r => r.UpdateVersionSourceAsync(It.IsAny<ClinicalVariableVersion>()), Times.Never);
+        }
+
+        [Fact]
         public async Task Update_CambioDeTipoEnUnaPublicada_Rechaza()
         {
             var v = Severidad(vigente: new ClinicalVariableVersion { Id = Guid.NewGuid(), VersionNumber = 1, SourceRevision = 1 });

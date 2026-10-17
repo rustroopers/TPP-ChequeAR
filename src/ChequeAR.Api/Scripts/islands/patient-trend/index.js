@@ -56,17 +56,19 @@
                 }).then(function () { loadingParams.value = false; });
             }
 
+            var seriesSeq = window.ChequeARIslands.http.latest();
             function loadSeries() {
+                var vigente = seriesSeq();
                 var ids = selected.value;
-                if (!ids.length) { series.value = []; return; }
+                if (!ids.length) { series.value = []; loadingSeries.value = false; return; }
                 loadingSeries.value = true; error.value = null;
                 var url = base() + '/trend?questionnaireId=' + props.questionnaireId +
                     ids.map(function (l) { return '&linkId=' + encodeURIComponent(l); }).join('');
                 fetch(url, { headers: authHeaders() }).then(readJson).then(function (d) {
-                    series.value = (d && d.Series) || [];
+                    if (vigente()) series.value = (d && d.Series) || [];
                 }).catch(function (e) {
-                    error.value = e.message; series.value = [];
-                }).then(function () { loadingSeries.value = false; });
+                    if (vigente()) { error.value = e.message; series.value = []; }
+                }).then(function () { if (vigente()) loadingSeries.value = false; });
             }
 
             function isSelected(linkId) { return selected.value.indexOf(linkId) !== -1; }
@@ -231,8 +233,8 @@
                 <div class="cq-loading__label">Cargando series…</div>\
             </div>\
         </div>\
-        <div v-else-if="!charts.length" class="cq-card cq-text-sm cq-text-muted">\
-            Marque un parámetro para ver su gráfico.\
+        <div v-else-if="selected.length && !charts.length" class="cq-card cq-text-sm cq-text-muted">\
+            No hay valores registrados para los parámetros elegidos.\
         </div>\
         <div v-else class="d-flex flex-column gap-3">\
             <div v-for="c in charts" :key="c.linkId" class="cq-card">\

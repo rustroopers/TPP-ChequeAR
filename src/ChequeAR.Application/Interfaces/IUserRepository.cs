@@ -20,6 +20,13 @@ namespace ChequeAR.Application.Interfaces
         Task UpsertAsync(User u);
 
         /// <summary>
+        /// Corre <paramref name="change"/> con las filas de los administradores activos
+        /// bloqueadas y lo revierte si no queda ninguno. False si se revirtió. Dos cambios
+        /// simultáneos se ordenan: el segundo cuenta después de que el primero terminó.
+        /// </summary>
+        Task<bool> KeepingAnAdminAsync(System.Func<Task> change);
+
+        /// <summary>
         /// Reconcilia roles y especialidades del usuario contra lo informado (por el hospital
         /// en el login, o por un admin en el ABM), dando de alta y de baja lo que corresponda
         /// (ver UserMirrorDiff). Crea el usuario si no existe. Actualiza LastLoginAt/LastSyncAt.

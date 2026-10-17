@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
@@ -23,9 +24,8 @@ namespace ChequeAR.Tests.Application
         private readonly ClinicalVariable _peso = TestHelpers.Variable("peso");
 
         private QuestionnaireService Sut(ISpecialtyGuard guard, SpecialtyCatalogService catalog = null, IAccessGuard access = null)
-            => new QuestionnaireService(_repo.Object, _responses.Object, _validator.Object,
-                TestHelpers.NoopAuditDispatcher(), guard, catalog ?? TestHelpers.CatalogWith(),
-                access ?? TestHelpers.UnrestrictedAccess(), TestHelpers.VariableRepoWith(_peso));
+            => TestHelpers.QuestionnaireService(_repo, _responses, _validator, TestHelpers.VariableRepoWith(_peso),
+                guard, catalog, access);
 
         [Fact]
         public async Task GetAsync_FueraDeScope_Lanza()
@@ -135,21 +135,26 @@ namespace ChequeAR.Tests.Application
                 () => sut.UpdateAsync(id, new Questionnaire { Title = "nuevo" }, "u"));
         }
 
+        // El filtro y la paginación van a la base: antes se traían 2000 y se filtraba acá, y lo
+        // que pasaba de 2000 no aparecía.
         [Fact]
         public async Task SearchAsync_PasaElScopeAlRepo()
         {
-            _repo.Setup(r => r.SearchAsync(null, null, null, 0, 2000))
+            _repo.Setup(r => r.SearchAsync(null, null, null,
+                    It.Is<System.Collections.Generic.IReadOnlyCollection<string>>(c => c.SequenceEqual(new[] { "cardio" })), 40, 20))
                  .ReturnsAsync((System.Collections.Generic.IReadOnlyList<Questionnaire>)new System.Collections.Generic.List<Questionnaire>
                  {
-                     new Questionnaire { Id = Guid.NewGuid(), SpecialtyCode = "cardio" },
-                     new Questionnaire { Id = Guid.NewGuid(), SpecialtyCode = "onco" }
+                     new Questionnaire { Id = Guid.NewGuid(), SpecialtyCode = "cardio" }
                  });
+            _repo.Setup(r => r.CountAsync(null, null, null,
+                    It.Is<System.Collections.Generic.IReadOnlyCollection<string>>(c => c.SequenceEqual(new[] { "cardio" }))))
+                 .ReturnsAsync(41);
             var sut = Sut(TestHelpers.GuardFor("cardio"));
 
-            var result = await sut.SearchAsync(null, null, null, 0, 20);
+            var result = await sut.SearchAsync(null, null, null, 40, 20);
 
             Assert.Single(result);
-            Assert.Equal("cardio", result[0].SpecialtyCode);
+            Assert.Equal(41, await sut.CountAsync(null, null, null));
         }
 
         [Fact]
@@ -159,6 +164,8 @@ namespace ChequeAR.Tests.Application
             var result = await sut.SearchAsync(null, null, null, 0, 20);
             Assert.Empty(result);
             _repo.Verify(r => r.SearchAsync(It.IsAny<QuestionnaireStatus?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>()), Times.Never);
+            _repo.Verify(r => r.SearchAsync(It.IsAny<QuestionnaireStatus?>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<System.Collections.Generic.IReadOnlyCollection<string>>(), It.IsAny<int>(), It.IsAny<int>()), Times.Never);
         }
 
         [Fact]

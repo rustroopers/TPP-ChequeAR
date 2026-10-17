@@ -27,6 +27,16 @@
             }
         },
         http: {
+            // Para cargas que se pisan (otro cuestionario, otros parámetros): cada llamada
+            // devuelve una función que dice si esa carga sigue siendo la última pedida. Sin
+            // esto, una respuesta lenta llegaba después de la nueva y la reemplazaba.
+            latest: function () {
+                var seq = 0;
+                return function () {
+                    var mine = ++seq;
+                    return function () { return mine === seq; };
+                };
+            },
             // Para encadenar tras un fetch: deja pasar la respuesta si fue exitosa y, si no,
             // rechaza con el motivo que mandó la API. Los errores llegan como OperationOutcome
             // (issue[].diagnostics); sin esto la persona veía "HTTP 422" en vez de, por

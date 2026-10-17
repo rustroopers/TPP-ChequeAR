@@ -53,7 +53,7 @@ namespace ChequeAR.Application.Services
             var sw = Stopwatch.StartNew();
             try
             {
-                await _oracle.QueryAsync("DUAL", new Dictionary<string, object>());
+                await _oracle.PingAsync();
                 sw.Stop();
                 return Ok("Oracle Vistas", sw.ElapsedMilliseconds);
             }

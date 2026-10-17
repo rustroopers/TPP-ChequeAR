@@ -23,6 +23,12 @@ namespace ChequeAR.Api.Controllers.Api
                 {
                     Name = CapabilityCatalog.SoftwareName,
                     Version = CapabilityCatalog.SoftwareVersion
+                },
+                // Kind=instance exige decir de qué instalación se trata.
+                Implementation = new CapabilityStatement.ImplementationComponent
+                {
+                    Description = "ChequeAR · Hospital Garrahan",
+                    Url = Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5"
                 }
             };
 
@@ -37,6 +43,15 @@ namespace ChequeAR.Api.Controllers.Api
                     var code = EnumUtility.ParseLiteral<CapabilityStatement.TypeRestfulInteraction>(i);
                     if (code.HasValue)
                         resource.Interaction.Add(new CapabilityStatement.ResourceInteractionComponent { Code = code });
+                }
+
+                foreach (var p in r.SearchParams)
+                {
+                    resource.SearchParam.Add(new CapabilityStatement.SearchParamComponent
+                    {
+                        Name = p.Name,
+                        Type = EnumUtility.ParseLiteral<SearchParamType>(p.Type)
+                    });
                 }
 
                 foreach (var o in r.Operations)

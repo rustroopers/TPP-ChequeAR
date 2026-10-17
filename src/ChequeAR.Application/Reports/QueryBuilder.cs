@@ -61,7 +61,7 @@ namespace ChequeAR.Application.Reports
 
             var sql = new StringBuilder();
             sql.AppendLine("SELECT " + Projection);
-            sql.AppendLine("FROM \"vw_FlatResponses\" v");
+            sql.AppendLine("FROM \"CHEQUEAR\".\"vw_FlatResponses\" v");
             sql.AppendLine("WHERE " + where.Replace(Alias, "v"));
 
             if (paginate)
@@ -75,7 +75,7 @@ namespace ChequeAR.Application.Reports
                 sql.AppendLine("  AND v.\"ResponseId\" IN (");
                 sql.AppendLine("    SELECT \"ResponseId\" FROM (");
                 sql.AppendLine("      SELECT DISTINCT p.\"ResponseId\", p.\"AuthoredAt\"");
-                sql.AppendLine("      FROM \"vw_FlatResponses\" p");
+                sql.AppendLine("      FROM \"CHEQUEAR\".\"vw_FlatResponses\" p");
                 sql.AppendLine("      WHERE " + where.Replace(Alias, "p"));
                 sql.AppendLine("      ORDER BY p.\"AuthoredAt\" DESC, p.\"ResponseId\"");
                 sql.AppendLine("      OFFSET :Skip ROWS FETCH NEXT :Take ROWS ONLY");
@@ -92,7 +92,7 @@ namespace ChequeAR.Application.Reports
 
             // Total real de fichas de la cohorte, independiente de la pagina traida. Antes
             // se informaba rows.Count del formato largo, o sea fichas x preguntas.
-            var countSql = "SELECT COUNT(DISTINCT v.\"ResponseId\") FROM \"vw_FlatResponses\" v WHERE "
+            var countSql = "SELECT COUNT(DISTINCT v.\"ResponseId\") FROM \"CHEQUEAR\".\"vw_FlatResponses\" v WHERE "
                            + where.Replace(Alias, "v");
 
             return new BuiltQuery { Sql = sql.ToString(), CountSql = countSql, Parameters = ps };
@@ -182,6 +182,7 @@ namespace ChequeAR.Application.Reports
                 // El tipo sale de la PREGUNTA, no del valor que mando el cliente. Tambien
                 // valida que el linkId pertenezca al cuestionario.
                 var col = schema.ColumnFor(p.LinkId);
+                EnsureOperatorFits(p.Op, schema.TypeOf(p.LinkId));
                 var idx = ps.Count;
 
                 // Una condición negativa ("no sea", "no contenga", "no esté respondida") es la
@@ -190,7 +191,7 @@ namespace ChequeAR.Application.Reports
                 // afuera, porque no tiene ninguna respuesta con la que comparar.
                 var negada = EsNegativa(p);
                 sql.Append(negada ? "NOT EXISTS" : "EXISTS")
-                   .Append(" (SELECT 1 FROM \"QuestionnaireResponseItem\" qri")
+                   .Append(" (SELECT 1 FROM \"CHEQUEAR\".\"QuestionnaireResponseItem\" qri")
                    .Append(" WHERE qri.\"ResponseId\" = ").Append(Alias).Append(".\"ResponseId\"")
                    .Append(" AND qri.\"LinkId\" = :li").Append(idx);
                 ps.Add(QueryParameter.Text("li" + idx, p.LinkId));
@@ -198,6 +199,23 @@ namespace ChequeAR.Application.Reports
                 sql.Append(" AND ").Append(Predicate(Positiva(p), schema, col, idx, ps)).Append(')');
             }
             sql.Append(')');
+        }
+
+        /// <summary>
+        /// "Contenga" sobre un número o "mayor que" sobre un sí/no daban un error de Oracle o un
+        /// resultado sin sentido: se rechaza antes de armar la consulta.
+        /// </summary>
+        private static void EnsureOperatorFits(string op, Domain.Enums.QuestionType tipo)
+        {
+            var o = op.ToLowerInvariant();
+            var texto = tipo == Domain.Enums.QuestionType.String || tipo == Domain.Enums.QuestionType.Text;
+            var ordenable = tipo == Domain.Enums.QuestionType.Integer || tipo == Domain.Enums.QuestionType.Decimal
+                || tipo == Domain.Enums.QuestionType.Scale || tipo == Domain.Enums.QuestionType.Date
+                || tipo == Domain.Enums.QuestionType.DateTime;
+            if ((o == "contains" || o == "notcontains") && !texto)
+                throw new ArgumentException("'Contiene' sólo se puede usar con preguntas de texto.");
+            if ((o == ">" || o == "<" || o == ">=" || o == "<=" || o == "between") && !ordenable)
+                throw new ArgumentException("El operador '" + op + "' sólo se puede usar con números y fechas.");
         }
 
         /// <summary>"exists" con valor false es "no esté respondida"; el resto se reconoce por el operador.</summary>

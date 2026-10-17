@@ -40,43 +40,18 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             {
-                ModelState.AddModelError("", "Ingresá usuario y contraseña.");
-                return View("Login");
-            }
-
-            var ip = Request.UserHostAddress;
-            if (LoginThrottle.IsBlocked(ip))
-            {
-                Serilog.Log.Warning("Login rechazado por exceso de intentos desde {Ip}", ip);
-                Response.StatusCode = 429;
-                ModelState.AddModelError("", "Demasiados intentos de inicio de sesión. Esperá unos minutos y volvé a probar.");
+                ModelState.AddModelError("", "Ingrese usuario y contraseña.");
                 return View("Login");
             }
 
             try
             {
-                var info = await _auth.LoginAsync(username, password);
-                if (info == null)
+                var error = await SignInAsync(username, password, remember);
+                if (error != null)
                 {
-                    // Mismo mensaje para usuario inexistente, inactivo, sin contraseña
-                    // configurada, bloqueado o contraseña incorrecta: no hay que darle a quien
-                    // intenta loguearse una pista de cuál de esas cosas pasó.
-                    LoginThrottle.RegisterFailure(ip);
-                    Serilog.Log.Warning("Login fallido para {User} desde {Ip}", await _users.LoggableUserNameAsync(username), ip);
-                    ModelState.AddModelError("", "Usuario o contraseña inválidos. Después de varios intentos fallidos el acceso se bloquea por unos minutos.");
+                    ModelState.AddModelError("", error);
                     return View("Login");
                 }
-
-                // El espejo (AppUser/UserRole/UserSpecialty) se actualiza ANTES de emitir la
-                // cookie: si el sync falla, no se emite una sesión con permisos que la base
-                // no respalda. Devuelve el UserInfo SANEADO (códigos de especialidad
-                // filtrados contra el catálogo, rol colapsado a uno solo) para que la
-                // cookie no lleve algo que la base rechazó.
-                info = await _users.SyncFromHospitalAsync(info);
-
-                // SetAuthCookie guardaria solo el nombre y perderia info.Roles, que es
-                // justo lo que necesita SessionToken para firmar el bearer de las islas.
-                SessionCookie.Issue(HttpContext, info, remember);
 
                 // Un POST a Logout sin sesión deja ReturnUrl=/Account/Logout, que por GET da 404.
                 if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl)
@@ -89,15 +64,80 @@ namespace ChequeAR.Api.Controllers.Mvc
             catch (Exception ex)
             {
                 Helpers.HandledErrors.Log(this, ex);
-                ModelState.AddModelError("", "No se pudo iniciar sesión. Intentá nuevamente.");
+                ModelState.AddModelError("", "No se pudo iniciar sesión. Intente nuevamente.");
                 return View("Login");
             }
         }
 
-        [HttpGet, AllowAnonymous]
-        public ActionResult SessionExpired()
+        /// <summary>
+        /// Volver a entrar desde el aviso de sesión vencida, sin salir de la página ni perder lo
+        /// cargado. Sin antiforgery: el token quedó atado a la sesión vencida. El header propio
+        /// no se puede mandar desde otro origen sin CORS.
+        /// </summary>
+        [HttpPost, AllowAnonymous]
+        public async Task<ActionResult> Reauth(string username, string password)
         {
-            return View();
+            Response.SuppressFormsAuthenticationRedirect = true;
+            Response.TrySkipIisCustomErrors = true;
+            if (Request.Headers["X-CQ-Reauth"] != "1") return new HttpStatusCodeResult(400);
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            {
+                Response.StatusCode = 400;
+                return Json(new { error = "Usuario o contraseña inválidos." });
+            }
+
+            try
+            {
+                var error = await SignInAsync(username, password, false);
+                if (error == null) return Json(new { ok = true });
+                if (Response.StatusCode != 429) Response.StatusCode = 401;
+                return Json(new { error });
+            }
+            catch (Exception ex)
+            {
+                Helpers.HandledErrors.Log(this, ex);
+                Response.StatusCode = 500;
+                return Json(new { error = "No se pudo iniciar sesión. Intente nuevamente." });
+            }
+        }
+
+        /// <summary>Valida, sincroniza y emite la cookie. Null si entró; si no, el mensaje para la persona.</summary>
+        private async Task<string> SignInAsync(string username, string password, bool remember)
+        {
+            var ip = Request.UserHostAddress;
+            if (LoginThrottle.IsBlocked(ip))
+            {
+                Serilog.Log.Warning("Login rechazado por exceso de intentos desde {Ip}", ip);
+                Response.StatusCode = 429;
+                return "Demasiados intentos de inicio de sesión. Espere unos minutos y vuelva a probar.";
+            }
+
+            // Mismo mensaje para usuario inexistente, inactivo, sin contraseña configurada,
+            // bloqueado o contraseña incorrecta: no hay que darle a quien intenta loguearse una
+            // pista de cuál de esas cosas pasó.
+            const string invalid = "Usuario o contraseña inválidos. Después de varios intentos fallidos el acceso se bloquea por unos minutos.";
+            var info = await _auth.LoginAsync(username, password);
+            if (info == null)
+            {
+                LoginThrottle.RegisterFailure(ip);
+                Serilog.Log.Warning("Login fallido para {User} desde {Ip}", await _users.LoggableUserNameAsync(username), ip);
+                await _users.LoginFailedAsync(username);
+                return invalid;
+            }
+
+            // El espejo (AppUser/UserRole/UserSpecialty) se actualiza ANTES de emitir la
+            // cookie: si el sync falla, no se emite una sesión con permisos que la base
+            // no respalda. Devuelve el UserInfo SANEADO (códigos de especialidad
+            // filtrados contra el catálogo, rol colapsado a uno solo) para que la
+            // cookie no lleve algo que la base rechazó.
+            info = await _users.SyncFromHospitalAsync(info);
+            if (info == null) return invalid;
+            _users.LoginSucceeded(info.Id);
+
+            // SetAuthCookie guardaria solo el nombre y perderia info.Roles, que es
+            // justo lo que necesita SessionToken para firmar el bearer de las islas.
+            SessionCookie.Issue(HttpContext, info, remember);
+            return null;
         }
 
         // 'new' explícito: Controller expone una propiedad Profile (perfil de ASP.NET, que el
@@ -141,10 +181,51 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
-        [Authorize, HttpPost, ValidateAntiForgeryToken]
-        public ActionResult SaveProfile()
+        [Authorize, HttpGet]
+        public ActionResult Password()
         {
-            return RedirectToAction("Profile");
+            ViewBag.Title = "Cambiar contraseña";
+            return View();
+        }
+
+        /// <summary>El cambio rota el sello: se cierran todas las sesiones, incluida ésta.</summary>
+        [Authorize, HttpPost, ValidateAntiForgeryToken]
+        public async Task<ActionResult> ChangePassword(string current, string replacement, string confirmation)
+        {
+            ViewBag.Title = "Cambiar contraseña";
+            if (string.IsNullOrEmpty(current) || string.IsNullOrEmpty(replacement))
+            {
+                ModelState.AddModelError("", "Complete la contraseña actual y la nueva.");
+                return View("Password");
+            }
+            if (replacement != confirmation)
+            {
+                ModelState.AddModelError("", "La nueva contraseña y su confirmación no coinciden.");
+                return View("Password");
+            }
+
+            var id = CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal);
+            try
+            {
+                var error = await _users.ChangePasswordAsync(id, current, replacement);
+                if (error != null)
+                {
+                    ModelState.AddModelError("", error);
+                    return View("Password");
+                }
+            }
+            catch (Exception ex)
+            {
+                Helpers.HandledErrors.Log(this, ex);
+                ModelState.AddModelError("", "No se pudo cambiar la contraseña. Intente nuevamente.");
+                return View("Password");
+            }
+
+            SessionRevalidation.Invalidate(id);
+            FormsAuthentication.SignOut();
+            TempData["Toast"] = "Contraseña cambiada. Ingrese con la nueva.";
+            TempData["ToastLevel"] = "success";
+            return RedirectToAction("Login");
         }
 
         /// <summary>Renueva el JWT de las islas. GET: otro origen puede dispararlo pero no leer la respuesta.</summary>
@@ -168,6 +249,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     await _users.RotateSecurityStampAsync(id);
                     SessionRevalidation.Invalidate(id);
+                    _users.LoggedOut(id);
                 }
             }
             catch (Exception ex)

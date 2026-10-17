@@ -74,7 +74,7 @@ description: "Task list — Mock de la base de datos del lado Hospital (provisor
 
 - [X] T019 [P] [US1] Crear `tests/integration/MockHospital.Tests/MockHospital.Tests.csproj` (.NET Framework 4.7.1, xUnit) con referencias a `Oracle.ManagedDataAccess`, `Xunit`, `Xunit.Runner.VisualStudio`; agregar al `ChequeAR.sln`
 - [X] T020 [P] [US1] Crear `tests/integration/MockHospital.Tests/SeedInvariantsTests.cs`: ejercicios contra `OracleViewClient` real apuntando al contenedor; tests `Pacientes_AlMenos50`, `Episodios_AlMenos150`, `Observaciones_AlMenos500`, `ExisteAlMenosUnPacienteSinEpisodios`, `ExisteAlMenosUnPacienteCronico`, `ExisteAlMenosUnaObservacionTextual`, `ExisteAlMenosUnTurnoFuturo` (cubre SC-006)
-- [X] T021 [P] [US1] Crear `tests/integration/MockHospital.Tests/DeterminismTests.cs`: test `Seed_ProduceHashesEsperados` que invoca `STANDARD_HASH` sobre cada `VW_*` y compara contra valores baseline embebidos (regenerables cuando legítimamente cambia el seed); test adicional `Reset_RegeneraDatasetIdentico` que ejecuta `docker compose down -v && docker compose up -d --wait` (vía `Process.Start`) y verifica que los hashes post-reset coinciden con los previos (cubre FR-017 + SC-002)
+- [x] T021 [P] [US1] Crear `tests/integration/MockHospital.Tests/DeterminismTests.cs`: test `Seed_ProduceHashesEsperados` que invoca `STANDARD_HASH` sobre cada `VW_*` y compara contra valores baseline embebidos (regenerables cuando legítimamente cambia el seed); test adicional `Reset_RegeneraDatasetIdentico` que ejecuta `docker compose down -v && docker compose up -d --wait` (vía `Process.Start`) y verifica que los hashes post-reset coinciden con los previos (cubre FR-017 + SC-002) *(hecho después: hashes anclados sin columnas de fecha; el seed no consume números aleatorios según la fecha)*
 
 **Checkpoint US1**: El dataset levanta solo, cumple conteos y edge cases, es reproducible. MVP entregable.
 
@@ -95,8 +95,8 @@ description: "Task list — Mock de la base de datos del lado Hospital (provisor
 ### Tests de la story
 
 - [X] T025 [P] [US2] Crear `tests/integration/MockHospital.Tests/ViewContractTests.cs`: test `VW_Paciente_DevuelveFilas` (vista permitida), `Tabla_HospPaciente_RechazadaPorAllowlist` (esperar `ArgumentException` sin tocar la DB), `Tabla_HospPaciente_RechazadaPorGrants` (invocar SQL directo bypaseando allowlist y esperar `ORA-00942` desde `CHEQUEAR_RO`); cubre SC-003
-- [X] T026 [P] [US2] Crear `tests/integration/MockHospital.Tests/MappingCompatibilityTests.cs`: para cada YAML de `src/ChequeAR.Infrastructure/OracleMappings/` cargar el mapping, consultar la `VW_*` correspondiente vía `OracleViewClient`, aplicar el `OracleToFhirMapper` y validar que produce un recurso FHIR estructuralmente válido; cubre SC-004
-- [X] T026b [P] [US2] Configurar la suite ya existente del módulo 003 (`tests/integration/Oracle.Tests/`) para apuntar al contenedor del mock (via `appsettings.test.json` o variable `ChequeAR__OracleHospitalView`) y ejecutarla en CI; el criterio de aceptación es que **el 100% de los tests existentes del 003 pasan sin modificarse contra el mock** (cubre SC-008)
+- [x] T026 [P] [US2] Crear `tests/integration/MockHospital.Tests/MappingCompatibilityTests.cs`: para cada YAML de `src/ChequeAR.Infrastructure/OracleMappings/` cargar el mapping, consultar la `VW_*` correspondiente vía `OracleViewClient`, aplicar el `OracleToFhirMapper` y validar que produce un recurso FHIR estructuralmente válido; cubre SC-004 *(reemplazado por MockViewColumnsTests: no hay YAML de mapeo; compara las columnas del mock en memoria con las vistas)*
+- [ ] T026b [P] [US2] Configurar la suite ya existente del módulo 003 (`tests/integration/Oracle.Tests/`) para apuntar al contenedor del mock (via `appsettings.test.json` o variable `ChequeAR__OracleHospitalView`) y ejecutarla en CI; el criterio de aceptación es que **el 100% de los tests existentes del 003 pasan sin modificarse contra el mock** (cubre SC-008) *(no existe tests/integration/Oracle.Tests/)*
 - [X] T027 [US2] Verificar manualmente (con `DBA_TAB_PRIVS` desde el contenedor) que `CHEQUEAR_RO` no tiene privilegios distintos de `SELECT` sobre las 10 vistas; documentar la consulta de verificación en `infra/mock-hospital/README.md` (sección "Auditar grants")
 
 **Checkpoint US2**: La aplicación queda enchufada al mock con el contrato de acceso correcto; ambos P1 entregables independientes.
@@ -137,9 +137,10 @@ description: "Task list — Mock de la base de datos del lado Hospital (provisor
 
 - [X] T036 [P] Agregar al README sección "Apple Silicon": confirmar `platform: linux/amd64`, sugerir ≥6 GB de RAM en Docker Desktop, advertir que primer arranque puede tardar ~8 min (R8)
 - [X] T037 [P] Agregar al README sección "Troubleshooting" copiando de `quickstart.md` (puerto 1521 ocupado, `unhealthy` tras 10 min, logs del seed)
-- [X] T038 [P] Agregar workflow opcional `.github/workflows/mock-hospital-smoke.yml` que en cada PR a `dev` levanta el compose, espera `--wait`, corre los 4 grupos de tests (~5 min total) y reporta; marcar como opcional si CI de GitHub Actions no tiene Docker disponible
+- [ ] T038 [P] Agregar workflow opcional `.github/workflows/mock-hospital-smoke.yml` que en cada PR a `dev` levanta el compose, espera `--wait`, corre los 4 grupos de tests (~5 min total) y reporta; marcar como opcional si CI de GitHub Actions no tiene Docker disponible
+  - **Nota (2026-10-16):** el workflow se borró en 0f911ad. Los runners Windows del CI no pueden levantar el contenedor; los tests `Requires=Oracle` se corren a mano.
 - [X] T039 Actualizar `src/README.md` (ChequeAR) con una línea al final apuntando a `infra/mock-hospital/README.md` para que devs nuevos lo descubran
-- [X] T040 Smoke manual completo: clonar el repo en una máquina limpia (o `git clean -fdx`), seguir el quickstart al pie de la letra, cronometrar tiempo a `healthy`; documentar el resultado en una entrada de commit message para evidenciar SC-001
+- [ ] T040 Smoke manual completo: clonar el repo en una máquina limpia (o `git clean -fdx`), seguir el quickstart al pie de la letra, cronometrar tiempo a `healthy`; documentar el resultado en una entrada de commit message para evidenciar SC-001 *(no se registró el smoke; el mock ya no usa Docker)*
 
 ---
 

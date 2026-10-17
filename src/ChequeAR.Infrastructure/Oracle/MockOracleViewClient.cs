@@ -10,9 +10,9 @@ namespace ChequeAR.Infrastructure.Oracle
 {
     /// Sirve las vistas VW_* del lado hospital desde memoria, sin Oracle.
     ///
-    /// El mock de spec 008 (infra/mock-hospital) es Oracle XE en Docker: sirve en la
-    /// maquina de un dev, pero Azure App Service no corre contenedores, asi que alla
-    /// el buscador de pacientes queda sin datos. Este cliente cubre ese hueco: se
+    /// El mock de spec 008 (infra/mock-hospital) se carga en el Oracle XE de cada dev;
+    /// en Azure no hay base del hospital, asi que alla el buscador de pacientes quedaria
+    /// sin datos. Este cliente cubre ese hueco: se
     /// registra cuando Oracle:ConnectionString esta vacio (ver ServiceComposition),
     /// igual que MockHospitalAuthClient con HospitalAuth:LoginUrl.
     ///
@@ -48,6 +48,8 @@ namespace ChequeAR.Infrastructure.Oracle
                 : null;
         }
 
+        public Task PingAsync() => Task.CompletedTask;
+
         public Task<IReadOnlyList<IDictionary<string, object>>> QueryAsync(
             string viewName, IReadOnlyDictionary<string, object> filters)
         {
@@ -57,7 +59,7 @@ namespace ChequeAR.Infrastructure.Oracle
             {
                 foreach (var kv in filters)
                 {
-                    var column = ValidateColumnName(kv.Key);
+                    var column = EnsureColumnExists(viewName, ValidateColumnName(kv.Key));
                     rows = rows.Where(r => Matches(r, column, kv.Value)).ToList();
                 }
             }
@@ -70,7 +72,8 @@ namespace ChequeAR.Infrastructure.Oracle
         {
             var rows = Rows(ValidateViewName(viewName));
 
-            var safeColumns = (columns ?? Enumerable.Empty<string>()).Select(ValidateColumnName).ToList();
+            var safeColumns = (columns ?? Enumerable.Empty<string>())
+                .Select(c => EnsureColumnExists(viewName, ValidateColumnName(c))).ToList();
             if (safeColumns.Count == 0)
                 throw new ArgumentException("Se requiere al menos una columna de busqueda", nameof(columns));
 
@@ -110,6 +113,16 @@ namespace ChequeAR.Infrastructure.Oracle
         {
             if (string.IsNullOrWhiteSpace(column) || !IdentifierPattern.IsMatch(column))
                 throw new ArgumentException("Nombre de columna inválido: " + column, nameof(column));
+            return column;
+        }
+
+        // Oracle responde ORA-00904 ante una columna que la vista no tiene; devolver vacío
+        // escondía el error hasta usar la base real.
+        private static string EnsureColumnExists(string viewName, string column)
+        {
+            var sample = Rows(viewName).FirstOrDefault();
+            if (sample != null && !sample.ContainsKey(column))
+                throw new InvalidOperationException("La vista " + viewName + " no tiene la columna " + column + ".");
             return column;
         }
 

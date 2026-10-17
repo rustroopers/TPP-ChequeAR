@@ -6,6 +6,7 @@ using System.Data.Entity.Validation;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ChequeAR.Application.Validation;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Infrastructure.EF.Configurations;
 
@@ -13,8 +14,9 @@ namespace ChequeAR.Infrastructure.EF
 {
     public class ChequeARDbContext : DbContext
     {
-        // Aplica las migraciones pendientes la primera vez que se usa el contexto, para
-        // que un deploy no necesite un paso manual contra la base.
+        // En desarrollo aplica las migraciones pendientes la primera vez que se usa el contexto.
+        // En producción (Migrations:Automatic=false) las aplica el deploy, con un export
+        // previo, por /api/deploy/migrate: un usuario nunca dispara un cambio de esquema.
         //
         // Va aca y no en Application_Start por dos razones: ChequeAR.Api no referencia
         // EntityFramework (solo Infrastructure, y en csproj clasico las referencias no son
@@ -22,12 +24,20 @@ namespace ChequeAR.Infrastructure.EF
         // pantallas que la tocan en vez de tumbar el arranque entero de la app.
         static ChequeARDbContext()
         {
-            Database.SetInitializer(
-                new MigrateDatabaseToLatestVersion<ChequeARDbContext, Migrations.Configuration>());
+            if (AutomaticMigrations)
+                Database.SetInitializer(new MigrateDatabaseToLatestVersion<ChequeARDbContext, Migrations.Configuration>());
+            else
+                Database.SetInitializer<ChequeARDbContext>(null);
         }
 
-        public ChequeARDbContext() : base("name=ChequeAR") { }
-        public ChequeARDbContext(string connectionString) : base(connectionString) { }
+        public static bool AutomaticMigrations => !string.Equals(
+            System.Configuration.ConfigurationManager.AppSettings["Migrations:Automatic"], "false", StringComparison.OrdinalIgnoreCase);
+
+        // ODP.NET no tiene límite por defecto: una espera de lock dejaba el request colgado.
+        public const int CommandTimeoutSeconds = 30;
+
+        public ChequeARDbContext() : base("name=ChequeAR") { Database.CommandTimeout = CommandTimeoutSeconds; }
+        public ChequeARDbContext(string connectionString) : base(connectionString) { Database.CommandTimeout = CommandTimeoutSeconds; }
 
         public DbSet<Questionnaire> Questionnaires { get; set; }
         public DbSet<QuestionnaireVersion> QuestionnaireVersions { get; set; }
@@ -44,9 +54,6 @@ namespace ChequeAR.Infrastructure.EF
         public DbSet<Specialty> Specialties { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<SavedReport> SavedReports { get; set; }
-        public DbSet<ReportExecution> ReportExecutions { get; set; }
-        public DbSet<ExportArtifact> ExportArtifacts { get; set; }
-        public DbSet<ExportJob> ExportJobs { get; set; }
         public DbSet<ClinicalVariable> ClinicalVariables { get; set; }
         public DbSet<VariableOption> VariableOptions { get; set; }
         public DbSet<ClinicalVariableVersion> ClinicalVariableVersions { get; set; }
@@ -74,6 +81,7 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Configurations.Add(new QuestionnaireConfig());
             modelBuilder.Configurations.Add(new QuestionnaireVersionConfig());
             modelBuilder.Configurations.Add(new QuestionnaireResponseConfig());
+            modelBuilder.Entity<QuestionnaireResponseItem>().Property(x => x.ValueDecimal).HasPrecision(22, ResponseValidator.DecimalPlaces);
             modelBuilder.Configurations.Add(new AuditEventConfig());
             modelBuilder.Configurations.Add(new ClinicalVariableConfig());
             modelBuilder.Configurations.Add(new ClinicalVariableVersionConfig());
@@ -108,6 +116,11 @@ namespace ChequeAR.Infrastructure.EF
             // Nombre de zona del tema (red|violet|green|yellow|blue|orange), no un color libre.
             modelBuilder.Entity<Specialty>().Property(x => x.Color).HasMaxLength(32);
             modelBuilder.Entity<RefreshToken>().Property(x => x.UserId).HasMaxLength(128);
+            // SHA-256 en hex: cada /auth/refresh lo busca por igualdad.
+            modelBuilder.Entity<RefreshToken>().Property(x => x.TokenHash).HasMaxLength(64);
+            modelBuilder.Entity<RefreshToken>().HasIndex(x => x.TokenHash).IsUnique().HasName("UX_RefreshToken_Hash");
+            // Búsqueda de fichas por paciente y evolución.
+            modelBuilder.Entity<QuestionnaireResponse>().HasIndex(x => new { x.PatientHospitalId, x.AuthoredAt }).HasName("IX_Response_Patient");
             // Consistencia con Questionnaire.SpecialtyCode/Specialty.Code (ambos 64): estaba
             // en 2000 por la convención global de strings, un ancho que nunca podría matchear
             // la PK del catálogo. Puede ser NULL (Scope="private" no tiene especialidad).
@@ -128,8 +141,6 @@ namespace ChequeAR.Infrastructure.EF
             modelBuilder.Entity<Question>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
             modelBuilder.Entity<Questionnaire>().Property(x => x.CodingJson).HasColumnType("CLOB").IsMaxLength();
             modelBuilder.Entity<SavedReport>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
-            modelBuilder.Entity<ReportExecution>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
-            modelBuilder.Entity<ExportJob>().Property(x => x.QueryJson).HasColumnType("CLOB").IsMaxLength();
 
             base.OnModelCreating(modelBuilder);
         }

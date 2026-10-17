@@ -67,8 +67,11 @@
   --bs-body-color: var(--cq-neutral-700);
   --bs-body-bg: var(--cq-neutral-50);
   --bs-border-color: var(--cq-neutral-200);
-  --bs-link-color: var(--cq-primary-400);
+  --bs-link-color: var(--cq-primary);
+  --bs-link-color-rgb: 111, 95, 165;
   --bs-link-hover-color: var(--cq-primary-600);
+  --bs-link-hover-color-rgb: 87, 71, 133;
+  --bs-code-color: var(--cq-neutral-700);
   --bs-font-sans-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 }
@@ -721,6 +724,7 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
 .cq-empty__icon { font-size: 40px; opacity: 0.5; margin-bottom: 12px; }
 .cq-empty__title { font-size: 16px; font-weight: 600; color: var(--cq-neutral-700); margin-bottom: 4px; }
 .cq-empty__desc { font-size: 13px; margin-bottom: 16px; }
+.cq-empty > :last-child { margin-bottom: 0; }
 
 /* ===== KPI tiles ===== */
 .cq-kpi {
@@ -1720,3 +1724,16 @@ form.is-loading ~ .cq-search-panel .cq-search-loader { display: block; }
   .cq-wizard-help__nav { width: 100%; justify-content: space-between; }
   .cq-wizard-help__nav .btn { min-height: 44px; flex: 1; }
 }
+
+/* Códigos (HC, usuario, código de variable, SNOMED): gris neutro, no el rosa de Bootstrap. */
+code {
+  color: var(--cq-neutral-700);
+  background: var(--cq-neutral-100);
+  padding: .1em .35em;
+  border-radius: 4px;
+  font-size: .85em;
+}
+
+/* Botones de acción contiguos en una celda: mismo aire que el resto de los grupos. */
+td > .btn + .btn,
+td > .btn + a.btn { margin-left: .375rem; }

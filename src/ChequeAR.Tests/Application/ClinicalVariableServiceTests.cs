@@ -63,6 +63,15 @@ namespace ChequeAR.Tests.Application
             Assert.Contains(ex.Errors, e => e.Contains("peso"));
         }
 
+        [Fact]
+        public async Task CreateAsync_LargoMayorQueLaColumna_Falla()
+        {
+            var v = Nueva("obs", QuestionType.Text);
+            v.MaxLength = 2001;
+
+            await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.CreateAsync(v, "admin"));
+        }
+
         // Espacios, acentos y mayúsculas tendrían que normalizarse en cada consulta de reporte.
         [Fact]
         public async Task CreateAsync_CodigoNoSlug_Falla()

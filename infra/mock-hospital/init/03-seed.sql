@@ -3,9 +3,9 @@
 -- =====================================================================
 -- Reglas:
 --  * RNG fijado con DBMS_RANDOM.SEED(20260625) al inicio.
---  * Todas las fechas relativas se calculan contra c_anclaje = 2026-06-25.
+--  * Todas las fechas relativas se calculan contra c_anclaje (el dia de la carga).
 --  * Identificadores derivados de contadores, nunca de SYS_GUID/SYSTIMESTAMP.
---  * Misma semilla -> mismo dataset byte-a-byte (SC-002).
+--  * Misma semilla y mismo dia -> mismo dataset byte-a-byte (SC-002).
 -- Conteos objetivo: >=50 pacientes, >=150 episodios, >=500 observaciones lab.
 -- =====================================================================
 
@@ -22,7 +22,8 @@ BEGIN DBMS_RANDOM.SEED(20260625); END;
 -- compartir variables (catálogos, contadores).
 -- =====================================================================
 DECLARE
-  c_anclaje CONSTANT DATE := DATE '2026-06-25';
+  -- La fecha de carga: con una fija, los turnos "futuros" quedaban en el pasado.
+  c_anclaje CONSTANT DATE := TRUNC(SYSDATE);
 
   -- Catálogos
   TYPE t_str_arr IS TABLE OF VARCHAR2(200);
@@ -283,7 +284,8 @@ BEGIN
         v_fecha_nac + TRUNC(DBMS_RANDOM.VALUE(30, GREATEST(31, (c_anclaje - v_fecha_nac))))
         AS TIMESTAMP);
       IF v_fecha_episodio > CAST(c_anclaje AS TIMESTAMP) THEN
-        v_fecha_episodio := CAST(c_anclaje - TRUNC(DBMS_RANDOM.VALUE(1, 30)) AS TIMESTAMP);
+        -- Sin DBMS_RANDOM: una llamada que dependa de la fecha corre la secuencia del resto.
+        v_fecha_episodio := CAST(c_anclaje - 1 - MOD(v_n_episodios_tot, 29) AS TIMESTAMP);
       END IF;
 
       -- ~10% episodios "abiertos" (FECHA_FIN NULL)

@@ -34,6 +34,7 @@ namespace ChequeAR.Api.Models
         /// <summary>Versión vigente; 0 si nunca se publicó.</summary>
         public int CurrentVersion { get; set; }
         public bool HasUnpublishedChanges { get; set; }
+        public int Revision { get; set; }
     }
 
     /// <summary>
@@ -49,6 +50,8 @@ namespace ChequeAR.Api.Models
     {
         public Guid? Id { get; set; }
         public string PayloadJson { get; set; }
+        public string Name { get; set; }
+        public bool IsActive { get; set; }
         public int Revision { get; set; }
         public int CurrentVersion { get; set; }
         public bool HasUnpublishedChanges { get; set; }

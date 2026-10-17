@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
 
@@ -39,7 +40,12 @@ namespace ChequeAR.Api.Controllers.Api
                 return await SearchVersionAsync(url, version);
 
             QuestionnaireStatus? st = null;
-            if (Enum.TryParse(status, true, out QuestionnaireStatus parsed)) st = parsed;
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                if (!Enum.TryParse(status.Trim(), true, out QuestionnaireStatus parsed) || !Enum.IsDefined(typeof(QuestionnaireStatus), parsed))
+                    return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("status no reconocido: " + status));
+                st = parsed;
+            }
             try
             {
                 var items = await _service.SearchAsync(st, titleContains, specialty,
@@ -56,14 +62,15 @@ namespace ChequeAR.Api.Controllers.Api
                 var versiones = await _service.GetVersionCountsAsync(ids);
                 var recursos = completos.Select(q => (Hl7.Fhir.Model.Resource)FhirQuestionnaireBuilder.ToResource(
                     q, versiones.TryGetValue(q.Id, out var n) ? n : 0));
-                return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+                return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl(), Request.RequestUri,
+                    FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count)));
             }
             catch (SpecialtyForbiddenException)
             {
                 // El filtro ?specialty= pidió algo fuera del scope del usuario: se rechaza,
                 // no se devuelve un Bundle vacío (eso le mentiría "no hay nada").
                 return Content(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden(
-                    "No tenés acceso a esa especialidad."));
+                    "No tiene acceso a esa especialidad."));
             }
         }
 
@@ -82,7 +89,7 @@ namespace ChequeAR.Api.Controllers.Api
                 }
                 catch (SpecialtyForbiddenException) { /* fuera de scope: como si no existiera */ }
             }
-            return Ok(FhirBundles.SearchSet(recursos, recursos.Count, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, recursos.Count, Request.FhirBaseUrl()));
         }
 
         [HttpGet, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireRead)]
@@ -115,52 +122,44 @@ namespace ChequeAR.Api.Controllers.Api
         private static Hl7.Fhir.Model.Questionnaire ToFhir(Questionnaire q)
             => FhirQuestionnaireBuilder.ToResource(q, q.Versions?.Count ?? 0);
 
-        /// <summary>Base del servidor FHIR, para el fullUrl de cada entrada del Bundle.</summary>
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
-
         private static EntityTagHeaderValue ETagFor(Questionnaire q)
         {
-            // Weak ETag: identifica la versión del recurso, no una representación byte a byte.
-            return new EntityTagHeaderValue("\"" + q.ConcurrencyVersion + "\"", true);
-        }
-
-        // Acepta W/"3" y "3". Devuelve null si no hay un número adentro.
-        private static int? ParseIfMatch(HttpRequestMessage request)
-        {
-            var tag = request.Headers.IfMatch?.FirstOrDefault();
-            if (tag == null) return null;
-            var raw = (tag.Tag ?? string.Empty).Trim('"');
-            return int.TryParse(raw, out var version) ? version : (int?)null;
+            return FhirHttp.WeakETag(q.ConcurrencyVersion);
         }
 
         [HttpPost, Route(""), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
+            if (!ModelState.IsValid) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(FhirModelState.Describe(ModelState)));
             var q = FhirQuestionnaireParser.ToDomain(body);
             if (q == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
 
-
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(q, userId);
             var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
+            response.Headers.Location = new Uri(Request.FhirBaseUrl() + "/Questionnaire/" + created.Id);
             response.Headers.ETag = ETagFor(created);
             return ResponseMessage(response);
         }
 
+        private const string PendingChangesHeader = "X-ChequeAR-Pending-Changes";
+
         [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
+            if (!ModelState.IsValid) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(FhirModelState.Describe(ModelState)));
+            // FHIR: el id del cuerpo tiene que ser el de la URL.
+            if (body != null && !string.IsNullOrEmpty(body.Id) && !string.Equals(body.Id, id.ToString(), StringComparison.OrdinalIgnoreCase))
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("El id del recurso no coincide con el de la URL."));
             var patch = FhirQuestionnaireParser.ToDomain(body);
             if (patch == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
             EnsureSupported(body);
 
-
             // If-Match obligatorio: sin él no hay forma de saber si el cliente vio la última
             // versión, y una edición concurrente pisaría el trabajo ajeno en silencio.
             // 428 Precondition Required (RFC 6585) existe justamente para este caso.
-            var expectedVersion = ParseIfMatch(Request);
+            var expectedVersion = Request.IfMatchVersion();
             if (!expectedVersion.HasValue)
                 return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
 
@@ -168,6 +167,8 @@ namespace ChequeAR.Api.Controllers.Api
             var updated = await _service.UpdateAsync(id, patch, userId, expectedVersion);
             var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(updated));
             response.Headers.ETag = ETagFor(updated);
+            // Para el editor: si lo guardado difiere de la versión vigente.
+            response.Headers.Add(PendingChangesHeader, updated.HasUnpublishedChanges() ? "true" : "false");
             return ResponseMessage(response);
         }
 
@@ -182,7 +183,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             // Mismo contrato que el PUT: publicar congela lo que está en la base, así que hay
             // que demostrar que se vio la última versión del registro.
-            var expectedVersion = ParseIfMatch(Request);
+            var expectedVersion = Request.IfMatchVersion();
             if (!expectedVersion.HasValue)
                 return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired());
 

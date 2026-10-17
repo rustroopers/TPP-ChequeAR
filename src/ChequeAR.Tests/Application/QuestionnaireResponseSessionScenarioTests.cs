@@ -37,6 +37,7 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IFhirValidator> _validator = new Mock<IFhirValidator>();
         private readonly Mock<IAttachmentStore> _attachments = new Mock<IAttachmentStore>();
         private readonly Guid _questionnaireId = Guid.NewGuid();
+        private readonly FakeClock _clock = new FakeClock(new DateTime(2026, 10, 16, 13, 0, 0, DateTimeKind.Utc));
         private readonly QuestionnaireResponseService _sut;
 
         public QuestionnaireResponseSessionScenarioTests()
@@ -48,7 +49,8 @@ namespace ChequeAR.Tests.Application
             _validator.Setup(v => v.Validate(It.IsAny<string>(), It.IsAny<string>())).Returns(TestHelpers.ValidOk());
 
             _sut = new QuestionnaireResponseService(
-                _repo, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object);
+                _repo, _qRepo.Object, _validator.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedGuard(), TestHelpers.UnrestrictedAccess(), _attachments.Object,
+                clock: _clock);
         }
 
         // Ficha nueva desde cero: no hay borrador previo, se crea vacía y se va llenando
@@ -126,7 +128,7 @@ namespace ChequeAR.Tests.Application
             var sessionA = await _sut.AcquireLockAsync(created.Id, "medico-a");
             var tokenA = sessionA.LockToken.Value;
             await _sut.SaveProgressAsync(created.Id, "medico-a", tokenA, null, Items(Decimal("peso", 32.5m)));
-            (await _repo.GetAsync(created.Id)).LockExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+            _clock.Advance(TimeSpan.FromMinutes(16));
 
             var sessionB = await _sut.AcquireLockAsync(created.Id, "medico-b");
             await Assert.ThrowsAsync<LockConflictException>(
@@ -135,6 +137,32 @@ namespace ChequeAR.Tests.Application
 
             Assert.NotEqual(tokenA, sessionB.LockToken.Value);
             Assert.Equal(32.5m, saved.Items.Single(i => i.LinkId == "peso").ValueDecimal);
+        }
+
+        // Nadie tomó el lock vencido: el mismo médico sigue guardando y el lock se renueva.
+        [Fact]
+        public async Task ExpiredLock_NotTakenByAnyone_SameUserKeepsSaving()
+        {
+            var created = await NewResponseAsync("medico-a");
+            var token = (await _sut.AcquireLockAsync(created.Id, "medico-a")).LockToken.Value;
+            _clock.Advance(TimeSpan.FromMinutes(40));
+
+            var saved = await _sut.SaveProgressAsync(created.Id, "medico-a", token, null, Items(Decimal("peso", 30m)));
+
+            Assert.Equal(_clock.UtcNow.AddMinutes(15), saved.LockExpiresAt);
+        }
+
+        [Fact]
+        public async Task LockVigente_OtroMedicoNoLoPuedeTomar_HastaQueVence()
+        {
+            var created = await NewResponseAsync("medico-a");
+            await _sut.AcquireLockAsync(created.Id, "medico-a");
+
+            _clock.Advance(TimeSpan.FromMinutes(14));
+            await Assert.ThrowsAsync<LockConflictException>(() => _sut.AcquireLockAsync(created.Id, "medico-b"));
+
+            _clock.Advance(TimeSpan.FromMinutes(2));
+            Assert.Equal("medico-b", (await _sut.AcquireLockAsync(created.Id, "medico-b")).LockedByUserId);
         }
 
         // Regresión del defecto encontrado probando en el navegador: $lock es una escritura
@@ -269,6 +297,48 @@ namespace ChequeAR.Tests.Application
             Assert.Equal(ResponseStatus.Completed, again.Status);
             Assert.Equal(versionAtFinalize, again.ConcurrencyVersion);
             Assert.Equal(32.5m, again.Items.Single(i => i.LinkId == "peso").ValueDecimal);
+        }
+
+        // Salir de la página antes del autosave: lo pendiente llega con el cierre de la sesión.
+        [Fact]
+        public async Task Release_ConPendientes_LosGuardaYLibera()
+        {
+            var created = await NewResponseAsync("medico-a");
+            var token = (await _sut.AcquireLockAsync(created.Id, "medico-a")).LockToken.Value;
+            await _sut.SaveProgressAsync(created.Id, "medico-a", token, null, Items(Decimal("peso", 32.5m)));
+
+            await _sut.ReleaseLockAsync(created.Id, "medico-a", token, Items(), Items(Decimal("peso", 33m), Text("presion", "100/60")));
+
+            var r = await _sut.GetAsync(created.Id);
+            Assert.Null(r.LockToken);
+            Assert.Equal(33m, r.Items.Single(i => i.LinkId == "peso").ValueDecimal);
+            Assert.Equal("100/60", r.Items.Single(i => i.LinkId == "presion").ValueString);
+        }
+
+        [Fact]
+        public async Task Release_ConPendientesInvalidos_LiberaIgual()
+        {
+            var created = await NewResponseAsync("medico-a");
+            var token = (await _sut.AcquireLockAsync(created.Id, "medico-a")).LockToken.Value;
+
+            await _sut.ReleaseLockAsync(created.Id, "medico-a", token, null, Items(Text("presion", new string('a', 2001))));
+
+            var r = await _sut.GetAsync(created.Id);
+            Assert.Null(r.LockToken);
+            Assert.Empty(r.Items.Where(i => i.ValueString != null));
+        }
+
+        [Fact]
+        public async Task Release_ConTokenAjeno_NoGuardaLosPendientes()
+        {
+            var created = await NewResponseAsync("medico-a");
+            await _sut.AcquireLockAsync(created.Id, "medico-a");
+
+            await _sut.ReleaseLockAsync(created.Id, "medico-b", Guid.NewGuid(), null, Items(Decimal("peso", 40m)));
+
+            var r = await _sut.GetAsync(created.Id);
+            Assert.NotNull(r.LockToken);
+            Assert.Empty(r.Items.Where(i => i.ValueDecimal.HasValue));
         }
 
         [Fact]
@@ -423,12 +493,6 @@ namespace ChequeAR.Tests.Application
 
             public Task UpdateAsync(QuestionnaireResponse r) => Task.CompletedTask;
 
-            public Task AddItemsAsync(IEnumerable<QuestionnaireResponseItem> items)
-            {
-                foreach (var item in items) _store[item.ResponseId].Items.Add(item);
-                return Task.CompletedTask;
-            }
-
             public Task SaveProgressAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> replacementItems)
             {
                 var touched = new HashSet<string>(replacementItems.Select(i => i.LinkId));
@@ -441,6 +505,8 @@ namespace ChequeAR.Tests.Application
                 r.Items = r.Items.Where(i => keepLinkIds.Contains(i.LinkId)).ToList();
                 return Task.CompletedTask;
             }
+
+            public void DiscardChanges() { }
 
             public Task ReplaceItemsAsync(QuestionnaireResponse r, ICollection<QuestionnaireResponseItem> items)
             {

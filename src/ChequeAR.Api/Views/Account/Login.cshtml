@@ -19,9 +19,18 @@
             <h1 class="cq-display" style="margin:0 0 4px;">ChequeAR</h1>
             <p class="cq-text-muted" style="margin:0 0 24px;">Fichas clínicas interoperables</p>
 
+            @if (TempData["Toast"] != null)
+            {
+                <div class="alert alert-success cq-text-sm text-start py-2 px-3 mb-3" role="status">@TempData["Toast"]</div>
+            }
             @using (Html.BeginForm("DoLogin", "Account", FormMethod.Post, new { @class = "text-start" }))
             {
                 @Html.AntiForgeryToken()
+                var error = ViewData.ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).FirstOrDefault();
+                if (error != null)
+                {
+                    <div class="alert alert-danger cq-text-sm py-2 px-3 mb-3" role="alert">@error</div>
+                }
                 <input type="hidden" name="returnUrl" value="@(ViewBag.ReturnUrl as string)" />
                 <div class="mb-3">
                     <label for="username" class="form-label">Usuario</label>
@@ -38,7 +47,6 @@
                 <button type="submit" class="btn btn-primary w-100">Ingresar</button>
             }
 
-            <p class="cq-text-sm mt-3 mb-0"><a href="#">¿Olvidó su contraseña?</a></p>
             <p class="cq-text-xs cq-text-muted mt-4 mb-0">v1.0 · Hospital de Pediatría Garrahan</p>
         </div>
     </div>

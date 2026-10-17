@@ -22,18 +22,13 @@ namespace ChequeAR.Application.Services
 
     public class QuestionnaireService
     {
-        // Tope del scan en memoria cuando el usuario está restringido a un subconjunto de
-        // especialidades: los repos no aceptan una lista de códigos permitidos (harían
-        // falta cambiar todas las firmas de búsqueda), así que se trae una tanda acotada y
-        // se filtra/pagina acá. Questionnaire son decenas de filas en este dominio -- el
-        // costo de sobre-traer es bajo. Documentado como simplificación deliberada.
-        private const int MaxScopedScan = 2000;
-
         private static readonly string[] SpecialtyRequiredError =
             { "El cuestionario debe tener una especialidad." };
 
         private static readonly string[] TitleRequiredError =
             { "El cuestionario debe tener un título." };
+
+        private readonly IClock _clock;
 
         private readonly IQuestionnaireRepository _repo;
         private readonly IQuestionnaireResponseRepository _responses;
@@ -52,8 +47,10 @@ namespace ChequeAR.Application.Services
             ISpecialtyGuard guard,
             SpecialtyCatalogService catalog,
             IAccessGuard access,
-            IClinicalVariableRepository variables)
+            IClinicalVariableRepository variables,
+            IClock clock = null)
         {
+            _clock = clock ?? SystemClock.Instance;
             _repo = repo;
             _responses = responses;
             _validator = validator;
@@ -102,8 +99,7 @@ namespace ChequeAR.Application.Services
                 return await _repo.SearchAsync(status, titleContains, specialtyCode, skip, take);
             if (scope.IsEmpty) return new List<Questionnaire>();
 
-            var scanned = await _repo.SearchAsync(status, titleContains, specialtyCode, 0, MaxScopedScan);
-            return scanned.Where(q => scope.Allows(q.SpecialtyCode)).Skip(skip).Take(take).ToList();
+            return await _repo.SearchAsync(status, titleContains, specialtyCode, scope.Codes.ToList(), skip, take);
         }
 
         public async Task<int> CountAsync(QuestionnaireStatus? status, string titleContains, string specialtyCode)
@@ -113,8 +109,7 @@ namespace ChequeAR.Application.Services
             if (scope.IsUnrestricted) return await _repo.CountAsync(status, titleContains, specialtyCode);
             if (scope.IsEmpty) return 0;
 
-            var scanned = await _repo.SearchAsync(status, titleContains, specialtyCode, 0, MaxScopedScan);
-            return scanned.Count(q => scope.Allows(q.SpecialtyCode));
+            return await _repo.CountAsync(status, titleContains, specialtyCode, scope.Codes.ToList());
         }
 
         /// <summary>
@@ -206,8 +201,8 @@ namespace ChequeAR.Application.Services
             q.Status = QuestionnaireStatus.Draft;
             q.HasPendingChanges = false;   // todavía no hay versión publicada que contradecir
             q.CreatedBy = userId;
-            q.CreatedAt = DateTime.UtcNow;
-            q.UpdatedAt = DateTime.UtcNow;
+            q.CreatedAt = _clock.UtcNow;
+            q.UpdatedAt = _clock.UtcNow;
 
             // Antes de AssignChildIds: el snapshot genera las AnswerOption desde la variable,
             // y tienen que existir para que ahí abajo reciban Id y OrderIndex.
@@ -439,10 +434,7 @@ namespace ChequeAR.Application.Services
             // significa "sin codificar", no "no lo toques"—. Así se logra la misma paridad que
             // en las preguntas, donde quitar el término también es posible.
             q.CodingJson = patch.CodingJson;
-            q.UpdatedAt = DateTime.UtcNow;
-            // Toda edición deja cambios pendientes de publicar. En un borrador el flag es
-            // inocuo (HasUnpublishedChanges() exige estado Activo).
-            q.HasPendingChanges = true;
+            q.UpdatedAt = _clock.UtcNow;
             q.ConcurrencyVersion++;
 
             // Estructura (secciones/preguntas/opciones): el PUT es un reemplazo completo, así
@@ -465,10 +457,33 @@ namespace ChequeAR.Application.Services
             EnsureStructure(QuestionnaireStructureRules.CheckForSave(replacement.Groups, AllQuestions(replacement)));
             EnsureStructure(PublishedLinkIds.Conflicts(PublishedLinkIds.From(q), AllQuestions(replacement)));
             AssignChildIds(replacement);
+            // Quedan cambios para publicar sólo si lo guardado difiere de la versión vigente:
+            // deshacer a mano lo editado no habilita una versión idéntica. En un borrador el
+            // flag es inocuo (HasUnpublishedChanges() exige estado Activo).
+            q.HasPendingChanges = DiffersFromCurrentVersion(q, replacement);
             await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
 
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id, userId));
             return q;
+        }
+
+        private static bool DiffersFromCurrentVersion(Questionnaire q, Questionnaire replacement)
+        {
+            var current = q.CurrentVersion();
+            if (current == null) return true;
+            var guardado = new Questionnaire
+            {
+                Id = q.Id,
+                Title = q.Title,
+                Description = q.Description,
+                SpecialtyCode = q.SpecialtyCode,
+                SpecialtyDisplay = q.SpecialtyDisplay,
+                CodingJson = q.CodingJson,
+                Groups = replacement.Groups,
+                Questions = replacement.Questions
+            };
+            return !FhirQuestionnaireBuilder.SameContent(
+                FhirQuestionnaireBuilder.Build(guardado, current.VersionNumber, current.PublishedAt), current.FhirJson);
         }
 
         /// <summary>
@@ -495,7 +510,7 @@ namespace ChequeAR.Application.Services
             if (q.Status == QuestionnaireStatus.Retired && !q.HasPendingChanges && q.CurrentVersion() != null)
             {
                 q.Status = QuestionnaireStatus.Active;
-                q.UpdatedAt = DateTime.UtcNow;
+                q.UpdatedAt = _clock.UtcNow;
                 q.ConcurrencyVersion++;
                 await _repo.UpdateAsync(q);
                 _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$unarchive", userId));
@@ -515,7 +530,7 @@ namespace ChequeAR.Application.Services
             var sinVersion = preguntas.Where(x => !x.VariableVersionId.HasValue).ToList();
             if (sinVersion.Count > 0)
                 throw new ValidationFailedException(sinVersion.Select(x =>
-                    "La pregunta \"" + (x.Text ?? x.LinkId) + "\" usa una definición anterior de su variable: actualizala desde el editor antes de publicar."));
+                    "La pregunta \"" + (x.Text ?? x.LinkId) + "\" usa una definición anterior de su variable: actualícela desde el editor antes de publicar."));
 
             EnsureStructure(QuestionnaireStructureRules.CheckForPublish(q.Groups, preguntas));
             EnsureStructure(PublishedLinkIds.Conflicts(PublishedLinkIds.From(q), preguntas));
@@ -524,7 +539,7 @@ namespace ChequeAR.Application.Services
 
             // Un único timestamp para el recurso congelado, la versión y el cuestionario: deja
             // coherente el "última modificación" del listado con la fecha de publicación.
-            var now = DateTime.UtcNow;
+            var now = _clock.UtcNow;
             var fhirJson = FhirQuestionnaireBuilder.Build(q, nextVersionNumber, now);
 
             var validation = _validator.Validate(fhirJson, FhirQuestionnaireBuilder.ProfileUrl);
@@ -547,6 +562,8 @@ namespace ChequeAR.Application.Services
             q.UpdatedAt = now;
             q.ConcurrencyVersion++;
             await _repo.PublishAsync(q, version);
+            // Que quien llama vea el número de la versión recién creada.
+            if (q.Versions != null && !q.Versions.Contains(version)) q.Versions.Add(version);
 
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$publish", userId));
             return q;
@@ -599,8 +616,8 @@ namespace ChequeAR.Application.Services
             copy.Status = QuestionnaireStatus.Draft;
             copy.HasPendingChanges = false;
             copy.CreatedBy = userId;
-            copy.CreatedAt = DateTime.UtcNow;
-            copy.UpdatedAt = DateTime.UtcNow;
+            copy.CreatedAt = _clock.UtcNow;
+            copy.UpdatedAt = _clock.UtcNow;
             AssignChildIds(copy);
             await _repo.AddAsync(copy);
             _audit.Enqueue(AuditEventBuilder.For("create", "Questionnaire/" + copy.Id + "$clone-from-" + id, userId));
@@ -656,7 +673,7 @@ namespace ChequeAR.Application.Services
                 if (q.Status != QuestionnaireStatus.Retired)
                 {
                     q.Status = QuestionnaireStatus.Retired;
-                    q.UpdatedAt = DateTime.UtcNow;
+                    q.UpdatedAt = _clock.UtcNow;
                     q.ConcurrencyVersion++;
                     await _repo.UpdateAsync(q);
                 }
@@ -678,7 +695,7 @@ namespace ChequeAR.Application.Services
             if (q.Status == QuestionnaireStatus.Retired)
                 throw new BusinessRuleException("El cuestionario ya está archivado.");
             q.Status = QuestionnaireStatus.Retired;
-            q.UpdatedAt = DateTime.UtcNow;
+            q.UpdatedAt = _clock.UtcNow;
             q.ConcurrencyVersion++;
             await _repo.UpdateAsync(q);
             _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id + "$archive", userId));

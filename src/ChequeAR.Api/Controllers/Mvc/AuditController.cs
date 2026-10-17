@@ -141,7 +141,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             });
 
             var result = new ReportResult { Total = rows.Count, Rows = rows };
-            var dateSuffix = DateTime.Now.ToString("yyyy-MM-dd");
+            var dateSuffix = ArgentinaTime.From(DateTime.UtcNow).ToString("yyyy-MM-dd");
             if ((format ?? "xlsx").ToLowerInvariant() == "csv")
                 return File(CsvExporter.Export(result), "text/csv", $"auditoria_{dateSuffix}.csv");
             return File(XlsxExporter.Export(result),
@@ -151,7 +151,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // A7
         public async Task<ActionResult> Details(Guid id)
         {
-            ViewBag.Title = "Evento #" + id;
+            ViewBag.Title = "Evento de auditoría";
             ViewBag.PageId = "audit";
             try
             {
@@ -169,7 +169,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = ResourceLabel(av, titles, e.FhirJson, e.EntityRef)
+                    Resource = ResourceLabel(av, titles, e.FhirJson, e.EntityRef),
+                    Ip = e.AgentIp
                 };
 
                 // Para una publicación mostramos de qué versión a qué versión pasó y el diff.
@@ -180,10 +181,14 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // reporte exportado, las condiciones con las que se corrió.
                 if (av.ResourceType == "SavedReport" || av.ResourceType == "Report")
                     await FillReportDetailAsync(detail, e.FhirJson, saved: av.ResourceType == "SavedReport");
-                else if (av.ResourceType == "Patient")
+                else if (av.ResourceType == "Patient" && e.EntityRef.Contains("$trend"))
                     await FillTrendDetailAsync(detail, e.FhirJson);
+                else if (av.ResourceType == "Patient" && e.EntityRef.Contains("$search"))
+                    FillPatientSearchDetail(detail, e.FhirJson);
                 else if (av.ResourceType == "AuditEvent")
                     FillAuditExportDetail(detail, e.FhirJson);
+                else if (av.ResourceType == "AppUser")
+                    FillUserChanges(detail, e.FhirJson);
 
                 // Para una ficha: al finalizar se guardó la foto COMPLETA (todas las
                 // respuestas); en un guardado de avance, sólo el diff de esa sesión.
@@ -362,6 +367,35 @@ namespace ChequeAR.Api.Controllers.Mvc
                                             + " a " + (string.IsNullOrWhiteSpace(snap.To) ? "hoy" : snap.To));
         }
 
+        private static void FillPatientSearchDetail(AuditDetailViewModel detail, string fhirJson)
+        {
+            PatientSearchAuditSnapshot snap;
+            try { snap = Newtonsoft.Json.JsonConvert.DeserializeObject<PatientSearchAuditSnapshot>(fhirJson ?? string.Empty); }
+            catch (Newtonsoft.Json.JsonException) { return; }
+            if (snap == null) return;
+            detail.HasReportDetail = true;
+            detail.ReportHeading = "Búsqueda";
+            detail.ConditionsHeading = "Datos";
+            detail.ReportConditions.Add("Resultados: " + snap.Results);
+            detail.ReportConditions.Add("Término (SHA-256): " + snap.TermSha256);
+        }
+
+        private static void FillUserChanges(AuditDetailViewModel detail, string fhirJson)
+        {
+            if (string.IsNullOrWhiteSpace(fhirJson)) return;
+            ChequeAR.Application.Services.UserAuditSnapshot snap;
+            try { snap = Newtonsoft.Json.JsonConvert.DeserializeObject<ChequeAR.Application.Services.UserAuditSnapshot>(fhirJson); }
+            catch (Newtonsoft.Json.JsonException) { return; }
+            if (snap?.Changes == null || snap.Changes.Count == 0) return;
+
+            detail.HasReportDetail = true;
+            detail.ReportHeading = "Cambios";
+            detail.ConditionsHeading = "Campos";
+            foreach (var c in snap.Changes)
+                detail.ReportConditions.Add(c.Field + ": " + (string.IsNullOrEmpty(c.Before) ? "—" : c.Before)
+                                            + " → " + (string.IsNullOrEmpty(c.After) ? "—" : c.After));
+        }
+
         /// <summary>Mismas etiquetas que el selector "Acción" del listado.</summary>
         private static string ActionFilterLabel(string code)
         {
@@ -371,7 +405,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 case "C": return "Creaciones";
                 case "U": return "Modificaciones";
                 case "D": return "Eliminaciones";
-                case "E": return "Exportaciones";
+                case "E": return "Exportaciones e ingresos";
                 default: return code;
             }
         }
@@ -409,8 +443,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                 && !string.IsNullOrWhiteSpace(tituloReporte))
                 return tituloReporte;
             if (av.ResourceType == "Patient")
-                return "Paciente HC " + AuditPresentation.PatientHospitalId(entityRef);
+                return entityRef.StartsWith("Patient$", StringComparison.Ordinal)
+                    ? "Pacientes" : "Paciente HC " + AuditPresentation.PatientHospitalId(entityRef);
+            if (av.ResourceType == "Attachment") return "Adjunto";
+            if (av.ResourceType == "Http") return "/" + entityRef.Substring("Http/".Length);
             if (av.ResourceType == "AuditEvent") return "Registro de auditoría";
+            if (av.ResourceType == "AppUser") return "Usuario " + AuditPresentation.UserId(entityRef);
 
             if (av.ResourceType == "Questionnaire" && av.ResourceId.HasValue
                 && titles.TryGetValue(av.ResourceId.Value, out var title)

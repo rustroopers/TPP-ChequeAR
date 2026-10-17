@@ -91,7 +91,7 @@
                 codeDisplay: props.snomedDisplay || ''
             });
 
-            var snomed = window.ChequeARSnomed.createSearch(function () { return coding; });
+            var snomed = window.ChequeARSnomed.createSearch(function () { return coding; }, null, 'variable');
             Vue.watch(function () { return coding.term; }, function (t) { snomed.schedule(t); });
 
             var codeVerifying = Vue.ref(false);
@@ -183,9 +183,24 @@
 
             // El hidden se mantiene al día en vez de llenarse en el submit: si el navegador
             // dispara el submit por Enter en un input, el valor ya está puesto.
+            // Publicar, como en el editor de cuestionarios: sólo con todo guardado y con
+            // cambios respecto de la versión vigente.
+            var guardado = null;
             function sync() {
+                var json = JSON.stringify(buildPayload());
                 var hidden = document.getElementById('variablePayload');
-                if (hidden) hidden.value = JSON.stringify(buildPayload());
+                if (hidden) hidden.value = json;
+                if (guardado === null) guardado = json;
+                var pub = document.getElementById('publishBtn');
+                var save = document.getElementById('saveBtn');
+                var sinGuardar = json !== guardado || (pub != null && pub.hasAttribute('data-unsaved'));
+                // Como en el editor de cuestionarios: Guardar sólo con algo para guardar.
+                if (save && !esNueva) save.disabled = !sinGuardar;
+                if (pub) {
+                    pub.disabled = sinGuardar || !pub.hasAttribute('data-pending');
+                    pub.title = sinGuardar ? 'Guarde los cambios antes de publicar'
+                        : (pub.disabled ? 'No hay cambios para publicar' : '');
+                }
             }
             Vue.watch([model, coding], sync, { deep: true, immediate: true });
             Vue.onMounted(sync);
@@ -259,7 +274,7 @@
 
             '        <div class="col-md-6" v-if="tieneMaxLength">',
             '          <label class="form-label cq-text-sm">Largo m&aacute;ximo</label>',
-            '          <input v-model="model.maxLength" type="number" min="1" class="form-control" />',
+            '          <input v-model="model.maxLength" type="number" min="1" max="2000" class="form-control" />',
             '        </div>',
             '        <div class="col-md-6" v-if="esAdjunto">',
             '          <label class="form-label cq-text-sm">Formatos aceptados</label>',
@@ -270,7 +285,7 @@
             '      <div v-if="tieneOpciones" class="mt-3">',
             '        <div class="d-flex justify-content-between align-items-center mb-2">',
             '          <h3 class="h3 mb-0">Opciones de respuesta</h3>',
-            '          <button type="button" class="btn btn-sm btn-tertiary" @click="addOption">',
+            '          <button type="button" class="btn btn-sm btn-primary" @click="addOption">',
             '            <i class="bi bi-plus-lg me-1"></i>Agregar opci&oacute;n</button>',
             '        </div>',
             '        <p class="cq-text-xs cq-text-muted">En una pregunta de opci&oacute;n, el significado cl&iacute;nico est&aacute; en la respuesta: codificar cada una es lo que hace comparables los datos.</p>',
@@ -288,8 +303,8 @@
             '            <input v-model="o.snomedDisplay" class="form-control form-control-sm" placeholder="Mild" />',
             '          </div>',
             '          <div class="col-md-1 text-end">',
-            '            <button type="button" class="btn btn-sm btn-tertiary" @click="removeOption(i)" title="Quitar">',
-            '              <i class="bi bi-x-lg"></i></button>',
+            '            <button type="button" class="cq-icon-btn cq-icon-btn--danger" @click="removeOption(i)" title="Quitar" aria-label="Quitar opci&oacute;n">',
+            '              <i class="bi bi-trash cq-icon-btn__idle"></i><i class="bi bi-trash-fill cq-icon-btn__hover"></i></button>',
             '          </div>',
             '        </div>',
             '        <div v-if="!model.options.length" class="cq-text-sm cq-text-muted">Todav&iacute;a no hay opciones.</div>',
@@ -298,7 +313,7 @@
             '  </div>',
 
             '  <div class="col-lg-5">',
-            '    <div class="cq-card">',
+            '    <div class="cq-card" data-snomed-area="variable">',
             '      <h2 class="h3">Codificaci&oacute;n cl&iacute;nica</h2>',
             '      <label class="form-label cq-text-sm">T&eacute;rmino</label>',
             '      <input v-model="coding.term" class="form-control" placeholder="peso corporal" />',
@@ -318,7 +333,7 @@
             '      <label class="form-label cq-text-sm">C&oacute;digo SNOMED CT</label>',
             '      <div class="d-flex gap-2 align-items-center">',
             '        <input v-model="coding.code" class="form-control" placeholder="27113001" />',
-            '        <button type="button" class="btn btn-sm btn-tertiary" @click="snomed.clear()" v-if="coding.code" title="Quitar el c&oacute;digo">',
+            '        <button type="button" class="cq-icon-btn" @click="snomed.clear()" v-if="coding.code" title="Quitar el c&oacute;digo" aria-label="Quitar el c&oacute;digo">',
             '          <i class="bi bi-x-lg"></i></button>',
             '      </div>',
             '      <div v-if="codeVerifying" class="cq-text-sm cq-text-muted mt-1">Verificando&hellip;</div>',

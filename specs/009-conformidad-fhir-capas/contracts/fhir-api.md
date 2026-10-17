@@ -147,6 +147,27 @@ ficha vuelve a `in-progress` y se responde `422` + `OperationOutcome`.
 
 Finalizar algo ya completado es idempotente: devuelve el recurso sin error.
 
+### Sesión de edición y guardado parcial (spec 013)
+
+La ficha se completa en varias sesiones. Una sola persona edita a la vez (lock pesimista con
+vencimiento) y cada escritura lleva además `If-Match` (`ConcurrencyVersion` como ETag débil).
+Roles: Administrador, Jefe, Médico.
+
+| Operación | Headers | Respuesta |
+|---|---|---|
+| `POST {id}/$lock` | — | `{ lockToken, expiresAt, concurrencyVersion }` + ETag; `409` con `lock-holder` / `lock-expires` si la tiene otro |
+| `POST {id}/$renew-lock` | `X-Lock-Token` | `{ expiresAt, concurrencyVersion }` |
+| `POST {id}/$unlock` | `X-Lock-Token` (opcional) | `200`; idempotente |
+| `POST {id}/$save-progress` | `X-Lock-Token`, `If-Match` | `QuestionnaireResponse` + ETag + `X-Lock-Expires-At` |
+| `POST {id}/$finalize` | `X-Lock-Token` | `QuestionnaireResponse` |
+| `POST {id}/$amend` / `$amend-commit` | `X-Lock-Token` (en el commit) | Corrección de una ficha finalizada, con motivo |
+| `POST {id}/$abandon` | — | Descarta un borrador `in-progress` |
+| `GET {id}/$retarget-preview` · `POST {id}/$retarget-version` | `X-Lock-Token` (en el POST) | Pasa la ficha a la versión vigente del cuestionario |
+
+Sin el header requerido → `428` + `OperationOutcome`. El cuerpo de `$save-progress`,
+`$finalize`, `$unlock` y `$amend-commit` es la forma interna de guardado (`Items` con
+`LinkId`/`ValueXxx`), no un recurso: las lecturas sí devuelven el `QuestionnaireResponse` FHIR.
+
 ---
 
 ## `Patient` ⚠️ nuevo
@@ -155,7 +176,9 @@ Reemplaza `/api/patients`. Sólo lectura — ChequeAR no es dueño de la entidad
 
 ### `GET /fhir/r5/Patient?name={texto}`
 
-`Bundle` `searchset` de `Patient` con `identifier` de historia clínica.
+`Bundle` `searchset` de `Patient` con `identifier` de historia clínica. Pagina con `_count`
+(por omisión 50) y `_offset`, hasta 1000 resultados. La vista no da un total: `total` se
+informa sólo cuando la búsqueda entra entera, y el link `next` indica si hay más.
 
 **Modo degradado (FR-016)**: si la fuente hospitalaria no responde, los pacientes se derivan de
 las fichas propias. **Nunca** se devuelven datos de demostración.
@@ -170,9 +193,9 @@ las fichas propias. **Nunca** se devuelven datos de demostración.
 
 Reemplaza `/api/patients/{id}/encounters`. Sólo lectura, derivado de las fichas.
 
-### `GET /fhir/r5/Encounter?subject={hospitalId}&_count={n}`
+### `GET /fhir/r5/Encounter?subject={hospitalId}`
 
-`Bundle` `searchset` de `Encounter`.
+`Bundle` `searchset` de `Encounter`, con `total` y paginado por `_count` y `_offset`.
 
 ---
 
@@ -182,9 +205,8 @@ Reemplaza `/api/patients/{id}/encounters`. Sólo lectura, derivado de las fichas
 
 Roles: Administrador, Jefe. Parámetros: `agent.who`, `entity.what`, `_count`, `_offset`.
 
-⚠️ `Bundle` conforme con `entry[].resource` como `AuditEvent` FHIR.
-⚠️ El filtrado y la paginación pasan a la capa de negocio (FR-020): hoy el controller trae
-5000 filas y filtra en memoria.
+`Bundle` conforme con `entry[].resource` como `AuditEvent` FHIR. El filtrado y la
+paginación se hacen en la base.
 
 ### `GET /fhir/r5/AuditEvent/{id}`
 
@@ -196,13 +218,13 @@ Roles: Administrador, Jefe. Parámetros: `agent.who`, `entity.what`, `_count`, `
 
 ### `GET /fhir/r5/ValueSet/$expand?filter={texto}&count={n}`
 
-Roles: Administrador, Jefe. Autocompletado SNOMED CT contra el servidor terminológico.
+Los tres roles. Autocompletado SNOMED CT contra el servidor terminológico. Devuelve un
+`ValueSet` (`url = http://snomed.info/sct?fhir_vs`) con los conceptos en `expansion.contains`
+y los parámetros usados en `expansion.parameter`. `count` va de 1 a 50.
 
-Menos de 3 caracteres devuelve expansión vacía sin consultar el servidor externo.
-
-⚠️ La interpretación de la respuesta del servidor terminológico pasa a la capa de negocio
-(FR-020). Los errores (`429`, `502`, `503`) pasan a `OperationOutcome` con `code = "transient"`,
-conservando el dato de cuánto esperar antes de reintentar.
+Menos de 3 caracteres devuelve expansión vacía sin consultar el servidor externo. Los errores
+(`429`, `502`, `503`) son `OperationOutcome` con `code = "transient"` y el tiempo de espera en
+el texto.
 
 ---
 
@@ -218,7 +240,11 @@ existiendo** — en particular los adjuntos, que las fichas referencian por dire
 | `/api/reports`, `/api/reports/saved` | Consultas y exportación; sin recurso FHIR natural |
 | `/api/users` | Espejo del padrón hospitalario |
 | `/api/attachments` | Binarios; destino de `valueAttachment.url` |
-| `/api/integrations` | Diagnóstico operativo |
+| `/api/integrations`, `/api/health` | Diagnóstico operativo |
+| `/api/variables` | Catálogo de variables clínicas (spec 014) |
+| `/api/specialties` | Catálogo de especialidades |
+| `/api/patients/{id}/trend*` | Series para la pantalla de evolución (spec 010) |
+| `/api/deploy` | Migraciones desde el CD |
 
 ---
 
@@ -228,6 +254,10 @@ existiendo** — en particular los adjuntos, que las fichas referencian por dire
 |---|---|---|---|
 | `https://chequear.garrahan/StructureDefinition/question-term` | `Questionnaire.item` | `valueString` | Semilla clínica de autoría. Sin ella se pierde en cada guardado |
 | `https://chequear.garrahan/StructureDefinition/questionnaire-version-id` | `QuestionnaireResponse` | `valueString` (identificador único) | Ancla la ficha a la versión con la que se completó |
+| `…/questionnaire-term` | `Questionnaire` | `valueString` | Semilla de autoría del cuestionario entero |
+| `…/question-variable-id`, `…/question-variable-version` | `Questionnaire.item` | `valueString`, `valueInteger` | Variable clínica de la que sale la pregunta (spec 014) |
+| `…/option-snomed-display` | `answerOption.valueCoding` | `valueString` | Término SNOMED cuando la etiqueta visible es otra |
+| `…/lock-holder`, `…/lock-expires` | `OperationOutcome` (409) | `valueString`, `valueInstant` | Quién tiene la sesión de edición y hasta cuándo |
 
 ## Perfiles declarados
 
@@ -236,5 +266,4 @@ existiendo** — en particular los adjuntos, que las fichas referencian por dire
 | `https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaire` | `Questionnaire` |
 | `https://chequear.garrahan/StructureDefinition/ChequeARQuestionnaireResponse` | `QuestionnaireResponse` |
 
-⚠️ La primera ya se **declara** hoy en `meta.profile`, pero **no existe como artefacto**. Esta
-feature la crea (FR-011).
+Los dos existen como artefacto en `src/ChequeAR.Infrastructure/Fhir/Profiles/`.

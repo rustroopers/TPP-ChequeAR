@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 
@@ -20,20 +21,20 @@ namespace ChequeAR.Api.Controllers.Api
         public EncounterController(PatientService svc) { _svc = svc; }
 
         [HttpGet, Route(""), Authorize]
-        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] int _count = 50)
+        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] int _count = 50, [FromUri] int _offset = 0)
         {
             if (string.IsNullOrWhiteSpace(subject))
                 return Content(System.Net.HttpStatusCode.BadRequest, OperationOutcomes.Invalid(
                     "Falta el parámetro 'subject' con la historia clínica del paciente."));
 
-            var fichas = await _svc.GetEncountersAsync(subject, FhirBundles.ClampCount(_count));
+            var count = FhirBundles.ClampCount(_count);
+            var offset = FhirBundles.ClampOffset(_offset);
+            var fichas = await _svc.GetEncountersAsync(subject, count, offset);
             var total = await _svc.CountEncountersAsync(subject);
 
             var recursos = FhirPatientProjection.ToEncounters(fichas).Cast<Hl7.Fhir.Model.Resource>();
-            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl(), Request.RequestUri, offset, count));
         }
 
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
     }
 }

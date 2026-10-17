@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
+using ChequeAR.Api.Fhir;
 using ChequeAR.Api.Auth;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Fhir;
@@ -29,13 +30,17 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         [HttpGet, Route(""), Authorize]
-        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] Guid? questionnaire = null, [FromUri] string status = null, [FromUri] int _count = 50, [FromUri] int _offset = 0, [FromUri] string _summary = null)
+        public async Task<IHttpActionResult> Search([FromUri] string subject = null, [FromUri] string questionnaire = null, [FromUri] string status = null, [FromUri] int _count = 50, [FromUri] int _offset = 0, [FromUri] string _summary = null)
         {
-            ResponseStatus? st = null;
-            if (Enum.TryParse(status, true, out ResponseStatus s)) st = s;
-            var items = await _service.SearchAsync(subject, questionnaire, st,
-                FhirBundles.ClampOffset(_offset), FhirBundles.ClampCount(_count));
-            var total = await _service.CountAsync(subject, questionnaire, st);
+            if (!FhirSearchParams.TryParseStatus(status, out var st))
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("status no reconocido: " + status));
+            if (!FhirSearchParams.TryParseQuestionnaire(questionnaire, out var qid))
+                return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid("questionnaire no reconocido: " + questionnaire));
+            var paciente = FhirSearchParams.ParseSubject(subject);
+            var offset = FhirBundles.ClampOffset(_offset);
+            var count = FhirBundles.ClampCount(_count);
+            var items = await _service.SearchAsync(paciente, qid, st, offset, count);
+            var total = await _service.CountAsync(paciente, qid, st);
 
             // Con _summary=true no viajan respuestas y no se audita; sin él, cada ficha cuenta como lectura.
             var resumen = string.Equals(_summary, "true", StringComparison.OrdinalIgnoreCase);
@@ -43,7 +48,7 @@ namespace ChequeAR.Api.Controllers.Api
                 foreach (var r in items) await _accessAudit.ResponseRead(r);
 
             var recursos = items.Select(r => (Hl7.Fhir.Model.Resource)(resumen ? Summary(ToFhir(r)) : ToFhir(r)));
-            return Ok(FhirBundles.SearchSet(recursos, total, FhirBaseUrl()));
+            return Ok(FhirBundles.SearchSet(recursos, total, Request.FhirBaseUrl(), Request.RequestUri, offset, count));
         }
 
         private static Hl7.Fhir.Model.QuestionnaireResponse Summary(Hl7.Fhir.Model.QuestionnaireResponse resource)
@@ -100,16 +105,7 @@ namespace ChequeAR.Api.Controllers.Api
 
         private static EntityTagHeaderValue ETagFor(QuestionnaireResponse r)
         {
-            return new EntityTagHeaderValue("\"" + r.ConcurrencyVersion + "\"", true);
-        }
-
-        // Acepta W/"3" y "3". Devuelve null si no hay un número adentro.
-        private static int? ParseIfMatch(HttpRequestMessage request)
-        {
-            var tag = request.Headers.IfMatch?.FirstOrDefault();
-            if (tag == null) return null;
-            var raw = (tag.Tag ?? string.Empty).Trim('"');
-            return int.TryParse(raw, out var version) ? version : (int?)null;
+            return FhirHttp.WeakETag(r.ConcurrencyVersion);
         }
 
         private static Guid? ParseLockToken(HttpRequestMessage request)
@@ -118,18 +114,19 @@ namespace ChequeAR.Api.Controllers.Api
             return Guid.TryParse(values.FirstOrDefault(), out var token) ? token : (Guid?)null;
         }
 
-        private string FhirBaseUrl()
-            => Request.RequestUri.GetLeftPart(UriPartial.Authority) + "/fhir/r5";
-
         [HttpPost, Route(""), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> Create([FromBody] Hl7.Fhir.Model.QuestionnaireResponse body)
         {
+            if (!ModelState.IsValid) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid(FhirModelState.Describe(ModelState)));
             var r = FhirQuestionnaireResponseParser.ToDomain(body);
             if (r == null) return Content(HttpStatusCode.BadRequest, OperationOutcomes.Invalid());
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var created = await _service.CreateAsync(r, userId);
-            return Content(HttpStatusCode.Created, ToFhir(created));
+            var response = Request.CreateResponse(HttpStatusCode.Created, ToFhir(created));
+            response.Headers.Location = new Uri(Request.FhirBaseUrl() + "/QuestionnaireResponse/" + created.Id);
+            response.Headers.ETag = ETagFor(created);
+            return ResponseMessage(response);
         }
 
         // Toma la sesión de edición exclusiva. Sin esto, dos médicos podrían completar el
@@ -162,7 +159,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var token = ParseLockToken(Request);
             if (!token.HasValue)
-                return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired("Falta el header X-Lock-Token."));
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var r = await _service.RenewLockAsync(id, userId, token.Value);
@@ -176,13 +173,13 @@ namespace ChequeAR.Api.Controllers.Api
         // abrirla. Sólo lo manda el "Guardar avance" deliberado; con él, ReleaseLock audita un
         // único evento con el diff de lo completado. El cierre pasivo de pestaña no lo manda.
         [HttpPost, Route("{id:guid}/$unlock"), RequiresPermissionApi(Permissions.EncounterWrite)]
-        public async Task<IHttpActionResult> Unlock(Guid id, [FromBody] SaveProgressBody body)
+        public async Task<IHttpActionResult> Unlock(Guid id, [FromBody] UnlockBody body)
         {
             var token = ParseLockToken(Request);
             if (!token.HasValue) return Ok();
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items);
+            await _service.ReleaseLockAsync(id, userId, token.Value, body?.Items, body?.Pending);
             return Ok();
         }
 
@@ -194,26 +191,20 @@ namespace ChequeAR.Api.Controllers.Api
         // El body sigue siendo la forma interna (LinkId/ValueXxx) y no un recurso FHIR: es el
         // formato de guardado incremental, no la representación canónica de la ficha -- esa
         // sigue siendo GET/Search/$finalize, que sí devuelven el recurso FHIR completo.
-        [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.EncounterWrite)]
+        // Operación propia y no PUT: el cuerpo es la forma interna de guardado parcial, no un
+        // recurso QuestionnaireResponse, y un PUT FHIR promete reemplazar el recurso entero.
+        [HttpPost, Route("{id:guid}/$save-progress"), RequiresPermissionApi(Permissions.EncounterWrite)]
         public async Task<IHttpActionResult> SaveProgress(Guid id, [FromBody] SaveProgressBody body)
         {
-            var expectedVersion = ParseIfMatch(Request);
+            var expectedVersion = Request.IfMatchVersion();
             if (!expectedVersion.HasValue)
-            {
-                return Content((HttpStatusCode)428, new
-                {
-                    error = "Falta el header If-Match con la versión de la ficha (ej: If-Match: W/\"3\")."
-                });
-            }
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired(
+                    "Falta el header If-Match con la versión de la ficha (ej: If-Match: W/\"3\")."));
 
             var lockToken = ParseLockToken(Request);
             if (!lockToken.HasValue)
-            {
-                return Content((HttpStatusCode)428, new
-                {
-                    error = "Falta el header X-Lock-Token: hay que tomar el lock ($lock) antes de guardar."
-                });
-            }
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired(
+                    "Falta el header X-Lock-Token: hay que tomar el lock ($lock) antes de guardar."));
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var r = await _service.SaveProgressAsync(id, userId, lockToken.Value, expectedVersion, body?.Items);
@@ -236,7 +227,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var lockToken = ParseLockToken(Request);
             if (!lockToken.HasValue)
-                return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired("Falta el header X-Lock-Token."));
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var r = await _service.FinalizeAsync(id, userId, lockToken.Value, body?.Items);
@@ -267,10 +258,10 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var lockToken = ParseLockToken(Request);
             if (!lockToken.HasValue)
-                return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired("Falta el header X-Lock-Token."));
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
-            var r = await _service.CommitAmendAsync(id, userId, lockToken.Value, ParseIfMatch(Request), body?.Items, body?.Reason);
+            var r = await _service.CommitAmendAsync(id, userId, lockToken.Value, Request.IfMatchVersion(), body?.Items, body?.Reason);
             var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(r));
             response.Headers.ETag = ETagFor(r);
             return ResponseMessage(response);
@@ -312,7 +303,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             var lockToken = ParseLockToken(Request);
             if (!lockToken.HasValue)
-                return Content((HttpStatusCode)428, new { error = "Falta el header X-Lock-Token." });
+                return Content((HttpStatusCode)428, OperationOutcomes.PreconditionRequired("Falta el header X-Lock-Token."));
 
             var userId = CurrentUser.Id(User as ClaimsPrincipal);
             var r = await _service.RetargetToCurrentVersionAsync(id, userId, lockToken.Value);
@@ -322,6 +313,13 @@ namespace ChequeAR.Api.Controllers.Api
         }
 
         public class SaveProgressBody { public List<QuestionnaireResponseItem> Items { get; set; } }
+
+        public class UnlockBody
+        {
+            public List<QuestionnaireResponseItem> Items { get; set; }
+            /// <summary>Respuestas que el autosave no llegó a mandar antes de salir de la página.</summary>
+            public List<QuestionnaireResponseItem> Pending { get; set; }
+        }
 
         public class AmendBody
         {

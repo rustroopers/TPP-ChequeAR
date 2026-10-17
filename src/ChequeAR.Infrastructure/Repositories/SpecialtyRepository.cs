@@ -8,10 +8,16 @@ using ChequeAR.Infrastructure.EF;
 
 namespace ChequeAR.Infrastructure.Repositories
 {
-    public class SpecialtyRepository : ISpecialtyRepository
+    public sealed class SpecialtyRepository : ISpecialtyRepository, System.IDisposable
     {
         private readonly ChequeARDbContext _ctx;
-        public SpecialtyRepository(ChequeARDbContext ctx) { _ctx = ctx; }
+        private readonly bool _ownsContext;
+        public SpecialtyRepository(ChequeARDbContext ctx, bool ownsContext) { _ctx = ctx; _ownsContext = ownsContext; }
+
+        public void Dispose()
+        {
+            if (_ownsContext) _ctx.Dispose();
+        }
 
         public async Task<IReadOnlyList<Specialty>> ListAsync(bool includeInactive = false)
         {

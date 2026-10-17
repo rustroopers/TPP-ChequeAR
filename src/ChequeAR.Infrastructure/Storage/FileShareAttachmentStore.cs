@@ -1,6 +1,8 @@
 using System;
 using System.Globalization;
+using System.Data.Entity;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using ChequeAR.Application.Interfaces;
@@ -78,11 +80,44 @@ namespace ChequeAR.Infrastructure.Storage
         {
             var attachment = await _ctx.Attachments.FindAsync(attachmentId);
             if (attachment == null) return null;
-            // los adjuntos viejos guardaron la ruta absoluta
-            var path = Path.IsPathRooted(attachment.StoragePath)
-                ? attachment.StoragePath
-                : Path.Combine(_root, attachment.StoragePath);
+            var path = FullPath(attachment);
             return File.Exists(path) ? File.OpenRead(path) : null;
         }
+
+        public async Task<long> UploadedBytesSinceAsync(string userId, DateTime sinceUtc)
+            => await _ctx.Attachments
+                .Where(a => a.UploadedBy == userId && a.UploadedAt >= sinceUtc)
+                .Select(a => (long?)a.SizeBytes)
+                .SumAsync() ?? 0;
+
+        public async Task<int> PurgeOrphansAsync(DateTime uploadedBeforeUtc)
+        {
+            var huerfanos = await _ctx.Attachments
+                .Where(a => a.UploadedAt < uploadedBeforeUtc
+                            && !_ctx.QuestionnaireResponseItems.Any(i => i.AttachmentId == a.Id))
+                .OrderBy(a => a.UploadedAt)
+                .Take(500)
+                .ToListAsync();
+            foreach (var a in huerfanos)
+            {
+                // Primero la fila: si falla el borrado del archivo queda basura en disco, no
+                // una fila que apunta a nada.
+                _ctx.Attachments.Remove(a);
+            }
+            await _ctx.SaveChangesAsync();
+            foreach (var a in huerfanos)
+            {
+                var path = FullPath(a);
+                try { if (File.Exists(path)) File.Delete(path); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return huerfanos.Count;
+        }
+
+        // los adjuntos viejos guardaron la ruta absoluta
+        private string FullPath(Attachment attachment) => Path.IsPathRooted(attachment.StoragePath)
+            ? attachment.StoragePath
+            : Path.Combine(_root, attachment.StoragePath);
     }
 }

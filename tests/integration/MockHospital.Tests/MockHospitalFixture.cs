@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -8,8 +9,8 @@ namespace ChequeAR.Tests.MockHospital
 {
     /// <summary>
     /// Fixture compartido para los tests de integración del mock hospital.
-    /// Asume que el contenedor `infra/mock-hospital/docker-compose.yml` está corriendo
-    /// y reportado como `healthy`. Si no, los tests fallan rápido y claro.
+    /// Asume el mock cargado en el Oracle local (infra/mock-hospital/README.md).
+    /// Si no, los tests fallan rápido y claro.
     ///
     /// La connection string se toma de la env var MOCK_HOSPITAL_CONN; si no está,
     /// se usa un default apuntando a localhost:1521/XEPDB1 con CHEQUEAR_RO/devdev.
@@ -44,8 +45,8 @@ namespace ChequeAR.Tests.MockHospital
             catch (Exception ex)
             {
                 throw new InvalidOperationException(
-                    "El contenedor mock-hospital no responde. " +
-                    "Levantarlo con `docker compose up -d --wait` desde infra/mock-hospital/ " +
+                    "El mock-hospital no responde. Cargarlo con " +
+                    "`sqlplus -S \"/ as sysdba\" @cargar.sql` desde infra/mock-hospital/init/ " +
                     "antes de correr esta suite.", ex);
             }
         }
@@ -56,7 +57,7 @@ namespace ChequeAR.Tests.MockHospital
             using (var cmd = new OracleCommand($"SELECT COUNT(*) FROM HOSPITAL_MOCK.{viewName}", conn))
             {
                 conn.Open();
-                return Convert.ToInt64(cmd.ExecuteScalar());
+                return Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
             }
         }
 

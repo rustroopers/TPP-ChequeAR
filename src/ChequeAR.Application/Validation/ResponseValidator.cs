@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using ChequeAR.Application.Fhir;
 using ChequeAR.Domain.Entities;
 
@@ -13,7 +14,11 @@ namespace ChequeAR.Application.Validation
     /// </summary>
     public static class ResponseValidator
     {
-
+        /// <summary>Lo que entra en las columnas: NUMBER(22,6) y VARCHAR2(2000 CHAR), con tope de 4000 bytes.</summary>
+        public const int DecimalPlaces = 6;
+        public const int MaxTextLength = 2000;
+        private const int MaxTextBytes = 4000;
+        private const decimal MaxDecimal = 10000000000000000m;
 
         /// <summary>
         /// La escala y los decimales se guardan en ValueDecimal, que es donde los buscan los
@@ -83,6 +88,8 @@ namespace ChequeAR.Application.Validation
                     if (!Only(item, nameof(item.ValueDecimal))) return WrongType;
                     var d = item.ValueDecimal.Value;
                     if (q.Type == "scale" && d != decimal.Truncate(d)) return "tiene que ser un número entero.";
+                    if (d != Math.Round(d, DecimalPlaces)) return "admite hasta " + DecimalPlaces + " decimales.";
+                    if (Math.Abs(d) >= MaxDecimal) return "es demasiado grande.";
                     return complete ? Range(q, d) : null;
 
                 case "date":
@@ -100,6 +107,8 @@ namespace ChequeAR.Application.Validation
 
                 default:
                     if (!Only(item, nameof(item.ValueString))) return WrongType;
+                    if (item.ValueString.Length > MaxTextLength || Encoding.UTF8.GetByteCount(item.ValueString) > MaxTextBytes)
+                        return "supera el máximo de " + MaxTextLength + " caracteres.";
                     return complete ? Text(q, item.ValueString) : null;
             }
         }
@@ -120,7 +129,7 @@ namespace ChequeAR.Application.Validation
             return null;
         }
 
-        private static string Format(decimal v) => v.ToString("0.##", CultureInfo.GetCultureInfo("es-AR"));
+        private static string Format(decimal v) => v.ToString("0.######", CultureInfo.GetCultureInfo("es-AR"));
 
         private static string Label(RenderableQuestion q) =>
             "\"" + (string.IsNullOrWhiteSpace(q.Text) ? q.LinkId : q.Text) + "\"";

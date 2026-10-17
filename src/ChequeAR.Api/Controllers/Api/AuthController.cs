@@ -51,6 +51,7 @@ namespace ChequeAR.Api.Controllers.Api
             {
                 Auth.LoginThrottle.RegisterFailure(ip);
                 Serilog.Log.Warning("Login (API) fallido para {User} desde {Ip}", await _users.LoggableUserNameAsync(req.Username), ip);
+                await _users.LoginFailedAsync(req.Username);
                 return StatusCode(HttpStatusCode.Unauthorized);
             }
 
@@ -58,6 +59,8 @@ namespace ChequeAR.Api.Controllers.Api
             // emite un access token con permisos que la base no respalda. Devuelve el
             // UserInfo saneado (códigos de especialidad filtrados contra el catálogo).
             user = await _users.SyncFromHospitalAsync(user);
+            if (user == null) return StatusCode(HttpStatusCode.Unauthorized);
+            _users.LoginSucceeded(user.Id);
 
             var access = _jwt.IssueAccessToken(user);
             var ua = Request.Headers.UserAgent?.ToString();
@@ -113,6 +116,7 @@ namespace ChequeAR.Api.Controllers.Api
         {
             if (req != null && !string.IsNullOrEmpty(req.RefreshToken))
                 await _refresh.RevokeAsync(req.RefreshToken);
+            _users.LoggedOut(Auth.CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
             return Ok();
         }
 

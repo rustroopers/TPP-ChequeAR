@@ -90,10 +90,10 @@ namespace ChequeAR.Infrastructure.Repositories
         public async Task<int> IncrementFailedLoginAsync(string userId)
         {
             await _ctx.Database.ExecuteSqlCommandAsync(
-                "UPDATE \"AppUser\" SET \"FailedLoginCount\" = \"FailedLoginCount\" + 1 WHERE \"Id\" = :id",
+                "UPDATE \"CHEQUEAR\".\"AppUser\" SET \"FailedLoginCount\" = \"FailedLoginCount\" + 1 WHERE \"Id\" = :id",
                 new OracleParameter("id", userId));
             var total = await _ctx.Database.SqlQuery<decimal>(
-                "SELECT \"FailedLoginCount\" FROM \"AppUser\" WHERE \"Id\" = :id",
+                "SELECT \"FailedLoginCount\" FROM \"CHEQUEAR\".\"AppUser\" WHERE \"Id\" = :id",
                 new OracleParameter("id", userId)).FirstOrDefaultAsync();
             return (int)total;
         }
@@ -101,7 +101,7 @@ namespace ChequeAR.Infrastructure.Repositories
         public async Task SetLockoutUntilAsync(string userId, DateTime lockoutUntil)
         {
             await _ctx.Database.ExecuteSqlCommandAsync(
-                "UPDATE \"AppUser\" SET \"LockoutUntil\" = :hasta WHERE \"Id\" = :id",
+                "UPDATE \"CHEQUEAR\".\"AppUser\" SET \"LockoutUntil\" = :hasta WHERE \"Id\" = :id",
                 new OracleParameter("hasta", lockoutUntil), new OracleParameter("id", userId));
         }
 
@@ -112,6 +112,27 @@ namespace ChequeAR.Infrastructure.Repositories
             user.PasswordHash = passwordHash;
             user.PasswordUpdatedAt = DateTime.UtcNow;
             await _ctx.SaveChangesAsync();
+        }
+
+        private const string ActiveAdmins =
+            @"FROM ""CHEQUEAR"".""UserRole"" r JOIN ""CHEQUEAR"".""AppUser"" u ON u.""Id"" = r.""UserId"" WHERE r.""Role"" = 'Administrador' AND u.""IsActive"" = 1";
+
+        public async Task<bool> KeepingAnAdminAsync(Func<Task> change)
+        {
+            using (var tx = _ctx.Database.BeginTransaction())
+            {
+                await _ctx.Database.SqlQuery<string>(@"SELECT r.""UserId"" " + ActiveAdmins + " FOR UPDATE").ToListAsync();
+                await change();
+                var quedan = await _ctx.Database.SqlQuery<decimal>("SELECT COUNT(*) " + ActiveAdmins).SingleAsync();
+                if (quedan == 0)
+                {
+                    tx.Rollback();
+                    foreach (var entry in _ctx.ChangeTracker.Entries().ToList()) entry.State = EntityState.Detached;
+                    return false;
+                }
+                tx.Commit();
+                return true;
+            }
         }
 
         public async Task SyncFromHospitalAsync(string userId, string displayName, string email,

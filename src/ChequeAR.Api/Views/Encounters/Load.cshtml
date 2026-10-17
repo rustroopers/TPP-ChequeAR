@@ -15,10 +15,16 @@
        lock de sesión y autoguarda con PUT + $lock/$renew-lock/$unlock. *@
     @* "Detalle": historial de quién/cuándo tocó esta ficha. Sólo si ya existe la ficha
        (un borrado previo); una carga nueva todavía no generó eventos que mostrar. *@
-    @if (ViewBag.ExistingResponseId != null)
-    {
-        <a href="@Url.Action("History", new { id = (Guid)ViewBag.ExistingResponseId })" class="btn btn-primary" title="Quién y cuándo completó cada cambio"><i class="bi bi-clock-history me-1"></i> Detalle</a>
-    }
+    <div class="d-flex gap-2">
+        @if (!string.IsNullOrEmpty(Request.QueryString["patientId"]))
+        {
+            <a href="@Url.Action("Timeline", new { patientId = Request.QueryString["patientId"] })" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver al historial</a>
+        }
+        @if (ViewBag.ExistingResponseId != null)
+        {
+            <a href="@Url.Action("History", new { id = (Guid)ViewBag.ExistingResponseId })" class="btn btn-secondary" title="Quién y cuándo completó cada cambio"><i class="bi bi-clock-history me-1"></i>Detalle</a>
+        }
+    </div>
 </header>
 
 @if (!string.IsNullOrEmpty(loadError))
@@ -28,7 +34,6 @@
             <div class="cq-empty__icon"><i class="bi bi-exclamation-triangle"></i></div>
             <div class="cq-empty__title">No se puede cargar la ficha</div>
             <div class="cq-empty__desc">@loadError</div>
-            <a href="@Url.Action("Search")" class="btn btn-outline-secondary">Volver a Pacientes</a>
         </div>
     </div>
 }

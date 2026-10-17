@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ChequeAR.Application.Dtos;
 using ChequeAR.Application.Exceptions;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Reports;
 using ChequeAR.Domain.Entities;
+using ChequeAR.Domain.Enums;
 using Moq;
 using Xunit;
 
@@ -67,6 +69,43 @@ namespace ChequeAR.Tests.Application
 
             await Assert.ThrowsAsync<SpecialtyForbiddenException>(
                 () => sut.ExecuteStatsAsync(new ReportQuery { QuestionnaireId = id }));
+        }
+
+        // Estadísticas sobre la estructura publicada, con la metadata que necesita el export.
+        [Fact]
+        public async Task ExecuteStatsAsync_CalculaSobreLaCohorteYDescribeLaConsulta()
+        {
+            var id = Guid.NewGuid();
+            var q = Minimal(id, "cardio");
+            var foto = new Questionnaire { Id = id, Title = q.Title };
+            foto.Questions.Add(new Question { LinkId = "peso", Text = "Peso", Type = QuestionType.Decimal });
+            var v = new QuestionnaireVersion { Id = Guid.NewGuid(), QuestionnaireId = id, VersionNumber = 1, FhirJson = FhirQuestionnaireBuilder.Build(foto, 1) };
+            q.Versions.Add(v);
+            q.CurrentVersionId = v.Id;
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(q);
+            _runner.Setup(r => r.RunAsync(It.IsAny<BuiltQuery>(), It.IsAny<int?>())).ReturnsAsync(new QueryRunResult
+            {
+                Rows = new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object> { ["ResponseId"] = "a", ["LinkId"] = "peso", ["ValueDecimal"] = 20m },
+                    new Dictionary<string, object> { ["ResponseId"] = "b", ["LinkId"] = "peso", ["ValueDecimal"] = 30m }
+                },
+                TotalResponses = 3
+            });
+            var desde = new DateTime(2026, 10, 1);
+
+            var stats = await Sut(TestHelpers.GuardFor("cardio")).ExecuteStatsAsync(new ReportQuery
+            {
+                QuestionnaireId = id,
+                DateRange = new DateRange { From = desde }
+            });
+
+            Assert.Equal(3, stats.Responses);
+            var peso = Assert.Single(stats.Questions);
+            Assert.Equal(2, peso.Answered);
+            Assert.Equal(25m, peso.Mean);
+            Assert.Equal("Cuestionario de prueba", stats.QuestionnaireTitle);
+            Assert.Equal(desde, stats.DateFrom);
         }
 
         [Fact]

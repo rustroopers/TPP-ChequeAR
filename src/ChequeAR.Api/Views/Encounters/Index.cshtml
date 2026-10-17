@@ -12,8 +12,9 @@
     </div>
 </header>
 
-@using (Html.BeginForm("Index", "Encounters", FormMethod.Get, new { @class = "mb-4", data_cq_autofilter = "patients" }))
+@using (Html.BeginForm("Search", "Encounters", FormMethod.Post, new { @class = "mb-4", data_cq_autofilter = "patients" }))
 {
+    @Html.AntiForgeryToken()
     <div class="d-flex align-items-center" style="max-width:680px;">
         <div class="input-group" style="max-width:640px;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -47,7 +48,6 @@ else if (Model.Results == null || Model.Results.Count == 0)
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-emoji-frown"></i></div>
             <div class="cq-empty__title">@Cq.T("r1.noresults.title", new { q = Model.Query })</div>
-            <div class="cq-empty__desc">@Cq.T("r1.noresults.desc")</div>
         </div>
 }
 else
@@ -110,7 +110,7 @@ else
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title h3" id="selectQTitle">Seleccionar ficha clínica</h2>
+                <h2 class="modal-title h3" id="selectQTitle">Elegir cuestionario</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
@@ -120,8 +120,6 @@ else
                     <div class="cq-empty">
                         <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
                         <div class="cq-empty__title">No hay cuestionarios publicados</div>
-                        <div class="cq-empty__desc">Solo se pueden cargar fichas de cuestionarios publicados.</div>
-                        <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-primary">Ir a Cuestionarios</a>
                     </div>
                 }
                 else
@@ -178,7 +176,7 @@ else
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
-                <p class="cq-text-sm">Este paciente ya tiene una ficha de <strong id="resumeChoiceQTitle">este cuestionario</strong> sin terminar. ¿Querés continuar donde quedó o empezarla de nuevo?</p>
+                <p class="cq-text-sm">Este paciente ya tiene una ficha de <strong id="resumeChoiceQTitle">este cuestionario</strong> sin terminar. ¿Quiere continuar donde quedó o empezarla de nuevo?</p>
                 <p class="cq-text-sm cq-text-muted">Empezar de nuevo descarta todo lo cargado en la ficha anterior. Esta acción no se puede deshacer.</p>
             </div>
             <div class="modal-footer">
@@ -296,9 +294,9 @@ else
         loadLastEntries(pid);
         document.getElementById("selectQStartBtn").onclick = function () {
             var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
-            if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "error"); return; }
+            if (!qid) { window.cqToast && cqToast("Seleccione un cuestionario.", "error"); return; }
             var draft = draftIdByQid[qid.toLowerCase()];
-            if (draft) {
+            if (draft && draft.patientId === pid) {
                 openResumeChoice(pid, qid, draft.id, questionnaireTitleFor(qid));
             } else {
                 goToLoad(pid, qid);
@@ -343,16 +341,13 @@ else
         function otherUserFinishedFirst() {
             restartBtn.disabled = false;
             continueBtn.disabled = false;
-            window.cqToast && cqToast("Otro usuario ya finalizó esta ficha mientras tanto.", "error");
+            window.cqToast && cqToast("Esta ficha ya no está en curso: otro usuario la finalizó o la descartó.", "error");
             bootstrap.Modal.getOrCreateInstance(resumeModalEl).hide();
         }
 
         continueBtn.onclick = function () {
             continueBtn.disabled = true;
-            var meta = document.querySelector('meta[name="cq-token"]');
-            fetch("/fhir/r5/QuestionnaireResponse/" + draftId, {
-                headers: { "Authorization": "Bearer " + (meta ? meta.getAttribute("content") : "") }
-            }).then(function (r) {
+            fetch("/fhir/r5/QuestionnaireResponse/" + draftId).then(function (r) {
                 if (r.status === 404) return null;
                 if (!r.ok) throw new Error("HTTP " + r.status);
                 return r.json();
@@ -361,17 +356,13 @@ else
                 goToLoad(pid, qid);
             }).catch(function () {
                 continueBtn.disabled = false;
-                window.cqToast && cqToast("No se pudo verificar el estado de la ficha. Probá de nuevo.", "error");
+                window.cqToast && cqToast("No se pudo verificar el estado de la ficha. Pruebe de nuevo.", "error");
             });
         };
         restartBtn.onclick = function () {
             restartBtn.disabled = true;
-            var meta = document.querySelector('meta[name="cq-token"]');
-            fetch("/fhir/r5/QuestionnaireResponse/" + draftId + "/$abandon", {
-                method: "POST",
-                headers: { "Authorization": "Bearer " + (meta ? meta.getAttribute("content") : "") }
-            }).then(function (r) {
-                if (r.ok) { goToLoad(pid, qid); return; }
+            fetch("/fhir/r5/QuestionnaireResponse/" + draftId + "/$abandon", { method: "POST" }).then(function (r) {
+                if (r.ok) { window.cqFlash && cqFlash("Se descartó la ficha anterior.", "success"); goToLoad(pid, qid); return; }
                 // 422 = ya no está InProgress (alguien la finalizó justo antes de este
                 // click): no hay nada que descartar, y arrancar una ficha nueva en blanco
                 // sin decir nada sería el mismo problema al revés.
@@ -379,7 +370,7 @@ else
                 throw new Error("HTTP " + r.status);
             }).catch(function () {
                 restartBtn.disabled = false;
-                window.cqToast && cqToast("No se pudo descartar la ficha anterior. Probá de nuevo.", "error");
+                window.cqToast && cqToast("No se pudo descartar la ficha anterior. Pruebe de nuevo.", "error");
             });
         };
 
@@ -398,16 +389,15 @@ else
     // arma draftIdByQid (qid -> ficha InProgress), que usa "Comenzar carga" para decidir si
     // hay que preguntar "continuar o empezar de nuevo".
     var draftIdByQid = {};
+    // El paciente abierto en el selector: la respuesta de uno anterior que llega tarde se ignora.
+    var openPatientId = null;
     function loadLastEntries(patientId) {
+        openPatientId = patientId;
         var labels = document.querySelectorAll(".cq-q-last");
         Array.prototype.forEach.call(labels, function (el) { el.textContent = ""; });
         draftIdByQid = {};
-        var meta = document.querySelector('meta[name="cq-token"]');
-        if (!meta) return;
-        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200&_summary=true", {
-            headers: { "Authorization": "Bearer " + meta.getAttribute("content") }
-        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
-            if (!bundle) return;
+        fetch("/fhir/r5/QuestionnaireResponse?subject=" + encodeURIComponent(patientId) + "&_count=200&_summary=true").then(function (r) { return r.ok ? r.json() : null; }).then(function (bundle) {
+            if (!bundle || patientId !== openPatientId) return;
             // Bundle conforme: los resultados vienen en entry[].resource, y el cuestionario
             // se referencia por su canonical (.../Questionnaire/{id}), no por un campo propio.
             var entries = bundle.entry || [];
@@ -423,14 +413,14 @@ else
                 // A lo sumo debería haber una InProgress por paciente+cuestionario; si hay
                 // más de una (dato viejo), nos quedamos con la más reciente.
                 if (r.status === "in-progress" && r.id && (!draftIdByQid[qid] || when > draftIdByQid[qid].when)) {
-                    draftIdByQid[qid] = { id: r.id, when: when };
+                    draftIdByQid[qid] = { id: r.id, when: when, patientId: patientId };
                 }
             });
             Array.prototype.forEach.call(labels, function (el) {
                 var when = lastByQ[(el.getAttribute("data-qid") || "").toLowerCase()];
                 el.textContent = when
-                    ? "Última carga para este paciente: " + String(when).slice(0, 10)
-                    : "Nunca cargado";
+                    ? "Última carga para este paciente: " + new Date(when).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" })
+                    : "Sin fichas para este paciente";
             });
         }).catch(function () { /* sin dato: se deja vacío */ });
     }
