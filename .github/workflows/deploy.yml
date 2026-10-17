@@ -149,8 +149,18 @@ jobs:
             catch { "Intento ${i}: $($_.Exception.Message)"; Start-Sleep -Seconds 15 }
           }
           if (-not $r) { throw "No se pudo lanzar la migración en $url" }
-          for ($i = 0; $r.State -eq 'running' -and $i -lt 180; $i++) {
+          # Azure reinicia el sitio al terminar de aplicar el paquete, a veces con la migración
+          # ya lanzada: el estado vuelve a 'idle' y hay que lanzarla de nuevo.
+          $relanzadas = 0
+          for ($i = 0; ($r.State -eq 'running' -or ($r.State -eq 'idle' -and $relanzadas -lt 5)) -and $i -lt 180; $i++) {
             Start-Sleep -Seconds 10
+            if ($r.State -eq 'idle') {
+              $relanzadas++
+              "La app se reinició: se relanza la migración ($relanzadas)"
+              try { $r = Invoke-RestMethod $url -Method Post -Headers $headers -Body '' -TimeoutSec 120 }
+              catch { "Relanzar: $($_.Exception.Message)" }
+              continue
+            }
             try { $r = Invoke-RestMethod $url -Headers $headers -TimeoutSec 60 }
             catch { "Consulta: $($_.Exception.Message)" }
           }
