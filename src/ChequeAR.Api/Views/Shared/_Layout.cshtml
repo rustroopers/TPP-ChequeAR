@@ -12,7 +12,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <title>ChequeAR</title>
+    <title>@(string.IsNullOrEmpty(ViewBag.Title as string) ? "ChequeAR" : ViewBag.Title + " · ChequeAR")</title>
     <link rel="icon" type="image/png" href="@asset("~/Content/img/favicon-512.png")" />
 
     @* Token Bearer para que las islas Vue llamen a la API. Solo para sesion iniciada:

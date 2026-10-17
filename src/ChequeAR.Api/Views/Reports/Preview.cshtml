@@ -1,9 +1,18 @@
 @model ChequeAR.Api.Models.ReportPreviewViewModel
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
-    ViewBag.Title = "Preview";
+    ViewBag.Title = "Vista previa";
     var pageSize = Model.PageSize > 0 ? Model.PageSize : 50;
     var totalPages = (int)Math.Ceiling((double)Model.Total / pageSize);
+    // Fechas y decimales como en el resto de la app (dd/mm/aaaa, coma).
+    Func<string, string> celda = v =>
+    {
+        if (string.IsNullOrEmpty(v)) return v;
+        var d = System.Text.RegularExpressions.Regex.Match(v, @"^(\d{4})-(\d{2})-(\d{2})$");
+        if (d.Success) return d.Groups[3].Value + "/" + d.Groups[2].Value + "/" + d.Groups[1].Value;
+        if (System.Text.RegularExpressions.Regex.IsMatch(v, @"^-?\d+\.\d+$")) return v.Replace('.', ',');
+        return v;
+    };
 }
 
 <header class="cq-page-header">
@@ -24,7 +33,7 @@
     <tbody>
         @foreach (var row in Model.Rows)
         {
-            <tr>@foreach (var c in Model.Columns) { <td>@(row.Cells.ContainsKey(c) ? row.Cells[c] : "")</td> }</tr>
+            <tr>@foreach (var c in Model.Columns) { <td>@(row.Cells.ContainsKey(c) ? celda(row.Cells[c]) : "")</td> }</tr>
         }
     </tbody>
 </table>

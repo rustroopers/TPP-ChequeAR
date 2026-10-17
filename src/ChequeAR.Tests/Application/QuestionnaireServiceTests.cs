@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
+using ChequeAR.Application.Fhir;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
 using ChequeAR.Domain.Enums;
@@ -330,6 +331,32 @@ namespace ChequeAR.Tests.Application
 
             Assert.True(updated.HasPendingChanges);
             Assert.True(updated.HasUnpublishedChanges());
+        }
+
+        // Guardar algo igual a la versión vigente (por ejemplo, deshacer a mano lo editado)
+        // no deja nada para publicar.
+        [Fact]
+        public async Task UpdateAsync_IgualALaVersionVigente_NoDejaPendientes()
+        {
+            var id = Guid.NewGuid();
+            var publicada = new Questionnaire { Id = id, Title = "Control" };
+            var version = new QuestionnaireVersion
+            {
+                Id = Guid.NewGuid(), QuestionnaireId = id, VersionNumber = 1,
+                PublishedAt = new DateTime(2026, 5, 4, 13, 0, 0, DateTimeKind.Utc)
+            };
+            version.FhirJson = FhirQuestionnaireBuilder.Build(publicada, 1, version.PublishedAt);
+            var existing = new Questionnaire
+            {
+                Id = id, Title = "Control editado", Status = QuestionnaireStatus.Active,
+                CurrentVersionId = version.Id, HasPendingChanges = true, ConcurrencyVersion = 7,
+                Versions = new System.Collections.Generic.List<QuestionnaireVersion> { version }
+            };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existing);
+
+            var updated = await _sut.UpdateAsync(id, new Questionnaire { Title = "Control" }, "u");
+
+            Assert.False(updated.HasUnpublishedChanges());
         }
 
         // Concurrencia optimista: si el cliente trae una versión vieja (alguien más guardó

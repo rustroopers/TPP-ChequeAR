@@ -26,6 +26,20 @@
             stack.appendChild(el);
             if (level !== "error") setTimeout(function () { el.remove(); }, 4000);
         };
+
+        // Para avisar algo justo antes de cambiar de página: se muestra en la siguiente.
+        window.cqFlash = function (message, level) {
+            try { sessionStorage.setItem("cq-flash", JSON.stringify({ m: message, l: level || "success" })); }
+            catch (e) { window.cqToast(message, level); }
+        };
+        try {
+            var flash = sessionStorage.getItem("cq-flash");
+            if (flash) {
+                sessionStorage.removeItem("cq-flash");
+                flash = JSON.parse(flash);
+                document.addEventListener("DOMContentLoaded", function () { window.cqToast(flash.m, flash.l); });
+            }
+        } catch (e) { /* sin storage */ }
     })();
 </script>
 @if (TempData["Toast"] != null)

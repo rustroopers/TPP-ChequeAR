@@ -18,8 +18,6 @@
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-bar-chart"></i></div>
             <div class="cq-empty__title">@Cq.T("e1.empty.title")</div>
-            <div class="cq-empty__desc">@Cq.T("e1.empty.desc")</div>
-            <a href="@Url.Action("Build")" class="btn btn-primary">@Cq.T("e1.new")</a>
         </div>
     </div>
 }
@@ -44,8 +42,8 @@ else
                     <td class="cq-text-sm">@r.Author</td>
                     <td class="cq-text-sm cq-text-muted">@r.LastUsedAt</td>
                     <td class="text-end">
-                        <a href="@Url.Action("Preview", new { id = r.Id })" class="btn-neutral btn-sm"><i class="bi bi-table"></i> Vista previa</a>
-                        <a href="@Url.Action("Stats", new { id = r.Id })" class="btn-neutral btn-sm"><i class="bi bi-graph-up"></i> Estadísticas</a>
+                        <a href="@Url.Action("Preview", new { id = r.Id })" class="btn btn-sm btn-tertiary"><i class="bi bi-table me-1"></i> Vista previa</a>
+                        <a href="@Url.Action("Stats", new { id = r.Id })" class="btn btn-sm btn-tertiary"><i class="bi bi-graph-up me-1"></i> Estadísticas</a>
                     </td>
                 </tr>
             }

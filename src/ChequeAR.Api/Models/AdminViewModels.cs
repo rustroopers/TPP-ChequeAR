@@ -99,6 +99,9 @@ namespace ChequeAR.Api.Models
         /// <summary>Rol único y global del usuario (Administrador/Jefe/Medico). Ver Domain.Enums.Role.</summary>
         public string Role { get; set; }
         public List<UserSpecialtyItem> Specialties { get; set; } = new List<UserSpecialtyItem>();
+
+        /// <summary>Códigos marcados en el formulario al guardar.</summary>
+        public List<string> SpecialtyCodes { get; set; }
     }
 
     /// <summary>

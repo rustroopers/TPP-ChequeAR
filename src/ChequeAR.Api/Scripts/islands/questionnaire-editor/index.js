@@ -218,7 +218,7 @@
                 { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3',
                   help: 'Agregue secciones y elija variables del catálogo. De cada una puede cambiar el enunciado y si es obligatoria; el tipo, la unidad, el rango y el código los define el Administrador. Puede condicionar preguntas a otras anteriores.' },
                 { key: 'preview',   label: 'Vista previa', icon: 'bi-eye',
-                  help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revisá sus condiciones.' },
+                  help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revise sus condiciones.' },
                 { key: 'publish',   label: 'Publicación',  icon: 'bi-send',
                   help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guarde los cambios antes.' }
             ];
@@ -299,12 +299,14 @@
             // Blockers para publicar, calculados una vez y reusados en el paso 5.
             var publishBlockers = Vue.computed(function () {
                 var out = [];
-                if (isArchived.value) out.push('El cuestionario está archivado y no se puede publicar. Reactivalo desde el listado.');
+                if (isArchived.value) out.push('El cuestionario está archivado: publíquelo desde el listado para reactivarlo.');
                 if (conflict.value)   out.push('Hay un conflicto de edición sin resolver.');
                 if (dirty.value)      out.push('Hay cambios sin guardar. Guarde antes de publicar.');
                 if (isNew.value)      out.push('El cuestionario todavía no se guardó por primera vez.');
                 if (issues.value.length) out.push('Hay ' + issues.value.length + ' problema(s) en la estructura: ver el aviso de arriba.');
                 if (!allQuestionsFlat.value.length) out.push('No hay preguntas cargadas.');
+                if (isPublished.value && !dirty.value && !hasPendingChanges.value)
+                    out.push('No hay cambios respecto de la versión publicada.');
                 return out;
             });
 
@@ -855,7 +857,7 @@
                         importOpen.value = false;
                         var msg = 'Se importaron ' + count + ' pregunta(s) de "' + (candidate.title || 'otro cuestionario') + '"';
                         if (dropped) msg += ' — ' + dropped + ' condición(es) que apuntaban afuera quedaron sin efecto';
-                        toast(msg, 'success');
+                        toast(msg + '.', 'success');
                     })
                     .catch(function (err) { importError.value = 'No se pudo importar: ' + err.message; })
                     .then(function () { importBusy.value = false; });
@@ -910,7 +912,8 @@
             // la define es el Administrador desde el catalogo.
             var questionnaireSnomed = window.ChequeARSnomed.createSearch(
                 function () { return questionnaireCoding; },
-                function () { dirty.value = true; });
+                function () { dirty.value = true; },
+                'questionnaire');
 
             Vue.watch(function () { return questionnaireCoding.term; }, function (t) {
                 questionnaireSnomed.schedule(t);
@@ -1155,7 +1158,7 @@
                     // El usuario apreto Guardar pero no hay nada pendiente. No es
                     // un error: confirmamos con verde y wording positivo, en vez
                     // del azul info que se leia como cartel de bug.
-                    if (explicit) toast('Ya esta todo guardado', 'success');
+                    if (explicit) toast('Ya está todo guardado.', 'success');
                     return Promise.resolve(true);
                 }
                 // El backend rechaza cualquier escritura sobre un archivado (500 si no se
@@ -1166,7 +1169,7 @@
                     return Promise.resolve(false);
                 }
                 if (!canEdit) {
-                    if (explicit) toast('Tu rol no permite editar cuestionarios.', 'error');
+                    if (explicit) toast('Su rol no permite editar cuestionarios.', 'error');
                     return Promise.resolve(false);
                 }
                 // Con un conflicto sin resolver no se vuelve a intentar: reintentar sólo
@@ -1182,7 +1185,7 @@
                 }
                 var token = getToken();
                 if (!token) {
-                    toast('No hay sesión: no se puede guardar (token ausente).', 'error');
+                    toast('No hay una sesión activa. Vuelva a ingresar.', 'error');
                     return Promise.resolve(false);
                 }
 
@@ -1214,11 +1217,13 @@
 
                 // Devuelve una promesa que resuelve en true/false: publicar necesita saber
                 // si el guardado previo salió bien antes de congelar una versión.
+                var pendientes = null;
                 return fetch(url, {
                     method: creating ? 'POST' : 'PUT',
                     headers: headers,
                     body: body
                 }).then(function (res) {
+                    pendientes = res.headers.get('X-ChequeAR-Pending-Changes');
                     if (res.status === 409) {
                         return res.json().catch(function () { return null; }).then(function (body) {
                             var err = new Error(diagnostico(body, 'Conflicto de edición'));
@@ -1258,12 +1263,12 @@
                     // para no pisar una edición hecha mientras el guardado viajaba.
                     // Se guardó un cambio sobre un publicado: a partir de ahora hay que
                     // dejar publicar aunque "dirty" ya esté en false.
-                    if (isPublished.value) hasPendingChanges.value = true;
-                    if (creating) toast('Cuestionario creado', 'success');
+                    if (isPublished.value) hasPendingChanges.value = pendientes !== 'false';
+                    if (creating) toast('Cuestionario creado.', 'success');
                     else if (explicit) {
-                        toast(isPublished.value
-                            ? 'Cambios guardados. Publique de nuevo para que lleguen a los clínicos.'
-                            : 'Cambios guardados', 'success');
+                        toast(!isPublished.value ? 'Cambios guardados.'
+                            : hasPendingChanges.value ? 'Cambios guardados. Publique de nuevo para que lleguen a los clínicos.'
+                            : 'Cambios guardados. Quedó igual a la versión publicada.', 'success');
                     }
                     return true;
                 }).catch(function (err) {
@@ -1276,7 +1281,7 @@
                         // se intenta combinar los dos trabajos (con descarte siempre disponible).
                         beginMerge();
                     } else {
-                        toast('Error al guardar: ' + err.message, 'error');
+                        toast('No se pudo guardar: ' + err.message, 'error');
                     }
                     return false;
                 }).then(function (ok) {
@@ -1686,7 +1691,7 @@
                 // ni guardado antes sin publicar): publicar de nuevo sólo crearía una
                 // versión idéntica a la actual.
                 if (isPublished.value && !dirty.value && !hasPendingChanges.value) {
-                    toast('No hay cambios para publicar', 'info');
+                    toast('No hay cambios para publicar.', 'info');
                     return;
                 }
                 if (conflict.value) {
@@ -1697,7 +1702,7 @@
                 // vuelve una pregunta que nadie va a poder ver, y ya no hay forma de
                 // corregir esa versión.
                 if (issues.value.length) {
-                    toast('Hay ' + issues.value.length + ' problema(s) en la estructura del cuestionario. Resolvelos antes de publicar.', 'error');
+                    toast('Hay ' + issues.value.length + ' problema(s) en la estructura del cuestionario. Resuélvalos antes de publicar.', 'error');
                     return;
                 }
                 // Publicar exige haber guardado antes: no queremos congelar en una versión
@@ -1710,7 +1715,7 @@
                     return;
                 }
                 var token = getToken();
-                if (!token) { toast('No hay sesión: no se puede publicar (token ausente).', 'error'); return; }
+                if (!token) { toast('No hay una sesión activa. Vuelva a ingresar.', 'error'); return; }
 
                 publishing.value = true;
                 fetch('/fhir/r5/Questionnaire/' + currentId.value + '/$publish', {
@@ -1724,7 +1729,7 @@
                     },
                     body: '{}'
                 }).then(function (res) {
-                    if (res.ok) return null;
+                    if (res.ok) return res.json().catch(function () { return null; });
                     if (res.status === 409) {
                         // Otra persona guardó después de nuestro último guardado: se combina como
                         // en un guardado, y recién después se puede publicar.
@@ -1736,8 +1741,10 @@
                     return res.json().catch(function () { return null; }).then(function (body) {
                         throw new Error(diagnostico(body, 'HTTP ' + res.status));
                     });
-                }).then(function () {
+                }).then(function (data) {
                     dirty.value = false;
+                    window.cqFlash && window.cqFlash(data && data.version
+                        ? 'Cuestionario publicado (v' + data.version + ').' : 'Cuestionario publicado.', 'success');
                     // Publicar es un punto final del flujo de edición: volver al listado en
                     // vez de recargar el editor, que es donde se ve el resultado (versión,
                     // estado) sobre todos los cuestionarios, no sólo este.
@@ -1781,6 +1788,13 @@
                 return '';
             }
 
+            // Escape cierra los paneles superpuestos, como los modales de Bootstrap.
+            function onEscape(e) {
+                if (e.key !== 'Escape') return;
+                if (varPickerOpen.value) closeVariablePicker();
+                else if (importOpen.value && !importBusy.value) closeImport();
+            }
+
             // Engancha los botones del header (viven fuera de la isla). Ojo: el listener
             // recibe el Event, así que va el wrapper y no save directamente.
             Vue.onMounted(function () {
@@ -1790,6 +1804,7 @@
                 var pub = document.getElementById('publishBtn');
                 if (pub) pub.addEventListener('click', publish);
                 window.addEventListener('beforeunload', beforeUnload);
+                document.addEventListener('keydown', onEscape);
 
                 // Deshabilita los botones mientras hay un guardado/publicación en curso:
                 // sin esto, clickear varias veces mientras el primer POST todavía no
@@ -1822,6 +1837,7 @@
                 var pub = document.getElementById('publishBtn');
                 if (pub) pub.removeEventListener('click', publish);
                 window.removeEventListener('beforeunload', beforeUnload);
+                document.removeEventListener('keydown', onEscape);
             });
 
             return {
@@ -1953,7 +1969,7 @@
             </li>\
         </ul>\
         <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-3">\
-            <button class="btn btn-outline-secondary" @click="closeImport">Cerrar</button>\
+            <button class="btn btn-secondary" @click="closeImport">Cerrar</button>\
         </div>\
     </div>\
 </div>\
@@ -1974,7 +1990,7 @@
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(i, ix) in issues" :key="ix">{{ i.detail }}</li>\
             </ul>\
-            <button v-if="conditionIssues.length" class="btn btn-sm btn-outline-secondary-cq mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Quitar las condiciones que no se pueden cumplir</button>\
+            <button v-if="conditionIssues.length" class="btn btn-sm btn-secondary mt-2" @click="fixIssues"><i class="bi bi-wrench me-1"></i> Quitar las condiciones que no se pueden cumplir</button>\
         </div>\
     </div>\
 </div>\
@@ -2012,7 +2028,7 @@
 </ol>\
 <div class="cq-wizard-nav mb-3">\
     <div class="cq-wizard-help__nav">\
-        <button class="btn btn-sm btn-outline-secondary-cq" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
+        <button class="btn btn-sm btn-secondary" :disabled="stepIndex === 0" @click="stepPrev"><i class="bi bi-chevron-left"></i> Anterior</button>\
         <button class="btn btn-sm btn-secondary" :disabled="!canGoNext" @click="stepNext" :title="nextBlockedReason">Siguiente <i class="bi bi-chevron-right"></i></button>\
     </div>\
 </div>\
@@ -2043,7 +2059,7 @@
             <hr class="my-2" />\
             <h4 class="cq-text-sm fw-semibold mb-2">Codificación clínica del cuestionario <span class="cq-text-xs cq-text-muted fw-normal">(opcional)</span></h4>\
             <div class="row g-2">\
-                <div class="col-7">\
+                <div class="col-7" data-snomed-area="questionnaire">\
                     <label class="form-label cq-text-sm">Término clínico</label>\
                     <div class="input-group input-group-sm">\
                         <input v-model="questionnaireCoding.term" class="form-control form-control-sm" placeholder="ej: control cardiológico" />\
@@ -2074,7 +2090,7 @@
     </div>\
     <div class="cq-card mt-3" v-if="!readOnly">\
         <h3 class="cq-section-title mt-0">Importar desde otro cuestionario</h3>\
-        <button class="btn btn-sm btn-outline-primary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
+        <button class="btn btn-sm btn-secondary" @click="openImport"><i class="bi bi-box-arrow-in-down me-1"></i> Importar preguntas de otro cuestionario</button>\
     </div>\
 </div>\
 \
@@ -2237,7 +2253,7 @@
     <div class="cq-card mb-2">\
         <h3 class="cq-section-title mt-0"><i class="bi bi-send me-1"></i>Publicación</h3>\
         <div v-if="publishBlockers.length" class="cq-card mb-0" style="border-left:3px solid var(--cq-warning); background:var(--cq-neutral-50);">\
-            <div class="cq-text-sm"><strong>Antes de publicar, resolvé:</strong></div>\
+            <div class="cq-text-sm"><strong>Todavía no se puede publicar:</strong></div>\
             <ul class="cq-text-sm cq-text-muted mb-0 mt-1 ps-3">\
                 <li v-for="(b, bi) in publishBlockers" :key="bi">{{ b }}</li>\
             </ul>\

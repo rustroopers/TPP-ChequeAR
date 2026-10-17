@@ -114,8 +114,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 var existing = await _users.GetAsync(model.Username);
                 if (existing == null) return HttpNotFound();
 
-                var codes = (model.Specialties ?? new List<UserSpecialtyItem>())
-                    .Select(s => s.SpecialtyCode)
+                // Sin ninguna casilla marcada el formulario no manda el campo: quedan sin especialidades.
+                var codes = (model.SpecialtyCodes ?? new List<string>())
+                    .Where(c => !string.IsNullOrWhiteSpace(c))
+                    .Distinct()
                     .ToList();
                 await _users.UpdateByAdminAsync(existing.Id, model.FullName, model.Active, model.Role, codes,
                     CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
@@ -135,8 +137,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = ex.Message;
                 TempData["ToastLevel"] = "error";
             }
-            catch (System.Exception)
+            catch (System.Exception ex)
             {
+                Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudieron guardar los cambios.";
                 TempData["ToastLevel"] = "error";
             }

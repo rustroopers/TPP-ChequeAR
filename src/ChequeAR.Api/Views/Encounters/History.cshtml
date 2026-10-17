@@ -6,7 +6,7 @@
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title"><i class="bi bi-clock-history me-1"></i> Detalle de la ficha</h1>
+        <h1 class="cq-page-header__title">Detalle de la ficha</h1>
         <p class="cq-page-header__subtitle">
             @(Model.Patient != null ? Model.Patient.FullName : null)
             @if (!string.IsNullOrEmpty(Model.QuestionnaireTitle))
@@ -20,9 +20,13 @@
         </p>
     </div>
     <div class="d-flex gap-2">
+        @if (Model.Patient != null && !string.IsNullOrEmpty(Model.Patient.HC))
+        {
+            <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver al historial</a>
+        }
         @if (Model.Status == "completed" || Model.Status == "amended")
         {
-            <a href="@Url.Action("View", new { id = Model.EncounterId })" class="btn btn-outline-secondary"><i class="bi bi-file-text me-1"></i> Ver ficha</a>
+            <a href="@Url.Action("View", new { id = Model.EncounterId })" class="btn btn-secondary"><i class="bi bi-file-text me-1"></i> Ver ficha</a>
         }
         @if (Model.Patient != null && !string.IsNullOrEmpty(Model.Patient.HC) && Model.QuestionnaireId != Guid.Empty)
         {
@@ -37,10 +41,6 @@
                 <a href="@Url.Action("Load", new { patientId = Model.Patient.HC, questionnaireId = Model.QuestionnaireId })" class="btn btn-primary"><i class="bi bi-pencil-square me-1"></i> Volver a completar</a>
             }
         }
-        @if (Model.Patient != null && !string.IsNullOrEmpty(Model.Patient.HC))
-        {
-            <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-outline-secondary">Ver historial</a>
-        }
     </div>
 </header>
 
@@ -50,7 +50,6 @@
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-clock-history"></i></div>
             <div class="cq-empty__title">Sin movimientos registrados</div>
-            <div class="cq-empty__desc">Todavía no hay eventos de auditoría para esta ficha.</div>
         </div>
     }
     else
@@ -77,9 +76,9 @@
                     }
                     @if (e.Changes != null && e.Changes.Count > 0)
                     {
-                        <table class="table cq-table mt-2 mb-0">
+                        <table class="table cq-table mt-2 mb-0" style="table-layout:fixed;">
                             <thead>
-                                <tr><th>Pregunta</th><th>Antes</th><th>Después</th></tr>
+                                <tr><th style="width:50%;">Pregunta</th><th style="width:25%;">Antes</th><th style="width:25%;">Después</th></tr>
                             </thead>
                             <tbody>
                                 @foreach (var c in e.Changes)

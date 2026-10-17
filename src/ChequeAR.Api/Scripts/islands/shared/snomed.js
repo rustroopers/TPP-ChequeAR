@@ -49,8 +49,11 @@
      *
      * `onChange` se llama cada vez que el buscador modifica el objeto, para que cada isla
      * marque su propio estado sucio (el editor tiene autosave; el ABM, no).
+     *
+     * `area`: valor del atributo data-snomed-area del bloque que contiene el término y la
+     * lista. Un clic fuera de ese bloque, o Escape, cierra la lista.
      */
-    function createSearch(getActive, onChange) {
+    function createSearch(getActive, onChange, area) {
         var Vue = window.Vue;
         var results = Vue.ref([]);
         var searching = Vue.ref(false);
@@ -130,7 +133,21 @@
             touched();
         }
 
-        function cancel() { clearTimeout(debounce); if (abort) abort.abort(); }
+        function onOutside(e) {
+            if (!open.value) return;
+            if (e.type === 'keydown') { if (e.key === 'Escape') open.value = false; return; }
+            var el = e.target && e.target.closest ? e.target.closest('[data-snomed-area]') : null;
+            if (!el || el.getAttribute('data-snomed-area') !== (area || 'default')) open.value = false;
+        }
+        document.addEventListener('mousedown', onOutside);
+        document.addEventListener('keydown', onOutside);
+
+        function cancel() {
+            clearTimeout(debounce);
+            if (abort) abort.abort();
+            document.removeEventListener('mousedown', onOutside);
+            document.removeEventListener('keydown', onOutside);
+        }
 
         // reactive y no un objeto plano: al exponerse anidado en el return de setup, Vue NO
         // desenvuelve los refs sueltos —`.searching` llegaría al template como el objeto Ref,

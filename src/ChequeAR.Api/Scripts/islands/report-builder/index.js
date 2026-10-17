@@ -119,7 +119,7 @@
         <input v-else v-model="f.value" class="form-control form-control-sm" :type="inputType()" aria-label="Valor" />\
     </div>\
     <div class="col-md-auto text-end">\
-        <button class="btn btn-sm btn-link text-danger" @click="$emit(\'remove\')" aria-label="Eliminar condición"><i class="bi bi-x-lg"></i></button>\
+        <button type="button" class="cq-icon-btn cq-icon-btn--danger" @click="$emit(\'remove\')" aria-label="Eliminar condición" title="Eliminar condición"><i class="bi bi-trash cq-icon-btn__idle"></i><i class="bi bi-trash-fill cq-icon-btn__hover"></i></button>\
     </div>\
 </div>'
     };
@@ -284,6 +284,9 @@
                 document.addEventListener('click', function (e) {
                     if (qOpen.value && qBox.value && !qBox.value.contains(e.target)) qOpen.value = false;
                 });
+                document.addEventListener('keydown', function (e) {
+                    if (e.key === 'Escape') qOpen.value = false;
+                });
                 fetchAllEntries('/fhir/r5/Questionnaire?_count=200')
                     .then(function (list) {
                         questionnaires.value = list
@@ -334,13 +337,13 @@
             Vue.watch(filters, markDirty, { deep: true });
 
             function addFilter() {
-                if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar', 'info'); return; }
+                if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar.', 'info'); return; }
                 filters.value.push(newCondition(questions.value[0]));
             }
             // Un grupo es un paréntesis: sus condiciones se combinan entre sí con su propio
             // "todas / al menos una", y el grupo entero cuenta como una condición más.
             function addGroup() {
-                if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar', 'info'); return; }
+                if (!questions.value.length) { toast('Este cuestionario no tiene preguntas para filtrar.', 'info'); return; }
                 filters.value.push({ group: true, logic: 'OR', items: [newCondition(questions.value[0]), newCondition(questions.value[0])] });
             }
             function addToGroup(g) { g.items.push(newCondition(questions.value[0])); }
@@ -409,7 +412,7 @@
             // El boton "Previsualizar" pasa el Event como argumento (no un numero): en ese
             // caso arranca en la pagina 1. Anterior/Siguiente pasan el numero de pagina.
             function preview(goToPage) {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 var p = (typeof goToPage === 'number' && goToPage > 0) ? goToPage : 1;
                 loading.value = true; error.value = null;
                 var q = buildQuery();
@@ -433,12 +436,12 @@
             // /query: pedirlas por id de cuestionario daria numeros que no corresponden a
             // los filtros que la persona tiene puestos en pantalla.
             function stats() {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 window.dispatchEvent(new CustomEvent('cq:report-query', { detail: buildQuery() }));
             }
 
             function openSave() {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 showSave.value = true;
             }
 
@@ -447,9 +450,9 @@
             // vez y PUT sobre la misma si ya existia. El backend solo deja actualizar al
             // dueño (403 si no).
             function saveReport() {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 var name = (reportName.value || '').trim();
-                if (!name) { toast('Ingrese un nombre para el reporte', 'error'); return; }
+                if (!name) { toast('Ingrese un nombre para el reporte.', 'error'); return; }
                 if (saving.value) return;
 
                 saving.value = true;
@@ -478,7 +481,7 @@
                         }
                         showSave.value = false;
                         dirty.value = false;
-                        toast(editing ? 'Reporte actualizado' : 'Reporte guardado', 'success');
+                        toast(editing ? 'Cambios guardados.' : 'Reporte guardado.', 'success');
                     })
                     .catch(function (e) { toast('No se pudo guardar: ' + e.message, 'error'); })
                     .then(function () { saving.value = false; });
@@ -495,7 +498,7 @@
             }
 
             function exportFile(format, filename) {
-                if (!selectedId.value) { toast('Seleccione un cuestionario', 'error'); return; }
+                if (!selectedId.value) { toast('Seleccione un cuestionario.', 'error'); return; }
                 exporting.value = true;
                 fetch('/api/reports/export', { method: 'POST', headers: authHeaders(), body: JSON.stringify(buildQuery(format)) })
                     .then(window.ChequeARIslands.http.ensureOk)
@@ -505,13 +508,25 @@
                         var a = document.createElement('a');
                         a.href = url; a.download = filename; document.body.appendChild(a); a.click();
                         document.body.removeChild(a); URL.revokeObjectURL(url);
-                        toast('Exportación lista', 'success');
+                        toast('Archivo descargado.', 'success');
                     })
-                    .catch(function (e) { toast('Error al exportar: ' + e.message, 'error'); })
+                    .catch(function (e) { toast('No se pudo exportar: ' + e.message, 'error'); })
                     .then(function () { exporting.value = false; });
             }
 
+            // Sólo para mostrar: fechas y decimales como en el resto de la app (dd/mm/aaaa, coma).
+            // El export conserva el formato del servidor.
+            function formatCell(v) {
+                if (typeof v === 'number') v = String(v);
+                if (typeof v !== 'string') return v;
+                var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+                if (d) return d[3] + '/' + d[2] + '/' + d[1];
+                if (/^-?\d+\.\d+$/.test(v)) return v.replace('.', ',');
+                return v;
+            }
+
             return {
+                formatCell: formatCell,
                 questionnaires: questionnaires, groupedQuestionnaires: groupedQuestionnaires, selectedId: selectedId,
                 qSearch: qSearch, qOpen: qOpen, qBox: qBox, selectedTitle: selectedTitle,
                 filteredGroups: filteredGroups, pickQuestionnaire: pickQuestionnaire,
@@ -564,16 +579,16 @@
                 <span class="cq-text-muted">Grupo: las fichas deben</span>\
                 <label><input type="radio" v-model="f.logic" value="AND" /> cumplir todas</label>\
                 <label><input type="radio" v-model="f.logic" value="OR" /> cumplir al menos una</label>\
-                <button class="btn btn-sm btn-link text-danger ms-auto" @click="removeFilter(i)" aria-label="Eliminar grupo"><i class="bi bi-x-lg"></i></button>\
+                <button type="button" class="cq-icon-btn cq-icon-btn--danger ms-auto" @click="removeFilter(i)" aria-label="Eliminar grupo" title="Eliminar grupo"><i class="bi bi-trash cq-icon-btn__idle"></i><i class="bi bi-trash-fill cq-icon-btn__hover"></i></button>\
             </div>\
             <cq-filter-row v-for="(g, j) in f.items" :key="j" :f="g" :questions="questions" @remove="f.items.splice(j, 1)"></cq-filter-row>\
-            <button class="btn btn-sm btn-neutral" @click="addToGroup(f)"><i class="bi bi-plus-lg me-1"></i> Agregar condición al grupo</button>\
+            <button class="btn btn-sm btn-secondary" @click="addToGroup(f)"><i class="bi bi-plus-lg me-1"></i> Agregar condición al grupo</button>\
         </div>\
         <cq-filter-row v-else :f="f" :questions="questions" @remove="removeFilter(i)"></cq-filter-row>\
     </template>\
     <div class="d-flex align-items-center gap-3 mb-3">\
         <button class="btn btn-sm btn-primary" @click="addFilter"><i class="bi bi-plus-lg me-1"></i> Agregar condición</button>\
-        <button class="btn btn-sm btn-neutral" @click="addGroup"><i class="bi bi-collection me-1"></i> Agregar grupo</button>\
+        <button class="btn btn-sm btn-secondary" @click="addGroup"><i class="bi bi-collection me-1"></i> Agregar grupo</button>\
         <div v-if="filters.length > 1" class="d-inline-flex gap-3 cq-text-sm">\
             <span class="cq-text-muted">Las fichas deben:</span>\
             <label><input type="radio" v-model="combineMode" value="AND" /> cumplir todas</label>\
@@ -609,15 +624,15 @@
     <div v-if="error" class="alert alert-danger mt-3 mb-0">{{ error }}</div>\
 \
     <div v-if="rows.length" class="table-responsive mt-3" style="max-height:420px; overflow:auto;">\
-        <table class="table table-sm table-striped">\
+        <table class="cq-table">\
             <thead><tr><th v-for="c in columns" :key="c">{{ c }}</th></tr></thead>\
             <tbody>\
                 <tr v-for="(row, i) in rows" :key="i">\
-                    <td v-for="c in columns" :key="c">{{ row[c] }}</td>\
+                    <td v-for="c in columns" :key="c">{{ formatCell(row[c]) }}</td>\
                 </tr>\
             </tbody>\
         </table>\
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">\
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">\
             <span class="cq-text-xs cq-text-muted">Mostrando {{ rows.length }} de {{ total }} fichas.</span>\
             <div v-if="totalPages > 1" class="btn-group btn-group-sm">\
                 <button class="btn btn-outline-secondary" :disabled="page <= 1 || loading" @click="preview(page - 1)"><i class="bi bi-chevron-left"></i> Anterior</button>\
@@ -629,7 +644,6 @@
         <div class="cq-empty">\
             <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>\
             <div class="cq-empty__title">No hay fichas</div>\
-            <div class="cq-empty__desc">Pruebe ampliando el rango de fechas o sacando condiciones.</div>\
         </div>\
     </div>\
 \

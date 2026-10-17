@@ -75,7 +75,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                         IsActive = v.IsActive,
                         CreatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.CreatedAt),
                         CurrentVersion = estado[v.Id].CurrentVersion,
-                        HasUnpublishedChanges = estado[v.Id].CurrentVersion > 0 && estado[v.Id].HasUnpublishedChanges
+                        HasUnpublishedChanges = estado[v.Id].CurrentVersion > 0 && estado[v.Id].HasUnpublishedChanges,
+                        Revision = v.Revision
                     });
                 }
             }
@@ -120,6 +121,8 @@ namespace ChequeAR.Api.Controllers.Mvc
             var model = new VariableFormViewModel
             {
                 Id = id,
+                Name = dto.Name,
+                IsActive = dto.IsActive,
                 Revision = dto.Revision,
                 CurrentVersion = dto.CurrentVersion,
                 HasUnpublishedChanges = dto.CurrentVersion > 0 && dto.HasUnpublishedChanges
@@ -140,7 +143,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         [HttpPost, ValidateAntiForgeryToken]
-        public async Task<ActionResult> Publish(Guid id, string changeNote, int? revision, string payloadJson)
+        public async Task<ActionResult> Publish(Guid id, string changeNote, int? revision, string payloadJson, string returnUrl = null)
         {
             try
             {
@@ -157,10 +160,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 }
 
                 var version = await _variables.PublishAsync(id, User.Identity.Name, changeNote, revision);
-                TempData["Toast"] = version.VersionNumber == vigente
+                var sinCambios = version.VersionNumber == vigente;
+                TempData["Toast"] = sinCambios
                     ? "No hay cambios para publicar."
                     : "Variable publicada (v" + version.VersionNumber + ").";
-                TempData["ToastLevel"] = "success";
+                TempData["ToastLevel"] = sinCambios ? "info" : "success";
             }
             catch (ValidationFailedException ex)
             {
@@ -178,6 +182,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["Toast"] = "No se pudo publicar la variable.";
                 TempData["ToastLevel"] = "error";
             }
+            // Desde el listado se vuelve al listado, con sus filtros.
+            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl)) return Redirect(returnUrl);
             return RedirectToAction("Details", new { id });
         }
 
@@ -200,13 +206,16 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     var actualizada = await _variables.UpdateAsync(model.Id.Value, entidad, User.Identity.Name, dto.Revision);
                     if (actualizada == null) return HttpNotFound();
-                    TempData["Toast"] = "Variable actualizada.";
+                    var estado = (await _variables.GetPublicationAsync(new[] { actualizada }))[actualizada.Id];
+                    TempData["Toast"] = estado.CurrentVersion == 0 ? "Cambios guardados."
+                        : estado.HasUnpublishedChanges ? "Cambios guardados. Publique una versión nueva para que lleguen a los cuestionarios."
+                        : "Cambios guardados. Quedó igual a la versión publicada.";
                     TempData["ToastLevel"] = "success";
                 }
                 else
                 {
                     await _variables.CreateAsync(entidad, User.Identity.Name);
-                    TempData["Toast"] = "Variable creada.";
+                    TempData["Toast"] = "Variable creada. Publíquela para poder usarla en los cuestionarios.";
                     TempData["ToastLevel"] = "success";
                 }
             }
@@ -270,6 +279,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             ViewBag.Title = model.Id.HasValue ? "Editar variable" : "Nueva variable";
             ViewBag.PageId = "variables";
             ViewBag.VariableProps = JsonConvert.SerializeObject(enviado, CamelCase);
+            ViewBag.VariableUnsaved = true;
             return View("Details", await FormModelAsync(model.Id, enviado));
         }
 
@@ -284,7 +294,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var outcome = await _variables.DeleteAsync(id, User.Identity.Name);
                 TempData["Toast"] = outcome == VariableDeleteOutcome.DeactivatedBecauseInUse
-                    ? "La variable está publicada o en uso: se desactivó en vez de eliminarse."
+                    ? "La variable está publicada o en uso, así que se dio de baja en lugar de eliminarse."
                     : "Variable eliminada.";
                 TempData["ToastLevel"] = "success";
             }

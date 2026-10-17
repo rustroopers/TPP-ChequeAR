@@ -46,7 +46,6 @@
             <div id="reportEmpty" class="cq-empty" hidden>
                 <div class="cq-empty__icon"><i class="bi bi-bar-chart"></i></div>
                 <div class="cq-empty__title">No hay reportes aún</div>
-                <div class="cq-empty__desc cq-text-xs cq-text-muted">Guarde una consulta desde Reportes para verla acá.</div>
             </div>
             @* margin-bottom negativo = el gap de 12px que .cq-demo-card (flex column) deja entre
    el cuerpo y el pie. Absorbiéndolo, el borde inferior del svg -donde apoyan las
@@ -166,8 +165,6 @@
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-inbox"></i></div>
             <div class="cq-empty__title">@Cq.T("home.empty.title")</div>
-            <div class="cq-empty__desc">@Cq.T("home.empty.desc")</div>
-            <a href="@Url.Action("Index", "Encounters")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("home.empty.cta")</a>
         </div>
     </div>
 }

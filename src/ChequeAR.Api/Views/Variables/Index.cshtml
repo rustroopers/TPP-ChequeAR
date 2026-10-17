@@ -14,11 +14,6 @@
     <a href="@Url.Action("Details")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("variables.new")</a>
 </header>
 
-@if (ViewBag.DataError != null)
-{
-    <div class="alert alert-warning">@ViewBag.DataError</div>
-}
-
 @* Mismo formulario que el listado de cuestionarios: sin botón, cq-autofilter lo re-envía
    a medida que se escribe o se cambia un filtro. *@
 @using (Html.BeginForm("Index", "Variables", FormMethod.Get, new { @class = "mb-3", data_cq_autofilter = "variables" }))
@@ -62,9 +57,14 @@
     <div class="cq-card cq-card--stretch">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-tags"></i></div>
-            <div class="cq-empty__title">@Cq.T("variables.empty.title")</div>
-            <div class="cq-empty__desc">@Cq.T("variables.empty.desc")</div>
-            <a href="@Url.Action("Details")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("variables.new")</a>
+            @if (string.IsNullOrEmpty(Model.SearchTerm) && string.IsNullOrEmpty(Model.TypeFilter) && string.IsNullOrEmpty(Model.StatusFilter))
+            {
+                <div class="cq-empty__title">@Cq.T("variables.empty.title")</div>
+            }
+            else
+            {
+                <div class="cq-empty__title">@Cq.T("variables.empty.filtered")</div>
+            }
         </div>
     </div>
 }
@@ -104,7 +104,7 @@ else
                         @if (v.CurrentVersion == 0) { <span class="cq-badge cq-badge--draft">Sin publicar</span> }
                         else if (v.IsActive) { <span class="cq-badge cq-badge--published">Activa</span> }
                         else { <span class="cq-badge cq-badge--archived">De baja</span> }
-                        @if (v.HasUnpublishedChanges) { <span class="cq-badge cq-badge--info d-block mt-1">cambios sin publicar</span> }
+                        @if (v.HasUnpublishedChanges) { <span class="cq-badge cq-badge--info mt-1" style="width:fit-content;display:flex;">cambios sin publicar</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@v.CreatedAt</td>
                     <td class="text-end">
@@ -114,6 +114,14 @@ else
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="@Url.Action("Details", new { id = v.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
+                                @if (v.CurrentVersion == 0 || v.HasUnpublishedChanges)
+                                {
+                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@v.Id" data-revision="@v.Revision" data-title="@v.Name"><i class="bi bi-send me-1"></i> Publicar nueva versión</button></li>
+                                }
+                                else
+                                {
+                                    <li><span class="dropdown-item disabled" title="No hay cambios para publicar"><i class="bi bi-send me-1"></i> Publicar nueva versión</span></li>
+                                }
                                 <li><hr class="dropdown-divider" /></li>
                                 @if (v.IsActive)
                                 {
@@ -167,8 +175,8 @@ else
             <div class="modal-body">
                 <p>¿Quiere dar de baja <strong id="deleteTitle"></strong>?</p>
                 <p class="cq-text-sm cq-text-muted mb-0">
-                    Si algún cuestionario la usa, no se elimina: se desactiva y deja de ofrecerse para
-                    cuestionarios nuevos. Lo ya armado sigue funcionando.
+                    Se desactivará y dejará de ofrecerse para
+                    cuestionarios nuevos.
                 </p>
             </div>
             <div class="modal-footer">
@@ -179,8 +187,41 @@ else
     </div>
 </div>
 
+<div class="modal fade" id="publishModal" tabindex="-1" aria-labelledby="publishModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        @using (Html.BeginForm("Publish", "Variables", FormMethod.Post, new { @class = "modal-content" }))
+        {
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" id="publishId" />
+            <input type="hidden" name="revision" id="publishRevision" />
+            <input type="hidden" name="returnUrl" value="@Request.RawUrl" />
+            <div class="modal-header">
+                <h2 class="modal-title h3" id="publishModalLabel">Publicar <span id="publishTitle"></span></h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="publishNote">Notas del cambio</label>
+                <textarea name="changeNote" id="publishNote" rows="3" class="form-control" placeholder="Describa qué cambia respecto a la versión anterior"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Publicar</button>
+            </div>
+        }
+    </div>
+</div>
+
 @section scripts {
 <script>
+    document.addEventListener("click", function (e) {
+        var pub = e.target.closest("[data-bs-target='#publishModal']");
+        if (!pub) return;
+        document.getElementById("publishId").value = pub.getAttribute("data-id");
+        document.getElementById("publishRevision").value = pub.getAttribute("data-revision");
+        document.getElementById("publishTitle").textContent = pub.getAttribute("data-title");
+        document.getElementById("publishNote").value = "";
+    });
+
     document.addEventListener("click", function (e) {
         var btn = e.target.closest("[data-bs-target='#deleteModal']");
         if (!btn) return;

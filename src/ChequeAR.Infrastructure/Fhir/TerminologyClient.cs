@@ -101,7 +101,7 @@ namespace ChequeAR.Infrastructure.Fhir
                         return await SendAsync(url, allowRetry: false);
                     }
                     throw new TerminologyException(429,
-                        "El servidor SNOMED CT está limitando las consultas (429). Probá de nuevo en unos segundos.",
+                        "El servidor SNOMED CT está limitando las consultas (429). Pruebe de nuevo en unos segundos.",
                         retryAfter);
                 }
 

@@ -183,8 +183,9 @@
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
+                    window.cqToast && window.cqToast('Archivo descargado.', 'success');
                 }).catch(function (e) {
-                    exportError.value = e.message;
+                    exportError.value = 'No se pudo exportar: ' + e.message;
                 }).then(function () { exporting.value = false; });
             }
 

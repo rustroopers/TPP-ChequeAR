@@ -17,17 +17,14 @@
         <a href="@Url.Action("Index")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
         @if (Model.ReportId.HasValue)
         {
-            <a href="@Url.Action("Preview", new { id = Model.ReportId })" class="btn btn-primary"><i class="bi bi-table me-1"></i> Ver tabla</a>
+            <a href="@Url.Action("Preview", new { id = Model.ReportId })" class="btn btn-secondary"><i class="bi bi-table me-1"></i> Ver tabla</a>
         }
     </div>
 </header>
 
+@* El aviso de error lo muestra el layout (_DataError). *@
 @if (!string.IsNullOrEmpty(ViewBag.DataError as string))
 {
-    <div class="alert alert-danger" role="alert">
-        <strong>No se pudieron cargar los datos.</strong>
-        <div class="small">@ViewBag.DataError</div>
-    </div>
 }
 else if (string.IsNullOrEmpty(Model.QueryJson))
 {
@@ -35,8 +32,6 @@ else if (string.IsNullOrEmpty(Model.QueryJson))
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-graph-up"></i></div>
             <div class="cq-empty__title">No hay ningún reporte que analizar</div>
-            <div class="cq-empty__desc">Las estadísticas se calculan sobre un grupo de fichas. Arme un reporte y pida las estadísticas desde ahí.</div>
-            <a href="@Url.Action("Build")" class="btn btn-primary">Nuevo reporte</a>
         </div>
     </div>
 }

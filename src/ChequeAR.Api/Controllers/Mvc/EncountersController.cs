@@ -347,6 +347,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                             {
                                 Text = question.Text,
                                 Answer = ResponseAnswerFormatter.Format(items, question),
+                                Unit = items != null && items.Count > 0 ? question?.Unit : null,
                                 AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                             });
                         }
@@ -371,6 +372,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         {
                             Text = entry.Value,
                             Answer = ResponseAnswerFormatter.Format(items, question),
+                            Unit = items != null && items.Count > 0 ? question?.Unit : null,
                             AttachmentId = items?.FirstOrDefault(i => i.AttachmentId.HasValue)?.AttachmentId
                         });
                     }
@@ -624,6 +626,10 @@ namespace ChequeAR.Api.Controllers.Mvc
                 if (questionnaireId.HasValue &&
                     !model.AvailableQuestionnaires.Any(o => o.Value == questionnaireId.Value.ToString()))
                     model.SelectedQuestionnaireId = null;
+
+                // Con un solo cuestionario posible no hay nada que elegir.
+                if (!model.SelectedQuestionnaireId.HasValue && model.AvailableQuestionnaires.Count == 1)
+                    model.SelectedQuestionnaireId = Guid.Parse(model.AvailableQuestionnaires[0].Value);
             }
             catch (Exception ex)
             {

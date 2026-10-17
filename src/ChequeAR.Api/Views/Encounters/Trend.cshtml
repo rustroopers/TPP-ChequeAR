@@ -12,21 +12,24 @@
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">Evolución de parámetros@(Model.Patient != null && !string.IsNullOrEmpty(Model.Patient.FullName) ? " · " + Model.Patient.FullName : "")</h1>
-        <p class="cq-page-header__subtitle">Cómo cambian los valores de un paciente a lo largo de sus fichas finalizadas</p>
+        <h1 class="cq-page-header__title">Evolución de parámetros</h1>
+        <p class="cq-page-header__subtitle">
+            @if (Model.Patient != null && !string.IsNullOrEmpty(Model.Patient.FullName))
+            {
+                <text>@Model.Patient.FullName@(string.IsNullOrEmpty(Model.Patient.AgeLabel) ? "" : " (" + Model.Patient.AgeLabel + ")") · </text>
+            }
+            Valores a lo largo de sus fichas finalizadas
+        </p>
     </div>
     @if (Model.Patient != null)
     {
-        <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i> Volver al historial</a>
+        <a href="@Url.Action("Timeline", new { patientId = Model.Patient.HC })" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver al historial</a>
     }
 </header>
 
+@* El aviso de error lo muestra el layout (_DataError). *@
 @if (!string.IsNullOrEmpty(ViewBag.DataError as string))
 {
-    <div class="alert alert-danger" role="alert">
-        <strong>No se pudieron cargar los datos.</strong>
-        <div class="small">@ViewBag.DataError</div>
-    </div>
 }
 else if (!Model.HasAnyCompleted)
 {
@@ -34,7 +37,6 @@ else if (!Model.HasAnyCompleted)
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-graph-up"></i></div>
             <div class="cq-empty__title">Sin fichas finalizadas</div>
-            <div class="cq-empty__desc">La evolución se arma con las fichas finalizadas del paciente. Todavía no hay ninguna para graficar.</div>
         </div>
     </div>
 }

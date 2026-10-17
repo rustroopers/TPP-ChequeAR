@@ -77,7 +77,7 @@
   "home.greeting.morning": "Buen día, {name}",
   "home.greeting.afternoon": "Buenas tardes, {name}",
   "home.greeting.evening": "Buenas noches, {name}",
-  "home.subtitle": "Su actividad de hoy",
+  "home.subtitle": "Su actividad reciente",
   "home.action.load.title": "Cargar ficha",
   "home.action.load.desc": "Iniciar carga clínica para un paciente",
   "home.action.questionnaires.title": "Cuestionarios",
@@ -87,8 +87,6 @@
   "home.recent.title": "Fichas recientes",
   "home.recent.viewall": "Ver todas →",
   "home.empty.title": "Sin actividad reciente",
-  "home.empty.desc": "Cuando cargue fichas van a aparecer aquí.",
-  "home.empty.cta": "Cargar ficha",
   "home.metrics.title": "Métricas globales",
   "home.kpi.questionnaires": "Cuestionarios",
   "home.kpi.encounters": "Fichas cargadas",
@@ -100,7 +98,7 @@
   "q1.filter.specialty": "Especialidad",
   "q1.filter.status": "Estado",
   "q1.empty.title": "Aún no hay cuestionarios",
-  "q1.empty.desc": "Cree el primero para su especialidad.",
+  "q1.empty.filtered": "Ningún cuestionario coincide con los filtros",
   "q1.action.publish": "Publicar",
   "q1.action.archive": "Archivar",
   "q1.action.history": "Historial",
@@ -119,7 +117,6 @@
   "r1.empty.title": "Busque por DNI, HC o apellido",
   "r1.empty.desc": "Los resultados de la búsqueda aparecerán aquí.",
   "r1.noresults.title": "Sin resultados para \"{q}\"",
-  "r1.noresults.desc": "Revise la búsqueda o pruebe con menos caracteres.",
   "r1.btn.history": "Historial",
   "r1.btn.load": "Cargar ficha →",
 
@@ -127,7 +124,6 @@
   "e1.subtitle": "Reportes guardados y análisis de fichas",
   "e1.new": "Nuevo reporte",
   "e1.empty.title": "Sin reportes guardados",
-  "e1.empty.desc": "Arme su primer reporte para empezar.",
 
   "audit.title": "Auditoría",
   "audit.subtitle": "Eventos del sistema",
@@ -136,19 +132,18 @@
   "variables.subtitle": "Vocabulario con el que se arman los cuestionarios",
   "variables.new": "Nueva variable",
   "variables.empty.title": "Todavía no hay variables cargadas",
-  "variables.empty.desc": "Si variables en el sistema.",
+  "variables.empty.filtered": "Ninguna variable coincide con los filtros",
   "variables.usage": "Uso",
   "variables.inherited": "Heredado de la variable",
 
   "users.title": "Usuarios",
   "users.subtitle": "Gestión de cuentas, roles y especialidades",
-  "users.import": "Importar desde hospital",
 
   "integrations.title": "Integraciones",
   "integrations.subtitle": "Salud y latencia de los sistemas conectados",
   "integrations.errors.title": "Errores recientes",
   "integrations.errors.empty": "Sin errores recientes.",
 
-  "data.error.title": "Base de datos no disponible",
-  "data.error.desc": "No se cargaron los datos."
+  "data.error.title": "No se pudieron cargar los datos",
+  "data.error.desc": "Vuelva a intentar en unos minutos. Si el problema sigue, avise al administrador."
 }

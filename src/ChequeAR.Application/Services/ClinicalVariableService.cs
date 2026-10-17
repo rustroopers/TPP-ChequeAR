@@ -230,6 +230,16 @@ namespace ChequeAR.Application.Services
             foreach (var o in options) { o.Id = Guid.NewGuid(); o.VariableId = id; }
 
             await _repo.UpdateWithOptionsAsync(v, options);
+
+            // Si lo guardado volvió a ser igual a la vigente, no queda nada para publicar.
+            var current = v.CurrentVersionId.HasValue ? await _repo.GetVersionAsync(v.CurrentVersionId.Value) : null;
+            patch.Options = options;
+            if (current != null && VariableDefinition.From(patch).SameAs(VariableDefinition.Parse(current.DefinitionJson)))
+            {
+                current.SourceRevision = v.Revision;
+                await _repo.UpdateVersionSourceAsync(current);
+            }
+
             _audit.Enqueue(AuditEventBuilder.For("update", "ClinicalVariable/" + id, userId));
             return v;
         }

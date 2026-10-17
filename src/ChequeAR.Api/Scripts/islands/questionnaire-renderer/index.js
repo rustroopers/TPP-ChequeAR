@@ -65,10 +65,9 @@
                 } catch (e) { return null; }
             }
             var blockedByBack = Vue.ref(false);
-            var completedResponseId = Vue.ref(null);
             function applyFinalizedMark() {
                 var m = finalizedMark();
-                if (m) { blockedByBack.value = true; completedResponseId.value = m.responseId; }
+                if (m) blockedByBack.value = true;
             }
             // Caso recarga real: si el navegador respeta no-store, "atrás" re-ejecuta
             // setup() con el formulario vacío y la marca del historial todavía puesta.
@@ -278,7 +277,7 @@
             var uploading = Vue.reactive({});
             function onFile(q, file) {
                 if (!file) return;
-                if (!token()) { window.cqToast && window.cqToast('No hay sesión: no se puede subir.', 'error'); return; }
+                if (!token()) { window.cqToast && window.cqToast('No hay una sesión activa. Vuelva a ingresar.', 'error'); return; }
                 // Elegir otro archivo es el reintento: se limpia el bloqueo anterior.
                 delete uploadErrors[q.linkId];
                 delete errors[q.linkId];
@@ -560,7 +559,7 @@
                 return reloadFromServer().then(function () {
                     if (!closedByOther.value) {
                         window.cqToast && window.cqToast(
-                            'Otro usuario modificó esta ficha. Se cargaron los datos actuales: revisalos antes de seguir.', 'warning');
+                            'Otro usuario modificó esta ficha. Se cargaron los datos actuales: revíselos antes de seguir.', 'warning');
                     }
                     throw silentError();
                 });
@@ -934,11 +933,11 @@
                     });
                 });
                 if (allErrors.length) {
-                    window.cqToast && window.cqToast('Hay ' + allErrors.length + ' campos con error', 'error');
+                    window.cqToast && window.cqToast(allErrors.length === 1 ? 'Hay 1 campo con error. Revíselo antes de continuar.' : 'Hay ' + allErrors.length + ' campos con error. Revíselos antes de continuar.', 'error');
                     return;
                 }
                 if (!token()) {
-                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar la ficha.', 'error');
+                    window.cqToast && window.cqToast('No hay una sesión activa. Vuelva a ingresar.', 'error');
                     return;
                 }
                 if (amending) { submitAmend(); return; }
@@ -967,7 +966,7 @@
                     savingState.value = 'idle';
                     lockToken.value = null;   // $finalize ya liberó el lock del lado del server
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Ficha finalizada', 'success');
+                    window.cqFlash && window.cqFlash('Ficha finalizada.', 'success');
                     // Marca esta entrada del historial ANTES de redirigir: si la persona
                     // vuelve con "atrás", el renderer la lee y muestra el aviso en vez de
                     // dejar re-finalizar. Se guarda el id para poder linkear a la ficha.
@@ -1006,7 +1005,7 @@
                 }).then(function () {
                     lockToken.value = null;
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Ficha corregida', 'success');
+                    window.cqFlash && window.cqFlash('Corrección guardada.', 'success');
                     window.location.href = '/Encounters/View/' + responseId.value;
                 }).catch(function (err) {
                     savingState.value = 'dirty';
@@ -1070,7 +1069,7 @@
                     // la versión nueva.
                     lockToken.value = null;
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Ficha actualizada a la versión v' + props.newerVersion, 'success');
+                    window.cqFlash && window.cqFlash('Ficha actualizada a la v' + props.newerVersion + '.', 'success');
                     window.location.reload();
                 }).catch(function (err) {
                     retargeting.value = false;
@@ -1085,7 +1084,7 @@
             function finishPartial() {
                 if (submitting.value || readOnly()) return;
                 if (!token()) {
-                    window.cqToast && window.cqToast('No hay sesión: no se puede guardar.', 'error');
+                    window.cqToast && window.cqToast('No hay una sesión activa. Vuelva a ingresar.', 'error');
                     return;
                 }
                 // Nada cargado y ni siquiera se creó la ficha: no tiene sentido crear una vacía.
@@ -1107,7 +1106,7 @@
                     savingState.value = 'idle';
                     lockToken.value = null;   // ya liberado; el pagehide no reintenta
                     if (lockCountdownTimer) clearInterval(lockCountdownTimer);
-                    window.cqToast && window.cqToast('Avance guardado. Puede retomar esta ficha desde el historial.', 'success');
+                    window.cqFlash && window.cqFlash('Avance guardado. Puede retomar esta ficha desde el historial.', 'success');
                     goToHistory();
                 }).catch(function (err) {
                     if (err && err.silent) return;
@@ -1122,7 +1121,7 @@
                 questionnaire: questionnaire, answers: answers, errors: errors,
                 savingState: savingState, submitting: submitting,
                 loadError: loadError, blockedByBack: blockedByBack,
-                completedResponseId: completedResponseId,
+
                 isVisible: isVisible, onChange: onChange, onToggleMulti: onToggleMulti,
                 onFile: onFile, clearFile: clearFile, uploading: uploading,
                 viewAttachment: viewAttachment, viewingAttachment: viewingAttachment,
@@ -1146,8 +1145,6 @@
     <div class="cq-empty">\
         <div class="cq-empty__icon"><i class="bi bi-check2-circle"></i></div>\
         <div class="cq-empty__title">Ya se cargó esta ficha</div>\
-        <div class="cq-empty__desc">Si se necesita otra, entrar de nuevo desde Pacientes.</div>\
-        <a v-if="completedResponseId" :href="\'/Encounters/View/\' + completedResponseId" class="btn btn-outline-secondary">Ver ficha cargada</a>\
     </div>\
 </div>\
 <div v-else-if="loadError" class="alert alert-danger" role="alert">\
@@ -1159,7 +1156,7 @@
         <div class="alert alert-secondary d-flex align-items-center gap-2 mb-0">\
             <i class="bi bi-info-circle"></i>\
             <div class="flex-grow-1">Esta ficha ya no está en curso: otro usuario la finalizó o la descartó.</div>\
-            <button class="btn btn-sm btn-outline-secondary" @click="goToHistory">Ir al historial</button>\
+            <button class="btn btn-sm btn-secondary" @click="goToHistory">Ir al historial</button>\
         </div>\
     </div>\
     <div v-else-if="lockedByOther" class="col-12">\
@@ -1168,7 +1165,7 @@
             <div class="flex-grow-1">Lo está completando <strong>{{ lockedByOther.userId }}</strong>\
                 <span v-if="lockedByOther.expiresAt"> hasta las {{ formatTime(lockedByOther.expiresAt) }}</span>.\
             </div>\
-            <button class="btn btn-sm btn-outline-secondary" @click="retryLock">Reintentar</button>\
+            <button class="btn btn-sm btn-secondary" @click="retryLock">Reintentar</button>\
         </div>\
     </div>\
     <div v-else-if="showRenewPrompt" class="col-12">\
@@ -1182,7 +1179,7 @@
         <div class="alert alert-info d-flex align-items-center gap-2 mb-0">\
             <i class="bi bi-arrow-up-circle"></i>\
             <div class="flex-grow-1">Hay una versión más nueva (<strong>v{{ newerVersion }}</strong>) de este cuestionario. Esta ficha se sigue completando en la v{{ questionnaire.version }}, con la que se inició.</div>\
-            <button class="btn btn-sm btn-outline-primary" @click="openRetargetPreview">Ver cambios y actualizar</button>\
+            <button class="btn btn-sm btn-secondary" @click="openRetargetPreview">Ver cambios y actualizar</button>\
         </div>\
     </div>\
     <aside class="col-lg-3">\
@@ -1289,13 +1286,13 @@
                 <label class="form-label" for="amendReason">Motivo de la corrección<span class="text-danger"> *</span></label>\
                 <textarea id="amendReason" rows="2" maxlength="2000" class="form-control" v-model="amendReason" :disabled="readOnly()"></textarea>\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mt-3">\
-                    <button class="btn btn-outline-secondary" :disabled="submitting" @click="cancelAmend">Cancelar</button>\
+                    <button class="btn btn-neutral" :disabled="submitting" @click="cancelAmend">Cancelar</button>\
                     <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete() || !amendReason.trim()" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Guardar corrección\' }}</button>\
                 </div>\
             </div>\
             <div v-else class="border-top pt-3 mt-3">\
                 <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">\
-                    <button class="btn btn-outline-secondary" :disabled="submitting || readOnly()" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
+                    <button class="btn btn-secondary" :disabled="submitting || readOnly()" @click="finishPartial"><i class="bi bi-clock-history me-1"></i> Guardar y continuar después</button>\
                     <button class="btn btn-primary" :disabled="submitting || readOnly() || !isComplete()" :title="!isComplete() ? \'Aún quedan preguntas obligatorias que deben ser contestadas antes de finalizar\' : null" @click="submit"><i class="bi bi-check2-circle me-1"></i> {{ submitting ? \'Guardando…\' : \'Finalizar y enviar\' }}</button>\
                 </div>\
             </div>\
@@ -1327,7 +1324,7 @@
                 <p class="cq-text-xs text-danger mb-0 mt-1">Estas respuestas se perderán al actualizar.</p>\
             </div>\
             <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-3">\
-                <button class="btn btn-outline-secondary" :disabled="retargeting" @click="closeRetargetModal">Seguir en v{{ retargetPreview.FromVersion }}</button>\
+                <button class="btn btn-secondary" :disabled="retargeting" @click="closeRetargetModal">Seguir en v{{ retargetPreview.FromVersion }}</button>\
                 <button class="btn btn-primary" :disabled="retargeting" @click="confirmRetarget"><i class="bi bi-arrow-up-circle me-1"></i>{{ retargeting ? \'Actualizando…\' : \'Actualizar a v\' + retargetPreview.ToVersion }}</button>\
             </div>\
         </div>\

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -143,6 +143,8 @@ namespace ChequeAR.Api.Controllers.Api
             return ResponseMessage(response);
         }
 
+        private const string PendingChangesHeader = "X-ChequeAR-Pending-Changes";
+
         [HttpPut, Route("{id:guid}"), RequiresPermissionApi(Permissions.QuestionnaireWrite)]
         public async Task<IHttpActionResult> Update(Guid id, [FromBody] Hl7.Fhir.Model.Questionnaire body)
         {
@@ -165,6 +167,8 @@ namespace ChequeAR.Api.Controllers.Api
             var updated = await _service.UpdateAsync(id, patch, userId, expectedVersion);
             var response = Request.CreateResponse(HttpStatusCode.OK, ToFhir(updated));
             response.Headers.ETag = ETagFor(updated);
+            // Para el editor: si lo guardado difiere de la versión vigente.
+            response.Headers.Add(PendingChangesHeader, updated.HasUnpublishedChanges() ? "true" : "false");
             return ResponseMessage(response);
         }
 

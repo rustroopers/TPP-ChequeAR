@@ -289,7 +289,7 @@ namespace ChequeAR.Tests.Application
 
             var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => Sut(peso).PublishAsync(q.Id, "jefe"));
 
-            Assert.Contains(ex.Errors, e => e.Contains("actualizala desde el editor"));
+            Assert.Contains(ex.Errors, e => e.Contains("actualícela desde el editor"));
         }
 
         // Guardar no actualiza en silencio la definición de una pregunta que ya existía: si el

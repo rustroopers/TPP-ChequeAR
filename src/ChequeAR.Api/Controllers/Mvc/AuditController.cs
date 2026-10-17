@@ -151,7 +151,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // A7
         public async Task<ActionResult> Details(Guid id)
         {
-            ViewBag.Title = "Evento #" + id;
+            ViewBag.Title = "Evento de auditoría";
             ViewBag.PageId = "audit";
             try
             {

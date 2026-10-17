@@ -2,13 +2,12 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Mi perfil";
-    ViewBag.PageId = "home";
 }
 
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">Mi perfil</h1>
-        <p class="cq-page-header__subtitle">Datos institucionales y preferencias</p>
+        <p class="cq-page-header__subtitle">Datos de su cuenta</p>
     </div>
 </header>
 
@@ -40,7 +39,12 @@
         </dd>
 
         <dt class="col-sm-4 cq-text-sm cq-text-muted">Rol</dt>
-        <dd class="col-sm-8">@(Model.Roles.Count > 0 ? string.Join(", ", Model.Roles) : "—")</dd>
+        @{
+            // Los claims traen la jerarquía expandida (un Administrador también "es" Jefe y
+            // Médico); cada usuario tiene un solo rol, que es el que se muestra.
+            var rol = ChequeAR.Domain.Enums.RoleHierarchy.Principal(Model.Roles);
+        }
+        <dd class="col-sm-8">@(string.IsNullOrEmpty(rol) ? "—" : rol == ChequeAR.Domain.Enums.Role.Medico ? "Médico" : rol)</dd>
     </dl>
     <div class="mt-3">
         <a href="@Url.Action("Password", "Account")" class="btn btn-neutral"><i class="bi bi-key me-1"></i>Cambiar contraseña</a>

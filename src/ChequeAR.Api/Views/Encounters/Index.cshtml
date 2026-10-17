@@ -48,7 +48,6 @@ else if (Model.Results == null || Model.Results.Count == 0)
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-emoji-frown"></i></div>
             <div class="cq-empty__title">@Cq.T("r1.noresults.title", new { q = Model.Query })</div>
-            <div class="cq-empty__desc">@Cq.T("r1.noresults.desc")</div>
         </div>
 }
 else
@@ -111,7 +110,7 @@ else
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title h3" id="selectQTitle">Seleccionar ficha clínica</h2>
+                <h2 class="modal-title h3" id="selectQTitle">Elegir cuestionario</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
@@ -121,8 +120,6 @@ else
                     <div class="cq-empty">
                         <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
                         <div class="cq-empty__title">No hay cuestionarios publicados</div>
-                        <div class="cq-empty__desc">Solo se pueden cargar fichas de cuestionarios publicados.</div>
-                        <a href="@Url.Action("Index", "Questionnaires")" class="btn btn-primary">Ir a Cuestionarios</a>
                     </div>
                 }
                 else
@@ -297,7 +294,7 @@ else
         loadLastEntries(pid);
         document.getElementById("selectQStartBtn").onclick = function () {
             var qid = (document.querySelector("input[name='qchoice']:checked") || {}).value;
-            if (!qid) { window.cqToast && cqToast("Seleccionar cuestionario", "error"); return; }
+            if (!qid) { window.cqToast && cqToast("Seleccione un cuestionario.", "error"); return; }
             var draft = draftIdByQid[qid.toLowerCase()];
             if (draft && draft.patientId === pid) {
                 openResumeChoice(pid, qid, draft.id, questionnaireTitleFor(qid));
@@ -344,7 +341,7 @@ else
         function otherUserFinishedFirst() {
             restartBtn.disabled = false;
             continueBtn.disabled = false;
-            window.cqToast && cqToast("Otro usuario ya finalizó esta ficha mientras tanto.", "error");
+            window.cqToast && cqToast("Esta ficha ya no está en curso: otro usuario la finalizó o la descartó.", "error");
             bootstrap.Modal.getOrCreateInstance(resumeModalEl).hide();
         }
 
@@ -365,7 +362,7 @@ else
         restartBtn.onclick = function () {
             restartBtn.disabled = true;
             fetch("/fhir/r5/QuestionnaireResponse/" + draftId + "/$abandon", { method: "POST" }).then(function (r) {
-                if (r.ok) { goToLoad(pid, qid); return; }
+                if (r.ok) { window.cqFlash && cqFlash("Se descartó la ficha anterior.", "success"); goToLoad(pid, qid); return; }
                 // 422 = ya no está InProgress (alguien la finalizó justo antes de este
                 // click): no hay nada que descartar, y arrancar una ficha nueva en blanco
                 // sin decir nada sería el mismo problema al revés.
@@ -422,8 +419,8 @@ else
             Array.prototype.forEach.call(labels, function (el) {
                 var when = lastByQ[(el.getAttribute("data-qid") || "").toLowerCase()];
                 el.textContent = when
-                    ? "Última carga para este paciente: " + new Date(when).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })
-                    : "Nunca cargado";
+                    ? "Última carga para este paciente: " + new Date(when).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" })
+                    : "Sin fichas para este paciente";
             });
         }).catch(function () { /* sin dato: se deja vacío */ });
     }

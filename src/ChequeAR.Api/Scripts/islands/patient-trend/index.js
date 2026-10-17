@@ -233,8 +233,8 @@
                 <div class="cq-loading__label">Cargando series…</div>\
             </div>\
         </div>\
-        <div v-else-if="!charts.length" class="cq-card cq-text-sm cq-text-muted">\
-            Marque un parámetro para ver su gráfico.\
+        <div v-else-if="selected.length && !charts.length" class="cq-card cq-text-sm cq-text-muted">\
+            No hay valores registrados para los parámetros elegidos.\
         </div>\
         <div v-else class="d-flex flex-column gap-3">\
             <div v-for="c in charts" :key="c.linkId" class="cq-card">\

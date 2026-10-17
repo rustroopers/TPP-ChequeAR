@@ -63,8 +63,15 @@
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
-            <div class="cq-empty__title">Sin eventos</div>
-            <div class="cq-empty__desc">No hay registros de auditoría que coincidan con los filtros.</div>
+            @if (string.IsNullOrEmpty(Model.UserFilter) && string.IsNullOrEmpty(Model.ActionFilter) && !Model.QuestionnaireFilter.HasValue
+                 && string.IsNullOrEmpty(Model.From) && string.IsNullOrEmpty(Model.To))
+            {
+                <div class="cq-empty__title">Sin eventos</div>
+            }
+            else
+            {
+                <div class="cq-empty__title">Ningún evento coincide con los filtros</div>
+            }
         </div>
     </div>
 }
@@ -72,7 +79,7 @@ else
 {
     <table class="cq-table">
         <thead>
-            <tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Cuestionario</th><th></th></tr>
+            <tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Sobre</th><th></th></tr>
         </thead>
         <tbody>
             @foreach (var e in Model.Entries)
@@ -82,7 +89,7 @@ else
                     <td>@e.Username</td>
                     <td><span class="cq-badge @e.ActionBadge"><i class="bi @e.ActionIcon me-1"></i>@e.Action</span></td>
                     <td>@e.Resource</td>
-                    <td class="text-end"><a href="@Url.Action("Details", new { id = e.Id })" class="btn btn-sm btn-primary">Ver →</a></td>
+                    <td class="text-end"><a href="@Url.Action("Details", new { id = e.Id })" class="btn btn-sm btn-tertiary">Ver →</a></td>
                 </tr>
             }
         </tbody>

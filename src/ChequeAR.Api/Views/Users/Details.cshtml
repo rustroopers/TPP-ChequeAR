@@ -6,8 +6,10 @@
 
 <header class="cq-page-header">
     <div>
-        <h1 class="cq-page-header__title">@Model.FullName <span class="cq-text-sm cq-text-muted">(@Model.Username)</span></h1>
+        <h1 class="cq-page-header__title">@Model.FullName</h1>
+        <p class="cq-page-header__subtitle"><code>@Model.Username</code></p>
     </div>
+    <a href="@Url.Action("Index")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
 </header>
 
 @using (Html.BeginForm("Save", "Users", FormMethod.Post))
@@ -18,8 +20,7 @@
     <div class="cq-card mb-3" style="max-width:720px;">
         <h2>Datos</h2>
         <dl class="row">
-            <dt class="col-sm-3 cq-text-sm cq-text-muted">Email</dt><dd class="col-sm-9">@Model.Email</dd>
-            <dt class="col-sm-3 cq-text-sm cq-text-muted">DNI</dt><dd class="col-sm-9">@Model.DNI</dd>
+            <dt class="col-sm-3 cq-text-sm cq-text-muted">Email</dt><dd class="col-sm-9">@(string.IsNullOrWhiteSpace(Model.Email) ? "—" : Model.Email)</dd>
         </dl>
         <div class="form-check form-switch">
             <input class="form-check-input" type="checkbox" id="active" name="Active" @(Model.Active ? "checked" : "") />
@@ -36,7 +37,7 @@
         <select class="form-select" name="Role" style="max-width:280px;">
             @foreach (var r in ChequeAR.Domain.Enums.Role.All)
             {
-                <option value="@r" selected="@(Model.Role == r)">@r</option>
+                <option value="@r" selected="@(Model.Role == r)">@(r == ChequeAR.Domain.Enums.Role.Medico ? "Médico" : r)</option>
             }
         </select>
     </div>
@@ -44,26 +45,25 @@
     <div class="cq-card mb-3" style="max-width:720px;">
         <h2>Especialidades</h2>
         <p class="cq-text-sm cq-text-muted">
-            Acota lo que ve y puede tocar (fichas, cuestionarios, reportes) a estas especialidades.
-            Un Administrador ve todas sin necesidad de que se le asignen.
+            Limita lo que ve y puede modificar (fichas, cuestionarios, reportes) a las especialidades
+            marcadas. Un Administrador ve todas sin necesidad de que se le asignen.
         </p>
-        @for (int i = 0; i < Model.Specialties.Count; i++)
-        {
-            var sp = Model.Specialties[i];
-            <div class="row g-2 align-items-center mb-2">
-                <div class="col-md-5"><span class="cq-chip cq-chip--zone-@sp.SpecialtyColor">@sp.SpecialtyLabel</span></div>
-                <input type="hidden" name="Specialties[@i].SpecialtyCode" value="@sp.SpecialtyCode" />
-                <input type="hidden" name="Specialties[@i].SpecialtyLabel" value="@sp.SpecialtyLabel" />
-            </div>
+        @{
+            var disponibles = ViewBag.AvailableSpecialties as IEnumerable<ChequeAR.Domain.Entities.Specialty> ?? Enumerable.Empty<ChequeAR.Domain.Entities.Specialty>();
+            var asignadas = new HashSet<string>(Model.Specialties.Select(s => s.SpecialtyCode));
         }
-        @if (Model.Specialties.Count == 0)
-        {
-            <p class="cq-text-sm cq-text-muted fst-italic">Sin especialidades asignadas.</p>
-        }
+        <div class="d-flex flex-wrap gap-3">
+            @foreach (var sp in disponibles)
+            {
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="SpecialtyCodes" value="@sp.Code" id="sp-@sp.Code" @(asignadas.Contains(sp.Code) ? "checked" : "") />
+                    <label class="form-check-label" for="sp-@sp.Code">@sp.Name</label>
+                </div>
+            }
+        </div>
     </div>
 
-    <div class="d-flex gap-2">
-        <a href="@Url.Action("Index")" class="btn btn-outline-secondary">Cancelar</a>
+    <div class="d-flex gap-2" style="max-width:720px;">
         <button type="submit" class="btn btn-primary">Guardar cambios</button>
     </div>
 }

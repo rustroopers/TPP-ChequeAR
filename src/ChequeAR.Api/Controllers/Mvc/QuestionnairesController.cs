@@ -81,7 +81,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                 model.Items.Clear();
                 model.Total = 0;
                 Response.StatusCode = 403;
-                ViewBag.DataError = "No tiene acceso a esa especialidad.";
+                Response.TrySkipIisCustomErrors = true;
+                TempData["Toast"] = "No tiene acceso a esa especialidad.";
+                TempData["ToastLevel"] = "error";
             }
             catch (Exception ex)
             {
@@ -565,8 +567,14 @@ namespace ChequeAR.Api.Controllers.Mvc
             var userId = CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal);
             try
             {
+                var antes = await _svc.GetAsync(id);
+                var versionesAntes = antes?.Versions?.Count ?? 0;
                 await _svc.PublishAsync(id, userId, changeNote, concurrencyVersion);
-                TempData["Toast"] = "Cuestionario publicado.";
+                var versiones = (await _svc.GetVersionCountsAsync(new[] { id })).TryGetValue(id, out var n) ? n : versionesAntes;
+                // Un archivado sin cambios se reactiva con su última versión, sin crear otra.
+                TempData["Toast"] = versiones == versionesAntes
+                    ? "Cuestionario reactivado (v" + versiones + ")."
+                    : "Cuestionario publicado (v" + versiones + ").";
                 TempData["ToastLevel"] = "success";
             }
             catch (SpecialtyForbiddenException)
@@ -576,7 +584,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
             catch (ConcurrencyConflictException)
             {
-                TempData["Toast"] = "Alguien guardó cambios en el cuestionario mientras tanto. Revisalo antes de publicarlo.";
+                TempData["Toast"] = "Otra persona guardó cambios en el cuestionario mientras tanto. Revíselos antes de publicar.";
                 TempData["ToastLevel"] = "error";
             }
             // Las reglas que impiden publicar (perfil FHIR, condiciones rotas, nada que publicar)

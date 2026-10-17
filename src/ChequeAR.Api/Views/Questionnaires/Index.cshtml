@@ -15,7 +15,7 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">@Cq.T("q1.title")</h1>
-        
+        <p class="cq-page-header__subtitle">Fichas que completan los clínicos, por especialidad</p>
     </div>
     @if (canWrite)
     {
@@ -23,7 +23,7 @@
             <a href="@Url.Action("Edit")" class="btn btn-primary">
                 <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
             </a>
-            <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="left" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Publicalo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
+            <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="left" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Publíquelo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
         </div>
     }
 </header>
@@ -62,7 +62,14 @@
     <div class="cq-card">
         <div class="cq-empty">
             <div class="cq-empty__icon"><i class="bi bi-clipboard-x"></i></div>
-            <div class="cq-empty__title">@Cq.T("q1.empty.title")</div>
+            @if (string.IsNullOrEmpty(Model.SearchTerm) && string.IsNullOrEmpty(Model.SpecialtyFilter) && string.IsNullOrEmpty(Model.StatusFilter))
+            {
+                <div class="cq-empty__title">@Cq.T("q1.empty.title")</div>
+            }
+            else
+            {
+                <div class="cq-empty__title">@Cq.T("q1.empty.filtered")</div>
+            }
         </div>
     </div>
 }
@@ -92,7 +99,7 @@ else
                         else { <span class="cq-badge cq-badge--archived">@Cq.T("status.archived")</span> }
                         @if (q.HasUnpublishedChanges)
                         {
-                            <span class="cq-badge cq-badge--info d-block mt-1" title="Se editó después de publicar. Los clínicos siguen viendo la versión publicada.">cambios sin publicar</span>
+                            <span class="cq-badge cq-badge--info mt-1" style="width:fit-content;display:flex;" title="Se editó después de publicar. Los clínicos siguen viendo la versión publicada.">cambios sin publicar</span>
                         }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@q.UpdatedAt</td>
