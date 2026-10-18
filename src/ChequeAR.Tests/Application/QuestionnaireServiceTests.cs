@@ -117,6 +117,66 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("REU", updated.SpecialtyCode);
         }
 
+        // El autoguardado del editor guarda aunque no haya cambios: eso no deja evento.
+        [Fact]
+        public async Task UpdateAsync_SinCambios_NoAudita()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, Title = "old", Description = "desc", SpecialtyCode = "REU" });
+
+            await _sut.UpdateAsync(id, new Questionnaire { Title = "old", Description = "desc" }, "u");
+            await _audit.FlushAsync();
+
+            Assert.Empty(_auditados);
+        }
+
+        [Fact]
+        public async Task UpdateAsync_AuditaLasLineasQueCambian()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, Title = "old", Description = "desc", SpecialtyCode = "REU" });
+
+            await _sut.UpdateAsync(id, new Questionnaire { Title = "new", Description = "desc" }, "u");
+            await _audit.FlushAsync();
+
+            var cambios = AuditChangeSet.Read(Assert.Single(_auditados).FhirJson);
+            Assert.Equal(new[] { "Título: old" }, cambios.Removed);
+            Assert.Equal(new[] { "Título: new" }, cambios.Added);
+        }
+
+        // El editor manda las preguntas dentro de cada sección y la base las guarda en la lista
+        // plana: guardar dos veces lo mismo no es una edición, y la segunda no deja evento.
+        [Fact]
+        public async Task UpdateAsync_ConSecciones_RepetirElGuardadoNoAudita()
+        {
+            var id = Guid.NewGuid();
+            var persistido = new Questionnaire { Id = id, Title = "Control", SpecialtyCode = "REU" };
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(persistido);
+            _repo.Setup(r => r.UpdateWithStructureAsync(persistido, It.IsAny<ICollection<QuestionGroup>>(), It.IsAny<ICollection<Question>>()))
+                 .Callback<Questionnaire, ICollection<QuestionGroup>, ICollection<Question>>((q, grupos, sueltas) =>
+                 {
+                     q.Groups = grupos.ToList();
+                     q.Questions = sueltas.Concat(grupos.SelectMany(g => g.Questions)).ToList();
+                 })
+                 .Returns(Task.CompletedTask);
+            Questionnaire Patch(string texto)
+            {
+                var grupo = new QuestionGroup { LinkId = "s1", Title = "Antropometría" };
+                grupo.Questions.Add(TestHelpers.QuestionFrom(_peso, "peso", texto));
+                return new Questionnaire { Title = "Control", Groups = new List<QuestionGroup> { grupo } };
+            }
+
+            await _sut.UpdateAsync(id, Patch("Peso"), "u");
+            await _sut.UpdateAsync(id, Patch("Peso"), "u");
+            await _sut.UpdateAsync(id, Patch("Peso al ingreso"), "u");
+            await _audit.FlushAsync();
+
+            Assert.Equal(2, _auditados.Count);
+            var cambios = AuditChangeSet.Read(_auditados[1].FhirJson);
+            Assert.Contains(cambios.Removed, l => l.Contains("Pregunta: Peso ["));
+            Assert.Contains(cambios.Added, l => l.Contains("Pregunta: Peso al ingreso ["));
+        }
+
         // La codificación clínica del cuestionario se persiste igual que el resto: viene en el
         // patch y queda guardada.
         [Fact]

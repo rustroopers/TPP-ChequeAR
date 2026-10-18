@@ -79,6 +79,47 @@ namespace ChequeAR.Tests.Application
             _repo.Verify(r => r.UpdateAsync(It.IsAny<SavedReport>()), Times.Once);
         }
 
+        [Fact]
+        public async Task Actualizar_SinCambios_NoAudita()
+        {
+            var id = Guid.NewGuid();
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(Consulta(id, creadaPor: "dr.gomez"));
+            var emitidos = Capturar();
+
+            await _sut.UpdateAsync(id, new SavedReport { Name = "Cohorte de control" }, "dr.gomez");
+            await _audit.FlushAsync();
+
+            Assert.Empty(emitidos);
+        }
+
+        [Fact]
+        public async Task Actualizar_AuditaQueCambio()
+        {
+            var id = Guid.NewGuid();
+            var existente = Consulta(id, creadaPor: "dr.gomez");
+            existente.QueryJson = "{\"filters\":{}}";
+            _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(existente);
+            var emitidos = Capturar();
+
+            await _sut.UpdateAsync(id, new SavedReport { Name = "Cohorte nueva", QueryJson = "{ \"filters\": {} }" }, "dr.gomez");
+            await _audit.FlushAsync();
+
+            var snap = Newtonsoft.Json.JsonConvert.DeserializeObject<SavedReportAuditSnapshot>(Assert.Single(emitidos).FhirJson);
+            var cambio = Assert.Single(snap.Changes);
+            Assert.Equal("Nombre", cambio.Field);
+            Assert.Equal("Cohorte de control", cambio.Before);
+            Assert.Null(snap.PreviousQueryJson);   // mismo JSON con otro espaciado
+        }
+
+        private List<AuditEvent> Capturar()
+        {
+            var emitidos = new List<AuditEvent>();
+            _auditRepo.Setup(r => r.AddManyAsync(It.IsAny<IEnumerable<AuditEvent>>()))
+                      .Callback<IEnumerable<AuditEvent>>(emitidos.AddRange)
+                      .Returns(Task.CompletedTask);
+            return emitidos;
+        }
+
         /// <summary>
         /// Lo que el cliente no manda se conserva. Un reemplazo completo convertiría cualquier
         /// omisión en un borrado silencioso de la consulta que alguien armó.

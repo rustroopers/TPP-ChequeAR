@@ -69,6 +69,14 @@ namespace ChequeAR.Api.Models
         public string ReportScope { get; set; }              // etiqueta legible del alcance; sólo reportes guardados
         public string ReportQuestionnaire { get; set; }      // título del cuestionario base
         public List<string> ReportConditions { get; set; } = new List<string>();
+        public List<string> PreviousReportConditions { get; set; }   // sólo si la modificación cambió las condiciones
+
+        // Qué cambió en una edición (usuario, variable, cuestionario o consulta guardada).
+        public List<ChequeAR.Application.Services.AuditFieldChange> FieldChanges { get; set; }
+            = new List<ChequeAR.Application.Services.AuditFieldChange>();
+        public List<string> RemovedLines { get; set; } = new List<string>();
+        public List<string> AddedLines { get; set; } = new List<string>();
+        public bool HasChanges => FieldChanges.Count > 0 || RemovedLines.Count > 0 || AddedLines.Count > 0;
     }
 
     public class UserListItem

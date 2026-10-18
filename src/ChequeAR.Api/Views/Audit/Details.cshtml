@@ -56,6 +56,65 @@
         {
             <p class="cq-text-sm cq-text-muted mb-0">@Model.NoConditionsText</p>
         }
+
+        @if (Model.PreviousReportConditions != null)
+        {
+            <h3 class="cq-text-sm fw-semibold mt-3 mb-1">Condiciones anteriores</h3>
+            if (Model.PreviousReportConditions.Count > 0)
+            {
+                <ul class="cq-text-sm mb-0" style="padding-left:1.1rem;">
+                    @foreach (var c in Model.PreviousReportConditions)
+                    {
+                        <li style="white-space:pre-wrap;"><span class="cq-diff__del">@c</span></li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="cq-text-sm cq-text-muted mb-0">@Model.NoConditionsText</p>
+            }
+        }
+    </div>
+}
+
+@if (Model.HasChanges)
+{
+    <div class="cq-card mt-3" style="max-width:760px;">
+        <h2 class="cq-section-title">Cambios</h2>
+        @if (Model.FieldChanges.Count > 0)
+        {
+            <table class="table cq-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Campo</th>
+                        <th>Antes</th>
+                        <th>Después</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in Model.FieldChanges)
+                    {
+                        <tr>
+                            <td>@c.Field</td>
+                            <td>@if (string.IsNullOrEmpty(c.Before)) {<span class="cq-text-muted">—</span>} else {<span class="cq-diff__del">@c.Before</span>}</td>
+                            <td>@if (string.IsNullOrEmpty(c.After)) {<span class="cq-text-muted">—</span>} else {<span class="cq-diff__add">@c.After</span>}</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        @if (Model.RemovedLines.Count > 0)
+        {
+            <div class="cq-text-sm cq-text-muted mt-3 mb-1">Quitado</div>
+            <pre class="cq-diff">@foreach (var l in Model.RemovedLines) {<text><span class="cq-diff__del">@l</span>
+</text>}</pre>
+        }
+        @if (Model.AddedLines.Count > 0)
+        {
+            <div class="cq-text-sm cq-text-muted mt-3 mb-1">Agregado</div>
+            <pre class="cq-diff">@foreach (var l in Model.AddedLines) {<text><span class="cq-diff__add">@l</span>
+</text>}</pre>
+        }
     </div>
 }
 

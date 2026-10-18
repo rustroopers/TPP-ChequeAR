@@ -191,8 +191,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                     FillPatientSearchDetail(detail, e.FhirJson);
                 else if (av.ResourceType == "AuditEvent")
                     FillAuditExportDetail(detail, e.FhirJson);
-                else if (av.ResourceType == "AppUser")
-                    FillUserChanges(detail, e.FhirJson);
+                else if (av.ResourceType == "AppUser"
+                         || (e.Action == "U" && (av.ResourceType == "ClinicalVariable" || av.ResourceType == "Questionnaire") && !e.EntityRef.Contains("$")))
+                    FillChanges(detail, AuditChangeSet.Read(e.FhirJson));
 
                 // Para una ficha: al finalizar se guardó la foto COMPLETA (todas las
                 // respuestas); en un guardado de avance, sólo el diff de esa sesión.
@@ -234,9 +235,9 @@ namespace ChequeAR.Api.Controllers.Mvc
             detail.ToVersion = to.VersionNumber;
             detail.FromVersion = from?.VersionNumber;
 
-            var afterLines = AuditPresentation.FlattenForHumans(to.FhirJson);
+            var afterLines = QuestionnaireReadableLines.From(to.FhirJson);
             var beforeLines = from != null
-                ? AuditPresentation.FlattenForHumans(from.FhirJson)
+                ? QuestionnaireReadableLines.From(from.FhirJson)
                 : new List<string>();
 
             AuditPresentation.Diff(beforeLines, afterLines,
@@ -319,6 +320,19 @@ namespace ChequeAR.Api.Controllers.Mvc
             }
 
             detail.ReportConditions = AuditPresentation.DescribeReportConditions(snap.QueryJson, linkTexts);
+
+            if (snap.Changes != null) detail.FieldChanges = snap.Changes;
+            if (snap.PreviousQuestionnaireId.HasValue)
+            {
+                var anterior = await _questionnaires.GetAsync(snap.PreviousQuestionnaireId.Value);
+                detail.FieldChanges.Add(new AuditFieldChange { Field = "Cuestionario", Before = anterior?.Title, After = detail.ReportQuestionnaire });
+                // Las condiciones anteriores hablan de las preguntas del cuestionario anterior.
+                if (snap.PreviousQueryJson != null && anterior?.Questions != null)
+                    linkTexts = anterior.Questions.Where(qq => !string.IsNullOrEmpty(qq.LinkId))
+                        .GroupBy(qq => qq.LinkId).ToDictionary(g => g.Key, g => g.First().Text);
+            }
+            if (snap.PreviousQueryJson != null)
+                detail.PreviousReportConditions = AuditPresentation.DescribeReportConditions(snap.PreviousQueryJson, linkTexts);
         }
 
         /// <summary>
@@ -385,20 +399,13 @@ namespace ChequeAR.Api.Controllers.Mvc
             detail.ReportConditions.Add("Término (SHA-256): " + snap.TermSha256);
         }
 
-        private static void FillUserChanges(AuditDetailViewModel detail, string fhirJson)
+        /// <summary>Qué cambió en una edición. Los eventos anteriores a que se guardara no traen nada.</summary>
+        private static void FillChanges(AuditDetailViewModel detail, AuditChangeSet changes)
         {
-            if (string.IsNullOrWhiteSpace(fhirJson)) return;
-            ChequeAR.Application.Services.UserAuditSnapshot snap;
-            try { snap = Newtonsoft.Json.JsonConvert.DeserializeObject<ChequeAR.Application.Services.UserAuditSnapshot>(fhirJson); }
-            catch (Newtonsoft.Json.JsonException) { return; }
-            if (snap?.Changes == null || snap.Changes.Count == 0) return;
-
-            detail.HasReportDetail = true;
-            detail.ReportHeading = "Cambios";
-            detail.ConditionsHeading = "Campos";
-            foreach (var c in snap.Changes)
-                detail.ReportConditions.Add(c.Field + ": " + (string.IsNullOrEmpty(c.Before) ? "—" : c.Before)
-                                            + " → " + (string.IsNullOrEmpty(c.After) ? "—" : c.After));
+            if (changes == null) return;
+            detail.FieldChanges = changes.Changes ?? new List<AuditFieldChange>();
+            detail.RemovedLines = changes.Removed ?? new List<string>();
+            detail.AddedLines = changes.Added ?? new List<string>();
         }
 
         /// <summary>Mismas etiquetas que el selector "Acción" del listado.</summary>

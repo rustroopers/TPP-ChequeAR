@@ -401,6 +401,7 @@ namespace ChequeAR.Application.Services
             if (patch.Title != null && string.IsNullOrWhiteSpace(patch.Title))
                 throw new ValidationFailedException(TitleRequiredError);
 
+            var antes = FhirQuestionnaireBuilder.Build(q, 0);
             q.Title = patch.Title ?? q.Title;
             q.Description = patch.Description;
             var cat = await _catalog.GetAsync();
@@ -444,7 +445,14 @@ namespace ChequeAR.Application.Services
             q.HasPendingChanges = DiffersFromCurrentVersion(q, replacement);
             await _repo.UpdateWithStructureAsync(q, replacement.Groups, replacement.Questions);
 
-            _audit.Enqueue(AuditEventBuilder.For("update", "Questionnaire/" + q.Id, userId));
+            // El autoguardado del editor guarda aunque no haya cambios: eso no es una edición.
+            var despues = FhirQuestionnaireBuilder.Build(Saved(q, replacement), 0);
+            if (!FhirQuestionnaireBuilder.SameContent(antes, despues))
+            {
+                var evt = AuditEventBuilder.For("update", "Questionnaire/" + q.Id, userId);
+                evt.FhirJson = StructureChanges(antes, despues).ToJson();
+                _audit.Enqueue(evt);
+            }
             return q;
         }
 
@@ -452,19 +460,39 @@ namespace ChequeAR.Application.Services
         {
             var current = q.CurrentVersion();
             if (current == null) return true;
-            var guardado = new Questionnaire
-            {
-                Id = q.Id,
-                Title = q.Title,
-                Description = q.Description,
-                SpecialtyCode = q.SpecialtyCode,
-                SpecialtyDisplay = q.SpecialtyDisplay,
-                CodingJson = q.CodingJson,
-                Groups = replacement.Groups,
-                Questions = replacement.Questions
-            };
             return !FhirQuestionnaireBuilder.SameContent(
-                FhirQuestionnaireBuilder.Build(guardado, current.VersionNumber, current.PublishedAt), current.FhirJson);
+                FhirQuestionnaireBuilder.Build(Saved(q, replacement), current.VersionNumber, current.PublishedAt), current.FhirJson);
+        }
+
+        /// <summary>
+        /// El cuestionario como queda guardado: la cabecera de q con la estructura nueva. El
+        /// builder lee las preguntas de la lista plana (con su GroupId), y el editor las manda
+        /// dentro de cada sección: sin aplanarlas, lo guardado parecía no tener preguntas.
+        /// </summary>
+        private static Questionnaire Saved(Questionnaire q, Questionnaire replacement) => new Questionnaire
+        {
+            Id = q.Id,
+            Title = q.Title,
+            Description = q.Description,
+            SpecialtyCode = q.SpecialtyCode,
+            SpecialtyDisplay = q.SpecialtyDisplay,
+            CodingJson = q.CodingJson,
+            Groups = replacement.Groups,
+            Questions = AllQuestions(replacement)
+        };
+
+        /// <summary>
+        /// Lo que cambió entre dos estados del cuestionario, como líneas quitadas y agregadas.
+        /// Si lo distinto no tiene una línea legible (un código de opción, una validación) se
+        /// dice igual que hubo un cambio.
+        /// </summary>
+        private static AuditChangeSet StructureChanges(string antes, string despues)
+        {
+            var cambios = new AuditChangeSet();
+            cambios.AddLineDiff(QuestionnaireReadableLines.From(antes), QuestionnaireReadableLines.From(despues));
+            if (cambios.IsEmpty)
+                cambios.Changes.Add(new AuditFieldChange { Field = "Preguntas", After = "Ajustes de códigos, validaciones o variables" });
+            return cambios;
         }
 
         /// <summary>

@@ -15,11 +15,14 @@ namespace ChequeAR.Tests.Application
     public class ClinicalVariablePublishTests
     {
         private readonly Mock<IClinicalVariableRepository> _repo = new Mock<IClinicalVariableRepository>();
+        private readonly List<AuditEvent> _auditados = new List<AuditEvent>();
+        private readonly AuditDispatcher _audit;
         private readonly ClinicalVariableService _sut;
 
         public ClinicalVariablePublishTests()
         {
-            _sut = new ClinicalVariableService(_repo.Object, TestHelpers.NoopAuditDispatcher(), TestHelpers.UnrestrictedAccess());
+            _audit = TestHelpers.CapturingAuditDispatcher(_auditados);
+            _sut = new ClinicalVariableService(_repo.Object, _audit, TestHelpers.UnrestrictedAccess());
         }
 
         private ClinicalVariable Severidad(int revision = 1, bool publicada = false)
@@ -161,6 +164,33 @@ namespace ChequeAR.Tests.Application
 
             Assert.Equal("Severidad del cuadro", updated.DefaultText);
             _repo.Verify(r => r.UpdateWithOptionsAsync(v, It.IsAny<ICollection<VariableOption>>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task Update_SinCambios_NoAudita()
+        {
+            var v = Severidad(publicada: true);
+
+            await _sut.UpdateAsync(v.Id, MismaDefinicion(v), "admin");
+            await _audit.FlushAsync();
+
+            Assert.Empty(_auditados);
+        }
+
+        [Fact]
+        public async Task Update_AuditaQueCambio()
+        {
+            var v = Severidad(publicada: true);
+            var patch = MismaDefinicion(v);
+            patch.Description = "Corregida";
+
+            await _sut.UpdateAsync(v.Id, patch, "admin");
+            await _audit.FlushAsync();
+
+            var cambio = Assert.Single(AuditChangeSet.Read(Assert.Single(_auditados).FhirJson).Changes);
+            Assert.Equal("Descripción", cambio.Field);
+            Assert.Null(cambio.Before);
+            Assert.Equal("Corregida", cambio.After);
         }
 
         // El formulario manda "" donde lo publicado quedó sin valor (término, nombre del concepto):

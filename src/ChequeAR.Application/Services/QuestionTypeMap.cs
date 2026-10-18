@@ -26,6 +26,26 @@ namespace ChequeAR.Application.Services
             }
         }
 
+        /// <summary>Etiqueta legible del tipo ("Opción única"), la del catálogo de variables.</summary>
+        public static string Label(QuestionType type)
+        {
+            switch (type)
+            {
+                case QuestionType.String: return "Texto corto";
+                case QuestionType.Text: return "Texto largo";
+                case QuestionType.Integer: return "Número entero";
+                case QuestionType.Decimal: return "Número decimal";
+                case QuestionType.Boolean: return "Sí / No";
+                case QuestionType.Choice: return "Opción única";
+                case QuestionType.OpenChoice: return "Opción múltiple";
+                case QuestionType.Date: return "Fecha";
+                case QuestionType.DateTime: return "Fecha y hora";
+                case QuestionType.Attachment: return "Adjunto";
+                case QuestionType.Scale: return "Escala";
+                default: return type.ToString();
+            }
+        }
+
         /// <summary>
         /// Inverso de <see cref="ToUi"/>, para el ABM de variables: el formulario manda el
         /// mismo vocabulario que consume el editor, y el catálogo lo tiene que guardar como
