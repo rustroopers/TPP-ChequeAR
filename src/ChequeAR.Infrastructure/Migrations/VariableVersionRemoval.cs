@@ -24,7 +24,7 @@ namespace ChequeAR.Infrastructure.Migrations
     {
         private const string LegacyTable = "CVV_Legacy";
 
-        private class LegacyDefinition
+        private sealed class LegacyDefinition
         {
             public byte[] VariableId { get; set; }
             public string DefinitionJson { get; set; }
