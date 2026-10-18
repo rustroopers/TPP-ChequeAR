@@ -150,20 +150,17 @@ namespace ChequeAR.Application.Services
 
         private void AuditChanges(string userId, Dictionary<string, string> antes, Dictionary<string, string> despues, string actingUserId)
         {
-            var cambios = despues.Keys
-                .Where(k => !string.Equals(antes.TryGetValue(k, out var a) ? a ?? "" : "", despues[k] ?? "", StringComparison.Ordinal))
-                .Select(k => new UserAuditChange { Field = k, Before = antes.TryGetValue(k, out var a) ? a : null, After = despues[k] })
-                .ToList();
-            if (cambios.Count == 0) return;
-            Audit("update", userId, null, actingUserId, "0", new UserAuditSnapshot { Changes = cambios });
+            var cambios = AuditChangeSet.Between(antes, despues);
+            if (cambios.IsEmpty) return;
+            Audit("update", userId, null, actingUserId, "0", cambios);
         }
 
-        private void Audit(string action, string userRef, string operation, string agent, string outcome, UserAuditSnapshot snapshot = null)
+        private void Audit(string action, string userRef, string operation, string agent, string outcome, AuditChangeSet changes = null)
         {
             if (_audit == null) return;
             var evt = AuditEventBuilder.For(action, "AppUser/" + userRef + (operation == null ? "" : "$" + operation),
                 agent, outcome, AuditCategory);
-            if (snapshot != null) evt.FhirJson = JsonConvert.SerializeObject(snapshot);
+            if (changes != null) evt.FhirJson = changes.ToJson();
             _audit.Enqueue(evt);
         }
 
@@ -330,18 +327,6 @@ namespace ChequeAR.Application.Services
             if (!await _repo.KeepingAnAdminAsync(() => _repo.SyncFromHospitalAsync(userId, user.DisplayName, null, new List<string> { role }, null)))
                 throw new BusinessRuleException("Debe existir al menos un Administrador activo en el sistema.");
         }
-    }
-
-    public class UserAuditSnapshot
-    {
-        public List<UserAuditChange> Changes { get; set; } = new List<UserAuditChange>();
-    }
-
-    public class UserAuditChange
-    {
-        public string Field { get; set; }
-        public string Before { get; set; }
-        public string After { get; set; }
     }
 
     public class UserPage

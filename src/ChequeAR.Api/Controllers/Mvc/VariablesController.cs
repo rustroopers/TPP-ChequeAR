@@ -73,7 +73,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                         Id = v.Id,
                         Code = v.Code,
                         Name = v.Name,
-                        TypeLabel = TypeLabel(v.Type),
+                        TypeLabel = QuestionTypeMap.Label(v.Type),
                         Unit = v.Unit,
                         Range = Range(v.MinValue, v.MaxValue),
                         SnomedCode = v.SnomedCode,
@@ -346,25 +346,6 @@ namespace ChequeAR.Api.Controllers.Mvc
                 TempData["ToastLevel"] = "error";
             }
             return RedirectToAction("Index");
-        }
-
-        private static string TypeLabel(QuestionType t)
-        {
-            switch (t)
-            {
-                case QuestionType.String: return "Texto corto";
-                case QuestionType.Text: return "Texto largo";
-                case QuestionType.Integer: return "Número entero";
-                case QuestionType.Decimal: return "Número decimal";
-                case QuestionType.Boolean: return "Sí / No";
-                case QuestionType.Choice: return "Opción única";
-                case QuestionType.OpenChoice: return "Opción múltiple";
-                case QuestionType.Date: return "Fecha";
-                case QuestionType.DateTime: return "Fecha y hora";
-                case QuestionType.Attachment: return "Adjunto";
-                case QuestionType.Scale: return "Escala";
-                default: return t.ToString();
-            }
         }
 
         private static string Range(decimal? min, decimal? max)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ChequeAR.Application.Services
 {
@@ -17,5 +18,11 @@ namespace ChequeAR.Application.Services
         public Guid QuestionnaireId { get; set; }
         /// <summary>La definición de la consulta (filtros/fechas/etc.) tal como la mandó el cliente.</summary>
         public string QueryJson { get; set; }
+
+        // Sólo en una modificación: qué cambió. Las condiciones y el cuestionario anteriores
+        // van aparte porque se muestran resueltos a texto, como los actuales.
+        public List<AuditFieldChange> Changes { get; set; }
+        public string PreviousQueryJson { get; set; }
+        public Guid? PreviousQuestionnaireId { get; set; }
     }
 }

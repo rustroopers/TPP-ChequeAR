@@ -119,7 +119,7 @@ namespace ChequeAR.Tests.Application
             var evt = Assert.Single(_eventos);
             Assert.Equal("AppUser/m1", evt.EntityRef);
             Assert.Equal("admin1", evt.AgentUserId);
-            var cambios = JsonConvert.DeserializeObject<UserAuditSnapshot>(evt.FhirJson).Changes;
+            var cambios = AuditChangeSet.Read(evt.FhirJson).Changes;
             Assert.Equal(new[] { "Rol", "Especialidades" }, cambios.Select(c => c.Field));
             Assert.Equal(Role.Medico, cambios[0].Before);
             Assert.Equal(Role.Jefe, cambios[0].After);

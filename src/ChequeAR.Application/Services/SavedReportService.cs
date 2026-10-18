@@ -120,6 +120,9 @@ namespace ChequeAR.Application.Services
             var nuevoAlcance = Validar(nuevoNombre, patch.Scope ?? actual.Scope, nuevaEspecialidad, nuevaQuery);
             if (!string.IsNullOrEmpty(nuevaEspecialidad)) _guard.EnsureAllows(nuevaEspecialidad);
 
+            var antes = Describir(actual);
+            var queryAntes = actual.QueryJson;
+            var cuestionarioAntes = actual.QuestionnaireId;
             actual.Name = nuevoNombre;
             actual.Scope = nuevoAlcance;
             actual.SpecialtyCode = nuevaEspecialidad;
@@ -130,7 +133,17 @@ namespace ChequeAR.Application.Services
             actual.UpdatedAt = DateTime.UtcNow;
 
             await _repo.UpdateAsync(actual);
-            Auditar("update", actual, userId);
+
+            var cambios = AuditChangeSet.Between(antes, Describir(actual)).Changes;
+            var otraQuery = !MismaQuery(queryAntes, actual.QueryJson);
+            var otroCuestionario = cuestionarioAntes != actual.QuestionnaireId;
+            if (cambios.Count > 0 || otraQuery || otroCuestionario)
+                Auditar("update", actual, userId, s =>
+                {
+                    s.Changes = cambios;
+                    if (otraQuery) s.PreviousQueryJson = queryAntes;
+                    if (otroCuestionario) s.PreviousQuestionnaireId = cuestionarioAntes;
+                });
             return SavedReportResult.Ok(actual);
         }
 
@@ -187,18 +200,35 @@ namespace ChequeAR.Application.Services
         /// definición (nombre, alcance y filtros) para que el detalle sea legible aunque la
         /// consulta cambie o se borre después. Sin esto, guardar un reporte no dejaba rastro.
         /// </summary>
-        private void Auditar(string action, SavedReport r, string userId)
+        private void Auditar(string action, SavedReport r, string userId, Action<SavedReportAuditSnapshot> completar = null)
         {
             var evt = AuditEventBuilder.For(action, "SavedReport/" + r.Id, userId, category: "report");
-            evt.FhirJson = JsonConvert.SerializeObject(new SavedReportAuditSnapshot
+            var foto = new SavedReportAuditSnapshot
             {
                 Name = r.Name,
                 Scope = r.Scope,
                 SpecialtyCode = r.SpecialtyCode,
                 QuestionnaireId = r.QuestionnaireId,
                 QueryJson = r.QueryJson
-            });
+            };
+            completar?.Invoke(foto);
+            evt.FhirJson = JsonConvert.SerializeObject(foto, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
             _audit.Enqueue(evt);
+        }
+
+        private static Dictionary<string, string> Describir(SavedReport r) => new Dictionary<string, string>
+        {
+            ["Nombre"] = r.Name,
+            ["Alcance"] = string.Equals(r.Scope, "specialty", StringComparison.OrdinalIgnoreCase) ? "Compartida con la especialidad" : "Privada",
+            ["Especialidad"] = r.SpecialtyCode
+        };
+
+        /// <summary>Misma definición aunque el JSON venga con otro espaciado.</summary>
+        private static bool MismaQuery(string a, string b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return string.IsNullOrWhiteSpace(a) == string.IsNullOrWhiteSpace(b);
+            try { return Newtonsoft.Json.Linq.JToken.DeepEquals(Newtonsoft.Json.Linq.JToken.Parse(a), Newtonsoft.Json.Linq.JToken.Parse(b)); }
+            catch (JsonException) { return a == b; }
         }
 
         /// <summary>

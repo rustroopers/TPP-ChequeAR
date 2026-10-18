@@ -212,6 +212,7 @@ namespace ChequeAR.Application.Services
                     "Una variable publicada sólo admite cambios en el enunciado por defecto y la descripción. Para cambiar el resto, cree una variable nueva a partir de esta."
                 });
 
+            var antes = Describe(v, v.Options);
             v.Code = patch.Code;
             v.Name = patch.Name;
             v.DefaultText = patch.DefaultText;
@@ -237,7 +238,13 @@ namespace ChequeAR.Application.Services
 
             await _repo.UpdateWithOptionsAsync(v, options);
 
-            _audit.Enqueue(AuditEventBuilder.For("update", "ClinicalVariable/" + id, userId));
+            var cambios = AuditChangeSet.Between(antes, Describe(v, options));
+            if (!cambios.IsEmpty)
+            {
+                var evt = AuditEventBuilder.For("update", "ClinicalVariable/" + id, userId);
+                evt.FhirJson = cambios.ToJson();
+                _audit.Enqueue(evt);
+            }
             return v;
         }
 
@@ -280,6 +287,31 @@ namespace ChequeAR.Application.Services
             if (deactivate != null)
                 _audit.Enqueue(AuditEventBuilder.For("deactivate", "ClinicalVariable/" + source.Id + "$deactivate", userId));
             return v;
+        }
+
+        /// <summary>La variable como campos legibles, para auditar qué cambió en un guardado.</summary>
+        private static Dictionary<string, string> Describe(ClinicalVariable v, IEnumerable<VariableOption> options)
+        {
+            var es = CultureInfo.GetCultureInfo("es-AR");
+            return new Dictionary<string, string>
+            {
+                ["Código"] = v.Code,
+                ["Nombre"] = v.Name,
+                ["Enunciado por defecto"] = v.DefaultText,
+                ["Descripción"] = v.Description,
+                ["Tipo"] = QuestionTypeMap.Label(v.Type),
+                ["Admite repeticiones"] = v.RepeatsAllowed ? "Sí" : "No",
+                ["Unidad"] = v.Unit,
+                ["Mínimo"] = v.MinValue?.ToString("G29", es),
+                ["Máximo"] = v.MaxValue?.ToString("G29", es),
+                ["Largo máximo"] = v.MaxLength?.ToString(es),
+                ["Archivos aceptados"] = v.Accept,
+                ["Concepto SNOMED"] = string.IsNullOrWhiteSpace(v.SnomedCode) ? null
+                    : (string.IsNullOrWhiteSpace(v.SnomedDisplay) ? v.SnomedCode : v.SnomedDisplay + " (" + v.SnomedCode + ")"),
+                ["Término"] = v.Term,
+                ["Opciones"] = string.Join(", ", (options ?? new List<VariableOption>()).OrderBy(o => o.OrderIndex)
+                    .Select(o => string.IsNullOrWhiteSpace(o.SnomedCode) ? o.Display : o.Display + " (" + o.SnomedCode + ")"))
+            };
         }
 
         /// <summary>
