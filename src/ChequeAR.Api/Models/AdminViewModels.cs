@@ -11,17 +11,16 @@ namespace ChequeAR.Api.Models
         public string Action { get; set; }        // etiqueta legible en español
         public string ActionBadge { get; set; }   // clase css del badge (color)
         public string ActionIcon { get; set; }    // clase del ícono bootstrap
-        public string Resource { get; set; }       // título del cuestionario o ref limpia
+        public string Resource { get; set; }       // tipo de recurso, en español
+        public string ResourceName { get; set; }   // nombre del recurso puntual, o "—"
     }
 
     public class AuditListViewModel
     {
         public string UserFilter { get; set; }
         public string ActionFilter { get; set; }
-        public Guid? QuestionnaireFilter { get; set; }
-        /// <summary>Opciones del filtro: todos los cuestionarios, eliminados incluidos.</summary>
-        public List<ChequeAR.Application.Dtos.QuestionnaireTitle> Questionnaires { get; set; }
-            = new List<ChequeAR.Application.Dtos.QuestionnaireTitle>();
+        /// <summary>Código del tipo de recurso, ej. "ClinicalVariable".</summary>
+        public string ResourceTypeFilter { get; set; }
         public string From { get; set; }
         public string To { get; set; }
         public List<AuditEntry> Entries { get; set; } = new List<AuditEntry>();
@@ -36,13 +35,11 @@ namespace ChequeAR.Api.Models
         public string Timestamp { get; set; }
         public string Username { get; set; }
         public string FullName { get; set; }
-        public string Role { get; set; }
-        public string Specialty { get; set; }
         public string Action { get; set; }
         public string ActionBadge { get; set; }
         public string ActionIcon { get; set; }
         public string Resource { get; set; }
-        public string Ip { get; set; }
+        public string ResourceName { get; set; }
 
         // Diff de versiones (solo para publicaciones de un cuestionario).
         public bool HasVersionDiff { get; set; }

@@ -13,8 +13,7 @@ namespace ChequeAR.Infrastructure.Oracle
     /// El mock de spec 008 (infra/mock-hospital) se carga en el Oracle XE de cada dev;
     /// en Azure no hay base del hospital, asi que alla el buscador de pacientes quedaria
     /// sin datos. Este cliente cubre ese hueco: se
-    /// registra cuando Oracle:ConnectionString esta vacio (ver ServiceComposition),
-    /// igual que MockHospitalAuthClient con HospitalAuth:LoginUrl.
+    /// registra cuando Oracle:ConnectionString esta vacio (ver ServiceComposition).
     ///
     /// Respeta el mismo contrato que OracleViewClient —allowlist de vistas, columnas
     /// validadas, filtros por igualdad, busqueda por substring— para que el codigo de

@@ -146,57 +146,6 @@ namespace ChequeAR.Tests.Application
             return guardadas;
         }
 
-        // El botón "Actualizar" del editor pide la versión nueva: la pregunta toma su definición
-        // y conserva el enunciado y el linkId.
-        [Fact]
-        public async Task UpdateAsync_PreguntaQuePideOtraVersion_TomaEsaDefinicion()
-        {
-            var v1 = Tabaquismo(revision: 1, fumador: "Fumador");
-            var pregunta = TestHelpers.QuestionFrom(v1, "tabaco-1");
-            TestHelpers.ApplySnapshot(pregunta, v1);
-            var q = Persistido(pregunta);
-            var v2 = Tabaquismo(revision: 2, fumador: "Fumador actual");
-            v2.Id = v1.Id;
-            var patch = new Questionnaire();
-            var pedida = TestHelpers.QuestionFrom(v2, "tabaco-1", "¿Fuma?");
-            pedida.VariableRevision = 2;
-            patch.Questions.Add(pedida);
-            var guardadas = CapturarGuardadas();
-
-            await Sut(v2).UpdateAsync(q.Id, patch, "jefe");
-
-            var guardada = guardadas.Single();
-            Assert.Equal(2, guardada.VariableRevision);
-            Assert.Equal(v2.CurrentVersionId, guardada.VariableVersionId);
-            Assert.Equal("Fumador actual", guardada.Options.OrderBy(o => o.OrderIndex).First().Display);
-            Assert.Equal("tabaco-1", guardada.LinkId);
-            Assert.Equal("¿Fuma?", guardada.Text);
-        }
-
-        // Pedir la misma versión que ya tiene la pregunta conserva su definición.
-        [Fact]
-        public async Task UpdateAsync_PideLaMismaVersion_ConservaElSnapshot()
-        {
-            var v1 = Tabaquismo(revision: 1, fumador: "Fumador");
-            var pregunta = TestHelpers.QuestionFrom(v1, "tabaco-1");
-            TestHelpers.ApplySnapshot(pregunta, v1);
-            var q = Persistido(pregunta);
-            var v2 = Tabaquismo(revision: 2, fumador: "Fumador actual");
-            v2.Id = v1.Id;
-            var patch = new Questionnaire();
-            var pedida = TestHelpers.QuestionFrom(v2, "tabaco-1");
-            pedida.VariableRevision = 1;
-            patch.Questions.Add(pedida);
-            var guardadas = CapturarGuardadas();
-
-            await Sut(v2).UpdateAsync(q.Id, patch, "jefe");
-
-            var guardada = guardadas.Single();
-            Assert.Equal(1, guardada.VariableRevision);
-            Assert.Equal(pregunta.VariableVersionId, guardada.VariableVersionId);
-            Assert.Equal("Fumador", guardada.Options.OrderBy(o => o.OrderIndex).First().Display);
-        }
-
         private static void PublicadaCon(Questionnaire q, Question pregunta)
         {
             var publicada = new Questionnaire { Id = q.Id, Title = q.Title };
@@ -234,7 +183,7 @@ namespace ChequeAR.Tests.Application
         }
 
         [Fact]
-        public async Task UpdateAsync_PreguntaNueva_TomaLaVersionVigente()
+        public async Task UpdateAsync_PreguntaNueva_TomaLaDefinicionDeLaVariable()
         {
             var peso = TestHelpers.Variable("peso", revision: 3);
             var q = Persistido();
@@ -245,21 +194,8 @@ namespace ChequeAR.Tests.Application
             await Sut(peso).UpdateAsync(q.Id, patch, "jefe");
 
             var guardada = guardadas.Single();
-            Assert.Equal(3, guardada.VariableRevision);
-            Assert.Equal(peso.CurrentVersionId, guardada.VariableVersionId);
-        }
-
-        [Fact]
-        public async Task UpdateAsync_VersionInexistente_Falla()
-        {
-            var peso = TestHelpers.Variable("peso");
-            var q = Persistido();
-            var patch = new Questionnaire();
-            patch.Questions.Add(new Question { LinkId = "peso-1", VariableId = peso.Id, VariableRevision = 7 });
-
-            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => Sut(peso).UpdateAsync(q.Id, patch, "jefe"));
-
-            Assert.Contains(ex.Errors, e => e.Contains("versión 7"));
+            Assert.Equal(peso.Type, guardada.Type);
+            Assert.Equal(ClinicalVariableSnapshot.ToValidationJson(peso), guardada.ValidationJson);
         }
 
         [Fact]
@@ -267,29 +203,14 @@ namespace ChequeAR.Tests.Application
         {
             var nueva = TestHelpers.Variable("nueva");
             var sut = Sut(nueva);
-            nueva.CurrentVersionId = null;
+            nueva.PublishedAt = null;
             var q = Persistido();
             var patch = new Questionnaire();
             patch.Questions.Add(new Question { LinkId = "nueva-1", VariableId = nueva.Id });
 
             var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => sut.UpdateAsync(q.Id, patch, "jefe"));
 
-            Assert.Contains(ex.Errors, e => e.Contains("no tiene ninguna versión publicada"));
-        }
-
-        // Una pregunta armada antes del versionado con una definición que ya no existe no se
-        // puede congelar: no habría cómo explicarla contra el catálogo.
-        [Fact]
-        public async Task PublishAsync_PreguntaSinVersion_Falla()
-        {
-            var peso = TestHelpers.Variable("peso");
-            var pregunta = TestHelpers.QuestionFrom(peso);
-            pregunta.VariableVersionId = null;
-            var q = Persistido(pregunta);
-
-            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => Sut(peso).PublishAsync(q.Id, "jefe"));
-
-            Assert.Contains(ex.Errors, e => e.Contains("actualícela desde el editor"));
+            Assert.Contains(ex.Errors, e => e.Contains("no está publicada"));
         }
 
         // Guardar no actualiza en silencio la definición de una pregunta que ya existía: si el
@@ -317,14 +238,13 @@ namespace ChequeAR.Tests.Application
             await Sut(v2).UpdateAsync(q.Id, patch, "jefe");
 
             var guardada = guardadas.Single();
-            Assert.Equal(1, guardada.VariableRevision);
             Assert.Equal("Fumador", guardada.Options.OrderBy(o => o.OrderIndex).First().Display);
             Assert.Equal("¿Fuma?", guardada.Text);   // el enunciado sí es del cuestionario
         }
 
         // Una pregunta NUEVA toma la definición vigente de la variable.
         [Fact]
-        public async Task UpdateAsync_PreguntaNueva_TomaLaRevisionVigente()
+        public async Task UpdateAsync_PreguntaNueva_TomaLaDefinicionVigente()
         {
             var v1 = Tabaquismo(revision: 1, fumador: "Fumador");
             var existente = TestHelpers.QuestionFrom(v1, "tabaco-1");
@@ -345,7 +265,6 @@ namespace ChequeAR.Tests.Application
             await Sut(v2).UpdateAsync(q.Id, patch, "jefe");
 
             var nueva = guardadas.Single(x => x.LinkId == "tabaco-2");
-            Assert.Equal(2, nueva.VariableRevision);
             Assert.Equal("Fumador actual", nueva.Options.OrderBy(o => o.OrderIndex).First().Display);
         }
 

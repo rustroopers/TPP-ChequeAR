@@ -39,8 +39,7 @@ Fuera de `src/`: `tests/integration/` (tests contra Oracle, se corren a mano),
 
 El hospital no expone API: el login es local (`LocalCredentialAuthenticator`) y los datos de
 pacientes salen de las vistas `VW_*` (`MockHospitalFhirClient` arma los recursos FHIR desde
-ahí). `HospitalFhirClient` y `HospitalAuthClient` se registran sólo si se configuran
-`HospitalFhir:BaseUrl` y `HospitalAuth:LoginUrl`.
+ahí).
 
 ## Desarrollo local
 
@@ -128,7 +127,7 @@ entiende sin leer esta documentación, así que se agregan sólo cuando no hay c
 | `question-term` | `Questionnaire.item` | Término de autoría: lo que quiso decir quien diseñó la pregunta, aunque todavía no haya elegido un código SNOMED |
 | `questionnaire-term` | `Questionnaire` | Lo mismo, para el cuestionario entero |
 | `questionnaire-version-id` | `QuestionnaireResponse` | Versión congelada con la que se completó la ficha |
-| `question-variable-id`, `question-variable-version` | `Questionnaire.item` | Variable clínica de la que sale la pregunta |
+| `question-variable-id` | `Questionnaire.item` | Variable clínica de la que sale la pregunta |
 | `option-snomed-display` | `answerOption.valueCoding` | Término SNOMED de la opción cuando la etiqueta visible es otra |
 | `lock-holder`, `lock-expires` | `OperationOutcome` (409) | Quién tiene la sesión de edición y hasta cuándo |
 

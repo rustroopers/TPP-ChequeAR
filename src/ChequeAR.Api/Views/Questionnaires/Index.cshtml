@@ -15,7 +15,6 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">@Cq.T("q1.title")</h1>
-        <p class="cq-page-header__subtitle">Fichas que completan los clínicos, por especialidad</p>
     </div>
     @if (canWrite)
     {
@@ -23,7 +22,6 @@
             <a href="@Url.Action("Edit")" class="btn btn-primary">
                 <i class="bi bi-plus-lg me-1"></i> @Cq.T("q1.new")
             </a>
-            <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="left" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Publíquelo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
         </div>
     }
 </header>
@@ -123,11 +121,11 @@ else
                                        de Archivar más abajo). *@
                                     if (!(q.Status == "published" && !q.HasUnpublishedChanges))
                                     {
-                                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title" data-version="@q.ConcurrencyVersion"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@q.Id" data-title="@q.Title" data-version="@q.ConcurrencyVersion" data-sin-notas="@(q.Version == 0 || (q.Status == "archived" && !q.HasUnpublishedChanges) ? "true" : "false")"><i class="bi bi-send me-1"></i> Publicar</button></li>
                                     }
                                     if (q.Status != "archived")
                                     {
-                                        <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title" title="Cambia el estado del cuestionario a Archivado"><i class="bi bi-archive me-1"></i> Archivar</button></li>
+                                        <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#archiveModal" data-id="@q.Id" data-title="@q.Title"><i class="bi bi-archive me-1"></i> Archivar</button></li>
                                     }
                                 }
                             </ul>
@@ -170,9 +168,9 @@ else
                 </div>
                 <div class="modal-body">
                     <p class="cq-text-sm cq-text-muted mb-3">Una vez publicada, la versión queda inmutable. Las cargas existentes mantienen su versión.</p>
-                    <div class="mb-3">
-                        <label class="form-label">Notas del cambio</label>
-                        <textarea name="changeNote" rows="3" class="form-control" placeholder="Describa qué cambia respecto a la versión anterior"></textarea>
+                    <div class="mb-3" id="publishNoteGroup">
+                        <label class="form-label" for="publishNote">Notas del cambio</label>
+                        <textarea name="changeNote" id="publishNote" rows="3" class="form-control" placeholder="Describa qué cambia respecto a la versión anterior"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -197,10 +195,7 @@ else
                 <div class="modal-body">
                     <p>¿Quiere archivar <strong id="archiveTitle"></strong>?</p>
                     <p class="cq-text-sm cq-text-muted mb-0">
-                        Archivar <strong>cambia el estado</strong> del cuestionario a <em>Archivado</em>: no se puede usar
-                        para nuevas cargas ni editar. Sigue en el listado con su estado, y el filtro <em>Archivado</em> los muestra solos.
-                        Puede reactivarlo con <em>Publicar</em>.
-                        Las respuestas ya cargadas se conservan intactas — por eso no ofrecemos "borrar": romperíamos su trazabilidad.
+                        No se podrá usar para nuevas cargas ni editar. Las fichas ya cargadas se conservan. Puede reactivarlo con <em>Publicar</em>.
                     </p>
                 </div>
                 <div class="modal-footer">
@@ -222,6 +217,10 @@ else
         if (btn.getAttribute("data-bs-target") === "#publishModal") {
             document.getElementById("publishId").value = id;
             document.getElementById("publishVersion").value = btn.getAttribute("data-version");
+            // Sin notas cuando no hay versión nueva que describir: primera publicación, o
+            // reactivar un archivado sin cambios (vuelve a la misma versión).
+            document.getElementById("publishNoteGroup").hidden = btn.getAttribute("data-sin-notas") === "true";
+            document.getElementById("publishNote").value = "";
         } else {
             document.getElementById("archiveId").value = id;
             document.getElementById("archiveTitle").textContent = title;

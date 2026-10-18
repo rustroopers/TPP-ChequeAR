@@ -94,8 +94,23 @@ namespace ChequeAR.Domain.Entities
         /// </summary>
         public int Revision { get; set; }
 
-        /// <summary>Versión publicada vigente; null si la variable nunca se publicó.</summary>
-        public Guid? CurrentVersionId { get; set; }
+        /// <summary>
+        /// Cuándo se publicó; null si nunca. Publicada, su definición clínica queda fija: un
+        /// cambio crea otra variable que la reemplaza (<see cref="ReplacesId"/>), así que no
+        /// hacen falta versiones.
+        /// </summary>
+        public DateTime? PublishedAt { get; set; }
+
+        public bool IsPublished => PublishedAt.HasValue;
+
+        /// <summary>
+        /// Variable de la que se creó esta. Un cambio clínico no edita la variable publicada:
+        /// crea otra, con su propio código y por lo tanto su propia columna en los reportes.
+        /// </summary>
+        public Guid? ReplacesId { get; set; }
+
+        /// <summary>Al publicar esta, dar de baja la que reemplaza (ver <see cref="ReplacesId"/>).</summary>
+        public bool DeactivateReplacedOnPublish { get; set; }
 
         public string CreatedBy { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -103,8 +118,6 @@ namespace ChequeAR.Domain.Entities
         public DateTime UpdatedAt { get; set; }
 
         public virtual ICollection<VariableOption> Options { get; set; } = new List<VariableOption>();
-
-        public virtual ICollection<ClinicalVariableVersion> Versions { get; set; } = new List<ClinicalVariableVersion>();
 
         /// <summary>Tipos que admiten unidad y rango.</summary>
         public bool IsNumeric() => Type == QuestionType.Decimal || Type == QuestionType.Integer || Type == QuestionType.Scale;

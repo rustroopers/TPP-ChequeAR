@@ -22,7 +22,7 @@ namespace ChequeAR.Tests.Application
 
         public PatientTrendServiceTests()
         {
-            _sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.UnrestrictedGuard());
+            _sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.UnrestrictedGuard(), TestHelpers.VariableRepoWith());
         }
 
         // --- Scope de especialidad -----------------------------------------------------
@@ -32,7 +32,7 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "onco" });
-            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"));
+            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"), TestHelpers.VariableRepoWith());
 
             await Assert.ThrowsAsync<SpecialtyForbiddenException>(() => sut.GetSelectableParametersAsync(id));
         }
@@ -42,7 +42,7 @@ namespace ChequeAR.Tests.Application
         {
             var id = Guid.NewGuid();
             _qRepo.Setup(r => r.GetAsync(id)).ReturnsAsync(new Questionnaire { Id = id, SpecialtyCode = "onco" });
-            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"));
+            var sut = new PatientTrendService(_qRepo.Object, _trends.Object, TestHelpers.GuardFor("cardio"), TestHelpers.VariableRepoWith());
 
             await Assert.ThrowsAsync<SpecialtyForbiddenException>(() => sut.GetTrendAsync("HC-1", id, new[] { "peso" }));
 

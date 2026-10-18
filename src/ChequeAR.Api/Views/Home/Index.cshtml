@@ -23,7 +23,6 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">@Cq.T(Cq.TimeGreetingKey(), new { name = name })</h1>
-        <p class="cq-page-header__subtitle">@Cq.T("home.subtitle")</p>
     </div>
 </header>
 
@@ -33,7 +32,7 @@
 <div class="row g-3 mb-4 cq-home-grid">
 
     @* --------- Reportes (ancho doble: gráfico real del primer saved report) --------- *@
-    <div class="col-lg-6">
+    <div class="col-12 col-xl-6">
     <div class="cq-demo-card">
         <div class="cq-demo-card__header">
             <h3 class="cq-demo-card__title"><i class="bi bi-bar-chart-line"></i> Reportes</h3>
@@ -61,7 +60,7 @@
     </div>
 
     @* --------- Ficha reciente --------- *@
-    <div class="col-lg-3">
+    <div class="col-md-6 col-xl-3">
     <div class="cq-demo-card">
         <div class="cq-demo-card__header">
             <h3 class="cq-demo-card__title"><i class="bi bi-clipboard2-pulse"></i> Ficha reciente</h3>
@@ -98,7 +97,7 @@
                     <span class="cq-chip cq-chip--zone-@lastEncounter.SpecialtyColor">@lastEncounter.SpecialtyLabel</span>
                     @if (lastEncounter.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
                     else if (lastEncounter.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
-                    else if (lastEncounter.Status == "amended") { <span class="cq-badge cq-badge--archived">Enmendada</span> }
+                    else if (lastEncounter.Status == "amended") { <span class="cq-badge cq-badge--published">Corregida</span> }
                     else { <span class="cq-badge cq-badge--archived" title="Respuesta incompleta descartada">Descartada</span> }
                     <span class="cq-text-xs cq-text-muted ms-auto">@lastEncounter.UpdatedAt</span>
                 </div>
@@ -115,7 +114,7 @@
     </div>
 
     @* --------- Cuestionarios --------- *@
-    <div class="col-lg-3">
+    <div class="col-md-6 col-xl-3">
     <div class="cq-demo-card">
         <div class="cq-demo-card__header">
             <h3 class="cq-demo-card__title"><i class="bi bi-journal-text"></i> Cuestionarios</h3>
@@ -145,7 +144,6 @@
             {
                 <div class="d-flex align-items-center gap-2">
                     <a href="@Url.Action("Edit", "Questionnaires")" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
-                    <button type="button" class="cq-help" data-bs-toggle="popover" data-bs-placement="top" data-bs-title="Nuevo cuestionario" data-bs-content="Se crea como borrador. Puede editarlo cuantas veces quiera y recién publicarlo cuando esté listo para uso clínico." aria-label="Ayuda: Nuevo cuestionario"><i class="bi bi-question-lg"></i></button>
                 </div>
             }
         </div>
@@ -191,7 +189,7 @@ else
                     <td>
                         @if (enc.Status == "completed") { <span class="cq-badge cq-badge--published">Finalizada</span> }
                         else if (enc.Status == "pending") { <span class="cq-badge cq-badge--info">Pendiente</span> }
-                        else if (enc.Status == "amended") { <span class="cq-badge cq-badge--archived">Enmendada</span> }
+                        else if (enc.Status == "amended") { <span class="cq-badge cq-badge--published">Corregida</span> }
                         else { <span class="cq-badge cq-badge--archived" title="Respuesta incompleta descartada">Descartada</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@enc.UpdatedAt</td>

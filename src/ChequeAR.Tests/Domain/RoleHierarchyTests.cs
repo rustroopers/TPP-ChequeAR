@@ -58,35 +58,5 @@ namespace ChequeAR.Tests.Domain
         {
             Assert.Equal(Role.Medico, RoleHierarchy.Principal(new[] { "Observador" }));
         }
-
-        [Fact]
-        public void IsAtLeast_AdminAlcanzaCualquierNivel()
-        {
-            var roles = new[] { Role.Administrador };
-            Assert.True(RoleHierarchy.IsAtLeast(roles, Role.Administrador));
-            Assert.True(RoleHierarchy.IsAtLeast(roles, Role.Jefe));
-            Assert.True(RoleHierarchy.IsAtLeast(roles, Role.Medico));
-        }
-
-        [Fact]
-        public void IsAtLeast_MedicoNoAlcanzaJefeNiAdmin()
-        {
-            var roles = new[] { Role.Medico };
-            Assert.False(RoleHierarchy.IsAtLeast(roles, Role.Jefe));
-            Assert.False(RoleHierarchy.IsAtLeast(roles, Role.Administrador));
-            Assert.True(RoleHierarchy.IsAtLeast(roles, Role.Medico));
-        }
-
-        [Fact]
-        public void IsAtLeast_ListaVacia_Falso()
-        {
-            Assert.False(RoleHierarchy.IsAtLeast(System.Array.Empty<string>(), Role.Medico));
-        }
-
-        [Fact]
-        public void IsAtLeast_RolRequeridoDesconocido_Falso()
-        {
-            Assert.False(RoleHierarchy.IsAtLeast(new[] { Role.Administrador }, "NoExiste"));
-        }
     }
 }

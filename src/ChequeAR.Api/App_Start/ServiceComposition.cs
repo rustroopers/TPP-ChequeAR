@@ -7,7 +7,6 @@ using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Reports;
 using ChequeAR.Application.Security;
 using ChequeAR.Application.Services;
-using ChequeAR.Infrastructure.Auth;
 using ChequeAR.Infrastructure.EF;
 using ChequeAR.Infrastructure.Fhir;
 using ChequeAR.Infrastructure.Oracle;
@@ -70,8 +69,6 @@ namespace ChequeAR.Api.App_Start
             if (!enforceSpecialtyScope)
                 Log.Warning("Authz:EnforceSpecialtyScope=false: el filtro por especialidad esta DESACTIVADO.");
 
-            var hospitalAuthUrl = ConfigurationManager.AppSettings["HospitalAuth:LoginUrl"] ?? "";
-            var hospitalFhirUrl = ConfigurationManager.AppSettings["HospitalFhir:BaseUrl"] ?? "";
             // Servidor terminológico SNOMED CT (Snowstorm). Vacío en config => el endpoint
             // de autocomplete responde 503 sin romper el resto de la app. ECL opcional acota
             // el dominio de sugerencias; displayLanguage por defecto 'es'.
@@ -100,12 +97,7 @@ namespace ChequeAR.Api.App_Start
             }, TimeSpan.FromSeconds(60), (ex, message) => Log.Warning(ex, "{SessionMessage}", message)));
             container.RegisterInstance<IFhirValidator>(CreateFhirValidator());
 
-            // Un HttpClient por integración, con su Timeout fijado una sola vez. Los clients
-            // NO mutan estas instancias (evita InvalidOperationException).
-            var fhirHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            var authHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-            // El terminológico puede ser un server externo (más lento que el hospital local):
-            // le damos bastante más aire. En arranque en frío, la PRIMERA expansión de los ECL
+            // El terminológico es un server externo: le damos bastante aire. En arranque en frío, la PRIMERA expansión de los ECL
             // grandes de la config (<<404684003 "Clinical finding" entero, etc.) se pasaba de 8s
             // hasta que Elasticsearch calienta sus cachés, y el autocomplete del editor moría en
             // 502 justo al empezar a usarlo. Ya caliente, la misma consulta tarda ~700 ms.
@@ -173,33 +165,12 @@ namespace ChequeAR.Api.App_Start
                 container.Register<IOracleViewClient>(() => new OracleViewClient(oracleConn, allowedViews));
             }
 
-            // Sin servidor FHIR del hospital, se proyecta el mismo dataset que las vistas
-            // VW_* (ver MockHospitalFhirClient): una sola fuente, dos protocolos.
-            if (string.IsNullOrWhiteSpace(hospitalFhirUrl))
-            {
-                Log.Warning("HospitalFhir:BaseUrl vacio: se usa MockHospitalFhirClient sobre "
-                            + "el dataset de las vistas (datos de demostracion).");
-                container.Register<IHospitalFhirClient>(() => new MockHospitalFhirClient(container.GetInstance<IOracleViewClient>()));
-            }
-            else
-            {
-                container.Register<IHospitalFhirClient>(() => new HospitalFhirClient(fhirHttp, hospitalFhirUrl));
-            }
+            // El hospital no expone FHIR: los pacientes se proyectan a FHIR desde el mismo
+            // dataset que las vistas VW_* (ver MockHospitalFhirClient).
+            container.Register<IHospitalFhirClient>(() => new MockHospitalFhirClient(container.GetInstance<IOracleViewClient>()));
 
-            // Sin URL configurada no hay login del hospital que llamar: se autentica local,
-            // contra AppUser.PasswordHash (ver LocalCredentialAuthenticator/PasswordHasher).
-            // Cuando exista el servicio real del hospital, basta configurar la URL para que
-            // ese modo tome precedencia -- el hash local queda sin uso, no hace falta borrarlo.
-            if (string.IsNullOrWhiteSpace(hospitalAuthUrl))
-            {
-                Log.Warning("HospitalAuth:LoginUrl vacio: se usa autenticacion local contra "
-                            + "AppUser.PasswordHash (LocalCredentialAuthenticator).");
-                container.Register<ICredentialAuthenticator>(() => new LocalCredentialAuthenticator(container.GetInstance<IUserRepository>()));
-            }
-            else
-            {
-                container.Register<ICredentialAuthenticator>(() => new HospitalAuthClient(authHttp, hospitalAuthUrl));
-            }
+            // El hospital tampoco delega el login: se autentica contra AppUser.PasswordHash.
+            container.Register<ICredentialAuthenticator>(() => new LocalCredentialAuthenticator(container.GetInstance<IUserRepository>()));
 
             container.Register<ITerminologyClient>(() => new TerminologyClient(termHttp, terminologyUrl, terminologyEcl, terminologyLang, terminologyApiKey));
             container.Register<IReportQueryRunner>(() => new OracleReportQueryRunner(sqlConn));
@@ -218,8 +189,8 @@ namespace ChequeAR.Api.App_Start
             // ===== Servicios de aplicación =====
             container.Register<RefreshTokenService>(() => new RefreshTokenService(container.GetInstance<IRefreshTokenRepository>(), refreshTtlHours, SystemClock.Instance));
             container.Register<IntegrationHealthService>(() => new IntegrationHealthService(
-                container.GetInstance<IHospitalFhirClient>(), container.GetInstance<IOracleViewClient>(), hospitalAuthUrl,
-                new ChequeAR.Infrastructure.Fhir.HttpProbe(), container.GetInstance<IFhirValidator>()));
+                container.GetInstance<IHospitalFhirClient>(), container.GetInstance<IOracleViewClient>(),
+                container.GetInstance<IFhirValidator>()));
             container.RegisterInstance<IClock>(SystemClock.Instance);
             container.Register<QuestionnaireService>();
             container.Register<QuestionnaireResponseService>();

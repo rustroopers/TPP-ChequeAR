@@ -28,21 +28,6 @@ namespace ChequeAR.Application.Services
         public int Total { get; set; }
     }
 
-    /// <summary>Estado de publicación de una variable.</summary>
-    public class VariablePublication
-    {
-        /// <summary>Número de la versión vigente; 0 si nunca se publicó.</summary>
-        public int CurrentVersion { get; set; }
-        public bool HasUnpublishedChanges { get; set; }
-    }
-
-    /// <summary>La versión vigente de una variable, con su definición.</summary>
-    public class PublishedVariable
-    {
-        public int VersionNumber { get; set; }
-        public VariableDefinition Definition { get; set; }
-    }
-
     /// <summary>Dónde se usa una variable.</summary>
     public class VariableUsage
     {
@@ -96,7 +81,7 @@ namespace ChequeAR.Application.Services
         }
 
         /// <param name="publishedOnly">
-        /// Sólo las que tienen versión publicada: el buscador del editor de cuestionarios no
+        /// Sólo las publicadas: el buscador del editor de cuestionarios no
         /// puede ofrecer una variable que nunca se publicó.
         /// </param>
         public async Task<ClinicalVariablePage> ListAsync(string search, QuestionType? type, bool? active, int skip, int take, bool publishedOnly = false)
@@ -107,46 +92,16 @@ namespace ChequeAR.Application.Services
             return new ClinicalVariablePage { Items = items, Total = total };
         }
 
-        /// <summary>Versión vigente y cambios sin publicar de cada variable, sin leer las definiciones.</summary>
-        public async Task<IReadOnlyDictionary<Guid, VariablePublication>> GetPublicationAsync(IEnumerable<ClinicalVariable> variables)
+        /// <summary>
+        /// La variable publicada que reemplaza a cada una de <paramref name="ids"/>, si hay. Si
+        /// una se reemplazó más de una vez, la más reciente.
+        /// </summary>
+        public async Task<IReadOnlyDictionary<Guid, ClinicalVariable>> GetSuccessorsAsync(IEnumerable<Guid> ids)
         {
             _access.EnsureCan(Permissions.QuestionnaireRead);
-            var list = (variables ?? Enumerable.Empty<ClinicalVariable>()).Where(v => v != null).ToList();
-            var headers = await _repo.GetCurrentVersionHeadersAsync(list.Select(v => v.Id));
-            return list.GroupBy(v => v.Id).ToDictionary(g => g.Key, g =>
-            {
-                var v = g.First();
-                return headers.TryGetValue(v.Id, out var current)
-                    ? new VariablePublication { CurrentVersion = current.VersionNumber, HasUnpublishedChanges = current.SourceRevision != v.Revision }
-                    : new VariablePublication { CurrentVersion = 0, HasUnpublishedChanges = true };
-            });
-        }
-
-        /// <summary>Definición y número de la versión vigente de cada variable publicada, en una consulta.</summary>
-        public async Task<IReadOnlyDictionary<Guid, PublishedVariable>> GetCurrentDefinitionsAsync(IEnumerable<ClinicalVariable> variables)
-        {
-            _access.EnsureCan(Permissions.QuestionnaireRead);
-            var list = (variables ?? Enumerable.Empty<ClinicalVariable>()).Where(v => v?.CurrentVersionId != null).ToList();
-            var versions = (await _repo.GetVersionsAsync(list.Select(v => v.Id))).ToDictionary(x => x.Id);
-            var result = new Dictionary<Guid, PublishedVariable>();
-            foreach (var v in list)
-                if (versions.TryGetValue(v.CurrentVersionId.Value, out var version))
-                    result[v.Id] = new PublishedVariable { VersionNumber = version.VersionNumber, Definition = VariableDefinition.Parse(version.DefinitionJson) };
-            return result;
-        }
-
-        public Task<IReadOnlyList<ClinicalVariableVersion>> ListVersionsAsync(Guid variableId)
-        {
-            _access.EnsureCan(Permissions.QuestionnaireRead);
-            return _repo.ListVersionsAsync(variableId);
-        }
-
-        /// <summary>La definición de una versión publicada; null si no existe.</summary>
-        public async Task<VariableDefinition> GetVersionAsync(Guid variableId, int versionNumber)
-        {
-            _access.EnsureCan(Permissions.QuestionnaireRead);
-            var version = await _repo.GetVersionAsync(variableId, versionNumber);
-            return version == null ? null : VariableDefinition.Parse(version.DefinitionJson);
+            return ((await _repo.GetSuccessorsAsync(ids)) ?? new List<ClinicalVariable>())
+                .GroupBy(v => v.ReplacesId.Value)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(v => v.CreatedAt).First());
         }
 
         public async Task<VariableUsage> GetUsageAsync(Guid id)
@@ -167,6 +122,16 @@ namespace ChequeAR.Application.Services
             if (v == null) throw new ArgumentNullException(nameof(v));
 
             Normalize(v);
+            if (v.ReplacesId.HasValue)
+            {
+                var source = await _repo.GetAsync(v.ReplacesId.Value);
+                if (source?.IsPublished != true)
+                    throw new ValidationFailedException(new List<string> { "Sólo se puede crear una variable a partir de una publicada." });
+            }
+            else
+            {
+                v.DeactivateReplacedOnPublish = false;
+            }
             await ValidateAsync(v, existingId: null);
 
             var now = DateTime.UtcNow;
@@ -180,13 +145,51 @@ namespace ChequeAR.Application.Services
             AssignOptionIds(v);
 
             await _repo.AddAsync(v);
-            _audit.Enqueue(AuditEventBuilder.For("create", "ClinicalVariable/" + v.Id, userId));
+            _audit.Enqueue(AuditEventBuilder.For("create",
+                "ClinicalVariable/" + v.Id + (v.ReplacesId.HasValue ? "$derive-from-" + v.ReplacesId.Value : ""), userId));
             return v;
         }
 
         /// <summary>
-        /// Guarda el borrador: nadie lo ve hasta que se publique. Ninguna pregunta cambia; el
-        /// editor de cuestionarios avisa cuando hay una versión publicada más nueva.
+        /// Arma, sin guardarla, una variable nueva a partir de una publicada: misma definición,
+        /// código libre y sin nombre, que tiene que ser distinto. Es como se cambia lo clínico de
+        /// una variable publicada; ella no se edita.
+        /// </summary>
+        public async Task<ClinicalVariable> DeriveAsync(Guid sourceId)
+        {
+            _access.EnsureCan(Permissions.VariableManage);
+            var source = await _repo.GetAsync(sourceId);
+            if (source == null) return null;
+            if (!source.IsPublished)
+                throw new ValidationFailedException(new List<string> { "La variable no está publicada: se edita directamente." });
+
+            var copy = VariableDefinition.From(source).ToVariable();
+            copy.Id = Guid.Empty;
+            copy.Name = null;
+            copy.Code = await FreeCodeAsync(source.Code);
+            copy.SortOrder = source.SortOrder;
+            copy.ReplacesId = source.Id;
+            copy.DeactivateReplacedOnPublish = true;
+            foreach (var o in copy.Options) o.VariableId = Guid.Empty;
+            return copy;
+        }
+
+        /// <summary>Primer "{código}-N" libre, desde N = 2.</summary>
+        private async Task<string> FreeCodeAsync(string code)
+        {
+            var raiz = System.Text.RegularExpressions.Regex.Replace(code, "-\\d+$", "");
+            for (var n = 2; ; n++)
+            {
+                var candidato = raiz + "-" + n;
+                if (candidato.Length > 64) candidato = raiz.Substring(0, 64 - (n.ToString(CultureInfo.InvariantCulture).Length + 1)) + "-" + n;
+                if (await _repo.GetByCodeAsync(candidato) == null) return candidato;
+            }
+        }
+
+        /// <summary>
+        /// Guarda el borrador: nadie lo ve hasta que se publique. En una variable publicada sólo
+        /// se corrigen el enunciado por defecto, la descripción y el orden; lo clínico pide
+        /// crear otra variable (<see cref="DeriveAsync"/>).
         /// </summary>
         /// <param name="expectedRevision">
         /// La revisión que vio quien edita. Si otro guardó en el medio, se rechaza en vez de pisarlo.
@@ -201,10 +204,17 @@ namespace ChequeAR.Application.Services
             EnsureRevision(v, expectedRevision);
 
             patch.Id = id;
+            patch.ReplacesId = v.ReplacesId;
+            if (v.IsPublished) patch.DeactivateReplacedOnPublish = v.DeactivateReplacedOnPublish;
             Normalize(patch);
-            await ValidateAsync(patch, existingId: id);
-            EnsureIdentityKept(v, patch);
+            // Los conflictos de nombre y concepto se miran al publicar; acá sólo en un borrador.
+            await ValidateAsync(patch, existingId: id, checkConflicts: !v.IsPublished);
 
+            if (v.IsPublished && !VariableDefinition.From(patch).ClinicallySameAs(VariableDefinition.From(v)))
+                throw new ValidationFailedException(new List<string>
+                {
+                    "Una variable publicada sólo admite cambios en el enunciado por defecto y la descripción. Para cambiar el resto, cree una variable nueva a partir de esta."
+                });
 
             v.Code = patch.Code;
             v.Name = patch.Name;
@@ -222,6 +232,7 @@ namespace ChequeAR.Application.Services
             v.SnomedDisplay = patch.SnomedDisplay;
             v.Term = patch.Term;
             v.SortOrder = patch.SortOrder;
+            v.DeactivateReplacedOnPublish = patch.DeactivateReplacedOnPublish;
             v.Revision++;
             v.UpdatedBy = userId;
             v.UpdatedAt = DateTime.UtcNow;
@@ -231,85 +242,95 @@ namespace ChequeAR.Application.Services
 
             await _repo.UpdateWithOptionsAsync(v, options);
 
-            // Si lo guardado volvió a ser igual a la vigente, no queda nada para publicar.
-            var current = v.CurrentVersionId.HasValue ? await _repo.GetVersionAsync(v.CurrentVersionId.Value) : null;
-            patch.Options = options;
-            if (current != null && VariableDefinition.From(patch).SameAs(VariableDefinition.Parse(current.DefinitionJson)))
-            {
-                current.SourceRevision = v.Revision;
-                await _repo.UpdateVersionSourceAsync(current);
-            }
-
             _audit.Enqueue(AuditEventBuilder.For("update", "ClinicalVariable/" + id, userId));
             return v;
         }
 
         /// <summary>
-        /// Publica el borrador como versión nueva. Si no cambió nada respecto de la vigente, no
-        /// crea otra: devuelve la vigente.
+        /// Publica la variable por primera vez. Una publicada no se vuelve a publicar: sus textos
+        /// se corrigen en el lugar y lo clínico se cambia creando otra. Si reemplaza a otra, se
+        /// valida que se distinga y, si se pidió, la anterior se da de baja en la misma operación.
         /// </summary>
-        public async Task<ClinicalVariableVersion> PublishAsync(Guid id, string userId, string changeNote = null, int? expectedRevision = null)
+        public async Task<ClinicalVariable> PublishAsync(Guid id, string userId, int? expectedRevision = null)
         {
             _access.EnsureCan(Permissions.VariableManage);
             var v = await _repo.GetAsync(id);
             if (v == null) return null;
             EnsureRevision(v, expectedRevision);
+            if (v.IsPublished) return v;
             await ValidateAsync(v, existingId: id);
-            if (changeNote != null && changeNote.Trim().Length > 2000)
-                throw new ValidationFailedException(new List<string> { "Las notas del cambio no pueden superar los 2000 caracteres." });
 
-            var definition = VariableDefinition.From(v);
-            var current = v.CurrentVersionId.HasValue ? await _repo.GetVersionAsync(v.CurrentVersionId.Value) : null;
-            if (current != null && definition.SameAs(VariableDefinition.Parse(current.DefinitionJson)))
+            ClinicalVariable source = null;
+            if (v.ReplacesId.HasValue)
             {
-                if (current.SourceRevision != v.Revision)
-                {
-                    current.SourceRevision = v.Revision;
-                    await _repo.UpdateVersionSourceAsync(current);
-                }
-                return current;
+                source = await _repo.GetAsync(v.ReplacesId.Value);
+                EnsureDistinctFromSource(v, source);
             }
 
-            var versions = await _repo.ListVersionsAsync(id);
+            var now = DateTime.UtcNow;
             // Mueve el token de concurrencia: de dos publicaciones simultáneas, la segunda choca.
             v.Revision++;
-            var version = new ClinicalVariableVersion
-            {
-                Id = Guid.NewGuid(),
-                VariableId = id,
-                VersionNumber = versions.Count == 0 ? 1 : versions.Max(x => x.VersionNumber) + 1,
-                SourceRevision = v.Revision,
-                DefinitionJson = definition.ToJson(),
-                PublishedBy = userId,
-                PublishedAt = DateTime.UtcNow,
-                ChangeNote = string.IsNullOrWhiteSpace(changeNote) ? null : changeNote.Trim()
-            };
-            v.CurrentVersionId = version.Id;
-            await _repo.AddVersionAsync(v, version);
+            v.PublishedAt = now;
+            v.UpdatedBy = userId;
+            v.UpdatedAt = now;
+
+            var deactivate = source != null && source.IsActive && v.DeactivateReplacedOnPublish
+                ? new ClinicalVariable { Id = source.Id, UpdatedBy = userId, UpdatedAt = now }
+                : null;
+            await _repo.PublishAsync(v, deactivate);
 
             _audit.Enqueue(AuditEventBuilder.For("update", "ClinicalVariable/" + id + "$publish", userId));
-            return version;
+            if (deactivate != null)
+                _audit.Enqueue(AuditEventBuilder.For("deactivate", "ClinicalVariable/" + source.Id + "$deactivate", userId));
+            return v;
         }
 
-        /// <summary>Sólo el estado: no es un cambio de definición, así que no crea versión ni mueve la revisión.</summary>
+        /// <summary>
+        /// La que reemplaza tiene que poder distinguirse de la anterior en catálogo, reportes y
+        /// auditoría: otro nombre y alguna diferencia clínica. Sin diferencia clínica no hay
+        /// motivo para una variable nueva.
+        /// </summary>
+        private static void EnsureDistinctFromSource(ClinicalVariable v, ClinicalVariable source)
+        {
+            if (source?.IsPublished != true)
+                throw new ValidationFailedException(new List<string> { "La variable que reemplaza ya no existe o no está publicada." });
+
+            var errors = new List<string>();
+            if (NormalizeName(v.Name) == NormalizeName(source.Name))
+                errors.Add("El nombre tiene que ser distinto del de '" + source.Name + "'.");
+            if (VariableDefinition.From(v).ClinicallySameAs(VariableDefinition.From(source), ignoreIdentity: true))
+                errors.Add("No hay cambios respecto de '" + source.Name + "': cambie el tipo, la unidad, el rango, las opciones o el concepto SNOMED.");
+            if (errors.Count > 0) throw new ValidationFailedException(errors);
+        }
+
+        /// <summary>Sólo el estado: no es un cambio de definición, así que no mueve la revisión.</summary>
         public async Task<bool> SetActiveAsync(Guid id, bool active, string userId)
         {
             _access.EnsureCan(Permissions.VariableManage);
             var v = await _repo.GetAsync(id);
             if (v == null) return false;
+            if (active && !v.IsActive && v.IsPublished)
+            {
+                var errors = await PublishedConflictsAsync(v, ignoreId: null);
+                if (errors.Count > 0)
+                {
+                    errors.Add("Para reactivarla, primero dé de baja esa variable.");
+                    throw new ValidationFailedException(errors);
+                }
+            }
 
             v.IsActive = active;
             v.UpdatedBy = userId;
             v.UpdatedAt = DateTime.UtcNow;
             await _repo.UpdateHeaderAsync(v);
 
-            _audit.Enqueue(AuditEventBuilder.For(active ? "activate" : "deactivate", "ClinicalVariable/" + id, userId));
+            _audit.Enqueue(AuditEventBuilder.For(active ? "activate" : "deactivate", "ClinicalVariable/" + id + (active ? "$activate" : "$deactivate"), userId));
             return true;
         }
 
         /// <summary>
         /// Se borra sólo si nunca se publicó y ninguna pregunta la usa; si no, se desactiva. Una
-        /// versión publicada puede estar en un cuestionario publicado, que tiene que seguir
+        /// variable publicada puede estar en un cuestionario publicado, que tiene que seguir
         /// nombrando una variable que el catálogo pueda explicar.
         /// </summary>
         public async Task<VariableDeleteOutcome> DeleteAsync(Guid id, string userId)
@@ -317,7 +338,7 @@ namespace ChequeAR.Application.Services
             _access.EnsureCan(Permissions.VariableManage);
             var v = await _repo.GetAsync(id);
             var enUso = await _repo.CountQuestionsUsingAsync(id);
-            if (v?.CurrentVersionId != null || enUso > 0)
+            if (v?.IsPublished == true || enUso > 0)
             {
                 await SetActiveAsync(id, false, userId);
                 return VariableDeleteOutcome.DeactivatedBecauseInUse;
@@ -338,20 +359,38 @@ namespace ChequeAR.Application.Services
         }
 
         /// <summary>
-        /// Código, tipo y repetición definen qué dato es: reportes, evolución y re-anclaje unen
-        /// por linkId, y cambiarlos mezclaría datos distintos bajo la misma columna.
+        /// Concepto SNOMED y nombre ya usados por otra variable activa y publicada. Son lo que
+        /// distingue a una variable en el catálogo y en los reportes. <paramref name="ignoreId"/>
+        /// es la que se va a dar de baja al publicar esta.
         /// </summary>
-        private static void EnsureIdentityKept(ClinicalVariable current, ClinicalVariable patch)
+        private async Task<List<string>> PublishedConflictsAsync(ClinicalVariable v, Guid? ignoreId)
         {
-            if (!current.CurrentVersionId.HasValue) return;
             var errors = new List<string>();
-            if (!string.Equals(current.Code, patch.Code, StringComparison.Ordinal))
-                errors.Add("El código no se puede cambiar en una variable publicada.");
-            if (current.Type != patch.Type)
-                errors.Add("El tipo de respuesta no se puede cambiar en una variable publicada. Para otro tipo, creá otra variable.");
-            if (current.RepeatsAllowed != patch.RepeatsAllowed)
-                errors.Add("Si admite varias respuestas no se puede cambiar en una variable publicada.");
-            if (errors.Count > 0) throw new ValidationFailedException(errors);
+            if (v.SnomedCode != null)
+            {
+                var otra = ((await _repo.GetPublishedActiveBySnomedCodeAsync(v.SnomedCode)) ?? new List<ClinicalVariable>())
+                    .FirstOrDefault(x => x.Id != v.Id && x.Id != ignoreId);
+                if (otra != null)
+                    errors.Add("La variable '" + otra.Name + "' ya usa el concepto " + v.SnomedCode + ".");
+            }
+            var nombre = NormalizeName(v.Name);
+            if (nombre.Length > 0)
+            {
+                var otra = ((await _repo.GetPublishedActiveNamesAsync()) ?? new List<ClinicalVariable>())
+                    .FirstOrDefault(x => x.Id != v.Id && x.Id != ignoreId && NormalizeName(x.Name) == nombre);
+                if (otra != null)
+                    errors.Add("Ya hay una variable activa con el nombre '" + otra.Name + "'.");
+            }
+            return errors;
+        }
+
+        /// <summary>Sin mayúsculas, acentos ni espacios de más: "Peso " y "peso" son el mismo nombre.</summary>
+        private static string NormalizeName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+            var sinAcentos = new string(name.Trim().Normalize(System.Text.NormalizationForm.FormD)
+                .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray());
+            return Regex.Replace(sinAcentos, "\\s+", " ").ToLowerInvariant();
         }
 
         private static void Normalize(ClinicalVariable v)
@@ -396,7 +435,7 @@ namespace ChequeAR.Application.Services
         /// Junta TODAS las reglas incumplidas en una sola excepción. Devolver la primera haría
         /// que el admin corrija y reenvíe una vez por error; la interfaz emite un issue por regla.
         /// </summary>
-        private async Task ValidateAsync(ClinicalVariable v, Guid? existingId)
+        private async Task ValidateAsync(ClinicalVariable v, Guid? existingId, bool checkConflicts = true)
         {
             var errors = new List<string>();
 
@@ -438,12 +477,9 @@ namespace ChequeAR.Application.Services
                 errors.Add("El largo máximo no puede superar los " + ResponseValidator.MaxTextLength + " caracteres.");
 
 
-            if (v.SnomedCode != null)
-            {
-                var otro = await _repo.GetBySnomedCodeAsync(v.SnomedCode);
-                if (otro != null && otro.Id != existingId)
-                    errors.Add("La variable '" + otro.Name + "' ya usa el concepto " + v.SnomedCode + ".");
-            }
+            v.Id = existingId ?? v.Id;
+            if (checkConflicts)
+                errors.AddRange(await PublishedConflictsAsync(v, v.DeactivateReplacedOnPublish ? v.ReplacesId : null));
 
             if (errors.Count > 0) throw new ValidationFailedException(errors);
         }

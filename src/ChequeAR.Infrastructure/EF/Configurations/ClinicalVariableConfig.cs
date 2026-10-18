@@ -25,13 +25,11 @@ namespace ChequeAR.Infrastructure.EF.Configurations
                 .HasColumnAnnotation(IndexAnnotation.AnnotationName,
                     new IndexAnnotation(new IndexAttribute("UX_ClinicalVariable_Code") { IsUnique = true }));
 
-            // SnomedCode: un concepto SNOMED no debería tener dos variables compitiendo. Es
-            // nullable, y en Oracle un índice único admite múltiples NULL, así que "a lo sumo
-            // una variable por concepto, y las no codificadas conviven" sale sin índice filtrado.
-            Property(x => x.SnomedCode)
-                .HasMaxLength(64)
-                .HasColumnAnnotation(IndexAnnotation.AnnotationName,
-                    new IndexAnnotation(new IndexAttribute("UX_ClinicalVariable_Snomed") { IsUnique = true }));
+            // SnomedCode: único sólo entre las variables activas y publicadas. Una variable que
+            // reemplaza a otra puede llevar el mismo concepto si la anterior se da de baja. El
+            // índice es funcional y se crea con SQL en la migración AddVariableReplacement:
+            // EF6 no sabe declararlo.
+            Property(x => x.SnomedCode).HasMaxLength(64);
 
             Property(x => x.Name).IsRequired().HasMaxLength(200);
             Property(x => x.Unit).HasMaxLength(32);
@@ -46,29 +44,6 @@ namespace ChequeAR.Infrastructure.EF.Configurations
             Property(x => x.MaxValue).HasPrecision(18, 4);
 
             Property(x => x.Revision).IsConcurrencyToken();
-        }
-    }
-
-    public class ClinicalVariableVersionConfig : EntityTypeConfiguration<ClinicalVariableVersion>
-    {
-        // Corto: Oracle anterior a 12.2 no admite nombres de más de 30 caracteres.
-        private const string UniqueVersionIndex = "UX_CVV_Variable_Number";
-
-        public ClinicalVariableVersionConfig()
-        {
-            ToTable("ClinicalVariableVersion");
-            HasKey(x => x.Id);
-
-            // Igual que QuestionnaireVersion: la base cierra la carrera de dos publicaciones simultáneas.
-            Property(x => x.VariableId)
-                .HasColumnAnnotation(IndexAnnotation.AnnotationName,
-                    new IndexAnnotation(new IndexAttribute(UniqueVersionIndex, 1) { IsUnique = true }));
-            Property(x => x.VersionNumber)
-                .HasColumnAnnotation(IndexAnnotation.AnnotationName,
-                    new IndexAnnotation(new IndexAttribute(UniqueVersionIndex, 2) { IsUnique = true }));
-
-            Property(x => x.DefinitionJson).IsRequired().HasColumnType("CLOB").IsMaxLength();
-            Property(x => x.PublishedBy).HasMaxLength(128);
         }
     }
 }

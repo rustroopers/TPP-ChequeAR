@@ -3,7 +3,6 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewBag.Title = "Evento de auditoría";
-    var rolEsp = string.Join(" · ", new[] { Model.Role, Model.Specialty }.Where(x => !string.IsNullOrWhiteSpace(x) && x != "-"));
 }
 
 <header class="cq-page-header">
@@ -18,13 +17,9 @@
     <dl class="row mb-0">
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Cuándo</dt>      <dd class="col-sm-9">@Model.Timestamp</dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Usuario</dt>     <dd class="col-sm-9">@Model.Username@(string.IsNullOrWhiteSpace(Model.FullName) || Model.FullName == "-" ? "" : " · " + Model.FullName)</dd>
-        <dt class="col-sm-3 cq-text-sm cq-text-muted">Rol / especialidad</dt><dd class="col-sm-9">@(rolEsp.Length > 0 ? rolEsp : "—")</dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Acción</dt>      <dd class="col-sm-9"><span class="cq-badge @Model.ActionBadge"><i class="bi @Model.ActionIcon me-1"></i>@Model.Action</span></dd>
         <dt class="col-sm-3 cq-text-sm cq-text-muted">Recurso</dt>      <dd class="col-sm-9">@Model.Resource</dd>
-        @if (!string.IsNullOrEmpty(Model.Ip))
-        {
-            <dt class="col-sm-3 cq-text-sm cq-text-muted">IP</dt>       <dd class="col-sm-9">@Model.Ip</dd>
-        }
+        <dt class="col-sm-3 cq-text-sm cq-text-muted">Nombre</dt>       <dd class="col-sm-9">@Model.ResourceName</dd>
     </dl>
 </div>
 
@@ -86,7 +81,6 @@
         else
         {
             <h2 class="cq-section-title">Versión inicial (v@(Model.ToVersion))</h2>
-            <p class="cq-text-sm cq-text-muted">Primera versión publicada del cuestionario.</p>
             <pre class="cq-diff">@foreach (var l in Model.AfterLines) {<text><span class="cq-diff__add">@l.Text</span>
 </text>}</pre>
         }
@@ -97,7 +91,6 @@
 {
     <div class="cq-card mt-3" style="max-width:760px;">
         <h2 class="cq-section-title">Cuestionario completo</h2>
-        <p class="cq-text-sm cq-text-muted">Respuestas de la ficha tal como quedó al finalizarla.</p>
         @foreach (var grp in Model.ResponseSnapshot)
         {
             if (!string.IsNullOrWhiteSpace(grp.Title))
@@ -123,7 +116,6 @@
 {
     <div class="cq-card mt-3" style="max-width:760px;">
         <h2 class="cq-section-title">Completado en esta sesión</h2>
-        <p class="cq-text-sm cq-text-muted">Preguntas que cambiaron de valor en este guardado.</p>
         <table class="table cq-table mb-0">
             <thead>
                 <tr>

@@ -22,7 +22,7 @@ El proyecto usa [Spec Kit](https://github.com/github/spec-kit). Cada módulo tie
 `specs/` con `spec.md`, `plan.md` y `tasks.md`.
 
 <!-- SPECKIT START -->
-**Feature activa**: ninguna. La última es [`specs/014-versionado-variables/plan.md`](specs/014-versionado-variables/plan.md); el estado de todas está en [`specs/README.md`](specs/README.md).
+**Feature activa**: ninguna. La última es [`specs/015-variables-reemplazo/plan.md`](specs/015-variables-reemplazo/plan.md); el estado de todas está en [`specs/README.md`](specs/README.md).
 <!-- SPECKIT END -->
 
 ## Levantar la app

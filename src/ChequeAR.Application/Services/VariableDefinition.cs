@@ -10,9 +10,9 @@ using Newtonsoft.Json.Linq;
 namespace ChequeAR.Application.Services
 {
     /// <summary>
-    /// Lo que una versión publicada congela de una variable. Es la única forma de esa
-    /// definición: la serializan la publicación y el backfill, y la aplica el snapshot de la
-    /// pregunta.
+    /// La definición de una variable, para compararla: lo clínico de una publicada no cambia,
+    /// y la que la reemplaza tiene que distinguirse. También lee el JSON de las versiones que
+    /// existían antes del reemplazo (VariableVersionRemoval).
     /// </summary>
     public class VariableDefinition
     {
@@ -115,21 +115,28 @@ namespace ChequeAR.Application.Services
         }
 
         /// <summary>
-        /// La pregunta tiene la misma definición que esta versión. Sirve para saber si una
-        /// pregunta armada antes del versionado corresponde a la definición actual.
+        /// Misma definición clínica: ignora el enunciado por defecto y la descripción, que se
+        /// corrigen en el lugar. Con <paramref name="ignoreIdentity"/> también ignora id, código y
+        /// nombre: es la comparación entre una variable y la que la reemplaza.
         /// </summary>
-        public bool Matches(Question q)
+        public bool ClinicallySameAs(VariableDefinition other, bool ignoreIdentity = false)
         {
-            if (q == null) return false;
-            var v = ToVariable();
-            if (q.Type != Type || q.RepeatsAllowed != RepeatsAllowed) return false;
-            if (!SameJson(q.ValidationJson, ClinicalVariableSnapshot.ToValidationJson(v))) return false;
-            if (!SameJson(q.CodingJson, ClinicalVariableSnapshot.ToCodingJson(v))) return false;
+            if (other == null) return false;
+            return ClinicalPart(this, ignoreIdentity).SameAs(ClinicalPart(other, ignoreIdentity));
+        }
 
-            var mine = Options.Select(o => new { o.Value, o.Display, o.Code, o.SnomedCode }).ToList();
-            var theirs = (q.Options ?? new List<AnswerOption>()).OrderBy(o => o.OrderIndex)
-                .Select(o => new { o.Value, o.Display, o.Code, o.SnomedCode }).ToList();
-            return mine.SequenceEqual(theirs);
+        private static VariableDefinition ClinicalPart(VariableDefinition d, bool ignoreIdentity)
+        {
+            var copy = Parse(d.ToJson());
+            copy.DefaultText = null;
+            copy.Description = null;
+            if (ignoreIdentity)
+            {
+                copy.VariableId = Guid.Empty;
+                copy.Code = null;
+                copy.Name = null;
+            }
+            return copy;
         }
 
         private static readonly JsonSerializerSettings Settings = new JsonSerializerSettings
@@ -143,38 +150,20 @@ namespace ChequeAR.Application.Services
             var copy = Parse(d.ToJson());
             copy.MinValue = WithoutTrailingZeros(copy.MinValue);
             copy.MaxValue = WithoutTrailingZeros(copy.MaxValue);
-            return JToken.FromObject(copy, JsonSerializer.Create(Settings));
+            var token = JToken.FromObject(copy, JsonSerializer.Create(Settings));
+            // Un texto vacío es lo mismo que ninguno: el formulario manda "" donde lo
+            // publicado quedó sin valor, y no es un cambio.
+            foreach (var vacio in token.SelectTokens("$..*").OfType<JValue>()
+                         .Where(v => v.Type == JTokenType.String && string.IsNullOrWhiteSpace((string)v.Value))
+                         .Select(v => v.Parent).OfType<JProperty>().ToList())
+                vacio.Remove();
+            return token;
         }
 
         private static decimal? WithoutTrailingZeros(decimal? value)
         {
             if (!value.HasValue) return null;
             return decimal.Parse(value.Value.ToString("G29", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
-        }
-
-        private static bool SameJson(string a, string b)
-        {
-            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
-                return string.IsNullOrWhiteSpace(a) && string.IsNullOrWhiteSpace(b);
-            try
-            {
-                return NumbersEqual(JToken.Parse(a), JToken.Parse(b));
-            }
-            catch (JsonException) { return false; }
-        }
-
-        private static bool NumbersEqual(JToken a, JToken b)
-        {
-            if (a is JObject oa && b is JObject ob)
-            {
-                var keys = oa.Properties().Select(p => p.Name).OrderBy(n => n).ToList();
-                if (!keys.SequenceEqual(ob.Properties().Select(p => p.Name).OrderBy(n => n))) return false;
-                return keys.All(k => NumbersEqual(oa[k], ob[k]));
-            }
-            if ((a.Type == JTokenType.Float || a.Type == JTokenType.Integer)
-                && (b.Type == JTokenType.Float || b.Type == JTokenType.Integer))
-                return a.Value<decimal>() == b.Value<decimal>();
-            return JToken.DeepEquals(a, b);
         }
     }
 

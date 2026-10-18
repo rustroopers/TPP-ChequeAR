@@ -41,18 +41,5 @@ namespace ChequeAR.Domain.Enums
             return Role.Medico;
         }
 
-        /// <summary>¿Alguno de <paramref name="userRoles"/> alcanza o supera <paramref name="required"/>?</summary>
-        public static bool IsAtLeast(IEnumerable<string> userRoles, string required)
-        {
-            if (userRoles == null) return false;
-            var requiredIdx = Array.IndexOf(Order, required);
-            if (requiredIdx < 0) return false;
-            foreach (var r in userRoles)
-            {
-                var idx = Array.IndexOf(Order, r);
-                if (idx >= 0 && idx <= requiredIdx) return true;
-            }
-            return false;
-        }
     }
 }

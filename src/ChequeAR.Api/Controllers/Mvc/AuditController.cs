@@ -18,20 +18,28 @@ namespace ChequeAR.Api.Controllers.Mvc
     [RequiresPermission(Permissions.AuditRead)]
     public class AuditController : Controller
     {
+        // Oracle no acepta más de 1000 elementos en un IN.
+        private const int LookupChunk = 500;
+
         private readonly AuditQueryService _audit;
         private readonly QuestionnaireService _questionnaires;
+        private readonly ClinicalVariableService _variables;
+        private readonly QuestionnaireResponseService _responses;
         private readonly AccessAuditService _access;
 
-        public AuditController(AuditQueryService audit, QuestionnaireService questionnaires, AccessAuditService access)
+        public AuditController(AuditQueryService audit, QuestionnaireService questionnaires,
+            ClinicalVariableService variables, QuestionnaireResponseService responses, AccessAuditService access)
         {
             _audit = audit;
             _questionnaires = questionnaires;
+            _variables = variables;
+            _responses = responses;
             _access = access;
         }
 
         // A6. OJO: el parámetro NO puede llamarse "action" — colisiona con el token de ruta
         // {action} de MVC (nombre del método), que gana sobre el query string y rompía el filtro.
-        public async Task<ActionResult> Index(string user = null, string act = null, Guid? questionnaire = null, string from = null, string to = null, int page = 1)
+        public async Task<ActionResult> Index(string user = null, string act = null, string type = null, string from = null, string to = null, int page = 1)
         {
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             ViewBag.Title = "Auditoría";
@@ -39,7 +47,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             const int pageSize = 50;
             var model = new AuditListViewModel
             {
-                UserFilter = user, ActionFilter = act, QuestionnaireFilter = questionnaire,
+                UserFilter = user, ActionFilter = act, ResourceTypeFilter = type,
                 From = from, To = to, PageSize = pageSize,
                 // Acotada para que (página - 1) * tamaño no desborde.
                 Page = Math.Min(Math.Max(1, page), int.MaxValue / pageSize)
@@ -49,8 +57,7 @@ namespace ChequeAR.Api.Controllers.Mvc
 
             try
             {
-                model.Questionnaires.AddRange(await _questionnaires.ListTitlesAsync());
-                var criteria = BuildCriteria(user, act, questionnaire, from, to);
+                var criteria = BuildCriteria(user, act, type, from, to);
                 var pagina = await _audit.SearchAsync(criteria, (model.Page - 1) * pageSize, pageSize);
                 model.Total = pagina.Total;
                 model.Entries.AddRange(await ToEntriesAsync(pagina.Items));
@@ -66,13 +73,13 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         /// <summary>Filtros del listado, tal como los entiende el servicio.</summary>
-        private static AuditSearchCriteria BuildCriteria(string user, string act, Guid? questionnaire, string from, string to)
+        private static AuditSearchCriteria BuildCriteria(string user, string act, string type, string from, string to)
         {
             return new AuditSearchCriteria
             {
                 AgentUserId = user,
                 Action = act,
-                QuestionnaireId = questionnaire,
+                ResourceType = string.IsNullOrWhiteSpace(type) ? null : type,
                 FromUtc = ArgentinaTime.ParseFilterDateToUtc(from, endOfDay: false),
                 ToUtc = ArgentinaTime.ParseFilterDateToUtc(to, endOfDay: true)
             };
@@ -81,12 +88,11 @@ namespace ChequeAR.Api.Controllers.Mvc
         /// <summary>Eventos ya traídos de la base, con forma de pantalla.</summary>
         private async Task<List<AuditEntry>> ToEntriesAsync(IReadOnlyList<AuditEvent> items)
         {
-            var titles = await ResolveTitlesAsync(items);
+            var names = await ResolveNamesAsync(items);
             var entries = new List<AuditEntry>();
             foreach (var e in items)
             {
                 var av = AuditPresentation.Describe(e.EntityRef, e.Action);
-                var label = ResourceLabel(av, titles, e.FhirJson, e.EntityRef);
                 entries.Add(new AuditEntry
                 {
                     Id = e.Id,
@@ -95,7 +101,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = label
+                    Resource = AuditPresentation.ResourceTypeLabel(av.ResourceType),
+                    ResourceName = ResourceName(av, e, names)
                 });
             }
             return entries;
@@ -105,39 +112,36 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         // A6b — Exportación. Reutiliza los mismos exporters (XLSX/CSV) que Reportes,
         // armando un ReportResult con las columnas visibles del listado.
-        public async Task<ActionResult> Export(string user = null, string act = null, Guid? questionnaire = null, string from = null, string to = null, string format = "xlsx")
+        public async Task<ActionResult> Export(string user = null, string act = null, string type = null, string from = null, string to = null, string format = "xlsx")
         {
             ArgentinaTime.NormalizeFilterRange(ref from, ref to);
             // Exporta exactamente lo que muestra el listado con los filtros aplicados (sin paginar).
             List<AuditEntry> entries;
             try
             {
-                var criteria = BuildCriteria(user, act, questionnaire, from, to);
+                var criteria = BuildCriteria(user, act, type, from, to);
                 entries = await ToEntriesAsync(await _audit.ExportAsync(criteria));
             }
             catch (ChequeAR.Application.Exceptions.BusinessRuleException ex)
             {
                 // Demasiados eventos: se vuelve al listado con el motivo, no se baja un archivo recortado.
                 TempData["AuditExportError"] = ex.Message;
-                return RedirectToAction("Index", new { user, act, questionnaire, from, to });
+                return RedirectToAction("Index", new { user, act, type, from, to });
             }
             // Bajar el registro de auditoría también es un acceso que tiene que quedar registrado.
-            string titulo = null;
-            if (questionnaire.HasValue)
-            {
-                var titulos = await _questionnaires.GetTitlesAsync(new[] { questionnaire.Value });
-                titulo = titulos.TryGetValue(questionnaire.Value, out var t) ? t : questionnaire.Value.ToString();
-            }
             _access.AuditExported(new AuditExportSnapshot
             {
-                User = user, Action = act, Questionnaire = titulo, From = from, To = to, Format = format
+                User = user, Action = act,
+                ResourceType = string.IsNullOrWhiteSpace(type) ? null : AuditPresentation.ResourceTypeLabel(type),
+                From = from, To = to, Format = format
             }, entries.Count);
             var rows = entries.ConvertAll(e => new Dictionary<string, object>
             {
                 ["Fecha"] = e.Timestamp,
                 ["Usuario"] = e.Username,
                 ["Acción"] = e.Action,
-                ["Cuestionario"] = e.Resource
+                ["Recurso"] = e.Resource,
+                ["Nombre"] = e.ResourceName
             });
 
             var result = new ReportResult { Total = rows.Count, Rows = rows };
@@ -159,7 +163,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                 if (e == null) return HttpNotFound();
 
                 var av = AuditPresentation.Describe(e.EntityRef, e.Action);
-                var titles = await ResolveTitlesAsync(new List<ChequeAR.Domain.Entities.AuditEvent> { e });
+                var names = await ResolveNamesAsync(new List<AuditEvent> { e });
 
                 var detail = new AuditDetailViewModel
                 {
@@ -169,12 +173,12 @@ namespace ChequeAR.Api.Controllers.Mvc
                     Action = av.Label,
                     ActionBadge = av.BadgeClass,
                     ActionIcon = av.Icon,
-                    Resource = ResourceLabel(av, titles, e.FhirJson, e.EntityRef),
-                    Ip = e.AgentIp
+                    Resource = AuditPresentation.ResourceTypeLabel(av.ResourceType),
+                    ResourceName = ResourceName(av, e, names)
                 };
 
                 // Para una publicación mostramos de qué versión a qué versión pasó y el diff.
-                if (av.Operation == AuditPresentation.Op.Publish && av.ResourceId.HasValue)
+                if (av.Operation == AuditPresentation.Op.Publish && av.ResourceType == "Questionnaire" && av.ResourceId.HasValue)
                     await FillVersionDiffAsync(detail, av.ResourceId.Value, e.Recorded);
 
                 // Para una consulta guardada mostramos su nombre, alcance y condiciones; para un
@@ -361,6 +365,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             detail.NoConditionsText = "Sin filtros: incluye todos los eventos.";
             if (!string.IsNullOrWhiteSpace(snap.User)) detail.ReportConditions.Add("Usuario: " + snap.User);
             if (!string.IsNullOrWhiteSpace(snap.Action)) detail.ReportConditions.Add("Acción: " + ActionFilterLabel(snap.Action));
+            if (!string.IsNullOrWhiteSpace(snap.ResourceType)) detail.ReportConditions.Add("Recurso: " + snap.ResourceType);
             if (!string.IsNullOrWhiteSpace(snap.Questionnaire)) detail.ReportConditions.Add("Cuestionario: " + snap.Questionnaire);
             if (!string.IsNullOrWhiteSpace(snap.From) || !string.IsNullOrWhiteSpace(snap.To))
                 detail.ReportConditions.Add("Período: " + (string.IsNullOrWhiteSpace(snap.From) ? "el inicio" : snap.From)
@@ -420,50 +425,96 @@ namespace ChequeAR.Api.Controllers.Mvc
             return "Privada (sólo el autor)";
         }
 
-        private async Task<IReadOnlyDictionary<Guid, string>> ResolveTitlesAsync(IEnumerable<AuditEvent> events)
+        /// <summary>Nombres de cuestionarios, variables y fichas de los eventos, en pocas consultas.</summary>
+        private sealed class ResourceNames
         {
-            var ids = new List<Guid>();
+            public Dictionary<Guid, string> Questionnaires { get; } = new Dictionary<Guid, string>();
+            public Dictionary<Guid, string> Variables { get; } = new Dictionary<Guid, string>();
+            public Dictionary<Guid, QuestionnaireResponse> Responses { get; } = new Dictionary<Guid, QuestionnaireResponse>();
+        }
+
+        private async Task<ResourceNames> ResolveNamesAsync(IEnumerable<AuditEvent> events)
+        {
+            var questionnaireIds = new HashSet<Guid>();
+            var variableIds = new HashSet<Guid>();
+            var responseIds = new HashSet<Guid>();
             foreach (var e in events)
             {
                 AuditPresentation.ParseRef(e.EntityRef, out var type, out var eid, out _);
-                if (type == "Questionnaire" && eid.HasValue) ids.Add(eid.Value);
                 // Un reporte se identifica por el cuestionario sobre el que corrió.
                 var deReporte = AuditPresentation.ReportQuestionnaireId(e.EntityRef);
-                if (deReporte.HasValue) ids.Add(deReporte.Value);
+                if (deReporte.HasValue) questionnaireIds.Add(deReporte.Value);
+                if (!eid.HasValue) continue;
+                if (type == "Questionnaire") questionnaireIds.Add(eid.Value);
+                else if (type == "ClinicalVariable") variableIds.Add(eid.Value);
+                else if (type == "QuestionnaireResponse") responseIds.Add(eid.Value);
             }
-            if (ids.Count == 0) return new Dictionary<Guid, string>();
-            return await _questionnaires.GetTitlesAsync(ids);
+
+            var names = new ResourceNames();
+            foreach (var chunk in Chunks(responseIds))
+                foreach (var r in await _responses.GetHeadersForAuditAsync(chunk))
+                {
+                    names.Responses[r.Id] = r;
+                    questionnaireIds.Add(r.QuestionnaireId);
+                }
+            foreach (var chunk in Chunks(variableIds))
+                foreach (var v in await _variables.GetManyAsync(chunk))
+                    names.Variables[v.Id] = v.Name;
+            foreach (var chunk in Chunks(questionnaireIds))
+                foreach (var t in await _questionnaires.GetTitlesAsync(chunk))
+                    names.Questionnaires[t.Key] = t.Value;
+            return names;
         }
 
-        /// <summary>Recurso legible: título del cuestionario si lo hay; si no, una ref limpia.</summary>
-        private static string ResourceLabel(AuditPresentation.ActionView av, IReadOnlyDictionary<Guid, string> titles, string fhirJson = null, string entityRef = null)
+        private static IEnumerable<List<Guid>> Chunks(IEnumerable<Guid> ids)
         {
-            var deReporte = AuditPresentation.ReportQuestionnaireId(entityRef);
-            if (deReporte.HasValue && titles.TryGetValue(deReporte.Value, out var tituloReporte)
-                && !string.IsNullOrWhiteSpace(tituloReporte))
-                return tituloReporte;
-            if (av.ResourceType == "Patient")
-                return entityRef.StartsWith("Patient$", StringComparison.Ordinal)
-                    ? "Pacientes" : "Paciente HC " + AuditPresentation.PatientHospitalId(entityRef);
-            if (av.ResourceType == "Attachment") return "Adjunto";
-            if (av.ResourceType == "Http") return "/" + entityRef.Substring("Http/".Length);
-            if (av.ResourceType == "AuditEvent") return "Registro de auditoría";
-            if (av.ResourceType == "AppUser") return "Usuario " + AuditPresentation.UserId(entityRef);
+            var list = ids.ToList();
+            for (var i = 0; i < list.Count; i += LookupChunk)
+                yield return list.GetRange(i, Math.Min(LookupChunk, list.Count - i));
+        }
 
-            if (av.ResourceType == "Questionnaire" && av.ResourceId.HasValue
-                && titles.TryGetValue(av.ResourceId.Value, out var title)
-                && !string.IsNullOrWhiteSpace(title))
-                return title;
-
-            if (av.ResourceType == "SavedReport")
+        /// <summary>Nombre del recurso puntual del evento; "—" si no tiene o ya no existe.</summary>
+        private static string ResourceName(AuditPresentation.ActionView av, AuditEvent e, ResourceNames names)
+        {
+            var entityRef = e.EntityRef ?? string.Empty;
+            var id = av.ResourceId;
+            string nombre = null;
+            switch (av.ResourceType)
             {
-                var snap = AuditPresentation.ReadSavedReport(fhirJson);
-                return !string.IsNullOrWhiteSpace(snap?.Name) ? snap.Name : "Reporte guardado";
+                case "Questionnaire":
+                    if (id.HasValue) names.Questionnaires.TryGetValue(id.Value, out nombre);
+                    break;
+                case "ClinicalVariable":
+                    if (id.HasValue) names.Variables.TryGetValue(id.Value, out nombre);
+                    break;
+                case "QuestionnaireResponse":
+                    if (id.HasValue && names.Responses.TryGetValue(id.Value, out var r))
+                    {
+                        names.Questionnaires.TryGetValue(r.QuestionnaireId, out var titulo);
+                        var hc = string.IsNullOrWhiteSpace(r.PatientHospitalId) ? null : "HC " + r.PatientHospitalId;
+                        nombre = string.Join(" · ", new[] { titulo, hc }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                    }
+                    break;
+                case "Report":
+                    var deReporte = AuditPresentation.ReportQuestionnaireId(entityRef);
+                    if (deReporte.HasValue) names.Questionnaires.TryGetValue(deReporte.Value, out nombre);
+                    break;
+                case "SavedReport":
+                    nombre = AuditPresentation.ReadSavedReport(e.FhirJson)?.Name;
+                    break;
+                case "Patient":
+                    // La búsqueda no apunta a un paciente: el término se guarda sólo como hash.
+                    if (!entityRef.StartsWith("Patient$", StringComparison.Ordinal))
+                        nombre = "HC " + AuditPresentation.PatientHospitalId(entityRef);
+                    break;
+                case "AppUser":
+                    nombre = AuditPresentation.UserId(entityRef);
+                    break;
+                case "Http":
+                    nombre = "/" + entityRef.Substring("Http/".Length);
+                    break;
             }
-            if (av.ResourceType == "QuestionnaireResponse") return "Respuesta de cuestionario";
-            if (av.ResourceType == "Report") return "Reporte";
-            if (!string.IsNullOrWhiteSpace(av.ResourceType)) return av.ResourceType;
-            return "—";
+            return string.IsNullOrWhiteSpace(nombre) ? "—" : nombre;
         }
     }
 }

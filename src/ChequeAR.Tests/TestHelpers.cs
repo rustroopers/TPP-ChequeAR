@@ -119,30 +119,27 @@ namespace ChequeAR.Tests
         }
 
         /// <summary>
-        /// Repositorio de variables en memoria. GetManyAsync y GetVersionsAsync son los que usa
-        /// QuestionnaireService al guardar, así que son los que más importa que respondan bien.
-        /// Cada variable está publicada en la versión igual a su revisión, con su definición actual.
+        /// Repositorio de variables en memoria. GetManyAsync es el que usa QuestionnaireService
+        /// al guardar, así que es el que más importa que responda bien. Cada variable queda
+        /// publicada, salvo que el test le saque la fecha después.
         /// </summary>
         public static IClinicalVariableRepository VariableRepoWith(params ClinicalVariable[] variables)
         {
             var seed = (variables ?? Array.Empty<ClinicalVariable>()).ToList();
-            var versionIds = seed.ToDictionary(v => v.Id, v => v.CurrentVersionId ?? Guid.NewGuid());
-            foreach (var v in seed) v.CurrentVersionId = versionIds[v.Id];
+            foreach (var v in seed) v.PublishedAt = v.PublishedAt ?? new DateTime(2026, 1, 1);
             var mock = new Mock<IClinicalVariableRepository>();
-            mock.Setup(r => r.GetVersionsAsync(It.IsAny<IEnumerable<Guid>>()))
-                .ReturnsAsync((IEnumerable<Guid> ids) => (IReadOnlyList<ClinicalVariableVersion>)seed
-                    .Where(v => ids.Contains(v.Id))
-                    .Select(v => new ClinicalVariableVersion
-                    {
-                        Id = versionIds[v.Id], VariableId = v.Id, VersionNumber = v.Revision, SourceRevision = v.Revision,
-                        DefinitionJson = VariableDefinition.From(v).ToJson()
-                    }).ToList());
             mock.Setup(r => r.GetAsync(It.IsAny<Guid>()))
                 .ReturnsAsync((Guid id) => seed.FirstOrDefault(v => v.Id == id));
             mock.Setup(r => r.GetByCodeAsync(It.IsAny<string>()))
                 .ReturnsAsync((string code) => seed.FirstOrDefault(v => v.Code == code));
-            mock.Setup(r => r.GetBySnomedCodeAsync(It.IsAny<string>()))
-                .ReturnsAsync((string code) => seed.FirstOrDefault(v => v.SnomedCode == code));
+            mock.Setup(r => r.GetPublishedActiveBySnomedCodeAsync(It.IsAny<string>()))
+                .ReturnsAsync((string code) => (IReadOnlyList<ClinicalVariable>)seed
+                    .Where(v => v.SnomedCode == code && v.IsActive && v.PublishedAt != null).ToList());
+            mock.Setup(r => r.GetPublishedActiveNamesAsync())
+                .ReturnsAsync(() => (IReadOnlyList<ClinicalVariable>)seed.Where(v => v.IsActive && v.PublishedAt != null).ToList());
+            mock.Setup(r => r.GetSuccessorsAsync(It.IsAny<IEnumerable<Guid>>()))
+                .ReturnsAsync((IEnumerable<Guid> ids) => (IReadOnlyList<ClinicalVariable>)seed
+                    .Where(v => v.ReplacesId.HasValue && ids.Contains(v.ReplacesId.Value) && v.PublishedAt != null).ToList());
             mock.Setup(r => r.GetManyAsync(It.IsAny<IEnumerable<Guid>>()))
                 .ReturnsAsync((IEnumerable<Guid> ids) =>
                     (IReadOnlyList<ClinicalVariable>)seed.Where(v => ids.Contains(v.Id)).ToList());
@@ -153,19 +150,16 @@ namespace ChequeAR.Tests
             return mock.Object;
         }
 
-        /// <summary>Copia la definición actual de la variable, como si estuviera publicada en la versión igual a su revisión.</summary>
-        public static void ApplySnapshot(Question q, ClinicalVariable v)
-            => ClinicalVariableSnapshot.Apply(q, VariableDefinition.From(v),
-                new ClinicalVariableVersion { Id = v.CurrentVersionId ?? Guid.NewGuid(), VariableId = v.Id, VersionNumber = v.Revision });
+        /// <summary>Copia la definición de la variable a la pregunta.</summary>
+        public static void ApplySnapshot(Question q, ClinicalVariable v) => ClinicalVariableSnapshot.Apply(q, v);
 
         /// <summary>
         /// Pregunta que proviene de <paramref name="v"/>. Desde el catálogo de variables toda
         /// pregunta necesita VariableId o QuestionnaireService la rechaza, así que armarla a
-        /// mano en cada test sería repetir lo mismo veinte veces. Trae versión, como una
-        /// pregunta ya guardada, pero no pide ninguna: al guardar la resuelve el servicio.
+        /// mano en cada test sería repetir lo mismo veinte veces.
         /// </summary>
         public static Question QuestionFrom(ClinicalVariable v, string linkId = null, string text = null)
-            => new Question { LinkId = linkId ?? v.Code, Text = text ?? v.DefaultText, VariableId = v.Id, VariableVersionId = Guid.NewGuid() };
+            => new Question { LinkId = linkId ?? v.Code, Text = text ?? v.DefaultText, VariableId = v.Id };
 
         /// <summary>Catálogo en memoria con los 5 códigos base, para tests que no necesitan tocar la DB.</summary>
         public static SpecialtyCatalogService CatalogWith(params Specialty[] items)

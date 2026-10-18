@@ -25,8 +25,28 @@ namespace ChequeAR.Infrastructure.Repositories
         public Task<ClinicalVariable> GetByCodeAsync(string code) =>
             _ctx.ClinicalVariables.Include(v => v.Options).FirstOrDefaultAsync(v => v.Code == code);
 
-        public Task<ClinicalVariable> GetBySnomedCodeAsync(string snomedCode) =>
-            _ctx.ClinicalVariables.Include(v => v.Options).FirstOrDefaultAsync(v => v.SnomedCode == snomedCode);
+        public async Task<IReadOnlyList<ClinicalVariable>> GetPublishedActiveBySnomedCodeAsync(string snomedCode) =>
+            await _ctx.ClinicalVariables.AsNoTracking()
+                .Where(v => v.SnomedCode == snomedCode && v.IsActive && v.PublishedAt != null)
+                .ToListAsync();
+
+        public async Task<IReadOnlyList<ClinicalVariable>> GetPublishedActiveNamesAsync()
+        {
+            var rows = await _ctx.ClinicalVariables.AsNoTracking()
+                .Where(v => v.IsActive && v.PublishedAt != null)
+                .Select(v => new { v.Id, v.Name })
+                .ToListAsync();
+            return rows.Select(r => new ClinicalVariable { Id = r.Id, Name = r.Name }).ToList();
+        }
+
+        public async Task<IReadOnlyList<ClinicalVariable>> GetSuccessorsAsync(IEnumerable<Guid> ids)
+        {
+            var list = ids?.Distinct().ToList() ?? new List<Guid>();
+            if (list.Count == 0) return new List<ClinicalVariable>();
+            return await _ctx.ClinicalVariables.AsNoTracking()
+                .Where(v => v.ReplacesId != null && list.Contains(v.ReplacesId.Value) && v.PublishedAt != null)
+                .ToListAsync();
+        }
 
         public async Task<IReadOnlyList<ClinicalVariable>> GetManyAsync(IEnumerable<Guid> ids)
         {
@@ -55,7 +75,7 @@ namespace ChequeAR.Infrastructure.Repositories
         private IQueryable<ClinicalVariable> Filter(string search, QuestionType? type, bool? active, bool publishedOnly)
         {
             var q = _ctx.ClinicalVariables.AsQueryable();
-            if (publishedOnly) q = q.Where(v => v.CurrentVersionId != null);
+            if (publishedOnly) q = q.Where(v => v.PublishedAt != null);
             if (active.HasValue) q = q.Where(v => v.IsActive == active.Value);
             if (type.HasValue) q = q.Where(v => v.Type == type.Value);
             if (!string.IsNullOrWhiteSpace(search))
@@ -114,60 +134,27 @@ namespace ChequeAR.Infrastructure.Repositories
 
         public Task UpdateHeaderAsync(ClinicalVariable v) => SaveAsync(v);
 
-        public async Task AddVersionAsync(ClinicalVariable v, ClinicalVariableVersion version)
+        public async Task PublishAsync(ClinicalVariable v, ClinicalVariable deactivate = null)
         {
-            _ctx.ClinicalVariableVersions.Add(version);
-            await SaveAsync(v);
-        }
-
-        public Task<ClinicalVariableVersion> GetVersionAsync(Guid versionId) =>
-            _ctx.ClinicalVariableVersions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == versionId);
-
-        public Task<ClinicalVariableVersion> GetVersionAsync(Guid variableId, int versionNumber) =>
-            _ctx.ClinicalVariableVersions.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.VariableId == variableId && x.VersionNumber == versionNumber);
-
-        public async Task<IReadOnlyList<ClinicalVariableVersion>> ListVersionsAsync(Guid variableId)
-        {
-            var rows = await _ctx.ClinicalVariableVersions.AsNoTracking()
-                .Where(x => x.VariableId == variableId)
-                .OrderByDescending(x => x.VersionNumber)
-                .Select(x => new { x.Id, x.VariableId, x.VersionNumber, x.SourceRevision, x.PublishedBy, x.PublishedAt, x.ChangeNote })
-                .ToListAsync();
-            return rows.Select(x => new ClinicalVariableVersion
+            if (deactivate == null)
             {
-                Id = x.Id, VariableId = x.VariableId, VersionNumber = x.VersionNumber, SourceRevision = x.SourceRevision,
-                PublishedBy = x.PublishedBy, PublishedAt = x.PublishedAt, ChangeNote = x.ChangeNote
-            }).ToList();
-        }
+                await SaveAsync(v);
+                return;
+            }
 
-        public async Task<IReadOnlyList<ClinicalVariableVersion>> GetVersionsAsync(IEnumerable<Guid> variableIds)
-        {
-            var ids = variableIds?.Distinct().ToList() ?? new List<Guid>();
-            if (ids.Count == 0) return new List<ClinicalVariableVersion>();
-            return await _ctx.ClinicalVariableVersions.AsNoTracking().Where(x => ids.Contains(x.VariableId)).ToListAsync();
-        }
-
-        public async Task<IReadOnlyDictionary<Guid, ClinicalVariableVersion>> GetCurrentVersionHeadersAsync(IEnumerable<Guid> variableIds)
-        {
-            var ids = variableIds?.Distinct().ToList() ?? new List<Guid>();
-            if (ids.Count == 0) return new Dictionary<Guid, ClinicalVariableVersion>();
-            var rows = await (from v in _ctx.ClinicalVariables
-                              where ids.Contains(v.Id)
-                              join cv in _ctx.ClinicalVariableVersions on v.CurrentVersionId equals cv.Id
-                              select new { cv.Id, cv.VariableId, cv.VersionNumber, cv.SourceRevision }).ToListAsync();
-            return rows.ToDictionary(x => x.VariableId, x => new ClinicalVariableVersion
+            // Dos SaveChanges en orden y no uno: EF no garantiza el orden de los UPDATE, y si
+            // publicara la nueva antes de dar de baja la anterior el índice de SNOMED fallaría.
+            using (var tx = _ctx.Database.BeginTransaction())
             {
-                Id = x.Id, VariableId = x.VariableId, VersionNumber = x.VersionNumber, SourceRevision = x.SourceRevision
-            });
-        }
+                var anterior = await _ctx.ClinicalVariables.FirstAsync(x => x.Id == deactivate.Id);
+                anterior.IsActive = false;
+                anterior.UpdatedBy = deactivate.UpdatedBy;
+                anterior.UpdatedAt = deactivate.UpdatedAt;
+                await _ctx.SaveChangesAsync();
 
-        public async Task UpdateVersionSourceAsync(ClinicalVariableVersion version)
-        {
-            var row = await _ctx.ClinicalVariableVersions.FirstOrDefaultAsync(x => x.Id == version.Id);
-            if (row == null) return;
-            row.SourceRevision = version.SourceRevision;
-            await _ctx.SaveChangesAsync();
+                await SaveAsync(v);
+                tx.Commit();
+            }
         }
 
         /// <summary>

@@ -22,14 +22,24 @@ namespace ChequeAR.Application.Reports
         private readonly QueryBuilder _builder;
         private readonly IQuestionnaireRepository _questionnaires;
         private readonly ISpecialtyGuard _guard;
+        private readonly IClinicalVariableRepository _variables;
 
         public ReportExecutor(IReportQueryRunner runner, QueryBuilder builder,
-            IQuestionnaireRepository questionnaires, ISpecialtyGuard guard)
+            IQuestionnaireRepository questionnaires, ISpecialtyGuard guard, IClinicalVariableRepository variables)
         {
             _runner = runner;
             _builder = builder;
             _questionnaires = questionnaires;
             _guard = guard;
+            _variables = variables;
+        }
+
+        /// <summary>Lo publicado del cuestionario, con nombres de columna que se distinguen entre sí.</summary>
+        private async Task<Questionnaire> StructureAsync(Questionnaire questionnaire)
+        {
+            var structure = PublishedStructure.Union(questionnaire);
+            await ColumnLabels.ApplyAsync(structure, _variables);
+            return structure;
         }
 
         /// <summary>
@@ -83,7 +93,7 @@ namespace ChequeAR.Application.Reports
             var questionnaire = await _questionnaires.GetAsync(questionnaireId);
             if (questionnaire == null) return null;
             _guard.EnsureAllows(questionnaire.SpecialtyCode);
-            return PublishedStructure.Union(questionnaire);
+            return await StructureAsync(questionnaire);
         }
 
         private async Task<RawResult> RunRawAsync(ReportQuery q, bool paginate)
@@ -99,7 +109,7 @@ namespace ChequeAR.Application.Reports
             // conociera el GUID de un cuestionario podía ejecutar un reporte sobre datos de
             // una especialidad fuera de su scope. Es el mismo chequeo, hecho acá.
             _guard.EnsureAllows(questionnaire.SpecialtyCode);
-            var schema = ReportSchema.From(PublishedStructure.Union(questionnaire));
+            var schema = ReportSchema.From(await StructureAsync(questionnaire));
 
             BuiltQuery built;
             try
@@ -124,7 +134,7 @@ namespace ChequeAR.Application.Reports
             if (!paginate && ejecutado.TotalResponses > MaxSyncRows)
                 throw new BusinessRuleException(
                     "La consulta devuelve " + ejecutado.TotalResponses + " fichas y el máximo para exportar en línea es " +
-                    MaxSyncRows + ". Acotá el rango de fechas o agregá filtros.");
+                    MaxSyncRows + ". Acote el rango de fechas o agregue filtros.");
 
             var rows = ejecutado.Rows;
             var totalResponses = ejecutado.TotalResponses;

@@ -16,9 +16,8 @@
         <p class="cq-page-header__subtitle">
             @if (Model.Patient != null && !string.IsNullOrEmpty(Model.Patient.FullName))
             {
-                <text>@Model.Patient.FullName@(string.IsNullOrEmpty(Model.Patient.AgeLabel) ? "" : " (" + Model.Patient.AgeLabel + ")") · </text>
+                <text>@Model.Patient.FullName@(string.IsNullOrEmpty(Model.Patient.AgeLabel) ? "" : " (" + Model.Patient.AgeLabel + ")")</text>
             }
-            Valores a lo largo de sus fichas finalizadas
         </p>
     </div>
     @if (Model.Patient != null)

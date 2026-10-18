@@ -27,6 +27,14 @@
             // graficar. Antes esos dos casos mostraban una tarjeta con un mensaje de "sin
             // datos"; ahora directamente no se ofrecen. Siguen disponibles para el export a
             // Excel (ahí sí interesa saber cuántas fichas la tienen cargada).
+            // El servidor manda el nombre del enum QuestionType; se muestra como en el catálogo.
+            var TYPE_LABELS = {
+                Decimal: 'Número decimal', Integer: 'Número entero', String: 'Texto corto', Text: 'Texto largo',
+                Date: 'Fecha', DateTime: 'Fecha y hora', Boolean: 'Sí / No', Choice: 'Opción única',
+                OpenChoice: 'Opción múltiple', Attachment: 'Adjunto', Scale: 'Escala'
+            };
+            function typeLabel(t) { return TYPE_LABELS[t] || t; }
+
             var chartableQuestions = Vue.computed(function () {
                 return (stats.value && stats.value.Questions || []).filter(function (q) {
                     if (q.Kind === 'numeric') return !!q.N;
@@ -190,7 +198,7 @@
             }
 
             return {
-                stats: stats, chartableQuestions: chartableQuestions, loading: loading, error: error, lastQuery: lastQuery,
+                stats: stats, chartableQuestions: chartableQuestions, typeLabel: typeLabel, loading: loading, error: error, lastQuery: lastQuery,
                 load: load, num: num, binPct: binPct, rango: rango,
                 completenessColor: completenessColor,
                 selected: selected, selectedCount: selectedCount, selectAll: selectAll,
@@ -217,7 +225,7 @@
                 <div class="cq-card h-100">\
                     <div class="d-flex justify-content-between align-items-start gap-2">\
                         <h3 class="cq-section-title" style="margin-top:0;">{{ q.Text }}</h3>\
-                        <span class="cq-badge cq-badge--info cq-text-xs">{{ q.Type }}</span>\
+                        <span class="cq-badge cq-badge--info cq-text-xs">{{ typeLabel(q.Type) }}</span>\
                     </div>\
 \
                     <div class="mb-3">\

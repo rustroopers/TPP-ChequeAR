@@ -50,9 +50,16 @@ namespace ChequeAR.Api.Models
         public int Revision { get; set; }
         public DateTime UpdatedAt { get; set; }
 
-        /// <summary>Número de la versión vigente; 0 si nunca se publicó. Sólo de salida.</summary>
-        public int CurrentVersion { get; set; }
-        public bool HasUnpublishedChanges { get; set; }
+        /// <summary>Cuándo se publicó; null si nunca. Sólo de salida.</summary>
+        public DateTime? PublishedAt { get; set; }
+        public bool IsPublished => PublishedAt.HasValue;
+
+        /// <summary>Variable de la que se creó esta; sólo se fija al crearla.</summary>
+        public Guid? ReplacesId { get; set; }
+        /// <summary>Nombre de esa variable. Sólo de salida, para el formulario.</summary>
+        public string ReplacesName { get; set; }
+        /// <summary>Al publicar esta, dar de baja la que reemplaza.</summary>
+        public bool DeactivateReplacedOnPublish { get; set; }
 
         public List<VariableOptionDto> Options { get; set; } = new List<VariableOptionDto>();
     }
@@ -67,43 +74,9 @@ namespace ChequeAR.Api.Models
         public string SnomedDisplay { get; set; }
     }
 
-    [JsonObject(NamingStrategyType = typeof(CamelCaseNamingStrategy))]
-    public class PublishVariableDto
-    {
-        public string Note { get; set; }
-    }
-
     /// <summary>Traducción entidad &lt;-&gt; DTO. Un solo lugar para las dos direcciones.</summary>
     public static class ClinicalVariableDtoMap
     {
-        public static ClinicalVariableDto ToDto(ClinicalVariable v, VariablePublication publication)
-        {
-            var dto = ToDto(v);
-            if (dto != null && publication != null)
-            {
-                dto.CurrentVersion = publication.CurrentVersion;
-                dto.HasUnpublishedChanges = publication.HasUnpublishedChanges;
-            }
-            return dto;
-        }
-
-        /// <summary>
-        /// La definición de una versión publicada, con la forma de siempre: es lo que copia el
-        /// editor de cuestionarios al agregar o actualizar una pregunta.
-        /// </summary>
-        public static ClinicalVariableDto ToDto(ClinicalVariable v, PublishedVariable published)
-        {
-            if (v == null || published?.Definition == null) return ToDto(v);
-            var dto = ToDto(published.Definition.ToVariable());
-            dto.Id = v.Id;
-            dto.IsActive = v.IsActive;
-            dto.SortOrder = v.SortOrder;
-            dto.Revision = v.Revision;
-            dto.UpdatedAt = v.UpdatedAt;
-            dto.CurrentVersion = published.VersionNumber;
-            return dto;
-        }
-
         public static ClinicalVariableDto ToDto(ClinicalVariable v)
         {
             if (v == null) return null;
@@ -129,6 +102,9 @@ namespace ChequeAR.Api.Models
                 SortOrder = v.SortOrder,
                 Revision = v.Revision,
                 UpdatedAt = v.UpdatedAt,
+                PublishedAt = v.PublishedAt,
+                ReplacesId = v.ReplacesId,
+                DeactivateReplacedOnPublish = v.DeactivateReplacedOnPublish,
                 Options = (v.Options ?? new List<VariableOption>())
                     .OrderBy(o => o.OrderIndex)
                     .Select(o => new VariableOptionDto
@@ -168,7 +144,9 @@ namespace ChequeAR.Api.Models
                 SnomedCode = d.SnomedCode,
                 SnomedDisplay = d.SnomedDisplay,
                 Term = d.Term,
-                SortOrder = d.SortOrder
+                SortOrder = d.SortOrder,
+                ReplacesId = d.ReplacesId,
+                DeactivateReplacedOnPublish = d.DeactivateReplacedOnPublish
             };
             foreach (var o in d.Options ?? new List<VariableOptionDto>())
                 v.Options.Add(new VariableOption

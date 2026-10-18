@@ -477,6 +477,9 @@
                                 // Reflejar que ahora es una consulta existente (siguiente guardado = PUT).
                                 if (window.history && window.history.replaceState)
                                     window.history.replaceState(null, '', '/Reports/Build/' + id);
+                                // El encabezado lo arma Razor: sin esto seguía diciendo "Nuevo reporte".
+                                var h1 = document.querySelector('.cq-page-header__title');
+                                if (h1) h1.textContent = 'Editar reporte';
                             }
                         }
                         showSave.value = false;
@@ -586,7 +589,7 @@
         </div>\
         <cq-filter-row v-else :f="f" :questions="questions" @remove="removeFilter(i)"></cq-filter-row>\
     </template>\
-    <div class="d-flex align-items-center gap-3 mb-3">\
+    <div class="d-flex flex-wrap align-items-center gap-2 gap-sm-3 mb-3">\
         <button class="btn btn-sm btn-primary" @click="addFilter"><i class="bi bi-plus-lg me-1"></i> Agregar condición</button>\
         <button class="btn btn-sm btn-secondary" @click="addGroup"><i class="bi bi-collection me-1"></i> Agregar grupo</button>\
         <div v-if="filters.length > 1" class="d-inline-flex gap-3 cq-text-sm">\
@@ -647,7 +650,7 @@
         </div>\
     </div>\
 \
-    <div class="d-flex justify-content-end gap-2 mt-3">\
+    <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">\
         <button class="btn btn-secondary" @click="openSave"\
                 :disabled="!!currentReportId && !dirty"\
                 :title="(!!currentReportId && !dirty) ? \'No hay cambios para guardar\' : \'\'">\

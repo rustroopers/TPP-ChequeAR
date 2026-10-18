@@ -11,6 +11,9 @@ namespace ChequeAR.Application.Interfaces
     {
         Task<QuestionnaireResponse> GetAsync(Guid id);
 
+        /// <summary>Varias fichas por id, sin sus ítems: sólo cuestionario y paciente. Las que no existen no vienen.</summary>
+        Task<IReadOnlyList<QuestionnaireResponse>> GetHeadersAsync(IReadOnlyCollection<Guid> ids);
+
         /// <param name="scope">
         /// Restringe por la especialidad del Questionnaire al que pertenece cada respuesta
         /// (join, QuestionnaireResponse no tiene columna de especialidad propia — ver C2 en

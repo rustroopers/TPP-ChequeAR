@@ -113,8 +113,8 @@ namespace ChequeAR.Tests.Application
         [Fact]
         public async Task CreateAsync_SnomedDuplicado_Falla()
         {
-            _repo.Setup(r => r.GetBySnomedCodeAsync("27113001"))
-                 .ReturnsAsync(new ClinicalVariable { Id = Guid.NewGuid(), Name = "Peso viejo" });
+            _repo.Setup(r => r.GetPublishedActiveBySnomedCodeAsync("27113001"))
+                 .ReturnsAsync(new List<ClinicalVariable> { new ClinicalVariable { Id = Guid.NewGuid(), Name = "Peso viejo" } });
             var v = Nueva("peso-2");
             v.SnomedCode = "27113001";
 

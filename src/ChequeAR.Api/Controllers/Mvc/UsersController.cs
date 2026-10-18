@@ -119,7 +119,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .Where(c => !string.IsNullOrWhiteSpace(c))
                     .Distinct()
                     .ToList();
-                await _users.UpdateByAdminAsync(existing.Id, model.FullName, model.Active, model.Role, codes,
+                // La pantalla ya no edita si la cuenta está activa: se conserva la actual.
+                await _users.UpdateByAdminAsync(existing.Id, model.FullName, existing.IsActive, model.Role, codes,
                     CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
 
                 SessionRevalidation.Invalidate(existing.Id);

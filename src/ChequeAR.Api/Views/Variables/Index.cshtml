@@ -9,7 +9,6 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">@Cq.T("variables.title")</h1>
-        <p class="cq-page-header__subtitle">@Cq.T("variables.subtitle")</p>
     </div>
     <a href="@Url.Action("Details")" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> @Cq.T("variables.new")</a>
 </header>
@@ -74,7 +73,7 @@ else
         <thead>
             <tr>
                 <th>Nombre</th><th>Código</th><th>Tipo</th><th>Unidad</th>
-                <th>Rango</th><th>SNOMED CT</th><th>Versión</th><th>Estado</th>
+                <th>Rango</th><th>SNOMED CT</th><th>Estado</th>
                 <th>Creada <i class="bi bi-arrow-down" aria-hidden="true"></i></th>
                 <th class="text-end">@Cq.T("table.col.actions")</th>
             </tr>
@@ -99,12 +98,11 @@ else
                             <span class="cq-text-xs cq-text-muted">@v.SnomedDisplay</span>
                         }
                     </td>
-                    <td class="cq-text-sm">@(v.CurrentVersion > 0 ? "v" + v.CurrentVersion : "—")</td>
                     <td>
-                        @if (v.CurrentVersion == 0) { <span class="cq-badge cq-badge--draft">Sin publicar</span> }
+                        @if (!v.IsPublished) { <span class="cq-badge cq-badge--draft">Sin publicar</span> }
                         else if (v.IsActive) { <span class="cq-badge cq-badge--published">Activa</span> }
                         else { <span class="cq-badge cq-badge--archived">De baja</span> }
-                        @if (v.HasUnpublishedChanges) { <span class="cq-badge cq-badge--info mt-1" style="width:fit-content;display:flex;">cambios sin publicar</span> }
+                        @if (v.ReplacedByName != null) { <span class="cq-badge cq-badge--info mt-1" style="width:fit-content;display:flex;" title="Reemplazada por @v.ReplacedByName">Reemplazada</span> }
                     </td>
                     <td class="cq-text-sm cq-text-muted">@v.CreatedAt</td>
                     <td class="text-end">
@@ -114,18 +112,19 @@ else
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="@Url.Action("Details", new { id = v.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
-                                @if (v.CurrentVersion == 0 || v.HasUnpublishedChanges)
+                                @if (!v.IsPublished)
                                 {
-                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@v.Id" data-revision="@v.Revision" data-title="@v.Name"><i class="bi bi-send me-1"></i> Publicar nueva versión</button></li>
+                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@v.Id" data-revision="@v.Revision" data-title="@v.Name"><i class="bi bi-send me-1"></i> Publicar</button></li>
                                 }
                                 else
                                 {
-                                    <li><span class="dropdown-item disabled" title="No hay cambios para publicar"><i class="bi bi-send me-1"></i> Publicar nueva versión</span></li>
+                                    <li><a class="dropdown-item" href="@Url.Action("Details", new { from = v.Id })"><i class="bi bi-plus-lg me-1"></i> Crear a partir de esta</a></li>
                                 }
                                 <li><hr class="dropdown-divider" /></li>
                                 @if (v.IsActive)
                                 {
-                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-id="@v.Id" data-title="@v.Name"><i class="bi bi-trash me-1"></i> Dar de baja</button></li>
+                                    @* Una variable que nunca se publicó no puede estar en uso: el servicio la borra. *@
+                                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#deleteModal" data-id="@v.Id" data-title="@v.Name" data-delete="@(!v.IsPublished ? "true" : "false")"><i class="bi bi-trash me-1"></i> @(!v.IsPublished ? "Eliminar" : "Dar de baja")</button></li>
                                 }
                                 else
                                 {
@@ -160,8 +159,8 @@ else
     </div>
 }
 
-@* Modal Dar de baja. El servicio decide si borra o desactiva según esté en uso, y el toast
-   dice cuál de las dos pasó. *@
+@* Modal Dar de baja / Eliminar. El servicio decide si borra o desactiva según esté publicada
+   o en uso; el texto se ajusta a lo que va a pasar. *@
 <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         @using (Html.BeginForm("Delete", "Variables", FormMethod.Post, new { @class = "modal-content" }))
@@ -169,19 +168,16 @@ else
             @Html.AntiForgeryToken()
             <input type="hidden" name="id" id="deleteId" />
             <div class="modal-header">
-                <h2 class="modal-title h3" id="deleteModalLabel">Dar de baja variable</h2>
+                <h2 class="modal-title h3" id="deleteModalLabel"><span class="js-delete-verb">Dar de baja</span> variable</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
-                <p>¿Quiere dar de baja <strong id="deleteTitle"></strong>?</p>
-                <p class="cq-text-sm cq-text-muted mb-0">
-                    Se desactivará y dejará de ofrecerse para
-                    cuestionarios nuevos.
-                </p>
+                <p class="mb-0">¿Quiere <span id="deleteVerbLower">dar de baja</span> <strong id="deleteTitle"></strong>?</p>
+                <p class="cq-text-sm cq-text-muted mb-0 mt-2" id="deleteHint">Dejará de ofrecerse para cuestionarios nuevos.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="btn btn-danger">Dar de baja</button>
+                <button type="submit" class="btn btn-danger js-delete-verb">Dar de baja</button>
             </div>
         }
     </div>
@@ -199,10 +195,6 @@ else
                 <h2 class="modal-title h3" id="publishModalLabel">Publicar <span id="publishTitle"></span></h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
-            <div class="modal-body">
-                <label class="form-label" for="publishNote">Notas del cambio</label>
-                <textarea name="changeNote" id="publishNote" rows="3" class="form-control" placeholder="Describa qué cambia respecto a la versión anterior"></textarea>
-            </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Publicar</button>
@@ -219,7 +211,6 @@ else
         document.getElementById("publishId").value = pub.getAttribute("data-id");
         document.getElementById("publishRevision").value = pub.getAttribute("data-revision");
         document.getElementById("publishTitle").textContent = pub.getAttribute("data-title");
-        document.getElementById("publishNote").value = "";
     });
 
     document.addEventListener("click", function (e) {
@@ -227,6 +218,10 @@ else
         if (!btn) return;
         document.getElementById("deleteId").value = btn.getAttribute("data-id");
         document.getElementById("deleteTitle").textContent = btn.getAttribute("data-title");
+        var borra = btn.getAttribute("data-delete") === "true";
+        document.querySelectorAll(".js-delete-verb").forEach(function (el) { el.textContent = borra ? "Eliminar" : "Dar de baja"; });
+        document.getElementById("deleteVerbLower").textContent = borra ? "eliminar" : "dar de baja";
+        document.getElementById("deleteHint").hidden = borra;
     });
 
     // Fila entera clickeable, como en cuestionarios. Se ignora si el click salió del menú.

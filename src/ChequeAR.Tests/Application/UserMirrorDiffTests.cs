@@ -39,7 +39,6 @@ namespace ChequeAR.Tests.Application
                 currentRoles: new[] { "Medico" }, incomingRoles: null,
                 currentSpecialties: new[] { "cardio" }, incomingSpecialties: null);
 
-            Assert.True(diff.IsNoOp);
             Assert.Empty(diff.SpecialtiesToAdd);
             Assert.Empty(diff.SpecialtiesToRemove);
             Assert.Empty(diff.RolesToAdd);
@@ -65,7 +64,10 @@ namespace ChequeAR.Tests.Application
                 currentRoles: new[] { "Medico" }, incomingRoles: new[] { "Medico" },
                 currentSpecialties: new[] { "cardio" }, incomingSpecialties: new[] { "cardio" });
 
-            Assert.True(diff.IsNoOp);
+            Assert.Empty(diff.RolesToAdd);
+            Assert.Empty(diff.RolesToRemove);
+            Assert.Empty(diff.SpecialtiesToAdd);
+            Assert.Empty(diff.SpecialtiesToRemove);
         }
 
         [Fact]
@@ -75,7 +77,10 @@ namespace ChequeAR.Tests.Application
                 currentRoles: Array.Empty<string>(), incomingRoles: Array.Empty<string>(),
                 currentSpecialties: new[] { "cardio" }, incomingSpecialties: new[] { "Cardio" });
 
-            Assert.True(diff.IsNoOp);
+            Assert.Empty(diff.RolesToAdd);
+            Assert.Empty(diff.RolesToRemove);
+            Assert.Empty(diff.SpecialtiesToAdd);
+            Assert.Empty(diff.SpecialtiesToRemove);
         }
 
         [Fact]

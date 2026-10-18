@@ -95,6 +95,16 @@ namespace ChequeAR.Application.Services
             return r;
         }
 
+        /// <summary>
+        /// Cuestionario y paciente de varias fichas, para nombrarlas en la auditoría. Sin filtro
+        /// de especialidad: quien lee la auditoría ya ve todos los eventos.
+        /// </summary>
+        public Task<IReadOnlyList<QuestionnaireResponse>> GetHeadersForAuditAsync(IReadOnlyCollection<Guid> ids)
+        {
+            _access.EnsureCan(Permissions.AuditRead);
+            return _repo.GetHeadersAsync(ids);
+        }
+
         public Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(
             string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take)
             => _repo.SearchAsync(patientHospitalId, questionnaireId, status, skip, take, _guard.Scope);

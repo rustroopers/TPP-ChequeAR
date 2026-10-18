@@ -130,14 +130,12 @@ namespace ChequeAR.Api.Models
         /// </summary>
         public string VariableName { get; set; }
 
-        /// <summary>Revisión con la que se armó la pregunta (el snapshot congelado).</summary>
-        public int VariableRevision { get; set; }
-
         /// <summary>
-        /// Revisión vigente de esa variable hoy. Si es mayor que VariableRevision, el
-        /// Administrador la editó después: el editor lo avisa, pero no re-sincroniza nada.
+        /// Variable publicada que reemplaza a la de esta pregunta, si hay. El editor ofrece
+        /// cambiar la pregunta por ella; nunca lo hace solo.
         /// </summary>
-        public int VariableCurrentRevision { get; set; }
+        public string VariableReplacedById { get; set; }
+        public string VariableReplacedByName { get; set; }
     }
 
     /// <summary>Condición de visibilidad: "mostrar sólo si &lt;question&gt; &lt;op&gt; &lt;value&gt;".</summary>

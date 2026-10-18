@@ -11,9 +11,6 @@ namespace ChequeAR.Application.Services
         public IReadOnlyList<string> RolesToRemove { get; set; } = new List<string>();
         public IReadOnlyList<string> SpecialtiesToAdd { get; set; } = new List<string>();
         public IReadOnlyList<string> SpecialtiesToRemove { get; set; } = new List<string>();
-
-        public bool IsNoOp => RolesToAdd.Count == 0 && RolesToRemove.Count == 0
-                            && SpecialtiesToAdd.Count == 0 && SpecialtiesToRemove.Count == 0;
     }
 
     /// <summary>

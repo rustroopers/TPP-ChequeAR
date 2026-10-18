@@ -98,9 +98,7 @@ namespace ChequeAR.Application.Fhir
                 ValidationJson = ToValidationJson(item),
                 EnableWhenJson = ToEnableWhenJson(item),
                 CodingJson = ToCodingJson(item),
-                VariableId = ChequeARExtensions.GetVariableId(item),
-                // La versión que pide quien guarda; QuestionnaireService la resuelve contra el catálogo.
-                VariableRevision = ChequeARExtensions.GetVariableVersion(item)
+                VariableId = ChequeARExtensions.GetVariableId(item)
             };
 
             var ordenOpcion = 0;

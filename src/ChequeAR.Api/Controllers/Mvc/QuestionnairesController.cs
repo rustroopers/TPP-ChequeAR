@@ -270,7 +270,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         // sección se juntan en una sección implícita para que sean editables igual.
         /// <summary>
         /// Trae de una sola vez las variables que usa el cuestionario, para que el editor pueda
-        /// mostrar el nombre de cada una y detectar las desactualizadas. Una sola consulta por
+        /// mostrar el nombre de cada una y detectar las reemplazadas. Una sola consulta por
         /// cuestionario, no una por variable.
         /// </summary>
         private async Task<IDictionary<Guid, VariableInfo>> VariablesDe(
@@ -284,15 +284,23 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (ids.Count == 0) return new Dictionary<Guid, VariableInfo>();
 
             var variables = await _variables.GetManyAsync(ids);
-            var estado = await _variables.GetPublicationAsync(variables);
-            return variables.ToDictionary(v => v.Id, v => new VariableInfo { Name = v.Name, CurrentVersion = estado[v.Id].CurrentVersion });
+            var sucesoras = await _variables.GetSuccessorsAsync(ids);
+            return variables.ToDictionary(v => v.Id, v =>
+            {
+                sucesoras.TryGetValue(v.Id, out var sucesora);
+                return new VariableInfo
+                {
+                    Name = v.Name,
+                    ReplacedBy = sucesora
+                };
+            });
         }
 
         /// <summary>Lo que el editor necesita de la variable de cada pregunta.</summary>
         private sealed class VariableInfo
         {
             public string Name { get; set; }
-            public int CurrentVersion { get; set; }
+            public ChequeAR.Domain.Entities.ClinicalVariable ReplacedBy { get; set; }
         }
 
         private static List<QuestionGroupView> BuildEditorGroups(
@@ -374,13 +382,16 @@ namespace ChequeAR.Api.Controllers.Mvc
             if (qq.VariableId.HasValue)
             {
                 view.VariableId = qq.VariableId.Value.ToString();
-                view.VariableRevision = qq.VariableVersionId.HasValue ? qq.VariableRevision : 0;
                 VariableInfo v = null;
                 if (variables != null) variables.TryGetValue(qq.VariableId.Value, out v);
                 // Si la variable ya no está en el catálogo, la pregunta sigue mostrándose con
                 // su snapshot: lo que se perdió es poder nombrar el origen, no el contenido.
                 view.VariableName = v != null ? v.Name : null;
-                view.VariableCurrentRevision = v != null ? v.CurrentVersion : qq.VariableRevision;
+                if (v?.ReplacedBy != null)
+                {
+                    view.VariableReplacedById = v.ReplacedBy.Id.ToString();
+                    view.VariableReplacedByName = v.ReplacedBy.Name;
+                }
             }
             return view;
         }

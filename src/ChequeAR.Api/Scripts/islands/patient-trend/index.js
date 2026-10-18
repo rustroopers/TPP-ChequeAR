@@ -16,9 +16,10 @@
  * /api/reports/stats: por eso se leen así y no en camelCase.
  */
 (function () {
-    // Geometría del lienzo (viewBox); el CSS lo escala al ancho disponible.
-    var W = 640, H = 200, PADL = 52, PADR = 16, PADT = 16, PADB = 30;
-    var INNERW = W - PADL - PADR;
+    // Geometría del lienzo (viewBox); el CSS lo escala al ancho disponible. El ancho sigue
+    // al contenedor (entre MINW y MAXW): con uno fijo de 640, en un celular el gráfico se
+    // reducía a la mitad y los textos de los ejes quedaban ilegibles.
+    var MINW = 240, MAXW = 640, H = 200, PADL = 52, PADR = 16, PADT = 16, PADB = 30;
     var INNERH = H - PADT - PADB;
 
     var PatientTrend = {
@@ -80,7 +81,21 @@
                 loadSeries();
             }
 
-            Vue.onMounted(loadParams);
+            var root = Vue.ref(null);
+            var canvasW = Vue.ref(MAXW);
+            function measure() {
+                if (!root.value) return;
+                // 48 = padding horizontal de la cq-card que envuelve cada gráfico.
+                var w = Math.round(root.value.clientWidth - 48);
+                canvasW.value = Math.max(MINW, Math.min(MAXW, w));
+            }
+
+            Vue.onMounted(function () {
+                loadParams();
+                measure();
+                window.addEventListener('resize', measure);
+            });
+            Vue.onBeforeUnmount(function () { window.removeEventListener('resize', measure); });
 
             // --- formato -------------------------------------------------------------
             // Las fechas son días de calendario a medianoche UTC: se leen en UTC para que no se
@@ -139,6 +154,7 @@
                 if (yMin === yMax) { yMin -= 1; yMax += 1; }
                 else { var pad = (yMax - yMin) * 0.1; yMin -= pad; yMax += pad; }
 
+                var INNERW = canvasW.value - PADL - PADR;
                 var xMin = xDom.min, xMax = xDom.max;
                 function xScale(t) {
                     if (xMin === null || xMax === null || xMin === xMax) return PADL + INNERW / 2;
@@ -190,6 +206,7 @@
                 base.yTicks = yTicks;
                 base.axisX = PADT + INNERH;
                 base.axisLeft = PADL;
+                base.axisRight = PADL + INNERW;
                 return base;
             }
 
@@ -202,11 +219,11 @@
                 params: params, selected: selected, loadingParams: loadingParams,
                 loadingSeries: loadingSeries, error: error, charts: charts,
                 isSelected: isSelected, toggle: toggle,
-                W: W, H: H
+                root: root, W: canvasW, H: H
             };
         },
         template: '\
-<div>\
+<div ref="root">\
 <div v-if="error" class="alert alert-danger">{{ error }}</div>\
 <div v-if="loadingParams" class="cq-card">\
     <div class="cq-loading"><div class="cq-spinner cq-spinner--lg"></div>\
@@ -219,7 +236,6 @@
     </div>\
     <template v-else>\
         <div class="cq-card mb-3">\
-            <div class="cq-text-sm cq-text-muted mb-2">Seleccione uno o más parámetros para graficar su evolución.</div>\
             <div class="d-flex flex-wrap gap-3">\
                 <label v-for="p in params" :key="p.LinkId" class="d-flex align-items-center gap-1" style="cursor:pointer;">\
                     <input type="checkbox" :checked="isSelected(p.LinkId)" @change="toggle(p.LinkId)" :aria-label="p.Text" />\
@@ -247,7 +263,7 @@
                 <svg v-else :viewBox="\'0 0 \' + W + \' \' + H" style="width:100%; height:auto; overflow:visible;" role="img" :aria-label="\'Evolución de \' + c.text">\
                     <rect v-if="c.band" :x="c.band.x" :y="c.band.y" :width="c.band.w" :height="c.band.h"\
                           fill="var(--cq-success, #15803d)" opacity="0.12"></rect>\
-                    <line v-for="(t, ti) in c.yTicks" :key="\'yg\'+ti" :x1="c.axisLeft" :x2="c.axisLeft + ' + INNERW + '"\
+                    <line v-for="(t, ti) in c.yTicks" :key="\'yg\'+ti" :x1="c.axisLeft" :x2="c.axisRight"\
                           :y1="t.y" :y2="t.y" stroke="var(--cq-neutral-200, #e5e7eb)" stroke-width="1"></line>\
                     <text v-for="(t, ti) in c.yTicks" :key="\'yt\'+ti" :x="c.axisLeft - 6" :y="t.y + 3"\
                           text-anchor="end" font-size="10" fill="var(--cq-text-muted, #6b7280)">{{ t.label }}</text>\

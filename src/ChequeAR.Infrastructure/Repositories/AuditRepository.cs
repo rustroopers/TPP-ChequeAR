@@ -71,6 +71,15 @@ namespace ChequeAR.Infrastructure.Repositories
                 q = q.Where(x => x.EntityRef.StartsWith(propio)
                               || (x.EntityType == "Report" && x.EntityRef.Contains(enReporte)));
             }
+            if (!string.IsNullOrEmpty(criteria.ResourceType))
+            {
+                // Por la referencia y no por EntityType: "Patient$search" no tiene barra y
+                // queda sin tipo. La barra o el '$' evitan que "Questionnaire" incluya a
+                // "QuestionnaireResponse".
+                var conId = criteria.ResourceType + "/";
+                var conOperacion = criteria.ResourceType + "$";
+                q = q.Where(x => x.EntityRef.StartsWith(conId) || x.EntityRef.StartsWith(conOperacion));
+            }
 
             var total = await q.CountAsync();
             // El desempate por Id hace estable la paginación entre eventos del mismo instante.
