@@ -56,7 +56,6 @@
             isPublished: Boolean,
             replacesId: String,
             replacesName: String,
-            deactivateReplacedOnPublish: Boolean,
             options: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
@@ -76,7 +75,6 @@
                 maxLength: props.maxLength === undefined || props.maxLength === null ? '' : props.maxLength,
                 accept: props.accept || '',
                 sortOrder: props.sortOrder || 0,
-                deactivateReplaced: !!props.deactivateReplacedOnPublish,
                 options: (props.options || []).map(function (o) {
                     return {
                         display: o.display || '',
@@ -232,7 +230,6 @@
                     sortOrder: Number(model.sortOrder) || 0,
                     revision: props.revision || 0,
                     replacesId: props.replacesId || null,
-                    deactivateReplacedOnPublish: !!props.replacesId && model.deactivateReplaced,
                     options: tieneOpciones.value ? model.options.map(function (o) {
                         return {
                             display: o.display.trim(),
@@ -302,12 +299,6 @@
             '        <div class="col-12">',
             '          <label class="form-label cq-text-sm">Descripci&oacute;n</label>',
             '          <textarea v-model="model.description" rows="2" class="form-control" placeholder="Descripci&oacute;n..."></textarea>',
-            '        </div>',
-            '        <div class="col-12" v-if="replacesId && !publicada">',
-            '          <div class="form-check">',
-            '            <input class="form-check-input" type="checkbox" id="chkDeactivateReplaced" v-model="model.deactivateReplaced" />',
-            '            <label class="form-check-label cq-text-sm" for="chkDeactivateReplaced">Dar de baja &laquo;{{ replacesName }}&raquo; al publicar</label>',
-            '          </div>',
             '        </div>',
             '      </div>',
             '    </div>',

@@ -58,7 +58,7 @@ namespace ChequeAR.Api.Models
         public Guid? ReplacesId { get; set; }
         /// <summary>Nombre de esa variable. Sólo de salida, para el formulario.</summary>
         public string ReplacesName { get; set; }
-        /// <summary>Al publicar esta, dar de baja la que reemplaza.</summary>
+        /// <summary>Si al publicarla se dio de baja la que reemplaza. Sólo de salida: se elige al publicar.</summary>
         public bool DeactivateReplacedOnPublish { get; set; }
 
         public List<VariableOptionDto> Options { get; set; } = new List<VariableOptionDto>();
@@ -145,8 +145,7 @@ namespace ChequeAR.Api.Models
                 SnomedDisplay = d.SnomedDisplay,
                 Term = d.Term,
                 SortOrder = d.SortOrder,
-                ReplacesId = d.ReplacesId,
-                DeactivateReplacedOnPublish = d.DeactivateReplacedOnPublish
+                ReplacesId = d.ReplacesId
             };
             foreach (var o in d.Options ?? new List<VariableOptionDto>())
                 v.Options.Add(new VariableOption

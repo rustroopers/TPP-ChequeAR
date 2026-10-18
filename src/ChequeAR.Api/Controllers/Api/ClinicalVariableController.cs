@@ -64,11 +64,14 @@ namespace ChequeAR.Api.Controllers.Api
             return ResponseMessage(response);
         }
 
-        /// <summary>Publica el borrador. If-Match (la revisión que vio quien publica) es opcional.</summary>
+        /// <summary>
+        /// Publica el borrador. If-Match (la revisión que vio quien publica) es opcional;
+        /// deactivateReplaced da de baja la variable que esta reemplaza.
+        /// </summary>
         [HttpPost, Route("{id:guid}/$publish"), RequiresPermissionApi(Permissions.VariableManage)]
-        public async Task<IHttpActionResult> Publish(Guid id)
+        public async Task<IHttpActionResult> Publish(Guid id, bool deactivateReplaced = false)
         {
-            var v = await _service.PublishAsync(id, UserId, Request.IfMatchVersion());
+            var v = await _service.PublishAsync(id, UserId, Request.IfMatchVersion(), deactivateReplaced);
             if (v == null) return Content(HttpStatusCode.NotFound, OperationOutcomes.NotFound());
             return Ok(ClinicalVariableDtoMap.ToDto(v));
         }

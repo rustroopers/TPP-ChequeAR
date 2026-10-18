@@ -128,11 +128,9 @@ namespace ChequeAR.Application.Services
                 if (source?.IsPublished != true)
                     throw new ValidationFailedException(new List<string> { "Sólo se puede crear una variable a partir de una publicada." });
             }
-            else
-            {
-                v.DeactivateReplacedOnPublish = false;
-            }
-            await ValidateAsync(v, existingId: null);
+            // Si la anterior se da de baja se decide al publicar.
+            v.DeactivateReplacedOnPublish = false;
+            await ValidateAsync(v, existingId: null, ignoreConflictWith: v.ReplacesId);
 
             var now = DateTime.UtcNow;
             v.Id = v.Id == Guid.Empty ? Guid.NewGuid() : v.Id;
@@ -169,7 +167,6 @@ namespace ChequeAR.Application.Services
             copy.Code = await FreeCodeAsync(source.Code);
             copy.SortOrder = source.SortOrder;
             copy.ReplacesId = source.Id;
-            copy.DeactivateReplacedOnPublish = true;
             foreach (var o in copy.Options) o.VariableId = Guid.Empty;
             return copy;
         }
@@ -205,10 +202,9 @@ namespace ChequeAR.Application.Services
 
             patch.Id = id;
             patch.ReplacesId = v.ReplacesId;
-            if (v.IsPublished) patch.DeactivateReplacedOnPublish = v.DeactivateReplacedOnPublish;
             Normalize(patch);
             // Los conflictos de nombre y concepto se miran al publicar; acá sólo en un borrador.
-            await ValidateAsync(patch, existingId: id, checkConflicts: !v.IsPublished);
+            await ValidateAsync(patch, existingId: id, checkConflicts: !v.IsPublished, ignoreConflictWith: v.ReplacesId);
 
             if (v.IsPublished && !VariableDefinition.From(patch).ClinicallySameAs(VariableDefinition.From(v)))
                 throw new ValidationFailedException(new List<string>
@@ -232,7 +228,6 @@ namespace ChequeAR.Application.Services
             v.SnomedDisplay = patch.SnomedDisplay;
             v.Term = patch.Term;
             v.SortOrder = patch.SortOrder;
-            v.DeactivateReplacedOnPublish = patch.DeactivateReplacedOnPublish;
             v.Revision++;
             v.UpdatedBy = userId;
             v.UpdatedAt = DateTime.UtcNow;
@@ -249,16 +244,18 @@ namespace ChequeAR.Application.Services
         /// <summary>
         /// Publica la variable por primera vez. Una publicada no se vuelve a publicar: sus textos
         /// se corrigen en el lugar y lo clínico se cambia creando otra. Si reemplaza a otra, se
-        /// valida que se distinga y, si se pidió, la anterior se da de baja en la misma operación.
+        /// valida que se distinga y, con <paramref name="deactivateReplaced"/>, la anterior se da
+        /// de baja en la misma operación.
         /// </summary>
-        public async Task<ClinicalVariable> PublishAsync(Guid id, string userId, int? expectedRevision = null)
+        public async Task<ClinicalVariable> PublishAsync(Guid id, string userId, int? expectedRevision = null, bool deactivateReplaced = false)
         {
             _access.EnsureCan(Permissions.VariableManage);
             var v = await _repo.GetAsync(id);
             if (v == null) return null;
             EnsureRevision(v, expectedRevision);
             if (v.IsPublished) return v;
-            await ValidateAsync(v, existingId: id);
+            v.DeactivateReplacedOnPublish = v.ReplacesId.HasValue && deactivateReplaced;
+            await ValidateAsync(v, existingId: id, ignoreConflictWith: v.DeactivateReplacedOnPublish ? v.ReplacesId : null);
 
             ClinicalVariable source = null;
             if (v.ReplacesId.HasValue)
@@ -435,7 +432,11 @@ namespace ChequeAR.Application.Services
         /// Junta TODAS las reglas incumplidas en una sola excepción. Devolver la primera haría
         /// que el admin corrija y reenvíe una vez por error; la interfaz emite un issue por regla.
         /// </summary>
-        private async Task ValidateAsync(ClinicalVariable v, Guid? existingId, bool checkConflicts = true)
+        /// <param name="ignoreConflictWith">
+        /// La anterior, cuando no choca: en un borrador porque todavía se puede elegir darla de
+        /// baja, y al publicar porque se la da de baja.
+        /// </param>
+        private async Task ValidateAsync(ClinicalVariable v, Guid? existingId, bool checkConflicts = true, Guid? ignoreConflictWith = null)
         {
             var errors = new List<string>();
 
@@ -479,7 +480,7 @@ namespace ChequeAR.Application.Services
 
             v.Id = existingId ?? v.Id;
             if (checkConflicts)
-                errors.AddRange(await PublishedConflictsAsync(v, v.DeactivateReplacedOnPublish ? v.ReplacesId : null));
+                errors.AddRange(await PublishedConflictsAsync(v, ignoreConflictWith));
 
             if (errors.Count > 0) throw new ValidationFailedException(errors);
         }

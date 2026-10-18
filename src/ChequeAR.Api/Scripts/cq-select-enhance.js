@@ -73,9 +73,12 @@
         wrapper.className = 'dropdown cq-select' + (isSmall ? ' cq-select--sm' : '');
         var id = select.id || slug();
 
+        // El layout pone los dropdowns en posición fija; acá el menú es w-100 y con fixed ese
+        // 100% pasa a ser el ancho de la ventana. Vuelve a absolute para medir contra el wrapper.
         wrapper.innerHTML =
             '<button class="btn cq-select__toggle dropdown-toggle w-100" type="button" ' +
-                'data-bs-toggle="dropdown" aria-expanded="false" data-cq-select-toggle="' + id + '">' +
+                'data-bs-toggle="dropdown" aria-expanded="false" data-cq-select-toggle="' + id + '" ' +
+                'data-bs-popper-config=\'{"strategy":"absolute"}\'>' +
                 '<span class="cq-select__label"></span>' +
             '</button>' +
             '<ul class="dropdown-menu w-100">' + buildMenuItems(select) + '</ul>';
