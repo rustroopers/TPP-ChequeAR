@@ -240,12 +240,12 @@ namespace ChequeAR.Tests.Application
             return v;
         }
 
-        private ClinicalVariable Derivada(ClinicalVariable fuente, string nombre, bool darDeBaja, bool cambiarOpciones = true)
+        private ClinicalVariable Derivada(ClinicalVariable fuente, string nombre, bool cambiarOpciones = true)
         {
             var d = new ClinicalVariable
             {
                 Id = Guid.NewGuid(), Code = "severidad-2", Name = nombre, Type = QuestionType.Choice, IsActive = true, Revision = 1,
-                SnomedCode = fuente.SnomedCode, ReplacesId = fuente.Id, DeactivateReplacedOnPublish = darDeBaja,
+                SnomedCode = fuente.SnomedCode, ReplacesId = fuente.Id,
                 Options = fuente.Options.Select(o => new VariableOption { Id = Guid.NewGuid(), Value = o.Value, Display = o.Display, Code = o.Code, OrderIndex = o.OrderIndex }).ToList()
             };
             if (cambiarOpciones)
@@ -265,7 +265,7 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("severidad-3", draft.Code);
             Assert.Null(draft.Name);
             Assert.Equal(fuente.Id, draft.ReplacesId);
-            Assert.True(draft.DeactivateReplacedOnPublish);
+            Assert.False(draft.DeactivateReplacedOnPublish);
             Assert.Equal(2, draft.Options.Count);
             Assert.Equal("246112005", draft.SnomedCode);
         }
@@ -291,9 +291,9 @@ namespace ChequeAR.Tests.Application
         public async Task PublicarDerivada_MismoNombre_Rechaza()
         {
             var fuente = PublicadaConConcepto();
-            var d = Derivada(fuente, " severidad ", darDeBaja: true);
+            var d = Derivada(fuente, " severidad ");
 
-            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.PublishAsync(d.Id, "admin"));
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.PublishAsync(d.Id, "admin", deactivateReplaced: true));
 
             Assert.Contains(ex.Errors, e => e.Contains("nombre"));
         }
@@ -302,9 +302,9 @@ namespace ChequeAR.Tests.Application
         public async Task PublicarDerivada_SinCambioClinico_Rechaza()
         {
             var fuente = PublicadaConConcepto();
-            var d = Derivada(fuente, "Severidad pediátrica", darDeBaja: true, cambiarOpciones: false);
+            var d = Derivada(fuente, "Severidad pediátrica", cambiarOpciones: false);
 
-            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.PublishAsync(d.Id, "admin"));
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.PublishAsync(d.Id, "admin", deactivateReplaced: true));
 
             Assert.Contains(ex.Errors, e => e.Contains("No hay cambios"));
         }
@@ -314,7 +314,7 @@ namespace ChequeAR.Tests.Application
         {
             var fuente = PublicadaConConcepto();
             _repo.Setup(r => r.GetPublishedActiveBySnomedCodeAsync("246112005")).ReturnsAsync(new List<ClinicalVariable> { fuente });
-            var d = Derivada(fuente, "Severidad pediátrica", darDeBaja: false);
+            var d = Derivada(fuente, "Severidad pediátrica");
 
             var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => _sut.PublishAsync(d.Id, "admin"));
 
@@ -326,11 +326,11 @@ namespace ChequeAR.Tests.Application
         {
             var fuente = PublicadaConConcepto();
             _repo.Setup(r => r.GetPublishedActiveBySnomedCodeAsync("246112005")).ReturnsAsync(new List<ClinicalVariable> { fuente });
-            var d = Derivada(fuente, "Severidad pediátrica", darDeBaja: true);
+            var d = Derivada(fuente, "Severidad pediátrica");
             ClinicalVariable dadaDeBaja = null;
             CapturarPublicacion(d, x => dadaDeBaja = x);
 
-            await _sut.PublishAsync(d.Id, "admin");
+            await _sut.PublishAsync(d.Id, "admin", deactivateReplaced: true);
 
             Assert.True(d.IsPublished);
             Assert.Equal(fuente.Id, dadaDeBaja?.Id);

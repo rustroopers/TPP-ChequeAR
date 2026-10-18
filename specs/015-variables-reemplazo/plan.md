@@ -13,7 +13,7 @@ Una variable publicada queda fija en lo clínico. El cambio se hace creando otra
 | Campo | Cambio |
 |---|---|
 | `ReplacesId` (Guid?) | Nuevo. Variable de la que se creó. FK a la misma tabla, sin cascade, con índice. |
-| `DeactivateReplacedOnPublish` (bool) | Nuevo. Dar de baja la anterior al publicar esta. |
+| `DeactivateReplacedOnPublish` (bool) | Nuevo. Si al publicar esta se dio de baja la anterior; se elige en el modal de Publicar. |
 | `PublishedAt` (DateTime?) | Nuevo. Reemplaza a `CurrentVersionId`: null si nunca se publicó. |
 
 `Question` pierde `VariableVersionId` y `VariableRevision`; el builder FHIR deja de emitir `question-variable-version` (su StructureDefinition queda como `retired`, porque la llevan las versiones del cuestionario publicadas antes).

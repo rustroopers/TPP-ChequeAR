@@ -114,7 +114,7 @@ else
                                 <li><a class="dropdown-item" href="@Url.Action("Details", new { id = v.Id })"><i class="bi bi-pencil me-1"></i> Editar</a></li>
                                 @if (!v.IsPublished)
                                 {
-                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@v.Id" data-revision="@v.Revision" data-title="@v.Name"><i class="bi bi-send me-1"></i> Publicar</button></li>
+                                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#publishModal" data-id="@v.Id" data-revision="@v.Revision" data-title="@v.Name" data-replaces="@v.ReplacesName"><i class="bi bi-send me-1"></i> Publicar</button></li>
                                 }
                                 else
                                 {
@@ -195,6 +195,13 @@ else
                 <h2 class="modal-title h3" id="publishModalLabel">Publicar <span id="publishTitle"></span></h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
+            <div class="modal-body" id="publishReplaces" hidden>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="deactivateReplaced" value="true" id="deactivateReplaced" checked />
+                    <label class="form-check-label" for="deactivateReplaced">Dar de baja &laquo;<span id="publishReplacesName"></span>&raquo;</label>
+                </div>
+                <p class="cq-text-sm cq-text-muted mb-0 mt-2">Dejará de ofrecerse para cuestionarios nuevos. Los que ya la usan no cambian.</p>
+            </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Publicar</button>
@@ -211,6 +218,12 @@ else
         document.getElementById("publishId").value = pub.getAttribute("data-id");
         document.getElementById("publishRevision").value = pub.getAttribute("data-revision");
         document.getElementById("publishTitle").textContent = pub.getAttribute("data-title");
+        var anterior = pub.getAttribute("data-replaces");
+        var chk = document.getElementById("deactivateReplaced");
+        document.getElementById("publishReplaces").hidden = !anterior;
+        document.getElementById("publishReplacesName").textContent = anterior || "";
+        chk.disabled = !anterior;
+        chk.checked = true;
     });
 
     document.addEventListener("click", function (e) {

@@ -23,7 +23,7 @@ El Administrador necesita cambiar el rango de "Peso" para pediatría. No edita "
 **Acceptance Scenarios**:
 
 1. **Given** una variable publicada, **When** el Administrador abre su pantalla, **Then** los campos clínicos están bloqueados y puede corregir sólo el enunciado por defecto y la descripción.
-2. **Given** una variable publicada, **When** elige "Crear a partir de esta", **Then** se abre una variable nueva con la misma definición, un código libre sugerido, el nombre vacío y la opción "Dar de baja «Peso» al publicar" marcada.
+2. **Given** una variable publicada, **When** elige "Crear a partir de esta", **Then** se abre una variable nueva con la misma definición, un código libre sugerido, el nombre vacío. Al publicarla, el modal de Publicar ofrece "Dar de baja «Peso»", marcada.
 3. **Given** la nueva con el mismo nombre que la anterior, **When** la publica, **Then** se rechaza.
 4. **Given** la nueva sin ningún cambio clínico, **When** la publica, **Then** se rechaza.
 5. **Given** la nueva con el mismo concepto SNOMED y la baja marcada, **When** la publica, **Then** se publica y la anterior queda de baja en la misma operación.

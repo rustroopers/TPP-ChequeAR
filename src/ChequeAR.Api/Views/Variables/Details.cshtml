@@ -41,7 +41,8 @@
         @if (publicada)
         {
             @* Lo clínico de una publicada no se edita: se crea otra variable que la reemplaza. *@
-            <a href="@Url.Action("Details", new { from = Model.Id })" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Crear a partir de esta</a>
+            @* id vacío: si no, Url.Action reusa el id de la ruta actual y abre la misma variable. *@
+            <a href="@Url.Action("Details", new { id = "", from = Model.Id })" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Crear a partir de esta</a>
         }
     </div>
 </header>
@@ -80,6 +81,16 @@
                     <h2 class="modal-title h3" id="publishModalLabel">Publicar variable</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                 </div>
+                if (Model.ReplacesId.HasValue)
+                {
+                    <div class="modal-body">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="deactivateReplaced" value="true" id="deactivateReplaced" checked />
+                            <label class="form-check-label" for="deactivateReplaced">Dar de baja &laquo;@Model.ReplacesName&raquo;</label>
+                        </div>
+                        <p class="cq-text-sm cq-text-muted mb-0 mt-2">Dejará de ofrecerse para cuestionarios nuevos. Los que ya la usan no cambian.</p>
+                    </div>
+                }
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Publicar</button>

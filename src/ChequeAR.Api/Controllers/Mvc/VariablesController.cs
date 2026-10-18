@@ -59,10 +59,15 @@ namespace ChequeAR.Api.Controllers.Mvc
                 QuestionType? tipo = QuestionTypeMap.TryFromUi(type, out var t) ? t : (QuestionType?)null;
                 var pagina = await _variables.ListAsync(q, tipo, active, (model.Page - 1) * PageSize, PageSize);
                 var sucesoras = await _variables.GetSuccessorsAsync(pagina.Items.Select(v => v.Id));
+                var anteriores = new Dictionary<Guid, string>();
+                foreach (var anteriorId in pagina.Items.Where(v => !v.IsPublished && v.ReplacesId.HasValue).Select(v => v.ReplacesId.Value).Distinct())
+                    anteriores[anteriorId] = (await _variables.GetAsync(anteriorId))?.Name;
                 model.Total = pagina.Total;
                 foreach (var v in pagina.Items)
                 {
                     sucesoras.TryGetValue(v.Id, out var sucesora);
+                    string anterior = null;
+                    if (!v.IsPublished && v.ReplacesId.HasValue) anteriores.TryGetValue(v.ReplacesId.Value, out anterior);
                     model.Variables.Add(new VariableListItem
                     {
                         Id = v.Id,
@@ -77,7 +82,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                         CreatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.CreatedAt),
                         IsPublished = v.IsPublished,
                         Revision = v.Revision,
-                        ReplacedByName = sucesora?.Name
+                        ReplacedByName = sucesora?.Name,
+                        ReplacesName = anterior
                     });
                 }
             }
@@ -159,7 +165,7 @@ namespace ChequeAR.Api.Controllers.Mvc
         }
 
         [HttpPost, ValidateAntiForgeryToken]
-        public async Task<ActionResult> Publish(Guid id, int? revision, string payloadJson, string returnUrl = null)
+        public async Task<ActionResult> Publish(Guid id, int? revision, string payloadJson, bool deactivateReplaced = false, string returnUrl = null)
         {
             try
             {
@@ -174,7 +180,7 @@ namespace ChequeAR.Api.Controllers.Mvc
                     revision = guardada.Revision;
                 }
 
-                await _variables.PublishAsync(id, User.Identity.Name, revision);
+                await _variables.PublishAsync(id, User.Identity.Name, revision, deactivateReplaced);
                 var publicada = await _variables.GetAsync(id);
                 var anterior = publicada.ReplacesId.HasValue ? await _variables.GetAsync(publicada.ReplacesId.Value) : null;
                 TempData["Toast"] = anterior != null && !anterior.IsActive && publicada.DeactivateReplacedOnPublish

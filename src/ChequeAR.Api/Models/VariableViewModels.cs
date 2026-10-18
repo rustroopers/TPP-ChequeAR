@@ -36,6 +36,9 @@ namespace ChequeAR.Api.Models
 
         /// <summary>Nombre de la variable publicada que reemplaza a esta, si hay.</summary>
         public string ReplacedByName { get; set; }
+
+        /// <summary>Nombre de la que esta reemplaza, en un borrador: al publicar se elige si se la da de baja.</summary>
+        public string ReplacesName { get; set; }
     }
 
     /// <summary>
