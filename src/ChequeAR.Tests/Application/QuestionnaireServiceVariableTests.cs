@@ -154,16 +154,15 @@ namespace ChequeAR.Tests.Application
             Assert.Contains(ex.Errors, e => e.Contains("escondida"));
         }
 
-        // El clon copia la revisión del ORIGEN, no la vigente: nace idéntico a lo que se clonó.
-        // Si tomara la vigente, clonar sería una forma encubierta de actualizar las variables.
+        // El clon copia el snapshot del ORIGEN: nace idéntico a lo que se clonó.
         [Fact]
-        public async Task CloneAsync_CopiaVariableIdYRevision()
+        public async Task CloneAsync_CopiaVariableIdYSnapshot()
         {
             var id = Guid.NewGuid();
             var peso = TestHelpers.Variable("peso", revision: 7);
             var origen = new Questionnaire { Id = id, Title = "Control", Status = QuestionnaireStatus.Active, SpecialtyCode = "cardio" };
             var pregunta = TestHelpers.QuestionFrom(peso);
-            pregunta.VariableRevision = 2;   // se armó con una revisión anterior
+            pregunta.ValidationJson = "{\"unit\":\"g\"}";
             origen.Questions.Add(pregunta);
             _repo.Setup(r => r.GetAsync(id)).ReturnsAsync(origen);
 
@@ -171,8 +170,7 @@ namespace ChequeAR.Tests.Application
 
             var copiada = copia.Questions.First();
             Assert.Equal(peso.Id, copiada.VariableId);
-            Assert.Equal(pregunta.VariableVersionId, copiada.VariableVersionId);
-            Assert.Equal(2, copiada.VariableRevision);
+            Assert.Equal(pregunta.ValidationJson, copiada.ValidationJson);
         }
 
         // Clonar es un uso nuevo de las variables: una dada de baja no se puede usar.

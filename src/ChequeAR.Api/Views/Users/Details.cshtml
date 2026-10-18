@@ -7,7 +7,6 @@
 <header class="cq-page-header">
     <div>
         <h1 class="cq-page-header__title">@Model.FullName</h1>
-        <p class="cq-page-header__subtitle"><code>@Model.Username</code></p>
     </div>
     <a href="@Url.Action("Index")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
 </header>
@@ -18,22 +17,8 @@
     @Html.HiddenFor(m => m.Username)
 
     <div class="cq-card mb-3" style="max-width:720px;">
-        <h2>Datos</h2>
-        <dl class="row">
-            <dt class="col-sm-3 cq-text-sm cq-text-muted">Email</dt><dd class="col-sm-9">@(string.IsNullOrWhiteSpace(Model.Email) ? "—" : Model.Email)</dd>
-        </dl>
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="active" name="Active" @(Model.Active ? "checked" : "") />
-            <label class="form-check-label" for="active">Cuenta activa</label>
-        </div>
-    </div>
-
-    <div class="cq-card mb-3" style="max-width:720px;">
         <h2>Rol</h2>
-        <p class="cq-text-sm cq-text-muted">
-            El rol determina qué puede hacer en todo el sistema. El alcance por especialidad se
-            configura aparte, abajo.
-        </p>
+
         <select class="form-select" name="Role" style="max-width:280px;">
             @foreach (var r in ChequeAR.Domain.Enums.Role.All)
             {
@@ -44,10 +29,6 @@
 
     <div class="cq-card mb-3" style="max-width:720px;">
         <h2>Especialidades</h2>
-        <p class="cq-text-sm cq-text-muted">
-            Limita lo que ve y puede modificar (fichas, cuestionarios, reportes) a las especialidades
-            marcadas. Un Administrador ve todas sin necesidad de que se le asignen.
-        </p>
         @{
             var disponibles = ViewBag.AvailableSpecialties as IEnumerable<ChequeAR.Domain.Entities.Specialty> ?? Enumerable.Empty<ChequeAR.Domain.Entities.Specialty>();
             var asignadas = new HashSet<string>(Model.Specialties.Select(s => s.SpecialtyCode));

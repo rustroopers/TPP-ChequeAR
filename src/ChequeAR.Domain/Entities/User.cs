@@ -15,9 +15,7 @@ namespace ChequeAR.Domain.Entities
         /// <summary>
         /// Hash PBKDF2 de la contraseña para el login local (ver
         /// ChequeAR.Application.Security.PasswordHasher/LocalCredentialAuthenticator).
-        /// Null = este usuario no puede loguearse localmente (fail-closed) -- es el estado
-        /// normal de un usuario que sólo entra vía HospitalAuthClient cuando ese modo esté
-        /// activo.
+        /// Null = este usuario no puede loguearse (fail-closed).
         /// </summary>
         public string PasswordHash { get; set; }
         public DateTime? PasswordUpdatedAt { get; set; }

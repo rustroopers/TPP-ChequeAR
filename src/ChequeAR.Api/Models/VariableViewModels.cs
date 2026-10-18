@@ -31,10 +31,11 @@ namespace ChequeAR.Api.Models
         public bool IsActive { get; set; }
         public string CreatedAt { get; set; }
 
-        /// <summary>Versión vigente; 0 si nunca se publicó.</summary>
-        public int CurrentVersion { get; set; }
-        public bool HasUnpublishedChanges { get; set; }
+        public bool IsPublished { get; set; }
         public int Revision { get; set; }
+
+        /// <summary>Nombre de la variable publicada que reemplaza a esta, si hay.</summary>
+        public string ReplacedByName { get; set; }
     }
 
     /// <summary>
@@ -53,17 +54,14 @@ namespace ChequeAR.Api.Models
         public string Name { get; set; }
         public bool IsActive { get; set; }
         public int Revision { get; set; }
-        public int CurrentVersion { get; set; }
-        public bool HasUnpublishedChanges { get; set; }
-        public List<VariableVersionItem> Versions { get; set; } = new List<VariableVersionItem>();
-    }
+        public bool IsPublished { get; set; }
 
-    public class VariableVersionItem
-    {
-        public int Version { get; set; }
-        public string Date { get; set; }
-        public string Author { get; set; }
-        public string ChangeNote { get; set; }
-        public bool IsCurrent { get; set; }
+        /// <summary>La que esta reemplaza (se creó a partir de ella).</summary>
+        public Guid? ReplacesId { get; set; }
+        public string ReplacesName { get; set; }
+
+        /// <summary>La publicada que reemplaza a esta.</summary>
+        public Guid? ReplacedById { get; set; }
+        public string ReplacedByName { get; set; }
     }
 }

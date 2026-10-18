@@ -53,7 +53,10 @@
             isActive: Boolean,
             sortOrder: Number,
             revision: Number,
-            currentVersion: Number,
+            isPublished: Boolean,
+            replacesId: String,
+            replacesName: String,
+            deactivateReplacedOnPublish: Boolean,
             options: { type: Array, default: function () { return []; } }
         },
         setup: function (props) {
@@ -73,12 +76,15 @@
                 maxLength: props.maxLength === undefined || props.maxLength === null ? '' : props.maxLength,
                 accept: props.accept || '',
                 sortOrder: props.sortOrder || 0,
+                deactivateReplaced: !!props.deactivateReplacedOnPublish,
                 options: (props.options || []).map(function (o) {
                     return {
                         display: o.display || '',
                         value: o.value || '',
                         snomedCode: o.snomedCode || '',
-                        snomedDisplay: o.snomedDisplay || ''
+                        snomedDisplay: o.snomedDisplay || '',
+                        // Sólo de pantalla: si se codifica. Una opción ya codificada arranca activa.
+                        snomed: !!o.snomedCode
                     };
                 })
             });
@@ -92,7 +98,22 @@
             });
 
             var snomed = window.ChequeARSnomed.createSearch(function () { return coding; }, null, 'variable');
-            Vue.watch(function () { return coding.term; }, function (t) { snomed.schedule(t); });
+            // El término que deja un concepto elegido no es una búsqueda nueva.
+            var terminoElegido = null;
+            Vue.watch(function () { return coding.term; }, function (t) {
+                if (terminoElegido !== null && t === terminoElegido) { terminoElegido = null; return; }
+                terminoElegido = null;
+                snomed.schedule(t);
+            });
+
+            // Al elegir un concepto, su término reemplaza al escrito: ya no hace falta repetirlo abajo.
+            var codigoElegido = null;
+            function elegir(r) {
+                codigoElegido = r.code;
+                if (coding.term !== r.display) terminoElegido = r.display;
+                snomed.pick(r);
+                coding.term = r.display;
+            }
 
             var codeVerifying = Vue.ref(false);
             var codeVerification = Vue.ref(null);
@@ -104,8 +125,43 @@
                 codeVerification.value = null;
                 clearTimeout(verifyDebounce);
                 if (!(coding.code || '').trim()) return;
+                // El código de un concepto elegido de la lista ya viene del terminológico.
+                if (coding.code === codigoElegido) return;
+                codigoElegido = null;
                 verifyDebounce = setTimeout(verificar, 500);
             });
+
+            // --- SNOMED CT de las opciones de respuesta ---
+            // Busca con el texto de la opción y deja ese texto como está: es lo que ve quien
+            // completa. Un solo buscador, apuntado a la opción que se está editando.
+            var opcionActiva = Vue.ref(-1);
+            var opcionSnomed = window.ChequeARSnomed.createSearch(function () {
+                var o = model.options[opcionActiva.value];
+                if (!o) return null;
+                return {
+                    get term() { return o.display; },
+                    get code() { return o.snomedCode; },
+                    set code(v) { o.snomedCode = v || ''; },
+                    get codeDisplay() { return o.snomedDisplay; },
+                    set codeDisplay(v) { o.snomedDisplay = v || ''; }
+                };
+            }, null, 'variable-option');
+
+            function enfocarOpcion(i) {
+                if (opcionActiva.value === i) return;
+                opcionSnomed.reset();
+                opcionActiva.value = i;
+            }
+            function buscarOpcion(i) {
+                var o = model.options[i];
+                if (!o || !o.snomed) return;
+                enfocarOpcion(i);
+                opcionSnomed.schedule(o.display);
+            }
+            function alternarSnomed(i) {
+                if (model.options[i].snomed) buscarOpcion(i);
+                else if (opcionActiva.value === i) opcionSnomed.reset();
+            }
 
             function verificar() {
                 codeVerifying.value = true;
@@ -142,9 +198,14 @@
             }
 
             function addOption() {
-                model.options.push({ display: '', value: '', snomedCode: '', snomedDisplay: '' });
+                model.options.push({ display: '', value: '', snomedCode: '', snomedDisplay: '', snomed: false });
             }
-            function removeOption(i) { model.options.splice(i, 1); }
+            function removeOption(i) {
+                // Los índices se corren: la búsqueda en curso quedaría apuntando a otra opción.
+                opcionSnomed.reset();
+                opcionActiva.value = -1;
+                model.options.splice(i, 1);
+            }
 
             function num(v) { return v === '' || v === null || v === undefined ? null : Number(v); }
 
@@ -170,12 +231,14 @@
                     term: (coding.term || '').trim(),
                     sortOrder: Number(model.sortOrder) || 0,
                     revision: props.revision || 0,
+                    replacesId: props.replacesId || null,
+                    deactivateReplacedOnPublish: !!props.replacesId && model.deactivateReplaced,
                     options: tieneOpciones.value ? model.options.map(function (o) {
                         return {
                             display: o.display.trim(),
                             value: (o.value || o.display).trim(),
-                            snomedCode: (o.snomedCode || '').trim(),
-                            snomedDisplay: (o.snomedDisplay || '').trim()
+                            snomedCode: o.snomed ? (o.snomedCode || '').trim() : '',
+                            snomedDisplay: o.snomed ? (o.snomedDisplay || '').trim() : ''
                         };
                     }) : []
                 };
@@ -183,8 +246,7 @@
 
             // El hidden se mantiene al día en vez de llenarse en el submit: si el navegador
             // dispara el submit por Enter en un input, el valor ya está puesto.
-            // Publicar, como en el editor de cuestionarios: sólo con todo guardado y con
-            // cambios respecto de la versión vigente.
+            // Publicar, como en el editor de cuestionarios: sólo con todo guardado.
             var guardado = null;
             function sync() {
                 var json = JSON.stringify(buildPayload());
@@ -204,15 +266,18 @@
             }
             Vue.watch([model, coding], sync, { deep: true, immediate: true });
             Vue.onMounted(sync);
-            Vue.onBeforeUnmount(function () { snomed.cancel(); clearTimeout(verifyDebounce); });
+            Vue.onBeforeUnmount(function () { snomed.cancel(); opcionSnomed.cancel(); clearTimeout(verifyDebounce); });
 
             return {
-                esNueva: esNueva, publicada: (props.currentVersion || 0) > 0,
+                esNueva: esNueva, publicada: !!props.isPublished,
+                replacesId: props.replacesId, replacesName: props.replacesName,
                 types: TYPES, model: model, coding: coding, snomed: snomed,
                 codeVerifying: codeVerifying, codeVerification: codeVerification,
                 esNumerico: esNumerico, tieneOpciones: tieneOpciones,
                 tieneMaxLength: tieneMaxLength, esAdjunto: esAdjunto,
-                codeTocado: codeTocado,
+                codeTocado: codeTocado, elegir: elegir,
+                opcionActiva: opcionActiva, opcionSnomed: opcionSnomed,
+                enfocarOpcion: enfocarOpcion, buscarOpcion: buscarOpcion, alternarSnomed: alternarSnomed,
                 addOption: addOption, removeOption: removeOption
             };
         },
@@ -224,7 +289,7 @@
             '      <div class="row g-2">',
             '        <div class="col-md-7">',
             '          <label class="form-label cq-text-sm">Nombre</label>',
-            '          <input v-model="model.name" class="form-control" placeholder="Peso" />',
+            '          <input v-model="model.name" class="form-control" :placeholder="replacesName || \'Peso\'" :disabled="publicada" :title="publicada ? \'Fijo en una variable publicada\' : null" />',
             '        </div>',
             '        <div class="col-md-5">',
             '          <label class="form-label cq-text-sm">Código</label>',
@@ -238,23 +303,24 @@
             '          <label class="form-label cq-text-sm">Descripci&oacute;n</label>',
             '          <textarea v-model="model.description" rows="2" class="form-control" placeholder="Descripci&oacute;n..."></textarea>',
             '        </div>',
+            '        <div class="col-12" v-if="replacesId && !publicada">',
+            '          <div class="form-check">',
+            '            <input class="form-check-input" type="checkbox" id="chkDeactivateReplaced" v-model="model.deactivateReplaced" />',
+            '            <label class="form-check-label cq-text-sm" for="chkDeactivateReplaced">Dar de baja &laquo;{{ replacesName }}&raquo; al publicar</label>',
+            '          </div>',
+            '        </div>',
             '      </div>',
             '    </div>',
 
             '    <div class="cq-card mt-3">',
             '      <h2 class="h3">Respuesta</h2>',
+            '      <fieldset :disabled="publicada" class="border-0 p-0 m-0">',
             '      <div class="row g-2">',
             '        <div class="col-md-6">',
             '          <label class="form-label cq-text-sm">Tipo</label>',
-            '          <select v-model="model.type" class="form-select" :disabled="publicada" :title="publicada ? \'Fijo en una variable publicada\' : null">',
+            '          <select v-model="model.type" class="form-select">',
             '            <option v-for="t in types" :key="t.code" :value="t.code">{{ t.label }}</option>',
             '          </select>',
-            '        </div>',
-            '        <div class="col-md-6 d-flex align-items-end">',
-            '          <div class="form-check">',
-            '            <input class="form-check-input" type="checkbox" id="chkRepeats" v-model="model.repeatsAllowed" :disabled="publicada" />',
-            '            <label class="form-check-label cq-text-sm" for="chkRepeats">Admite varias respuestas</label>',
-            '          </div>',
             '        </div>',
 
             '        <template v-if="esNumerico">',
@@ -288,33 +354,58 @@
             '          <button type="button" class="btn btn-sm btn-primary" @click="addOption">',
             '            <i class="bi bi-plus-lg me-1"></i>Agregar opci&oacute;n</button>',
             '        </div>',
-            '        <p class="cq-text-xs cq-text-muted">En una pregunta de opci&oacute;n, el significado cl&iacute;nico est&aacute; en la respuesta: codificar cada una es lo que hace comparables los datos.</p>',
-            '        <div v-for="(o, i) in model.options" :key="i" class="row g-2 align-items-end mb-2">',
-            '          <div class="col-md-5">',
-            '            <label class="form-label cq-text-xs" v-if="i === 0">Texto</label>',
-            '            <input v-model="o.display" class="form-control form-control-sm" placeholder="Leve" />',
+            '        <div v-for="(o, i) in model.options" :key="i" class="row g-2 align-items-end mb-3">',
+            '          <div class="col-12 col-md position-relative" data-snomed-area="variable-option">',
+            '            <label class="form-label cq-text-xs" v-if="i === 0 || o.snomed">Texto</label>',
+            '            <input v-model="o.display" class="form-control form-control-sm" placeholder="Leve"',
+            '                   @focus="enfocarOpcion(i)" @input="buscarOpcion(i)" />',
+            '            <div v-if="o.snomed && opcionActiva === i && (opcionSnomed.searching || opcionSnomed.error || opcionSnomed.open)"',
+            '                 class="position-absolute bg-white border rounded shadow-sm mt-1"',
+            '                 style="z-index:1000; top:100%; left:calc(var(--bs-gutter-x) * .5); right:calc(var(--bs-gutter-x) * .5); min-width:20rem; max-height:240px; overflow-y:auto;">',
+            '              <div v-if="opcionSnomed.searching" class="cq-text-xs cq-text-muted px-2 py-1"><span class="cq-spinner cq-spinner--sm"></span> Buscando en SNOMED CT&hellip;</div>',
+            '              <div v-else-if="opcionSnomed.error" class="cq-text-xs text-danger px-2 py-1">{{ opcionSnomed.error }}</div>',
+            '              <ul v-else-if="opcionSnomed.results.length" class="list-group list-group-flush">',
+            '                <li v-for="r in opcionSnomed.results" :key="r.code" class="list-group-item list-group-item-action px-2 py-1 cq-text-sm"',
+            '                    role="button" @click="opcionSnomed.pick(r)">',
+            '                  {{ r.display }} <code class="cq-text-xs cq-text-muted">{{ r.code }}</code>',
+            '                </li>',
+            '              </ul>',
+            '              <div v-else class="cq-text-xs cq-text-muted px-2 py-1">Sin resultados.</div>',
+            '            </div>',
             '          </div>',
-            '          <div class="col-md-3">',
-            '            <label class="form-label cq-text-xs" v-if="i === 0">C&oacute;digo SNOMED</label>',
-            '            <input v-model="o.snomedCode" class="form-control form-control-sm" placeholder="255604002" />',
+            '          <template v-if="o.snomed">',
+            '            <div class="col-6 col-md-2">',
+            '              <label class="form-label cq-text-xs">C&oacute;digo</label>',
+            '              <input v-model="o.snomedCode" class="form-control form-control-sm" placeholder="255604002" />',
+            '            </div>',
+            '            <div class="col-6 col-md-3">',
+            '              <label class="form-label cq-text-xs">T&eacute;rmino</label>',
+            '              <input v-model="o.snomedDisplay" class="form-control form-control-sm" placeholder="Mild" />',
+            '            </div>',
+            '          </template>',
+            '          <div class="col-auto">',
+            // Interruptor arriba y rótulo abajo, en la altura de un input -sm para no agrandar la fila.
+            '            <div class="form-check form-switch p-0 m-0 d-flex flex-column align-items-center justify-content-center"',
+            '                 style="height:calc(1.5em + .5rem + 2px);">',
+            '              <input class="form-check-input float-none m-0" type="checkbox" role="switch" :id="\'optSnomed\' + i" v-model="o.snomed" @change="alternarSnomed(i)" />',
+            '              <label class="form-check-label cq-text-xs lh-1 mt-1" :for="\'optSnomed\' + i">SNOMED-CT</label>',
+            '            </div>',
             '          </div>',
-            '          <div class="col-md-3">',
-            '            <label class="form-label cq-text-xs" v-if="i === 0">T&eacute;rmino del concepto</label>',
-            '            <input v-model="o.snomedDisplay" class="form-control form-control-sm" placeholder="Mild" />',
-            '          </div>',
-            '          <div class="col-md-1 text-end">',
+            '          <div class="col-auto ms-auto text-end">',
             '            <button type="button" class="cq-icon-btn cq-icon-btn--danger" @click="removeOption(i)" title="Quitar" aria-label="Quitar opci&oacute;n">',
             '              <i class="bi bi-trash cq-icon-btn__idle"></i><i class="bi bi-trash-fill cq-icon-btn__hover"></i></button>',
             '          </div>',
             '        </div>',
             '        <div v-if="!model.options.length" class="cq-text-sm cq-text-muted">Todav&iacute;a no hay opciones.</div>',
             '      </div>',
+            '      </fieldset>',
             '    </div>',
             '  </div>',
 
             '  <div class="col-lg-5">',
             '    <div class="cq-card" data-snomed-area="variable">',
             '      <h2 class="h3">Codificaci&oacute;n cl&iacute;nica</h2>',
+            '      <fieldset :disabled="publicada" class="border-0 p-0 m-0">',
             '      <label class="form-label cq-text-sm">T&eacute;rmino</label>',
             '      <input v-model="coding.term" class="form-control" placeholder="peso corporal" />',
 
@@ -323,7 +414,7 @@
             '      <div v-if="snomed.error" class="cq-text-sm text-danger mt-2">{{ snomed.error }}</div>',
             '      <ul v-if="snomed.open && snomed.results.length" class="list-group mt-2">',
             '        <li v-for="r in snomed.results" :key="r.code"',
-            '            class="list-group-item list-group-item-action" role="button" @click="snomed.pick(r)">',
+            '            class="list-group-item list-group-item-action" role="button" @click="elegir(r)">',
             '          <div>{{ r.display }}</div>',
             '          <code class="cq-text-xs cq-text-muted">{{ r.code }}</code>',
             '        </li>',
@@ -333,7 +424,7 @@
             '      <label class="form-label cq-text-sm">C&oacute;digo SNOMED CT</label>',
             '      <div class="d-flex gap-2 align-items-center">',
             '        <input v-model="coding.code" class="form-control" placeholder="27113001" />',
-            '        <button type="button" class="cq-icon-btn" @click="snomed.clear()" v-if="coding.code" title="Quitar el c&oacute;digo" aria-label="Quitar el c&oacute;digo">',
+            '        <button type="button" class="cq-icon-btn" @click="snomed.clear()" v-if="coding.code && !publicada" title="Quitar el c&oacute;digo" aria-label="Quitar el c&oacute;digo">',
             '          <i class="bi bi-x-lg"></i></button>',
             '      </div>',
             '      <div v-if="codeVerifying" class="cq-text-sm cq-text-muted mt-1">Verificando&hellip;</div>',
@@ -342,7 +433,7 @@
             '        <template v-if="codeVerification.ok">&check; {{ codeVerification.display }}</template>',
             '        <template v-else>{{ codeVerification.msg }}</template>',
             '      </div>',
-            '      <div v-else-if="coding.codeDisplay" class="cq-text-sm cq-text-muted mt-1">{{ coding.codeDisplay }}</div>',
+            '      </fieldset>',
             '    </div>',
 
             '  </div>',

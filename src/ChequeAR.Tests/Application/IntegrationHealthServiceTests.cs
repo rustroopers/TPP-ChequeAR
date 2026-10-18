@@ -13,8 +13,8 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IOracleViewClient> _oracle = new Mock<IOracleViewClient>();
 
         private IntegrationHealthService Sut()
-            => new IntegrationHealthService(new Mock<IHospitalFhirClient>().Object, _oracle.Object, null,
-                new Mock<IHttpProbe>().Object, new Mock<IFhirValidator>().Object);
+            => new IntegrationHealthService(new Mock<IHospitalFhirClient>().Object, _oracle.Object,
+                new Mock<IFhirValidator>().Object);
 
         // Antes consultaba DUAL como si fuera una vista y la allowlist lo rechazaba siempre.
         [Fact]

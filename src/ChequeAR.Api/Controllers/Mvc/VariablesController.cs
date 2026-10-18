@@ -58,10 +58,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // Un tipo desconocido en la URL se ignora: es un filtro, no un dato que se guarda.
                 QuestionType? tipo = QuestionTypeMap.TryFromUi(type, out var t) ? t : (QuestionType?)null;
                 var pagina = await _variables.ListAsync(q, tipo, active, (model.Page - 1) * PageSize, PageSize);
-                var estado = await _variables.GetPublicationAsync(pagina.Items);
+                var sucesoras = await _variables.GetSuccessorsAsync(pagina.Items.Select(v => v.Id));
                 model.Total = pagina.Total;
                 foreach (var v in pagina.Items)
                 {
+                    sucesoras.TryGetValue(v.Id, out var sucesora);
                     model.Variables.Add(new VariableListItem
                     {
                         Id = v.Id,
@@ -74,9 +75,9 @@ namespace ChequeAR.Api.Controllers.Mvc
                         SnomedDisplay = v.SnomedDisplay,
                         IsActive = v.IsActive,
                         CreatedAt = ChequeAR.Api.Helpers.ArgentinaTime.FormatDate(v.CreatedAt),
-                        CurrentVersion = estado[v.Id].CurrentVersion,
-                        HasUnpublishedChanges = estado[v.Id].CurrentVersion > 0 && estado[v.Id].HasUnpublishedChanges,
-                        Revision = v.Revision
+                        IsPublished = v.IsPublished,
+                        Revision = v.Revision,
+                        ReplacedByName = sucesora?.Name
                     });
                 }
             }
@@ -90,8 +91,8 @@ namespace ChequeAR.Api.Controllers.Mvc
             return View(model);
         }
 
-        /// <summary>id == null => variable nueva.</summary>
-        public async Task<ActionResult> Details(Guid? id)
+        /// <summary>id == null => variable nueva; con <paramref name="from"/>, a partir de esa.</summary>
+        public async Task<ActionResult> Details(Guid? id, Guid? from = null)
         {
             ViewBag.Title = id.HasValue ? "Editar variable" : "Nueva variable";
             ViewBag.PageId = "variables";
@@ -101,8 +102,23 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var v = await _variables.GetAsync(id.Value);
                 if (v == null) return HttpNotFound();
-                var estado = await _variables.GetPublicationAsync(new[] { v });
-                dto = ClinicalVariableDtoMap.ToDto(v, estado[v.Id]);
+                dto = ClinicalVariableDtoMap.ToDto(v);
+            }
+            else if (from.HasValue)
+            {
+                try
+                {
+                    var draft = await _variables.DeriveAsync(from.Value);
+                    if (draft == null) return HttpNotFound();
+                    dto = ClinicalVariableDtoMap.ToDto(draft);
+                    dto.IsActive = true;
+                }
+                catch (ValidationFailedException ex)
+                {
+                    TempData["Toast"] = string.Join(" ", ex.Errors);
+                    TempData["ToastLevel"] = "error";
+                    return RedirectToAction("Details", new { id = from });
+                }
             }
             else
             {
@@ -118,38 +134,37 @@ namespace ChequeAR.Api.Controllers.Mvc
 
         private async Task<VariableFormViewModel> FormModelAsync(Guid? id, ClinicalVariableDto dto)
         {
+            if (dto.ReplacesId.HasValue)
+            {
+                dto.ReplacesName = (await _variables.GetAsync(dto.ReplacesId.Value))?.Name;
+                ViewBag.VariableProps = JsonConvert.SerializeObject(dto, CamelCase);
+            }
             var model = new VariableFormViewModel
             {
                 Id = id,
                 Name = dto.Name,
                 IsActive = dto.IsActive,
                 Revision = dto.Revision,
-                CurrentVersion = dto.CurrentVersion,
-                HasUnpublishedChanges = dto.CurrentVersion > 0 && dto.HasUnpublishedChanges
+                IsPublished = dto.IsPublished,
+                ReplacesId = dto.ReplacesId,
+                ReplacesName = dto.ReplacesName
             };
             if (!id.HasValue) return model;
-            foreach (var x in await _variables.ListVersionsAsync(id.Value))
+            if ((await _variables.GetSuccessorsAsync(new[] { id.Value })).TryGetValue(id.Value, out var sucesora))
             {
-                model.Versions.Add(new VariableVersionItem
-                {
-                    Version = x.VersionNumber,
-                    Date = ChequeAR.Api.Helpers.ArgentinaTime.FormatDateTime(x.PublishedAt),
-                    Author = x.PublishedBy,
-                    ChangeNote = x.ChangeNote,
-                    IsCurrent = x.VersionNumber == dto.CurrentVersion
-                });
+                model.ReplacedById = sucesora.Id;
+                model.ReplacedByName = sucesora.Name;
             }
             return model;
         }
 
         [HttpPost, ValidateAntiForgeryToken]
-        public async Task<ActionResult> Publish(Guid id, string changeNote, int? revision, string payloadJson, string returnUrl = null)
+        public async Task<ActionResult> Publish(Guid id, int? revision, string payloadJson, string returnUrl = null)
         {
             try
             {
                 var antes = await _variables.GetAsync(id);
                 if (antes == null) return HttpNotFound();
-                var vigente = (await _variables.GetPublicationAsync(new[] { antes }))[id].CurrentVersion;
 
                 // Lo que está en el formulario se guarda primero: si no, se publicaría el borrador anterior.
                 var dto = string.IsNullOrWhiteSpace(payloadJson) ? null : JsonConvert.DeserializeObject<ClinicalVariableDto>(payloadJson);
@@ -159,12 +174,13 @@ namespace ChequeAR.Api.Controllers.Mvc
                     revision = guardada.Revision;
                 }
 
-                var version = await _variables.PublishAsync(id, User.Identity.Name, changeNote, revision);
-                var sinCambios = version.VersionNumber == vigente;
-                TempData["Toast"] = sinCambios
-                    ? "No hay cambios para publicar."
-                    : "Variable publicada (v" + version.VersionNumber + ").";
-                TempData["ToastLevel"] = sinCambios ? "info" : "success";
+                await _variables.PublishAsync(id, User.Identity.Name, revision);
+                var publicada = await _variables.GetAsync(id);
+                var anterior = publicada.ReplacesId.HasValue ? await _variables.GetAsync(publicada.ReplacesId.Value) : null;
+                TempData["Toast"] = anterior != null && !anterior.IsActive && publicada.DeactivateReplacedOnPublish
+                    ? "Variable publicada. «" + anterior.Name + "» quedó dada de baja."
+                    : "Variable publicada.";
+                TempData["ToastLevel"] = "success";
             }
             catch (ValidationFailedException ex)
             {
@@ -206,17 +222,16 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     var actualizada = await _variables.UpdateAsync(model.Id.Value, entidad, User.Identity.Name, dto.Revision);
                     if (actualizada == null) return HttpNotFound();
-                    var estado = (await _variables.GetPublicationAsync(new[] { actualizada }))[actualizada.Id];
-                    TempData["Toast"] = estado.CurrentVersion == 0 ? "Cambios guardados."
-                        : estado.HasUnpublishedChanges ? "Cambios guardados. Publique una versión nueva para que lleguen a los cuestionarios."
-                        : "Cambios guardados. Quedó igual a la versión publicada.";
+                    TempData["Toast"] = "Cambios guardados.";
                     TempData["ToastLevel"] = "success";
                 }
                 else
                 {
-                    await _variables.CreateAsync(entidad, User.Identity.Name);
+                    var creada = await _variables.CreateAsync(entidad, User.Identity.Name);
                     TempData["Toast"] = "Variable creada. Publíquela para poder usarla en los cuestionarios.";
                     TempData["ToastLevel"] = "success";
+                    // La que reemplaza a otra se publica desde su pantalla: ahí se ve a cuál reemplaza.
+                    if (creada.ReplacesId.HasValue) return RedirectToAction("Details", new { id = creada.Id });
                 }
             }
             catch (ValidationFailedException ex)
@@ -262,13 +277,10 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var guardada = await _variables.GetAsync(model.Id.Value);
                 if (guardada == null) return HttpNotFound();
-                var estado = await _variables.GetPublicationAsync(new[] { guardada });
-                var original = ClinicalVariableDtoMap.ToDto(guardada, estado[guardada.Id]);
-                enviado.Id = original.Id;
-                enviado.IsActive = original.IsActive;
-                enviado.UpdatedAt = original.UpdatedAt;
-                enviado.CurrentVersion = original.CurrentVersion;
-                enviado.HasUnpublishedChanges = original.HasUnpublishedChanges;
+                enviado.Id = guardada.Id;
+                enviado.IsActive = guardada.IsActive;
+                enviado.UpdatedAt = guardada.UpdatedAt;
+                enviado.PublishedAt = guardada.PublishedAt;
             }
             else
             {
@@ -294,7 +306,7 @@ namespace ChequeAR.Api.Controllers.Mvc
             {
                 var outcome = await _variables.DeleteAsync(id, User.Identity.Name);
                 TempData["Toast"] = outcome == VariableDeleteOutcome.DeactivatedBecauseInUse
-                    ? "La variable está publicada o en uso, así que se dio de baja en lugar de eliminarse."
+                    ? "Variable dada de baja."
                     : "Variable eliminada.";
                 TempData["ToastLevel"] = "success";
             }
@@ -315,6 +327,11 @@ namespace ChequeAR.Api.Controllers.Mvc
                 await _variables.SetActiveAsync(id, true, User.Identity.Name);
                 TempData["Toast"] = "Variable reactivada.";
                 TempData["ToastLevel"] = "success";
+            }
+            catch (ValidationFailedException ex)
+            {
+                TempData["Toast"] = string.Join(" ", ex.Errors);
+                TempData["ToastLevel"] = "error";
             }
             catch (Exception ex)
             {

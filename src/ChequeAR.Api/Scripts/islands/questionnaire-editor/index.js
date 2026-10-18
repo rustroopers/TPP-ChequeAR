@@ -133,13 +133,11 @@
                             codeDisplay: q.codeDisplay,
                             term: q.term,
                             options: q.options && q.options.length ? q.options.slice() : undefined,
-                            // Origen de la pregunta. variableRevision es la revision con la que
-                            // se armo; compararla contra variableCurrentRevision es lo que
-                            // permite avisar que el Administrador edito la variable despues.
+                            // Origen de la pregunta y, si fue reemplazada, la variable nueva.
                             variableId: q.variableId,
                             variableName: q.variableName,
-                            variableRevision: q.variableRevision,
-                            variableCurrentRevision: q.variableCurrentRevision
+                            variableReplacedById: q.variableReplacedById,
+                            variableReplacedByName: q.variableReplacedByName
                         };
                     })
                 };
@@ -182,9 +180,9 @@
                 // sirve para MOSTRAR el tipo -y una variable de escala del catálogo apareciía
                 // como "scale" crudo en el selector y en el panel de propiedades-.
                 { code: 'scale',      label: 'Escala',          icon: 'bi-sliders' },
-                { code: 'integer',    label: 'Número',          icon: 'bi-123' },
-                { code: 'decimal',    label: 'Decimal',         icon: 'bi-percent' },
-                { code: 'boolean',    label: 'Booleano',        icon: 'bi-toggle-on' },
+                { code: 'integer',    label: 'Número entero',   icon: 'bi-123' },
+                { code: 'decimal',    label: 'Número decimal',  icon: 'bi-percent' },
+                { code: 'boolean',    label: 'Sí / No',          icon: 'bi-toggle-on' },
                 { code: 'choice',     label: 'Opción única',    icon: 'bi-ui-radios' },
                 { code: 'openChoice', label: 'Opción múltiple', icon: 'bi-check2-square' },
                 { code: 'date',       label: 'Fecha',           icon: 'bi-calendar' },
@@ -213,14 +211,10 @@
             // Propiedades del paso Estructura (verificación on-blur/on-input contra
             // Snowstorm). No hay un paso dedicado: publicar sin códigos es válido.
             var STEPS = [
-                { key: 'meta',      label: 'Metadatos',    icon: 'bi-info-circle',
-                  help: 'Ponele un título que un colega reconozca desde el listado. La especialidad determina bajo qué grupo aparece en los reportes.' },
-                { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3',
-                  help: 'Agregue secciones y elija variables del catálogo. De cada una puede cambiar el enunciado y si es obligatoria; el tipo, la unidad, el rango y el código los define el Administrador. Puede condicionar preguntas a otras anteriores.' },
-                { key: 'preview',   label: 'Vista previa', icon: 'bi-eye',
-                  help: 'Así ven la ficha los clínicos cuando cargan una respuesta. Si una pregunta no aparece, revise sus condiciones.' },
-                { key: 'publish',   label: 'Publicación',  icon: 'bi-send',
-                  help: 'Publicar congela una versión: los clínicos ven exactamente esta estructura. Guarde los cambios antes.' }
+                { key: 'meta',      label: 'Metadatos',    icon: 'bi-info-circle' },
+                { key: 'structure', label: 'Estructura',   icon: 'bi-diagram-3' },
+                { key: 'preview',   label: 'Vista previa', icon: 'bi-eye' },
+                { key: 'publish',   label: 'Publicación',  icon: 'bi-send' }
             ];
             var step = Vue.ref(props.isNew ? 'meta' : 'structure');
             var stepIndex = Vue.computed(function () {
@@ -270,7 +264,6 @@
                 if (STEPS[next].key === 'preview') previewSeen.value = true;
             }
             function stepPrev() { if (stepIndex.value > 0) step.value = STEPS[stepIndex.value - 1].key; }
-            var currentStepHelp = Vue.computed(function () { return STEPS[stepIndex.value].help; });
             var canGoNext = Vue.computed(function () {
                 return stepIndex.value < STEPS.length - 1 && isStepDone(stepIndex.value);
             });
@@ -476,38 +469,42 @@
                 return issues.value.filter(function (i) { return i.condition; });
             });
 
-            // Deriva: preguntas armadas con una revision anterior a la vigente de su variable.
-            // NO se re-sincroniza solo -eso cambiaria un cuestionario que nadie pidio cambiar,
-            // y lo publicado debe ser reproducible-: se avisa y el jefe decide.
-            // Toma la definición de la versión vigente sin cambiar el linkId, el enunciado, si es
-            // obligatoria ni la condición. Las condiciones que dejen de tener sentido (por
-            // ejemplo, sobre una opción que ya no existe) aparecen en el panel de problemas.
             var updatingVariable = Vue.reactive({});
-            function updateToCurrentVersion(q) {
-                if (!q || !q.variableId || updatingVariable[q.linkId]) return;
-                updatingVariable[q.linkId] = true;
+
+            // La variable de la pregunta fue reemplazada por otra: un cambio clínico crea una
+            // variable nueva, con su propio código. La pregunta pasa a la nueva con un linkId
+            // propio, porque son datos distintos y los reportes los muestran en columnas
+            // separadas. Las condiciones que miraban la pregunta se re-apuntan; las que queden
+            // sin sentido (por ejemplo, sobre una opción que ya no existe) aparecen en el panel
+            // de problemas.
+            function replaceVariable(q) {
+                if (!q || !q.variableReplacedById || updatingVariable[q.linkId]) return;
+                var anterior = q.linkId;
+                updatingVariable[anterior] = true;
                 var token = getToken();
                 var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-                fetch('/api/variables/' + q.variableId + '/versions/' + q.variableCurrentRevision,
+                fetch('/api/variables/' + q.variableReplacedById,
                       { credentials: 'same-origin', headers: headers })
                     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
                     .then(function (v) {
+                        var nuevo = linkIdLibre(v.code);
                         applyVariableDefinition(q, v);
+                        q.linkId = nuevo;
+                        q.variableReplacedById = undefined;
+                        q.variableReplacedByName = undefined;
+                        allQuestions().forEach(function (o) {
+                            if (o.enableWhen && o.enableWhen.question === anterior) o.enableWhen.question = nuevo;
+                        });
                         dirty.value = true;
                     })
                     .catch(function (err) {
-                        window.cqToast && window.cqToast('No se pudo actualizar la pregunta: ' + err.message, 'error');
+                        window.cqToast && window.cqToast('No se pudo reemplazar la variable: ' + err.message, 'error');
                     })
-                    .then(function () { delete updatingVariable[q.linkId]; });
+                    .then(function () { delete updatingVariable[anterior]; });
             }
 
-            var staleVariables = Vue.computed(function () {
-                return allQuestions().filter(function (q) {
-                    return q.variableId
-                        && typeof q.variableCurrentRevision === 'number'
-                        && typeof q.variableRevision === 'number'
-                        && q.variableCurrentRevision > q.variableRevision;
-                });
+            var replacedVariables = Vue.computed(function () {
+                return allQuestions().filter(function (q) { return !!q.variableReplacedById; });
             });
 
             function fixIssues() {
@@ -698,8 +695,6 @@
                 q.term = v.term || undefined;
                 q.variableId = v.id;
                 q.variableName = v.name;
-                q.variableRevision = v.currentVersion;
-                q.variableCurrentRevision = v.currentVersion;
             }
 
             function addQuestionFromVariable(v) {
@@ -813,8 +808,8 @@
                     options: q.options && q.options.length ? q.options.slice() : undefined,
                     variableId: q.variableId,
                     variableName: q.variableName,
-                    variableRevision: q.variableRevision,
-                    variableCurrentRevision: q.variableCurrentRevision
+                    variableReplacedById: q.variableReplacedById,
+                    variableReplacedByName: q.variableReplacedByName
                 };
             }
 
@@ -915,9 +910,20 @@
                 function () { dirty.value = true; },
                 'questionnaire');
 
+            // El término que deja un concepto elegido no es una búsqueda nueva.
+            var terminoElegido = null;
             Vue.watch(function () { return questionnaireCoding.term; }, function (t) {
+                if (terminoElegido !== null && t === terminoElegido) { terminoElegido = null; return; }
+                terminoElegido = null;
                 questionnaireSnomed.schedule(t);
             });
+
+            // Al elegir un concepto, su término reemplaza al escrito: ya no hace falta repetirlo abajo.
+            function elegirConceptoCuestionario(r) {
+                if (questionnaireCoding.term !== r.display) terminoElegido = r.display;
+                questionnaireSnomed.pick(r);
+                questionnaireCoding.term = r.display;
+            }
 
             // ---- Serialización a FHIR R5 ----
             //
@@ -993,10 +999,6 @@
                 // lugar nativo es la referencia, y sin ella el parser la pierde en cada
                 // guardado: el editor dejaria de saber de que variable viene cada pregunta.
                 if (q.variableId) out.push(ext(CQ_EXT + 'question-variable-id', 'valueString', q.variableId));
-                // La versión de la variable que usa la pregunta: si es distinta de la guardada
-                // (porque se actualizó o se importó), el servidor aplica esa.
-                if (q.variableId && q.variableRevision > 0)
-                    out.push(ext(CQ_EXT + 'question-variable-version', 'valueInteger', q.variableRevision));
 
                 return out;
             }
@@ -1251,6 +1253,10 @@
                             window.history.replaceState(null, '', '/Questionnaires/Edit/' + newId);
                         }
                     }
+                    // El encabezado lo arma Razor al cargar: sin esto quedaba "Nuevo cuestionario"
+                    // o el título anterior hasta recargar.
+                    var h1 = document.querySelector('.cq-page-header__title');
+                    if (h1 && (qTitle.value || '').trim()) h1.textContent = qTitle.value.trim();
                     // La versión del registro viaja en meta.versionId, que es el mecanismo
                     // nativo del estándar (y el mismo número que el ETag). Sin refrescarla,
                     // el segundo guardado seguido chocaría contra nuestro propio cambio.
@@ -1393,8 +1399,7 @@
                     code: q.code || null, codeDisplay: q.codeDisplay || null, term: q.term || null,
                     // Cambiar una pregunta de variable es un cambio real y tiene que poder
                     // entrar en conflicto como cualquier otro campo.
-                    variableId: q.variableId || null,
-                    variableRevision: q.variableRevision || 0
+                    variableId: q.variableId || null
                 });
             }
 
@@ -1853,8 +1858,10 @@
                 conditionSources: conditionSources, conditionSource: conditionSource, conditionOps: conditionOps,
                 onConditionQuestion: onConditionQuestion, onConditionValue: onConditionValue,
                 questionnaireCoding: questionnaireCoding, questionnaireSnomed: questionnaireSnomed,
+                elegirConceptoCuestionario: elegirConceptoCuestionario,
                 selectQuestion: selectQuestion, addGroup: addGroup,
-                staleVariables: staleVariables, updateToCurrentVersion: updateToCurrentVersion, updatingVariable: updatingVariable,
+                updatingVariable: updatingVariable,
+                replacedVariables: replacedVariables, replaceVariable: replaceVariable,
                 varPickerOpen: varPickerOpen, varPickerQuery: varPickerQuery,
                 varPickerLoading: varPickerLoading, varPickerError: varPickerError,
                 varPickerResults: varPickerResults,
@@ -1871,7 +1878,7 @@
                 onDragEnd: onDragEnd, onQuestionDragOver: onQuestionDragOver, onGroupDragOver: onGroupDragOver,
                 onQuestionDrop: onQuestionDrop, onSectionDrop: onSectionDrop,
                 STEPS: STEPS, step: step, stepIndex: stepIndex, gotoStep: gotoStep,
-                stepNext: stepNext, stepPrev: stepPrev, currentStepHelp: currentStepHelp,
+                stepNext: stepNext, stepPrev: stepPrev,
                 stepStatus: stepStatus, isStepDone: isStepDone, stepReachable: stepReachable,
                 canGoNext: canGoNext, nextBlockedReason: nextBlockedReason,
                 allQuestionsFlat: allQuestionsFlat,
@@ -1955,7 +1962,7 @@
 <div v-if="importOpen" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1050; display:flex; align-items:center; justify-content:center; padding:16px;" @click.self="closeImport">\
     <div class="cq-card" style="max-width:560px; width:100%; max-height:85vh; overflow:auto;">\
         <h2 class="cq-section-title" style="margin-top:0;">Importar preguntas de otro cuestionario</h2>\
-        <p class="cq-text-sm cq-text-muted">Se agregan las preguntas del cuestionario elegido (misma especialidad) a la estructura actual. Después puede editar, reordenar o quitar lo que quiera.</p>\
+        <p class="cq-text-sm cq-text-muted">Las preguntas se agregan al final de la estructura.</p>\
         <div v-if="importLoading" class="cq-text-sm cq-text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> Cargando…</div>\
         <div v-else-if="importError" class="cq-text-sm text-danger py-2">{{ importError }}</div>\
         <div v-else-if="!importCandidates.length" class="cq-text-sm cq-text-muted py-3">No hay otros cuestionarios de esta especialidad para importar.</div>\
@@ -1973,12 +1980,12 @@
         </div>\
     </div>\
 </div>\
-<div v-if="staleVariables.length" class="alert alert-info cq-text-sm" role="status">\
+<div v-if="replacedVariables.length" class="alert alert-info cq-text-sm" role="status">\
     <i class="bi bi-info-circle me-1"></i>\
-    <strong>{{ staleVariables.length }}</strong> pregunta(s) usan una versión anterior de su variable.\
+    <strong>{{ replacedVariables.length }}</strong> pregunta(s) usan una variable que fue reemplazada.\
     <ul class="mb-0 mt-1 ps-3">\
-        <li v-for="q in staleVariables" :key="q.linkId">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.variableName }})</span>\
-            <button v-if="!readOnly" type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" :disabled="updatingVariable[q.linkId]" @click="updateToCurrentVersion(q)">Actualizar a v{{ q.variableCurrentRevision }}</button>\
+        <li v-for="q in replacedVariables" :key="q.linkId">{{ q.text }} <span class="cq-text-xs cq-text-muted">({{ q.variableName }} → {{ q.variableReplacedByName }})</span>\
+            <button v-if="!readOnly" type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" :disabled="updatingVariable[q.linkId]" @click="replaceVariable(q)">Reemplazar</button>\
         </li>\
     </ul>\
 </div>\
@@ -2070,7 +2077,7 @@
                     </div>\
                     <div v-if="questionnaireSnomed.error" class="cq-text-xs text-danger mt-1">{{ questionnaireSnomed.error }}</div>\
                     <ul v-if="questionnaireSnomed.open && questionnaireSnomed.results.length" class="list-unstyled border rounded mt-1 mb-0" style="max-height:200px; overflow:auto;">\
-                        <li v-for="r in questionnaireSnomed.results" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="questionnaireSnomed.pick(r)"\
+                        <li v-for="r in questionnaireSnomed.results" :key="r.code" class="px-2 py-1 cq-text-sm" style="cursor:pointer;" @click="elegirConceptoCuestionario(r)"\
                             onmouseover="this.style.background=\'var(--cq-primary-100)\'" onmouseout="this.style.background=\'transparent\'">\
                             {{ r.display }} <span class="cq-text-xs cq-text-muted">{{ r.code }}</span>\
                         </li>\
@@ -2079,10 +2086,9 @@
                 </div>\
                 <div class="col-5">\
                     <label class="form-label cq-text-sm">Código SNOMED CT</label>\
-                    <input v-model="questionnaireCoding.code" class="form-control form-control-sm" placeholder="ej: 302760001" />\
-                    <div v-if="questionnaireCoding.codeDisplay" class="cq-text-xs mt-1">\
-                        <i class="bi bi-check-circle-fill text-success"></i> {{ questionnaireCoding.codeDisplay }}\
-                        <a href="javascript:" class="ms-1" @click="questionnaireSnomed.clear">quitar</a>\
+                    <div class="d-flex gap-2 align-items-center">\
+                        <input v-model="questionnaireCoding.code" class="form-control form-control-sm" placeholder="ej: 302760001" />\
+                        <button type="button" class="cq-icon-btn" v-if="questionnaireCoding.code" @click="questionnaireSnomed.clear" title="Quitar el código" aria-label="Quitar el código"><i class="bi bi-x-lg"></i></button>\
                     </div>\
                 </div>\
             </div>\
@@ -2109,8 +2115,8 @@
                    @dragstart="onGroupDragStart(g, $event)" @dragend="onDragEnd"\
                    :aria-label="\'Arrastrar para reordenar la sección \' + g.title" title="Arrastrar para reordenar la sección"></i>\
                 <i class="bi bi-folder text-primary"></i>\
-                <input v-model="g.title" class="form-control form-control-sm fw-semibold" :class="{ \'is-invalid\': g.titleTouched && !g.title.trim() }" style="max-width:320px;" placeholder="Nombre de la sección" required @blur="g.titleTouched = true" :title="(g.titleTouched && !g.title.trim()) ? \'Obligatorio: cargá un nombre para la sección\' : \'\'" />\
-                <span class="cq-text-xs cq-text-muted">{{ g.questions.length }} preguntas</span>\
+                <input v-model="g.title" class="form-control form-control-sm fw-semibold" :class="{ \'is-invalid\': g.titleTouched && !g.title.trim() }" style="max-width:320px;" placeholder="Nombre de la sección" required @blur="g.titleTouched = true" :title="(g.titleTouched && !g.title.trim()) ? \'Ingrese un nombre para la sección\' : \'\'" />\
+                <span class="cq-text-xs cq-text-muted">{{ g.questions.length }} {{ g.questions.length === 1 ? \'pregunta\' : \'preguntas\' }}</span>\
                 <button type="button" class="cq-icon-btn cq-icon-btn--danger ms-auto" @click="removeGroup(g)" :aria-label="\'Eliminar sección \' + g.title" :title="\'Eliminar sección \' + g.title">\
                     <i class="bi bi-trash cq-icon-btn__idle"></i>\
                     <i class="bi bi-trash-fill cq-icon-btn__hover"></i>\
@@ -2260,7 +2266,6 @@
         </div>\
         <div v-else class="cq-card mb-0" style="border-left:3px solid var(--cq-success); background:var(--cq-neutral-50);">\
             <div class="cq-text-sm"><i class="bi bi-check-circle-fill" style="color:var(--cq-success);"></i> Todo listo para publicar.</div>\
-            <div v-if="isPublished" class="cq-text-xs cq-text-muted mt-1">Ya hay una versión publicada. Publicar de nuevo crea una versión posterior.</div>\
         </div>\
     </div>\
 </div>\

@@ -26,6 +26,28 @@ namespace ChequeAR.Api.Helpers
             public Op Operation { get; set; }
         }
 
+        /// <summary>Tipos de recurso del registro, en el orden del filtro, con su nombre en español.</summary>
+        public static readonly IReadOnlyList<KeyValuePair<string, string>> ResourceTypes = new[]
+        {
+            new KeyValuePair<string, string>("Questionnaire", "Cuestionario"),
+            new KeyValuePair<string, string>("QuestionnaireResponse", "Ficha"),
+            new KeyValuePair<string, string>("ClinicalVariable", "Variable"),
+            new KeyValuePair<string, string>("Patient", "Paciente"),
+            new KeyValuePair<string, string>("Attachment", "Adjunto"),
+            new KeyValuePair<string, string>("Report", "Reporte"),
+            new KeyValuePair<string, string>("SavedReport", "Reporte guardado"),
+            new KeyValuePair<string, string>("AppUser", "Usuario"),
+            new KeyValuePair<string, string>("AuditEvent", "Auditoría"),
+            new KeyValuePair<string, string>("Http", "Página")
+        };
+
+        public static string ResourceTypeLabel(string type)
+        {
+            foreach (var t in ResourceTypes)
+                if (t.Key == type) return t.Value;
+            return string.IsNullOrWhiteSpace(type) ? "—" : type;
+        }
+
         /// <summary>Parte la referencia "Tipo/{id}$sufijo" en (tipo, id, sufijo).</summary>
         public static void ParseRef(string entityRef, out string type, out Guid? id, out string suffix)
         {
@@ -149,6 +171,21 @@ namespace ChequeAR.Api.Helpers
                 if (StartsWith(suffix, "logout")) return Set(view, Op.Other, "Salida", "cq-badge--archived", "bi-box-arrow-right");
                 if (StartsWith(suffix, "password")) return Set(view, Op.Edit, "Contraseña cambiada", "cq-badge--info", "bi-key");
                 if (actionCode == "U") return Set(view, Op.Edit, "Usuario modificado", "cq-badge--info", "bi-person-gear");
+            }
+            else if (type == "ClinicalVariable")
+            {
+                if (StartsWith(suffix, "publish")) return Set(view, Op.Publish, "Variable publicada", "cq-badge--published", "bi-send-check");
+                if (StartsWith(suffix, "derive")) return Set(view, Op.Create, "Variable creada a partir de otra", "cq-badge--published", "bi-diagram-2");
+                if (StartsWith(suffix, "deactivate")) return Set(view, Op.Edit, "Variable dada de baja", "cq-badge--archived", "bi-toggle-off");
+                if (StartsWith(suffix, "activate")) return Set(view, Op.Edit, "Variable reactivada", "cq-badge--info", "bi-toggle-on");
+                switch (actionCode)
+                {
+                    case "C": return Set(view, Op.Create, "Variable creada", "cq-badge--published", "bi-plus-circle");
+                    case "U": return Set(view, Op.Edit, "Variable editada", "cq-badge--info", "bi-pencil");
+                    case "D": return Set(view, Op.Delete, "Variable eliminada", "cq-badge--danger", "bi-trash");
+                    // Eventos anteriores a los sufijos $activate / $deactivate: no dicen cuál fue.
+                    case "E": return Set(view, Op.Edit, "Variable activada o dada de baja", "cq-badge--info", "bi-toggle-on");
+                }
             }
             else if (type == "SavedReport")
             {

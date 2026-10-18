@@ -12,17 +12,12 @@ namespace ChequeAR.Application.Services
     {
         private readonly IHospitalFhirClient _fhir;
         private readonly IOracleViewClient _oracle;
-        private readonly string _hospitalAuthUrl;
-        private readonly IHttpProbe _http;
         private readonly IFhirValidator _validator;
 
-        public IntegrationHealthService(IHospitalFhirClient fhir, IOracleViewClient oracle, string hospitalAuthUrl,
-            IHttpProbe http, IFhirValidator validator)
+        public IntegrationHealthService(IHospitalFhirClient fhir, IOracleViewClient oracle, IFhirValidator validator)
         {
             _fhir = fhir;
             _oracle = oracle;
-            _hospitalAuthUrl = hospitalAuthUrl;
-            _http = http;
             _validator = validator;
         }
 
@@ -31,7 +26,6 @@ namespace ChequeAR.Application.Services
             var result = new List<IntegrationStatus>();
             result.Add(await ProbeFhirAsync());
             result.Add(await ProbeOracleAsync());
-            result.Add(await ProbeAuthAsync());
             result.Add(ProbeValidator());
             return result;
         }
@@ -58,21 +52,6 @@ namespace ChequeAR.Application.Services
                 return Ok("Oracle Vistas", sw.ElapsedMilliseconds);
             }
             catch (Exception ex) { return Down("Oracle Vistas", ex.Message); }
-        }
-
-        private async Task<IntegrationStatus> ProbeAuthAsync()
-        {
-            if (string.IsNullOrEmpty(_hospitalAuthUrl))
-                return new IntegrationStatus { Name = "Auth Hospital", Status = "unknown", Detail = "sin URL configurada" };
-            var sw = Stopwatch.StartNew();
-            try
-            {
-                // Cualquier respuesta HTTP (incluso 4xx) indica que el servicio está vivo.
-                await _http.PingAsync(_hospitalAuthUrl);
-                sw.Stop();
-                return Ok("Auth Hospital", sw.ElapsedMilliseconds);
-            }
-            catch (Exception ex) { return Down("Auth Hospital", ex.Message); }
         }
 
         /// <summary>Valida un recurso mínimo: si el validador no carga sus perfiles, falla acá.</summary>

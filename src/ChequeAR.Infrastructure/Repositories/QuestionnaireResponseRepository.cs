@@ -29,6 +29,20 @@ namespace ChequeAR.Infrastructure.Repositories
         public Task<QuestionnaireResponse> GetAsync(Guid id) =>
             _ctx.QuestionnaireResponses.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id);
 
+        public async Task<IReadOnlyList<QuestionnaireResponse>> GetHeadersAsync(IReadOnlyCollection<Guid> ids)
+        {
+            var list = ids?.Distinct().ToList() ?? new List<Guid>();
+            if (list.Count == 0) return new List<QuestionnaireResponse>();
+            var rows = await _ctx.QuestionnaireResponses.AsNoTracking()
+                .Where(r => list.Contains(r.Id))
+                .Select(r => new { r.Id, r.QuestionnaireId, r.PatientHospitalId })
+                .ToListAsync();
+            return rows.Select(r => new QuestionnaireResponse
+            {
+                Id = r.Id, QuestionnaireId = r.QuestionnaireId, PatientHospitalId = r.PatientHospitalId
+            }).ToList();
+        }
+
         public async Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take, SpecialtyScope scope = null)
         {
             if (scope != null && !scope.IsUnrestricted && scope.IsEmpty) return new List<QuestionnaireResponse>();

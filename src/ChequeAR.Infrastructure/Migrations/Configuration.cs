@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data.Entity;
 using System.Data.Entity.Migrations;
 using System.Diagnostics;
 using System.Linq;
@@ -40,31 +41,30 @@ namespace ChequeAR.Infrastructure.Migrations
         ///     corre DESPUÉS de todas las migraciones, y para cuando la FK de la migración
         ///     siguiente se crea, el catálogo ya tiene que tener esas filas).
         ///  2. Sembrar los 13 usuarios de demo -- en DEV Y EN CLOUD por igual (ver
-        ///     DemoUsersEnabled: ya no depende de HospitalAuth:LoginUrl, que era la única
-        ///     razón por la que un deploy real no los sembraba).
+        ///     DemoUsersEnabled).
         /// </summary>
         protected override void Seed(ChequeARDbContext context)
         {
             SeedSpecialties(context);
-            // Antes de sembrar: una variable sembrada nace con versión, y el backfill corre sólo
-            // si todavía no hay ninguna.
-            BackfillVariableVersions(context);
+            RemoveVariableVersions(context);
             SeedClinicalVariables(context);
             if (DemoUsersEnabled()) SeedDemoUsers(context);
             BackfillResponses(context);
         }
 
-        private static void BackfillVariableVersions(ChequeARDbContext context)
+        private static void RemoveVariableVersions(ChequeARDbContext context)
         {
             context.SaveChanges();
             try
             {
-                var variables = VariableVersionBackfill.Run(context);
-                if (variables > 0) Trace.TraceInformation("Variables publicadas como versión 1: " + variables + ".");
+                var preguntas = VariableVersionRemoval.Run(context);
+                if (preguntas > 0) Trace.TraceInformation("Preguntas puestas al día con su variable: " + preguntas + ".");
             }
             catch (Exception ex)
             {
-                Trace.TraceError("No se pudieron versionar las variables: " + ex);
+                Trace.TraceError("No se pudieron quitar las versiones de variables: " + ex);
+                foreach (var entry in context.ChangeTracker.Entries().Where(e => e.State != EntityState.Unchanged).ToList())
+                    entry.State = EntityState.Detached;
             }
         }
 
@@ -110,12 +110,12 @@ namespace ChequeAR.Infrastructure.Migrations
                 Variable("dolor-escala", "Dolor (0-10)", "Intensidad del dolor en escala 0 a 10", QuestionType.Scale, null, 0m, 10m, "225908003", "Pain score", 90)
             };
 
-            // Las de arranque nacen publicadas: sin versión no se pueden usar en un cuestionario.
+            // Las de arranque nacen publicadas: si no, no se pueden usar en un cuestionario.
             var missing = seed.Where(v => !context.ClinicalVariables.Any(x => x.Code == v.Code)).ToList();
             foreach (var v in missing)
             {
+                v.PublishedAt = DateTime.UtcNow;
                 context.ClinicalVariables.Add(v);
-                VariableVersionBackfill.PublishInitial(context, v, "seed");
             }
 
             // Una variable de opción única, para que el catálogo de arranque muestre también
@@ -127,8 +127,8 @@ namespace ChequeAR.Infrastructure.Migrations
                 AddOption(severidad, "leve", "Leve", "255604002", "Mild");
                 AddOption(severidad, "moderada", "Moderada", "6736007", "Moderate");
                 AddOption(severidad, "severa", "Severa", "24484000", "Severe");
+                severidad.PublishedAt = DateTime.UtcNow;
                 context.ClinicalVariables.Add(severidad);
-                VariableVersionBackfill.PublishInitial(context, severidad, "seed");
             }
 
             context.SaveChanges();
@@ -198,11 +198,8 @@ namespace ChequeAR.Infrastructure.Migrations
         }
 
         /// <summary>
-        /// Antes exigía HospitalAuth:LoginUrl vacío (misma señal que ServiceComposition usa
-        /// para registrar el mock de login) -- eso era justo lo que impedía sembrar estos
-        /// usuarios en un deploy real. El login local (LocalCredentialAuthenticator) es
-        /// independiente de esa integración, así que el único interruptor que queda es
-        /// Seed:DemoUsers, para poder apagarlo explícitamente en un entorno que no los quiera.
+        /// El único interruptor es Seed:DemoUsers, para poder apagarlo explícitamente en un
+        /// entorno que no los quiera.
         /// </summary>
         private static bool DemoUsersEnabled()
             => !string.Equals(ConfigurationManager.AppSettings["Seed:DemoUsers"], "false",

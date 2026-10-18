@@ -55,6 +55,16 @@
     <script src="@asset("~/Scripts/cq-autofilter.js")"></script>
     <script src="@asset("~/Scripts/cq-select-enhance.js")"></script>
     <script>
+        // En pantallas angostas las tablas scrollean dentro de su propio contenedor, que
+        // recortaba el menú de acciones cuando había una o dos filas. Con posición fija el
+        // menú se ubica respecto de la ventana y no lo recorta nadie.
+        if (window.bootstrap && bootstrap.Dropdown) {
+            bootstrap.Dropdown.Default.popperConfig = function (config) {
+                config.strategy = "fixed";
+                return config;
+            };
+        }
+
         window.addEventListener("load", function () {
             requestAnimationFrame(function () {
                 document.documentElement.classList.remove("cq-preload");

@@ -8,10 +8,8 @@ using ChequeAR.Application.Interfaces;
 namespace ChequeAR.Application.Security
 {
     /// <summary>
-    /// Autenticación local: valida usuario+contraseña contra AppUser.PasswordHash. Es el
-    /// ICredentialAuthenticator que se registra mientras HospitalAuth:LoginUrl esté vacío
-    /// (ver ServiceComposition) -- reemplaza a MockHospitalAuthClient, que aceptaba
-    /// cualquier contraseña.
+    /// Autenticación local: valida usuario+contraseña contra AppUser.PasswordHash. El hospital
+    /// no delega el login, así que es el único ICredentialAuthenticator.
     ///
     /// Fail-closed UNIFORME: usuario inexistente, inactivo, sin hash, bloqueado o password
     /// incorrecta devuelven exactamente lo mismo (null), sin distinguir la causa -ni en el valor

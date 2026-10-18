@@ -474,6 +474,9 @@ namespace ChequeAR.Tests.Application
             public Task<QuestionnaireResponse> GetAsync(Guid id)
                 => Task.FromResult(_store.TryGetValue(id, out var r) ? r : null);
 
+            public Task<IReadOnlyList<QuestionnaireResponse>> GetHeadersAsync(IReadOnlyCollection<Guid> ids)
+                => Task.FromResult<IReadOnlyList<QuestionnaireResponse>>(_store.Values.Where(r => ids.Contains(r.Id)).ToList());
+
             public Task<IReadOnlyList<QuestionnaireResponse>> SearchAsync(
                 string patientHospitalId, Guid? questionnaireId, ResponseStatus? status, int skip, int take, SpecialtyScope scope = null)
             {

@@ -71,10 +71,6 @@ namespace ChequeAR.Application.Services
         /// <summary>Fuerza una recarga en el próximo GetAsync (para cuando exista ABM de especialidades).</summary>
         public void Invalidate() => _loadedAtUtc = DateTime.MinValue;
 
-        /// <summary>Códigos activos: para poblar selects y validar altas/movimientos de cuestionarios.</summary>
-        public async Task<System.Collections.Generic.IReadOnlyList<string>> ActiveCodesAsync()
-            => (await GetAsync().ConfigureAwait(false)).ActiveCodes();
-
         /// <summary>Todos los códigos (incluye inactivos): para validar el sync on-login contra el hospital.</summary>
         public async Task<System.Collections.Generic.IReadOnlyList<string>> AllCodesAsync()
             => (await GetAsync().ConfigureAwait(false)).AllCodes();

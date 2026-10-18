@@ -46,7 +46,7 @@ namespace ChequeAR.Application.Services
             if (pagina.Total > MaxExportRows)
                 throw new BusinessRuleException(
                     "La búsqueda devuelve " + pagina.Total + " eventos y el máximo para exportar es " +
-                    MaxExportRows + ". Acotá el período o agregá filtros.");
+                    MaxExportRows + ". Acote el período o agregue filtros.");
             return pagina.Items;
         }
 
@@ -89,6 +89,8 @@ namespace ChequeAR.Application.Services
         /// operaciones ($publish, $archive…), y los reportes consultados o exportados sobre él.
         /// </summary>
         public Guid? QuestionnaireId { get; set; }
+        /// <summary>Tipo de recurso, ej. "ClinicalVariable": sus eventos y los de sus operaciones.</summary>
+        public string ResourceType { get; set; }
     }
 
     public class AuditPage

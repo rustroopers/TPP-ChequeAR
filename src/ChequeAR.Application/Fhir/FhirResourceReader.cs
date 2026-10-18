@@ -24,9 +24,6 @@ namespace ChequeAR.Application.Fhir
         public static QuestionnaireResponse ReadResponse(string fhirJson)
             => Read<QuestionnaireResponse>(fhirJson);
 
-        public static Questionnaire ReadQuestionnaire(string fhirJson)
-            => Read<Questionnaire>(fhirJson);
-
         private static T Read<T>(string fhirJson) where T : Resource
         {
             if (string.IsNullOrWhiteSpace(fhirJson)) return null;

@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-15
 
-**Status**: Implementada
+**Status**: Reemplazada por la [015](../015-variables-reemplazo/spec.md). Un cambio clínico en una variable publicada crea otra variable, así que las versiones de variables se quitaron (migración `RemoveVariableVersions`).
 
 **Input**: Decisión del dueño a partir de CLI-10 del análisis integral: "las variables vamos a versionarlas también, de forma similar a los cuestionarios". Decisiones del 2026-10-15: publicación explícita, aviso con botón para actualizar en los cuestionarios, código y tipo fijos desde la primera publicación.
 

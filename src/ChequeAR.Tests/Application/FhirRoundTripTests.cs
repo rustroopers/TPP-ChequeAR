@@ -459,7 +459,7 @@ namespace ChequeAR.Tests.Application
         private static ChequeAR.Domain.Entities.Questionnaire Ciclo(ChequeAR.Domain.Entities.Questionnaire q)
         {
             var json = FhirQuestionnaireBuilder.Build(q, 1);
-            var recurso = FhirResourceReader.ReadQuestionnaire(json);
+            var recurso = new Hl7.Fhir.Serialization.FhirJsonParser().Parse<Hl7.Fhir.Model.Questionnaire>(json);
             Assert.NotNull(recurso);
             return FhirQuestionnaireParser.ToDomain(recurso);
         }

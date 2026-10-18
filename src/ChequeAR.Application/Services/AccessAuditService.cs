@@ -150,7 +150,10 @@ namespace ChequeAR.Application.Services
     {
         public string User { get; set; }
         public string Action { get; set; }
+        /// <summary>Sólo en exportaciones anteriores al filtro por tipo de recurso.</summary>
         public string Questionnaire { get; set; }
+        /// <summary>Tipo de recurso filtrado, en español.</summary>
+        public string ResourceType { get; set; }
         public string From { get; set; }
         public string To { get; set; }
         public string Format { get; set; }

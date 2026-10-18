@@ -14,9 +14,9 @@
 
     <div class="cq-navbar__actions">
         <div class="dropdown">
-            <button class="cq-navbar__btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <button class="cq-navbar__btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="@userName">
                 <i class="bi bi-person-circle"></i>
-                <span>@userName</span>
+                <span class="cq-navbar__user">@userName</span>
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 @if (Request.IsAuthenticated)

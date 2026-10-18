@@ -49,21 +49,6 @@ namespace ChequeAR.Tests.Application
             Assert.Equal("http://snomed.info/sct", coding.System);
         }
 
-        // La revisión se congela al insertar: es lo único que después permite detectar que el
-        // Administrador editó la variable y avisar en el borrador. Si se guardara la vigente,
-        // la comparación siempre daría iguales y el aviso no existiría nunca.
-        [Fact]
-        public void Apply_CongelaLaRevisionDeLaVariable()
-        {
-            var v = Peso();
-            var q = new Question();
-
-            TestHelpers.ApplySnapshot(q, v);
-            v.Revision = 99;   // el admin editó la variable después
-
-            Assert.Equal(3, q.VariableRevision);
-        }
-
         // Enunciado, obligatoriedad y condición son lo único que el jefe decide por
         // cuestionario: pisarlos convertiría "Peso al nacer" en "Peso corporal" en cada guardado.
         [Fact]

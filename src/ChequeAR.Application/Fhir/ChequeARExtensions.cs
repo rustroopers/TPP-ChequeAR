@@ -57,10 +57,9 @@ namespace ChequeAR.Application.Fhir
         /// recurso completo sin saber que existe un catálogo. Lo que no tiene lugar nativo es
         /// la referencia en sí, y sin ella el par builder/parser la perdería en CADA guardado —
         /// el editor no podría decir de qué variable viene una pregunta, ni avisar cuando esa
-        /// variable cambió.
+        /// variable fue reemplazada.
         /// </summary>
         public const string QuestionVariableIdUrl = Base + "question-variable-id";
-        public const string QuestionVariableVersionUrl = Base + "question-variable-version";
 
         /// <summary>
         /// Término SNOMED de una opción ("Moderate"). El display del Coding lleva la etiqueta que
@@ -121,20 +120,6 @@ namespace ChequeAR.Application.Fhir
             var raw = GetString(item, QuestionVariableIdUrl);
             if (string.IsNullOrWhiteSpace(raw)) return null;
             return Guid.TryParse(raw, out var parsed) ? parsed : (Guid?)null;
-        }
-
-        /// <summary>Número de versión de la variable que usó la pregunta. Se omite si no tiene.</summary>
-        public static void SetVariableVersion(IExtendable item, int versionNumber)
-        {
-            item.Extension.RemoveAll(e => e.Url == QuestionVariableVersionUrl);
-            if (versionNumber > 0) item.Extension.Add(new Extension(QuestionVariableVersionUrl, new Integer(versionNumber)));
-        }
-
-        /// <summary>0 si la extensión falta.</summary>
-        public static int GetVariableVersion(IExtendable item)
-        {
-            var ext = item.Extension?.FirstOrDefault(e => e.Url == QuestionVariableVersionUrl);
-            return (ext?.Value as Integer)?.Value ?? 0;
         }
 
         public static void SetQuestionnaireVersionId(IExtendable response, Guid versionId)

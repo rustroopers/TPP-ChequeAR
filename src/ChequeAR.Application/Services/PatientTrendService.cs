@@ -23,13 +23,23 @@ namespace ChequeAR.Application.Services
         private readonly IQuestionnaireRepository _questionnaires;
         private readonly IPatientTrendRepository _trends;
         private readonly ISpecialtyGuard _guard;
+        private readonly IClinicalVariableRepository _variables;
 
         public PatientTrendService(IQuestionnaireRepository questionnaires, IPatientTrendRepository trends,
-            ISpecialtyGuard guard)
+            ISpecialtyGuard guard, IClinicalVariableRepository variables)
         {
             _questionnaires = questionnaires;
             _trends = trends;
             _guard = guard;
+            _variables = variables;
+        }
+
+        /// <summary>Lo publicado del cuestionario, con nombres que se distinguen entre sí.</summary>
+        private async Task<Questionnaire> StructureAsync(Questionnaire q)
+        {
+            var structure = PublishedStructure.Union(q);
+            await ColumnLabels.ApplyAsync(structure, _variables);
+            return structure;
         }
 
         /// <summary>
@@ -44,7 +54,7 @@ namespace ChequeAR.Application.Services
             // IQuestionnaireRepository no aplica el guard (mismo chequeo que ReportExecutor)
             _guard.EnsureAllows(q.SpecialtyCode);
 
-            var parameters = GraphableQuestions(PublishedStructure.Union(q)).ToList();
+            var parameters = GraphableQuestions(await StructureAsync(q)).ToList();
 
             return new TrendParametersResult
             {
@@ -75,7 +85,7 @@ namespace ChequeAR.Application.Services
 
             // Metadata de las preguntas graficables, indexada por linkId. Solo se atienden los
             // linkId pedidos que efectivamente son graficables en este cuestionario.
-            var graphable = GraphableQuestions(PublishedStructure.Union(q)).ToDictionary(x => x.LinkId, StringComparer.Ordinal);
+            var graphable = GraphableQuestions(await StructureAsync(q)).ToDictionary(x => x.LinkId, StringComparer.Ordinal);
             var validLinkIds = requested.Where(graphable.ContainsKey).ToList();
             if (validLinkIds.Count == 0) return new List<TrendSeriesDto>();
 

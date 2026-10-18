@@ -13,9 +13,10 @@
 | [009 Conformidad FHIR y capas](009-conformidad-fhir-capas/spec.md) | Implementada |
 | [010 Evolución de parámetros por paciente](010-evolucion-parametros-paciente/spec.md) | Implementada |
 | 011 Especialidades | Sin spec: entró en el PR #26 (`SpecialtyCatalogService`, `/api/specialties`) |
-| 012 Variables clínicas | Sin spec: entró en el PR #26; la 014 agrega el versionado |
+| 012 Variables clínicas | Sin spec: entró en el PR #26 |
 | [013 Completado asincrónico](013-completado-asincronico-cuestionarios/README.md) | Implementada; documentada en un README, sin spec formal |
-| [014 Versionado de variables](014-versionado-variables/spec.md) | Implementada |
+| [014 Versionado de variables](014-versionado-variables/spec.md) | Reemplazada por la 015: las variables ya no tienen versiones |
+| [015 Reemplazo de variables](015-variables-reemplazo/spec.md) | Implementada |
 
 Los contratos de 001–005 quedaron viejos; el vigente para la interfaz FHIR es
 [`009-conformidad-fhir-capas/contracts/fhir-api.md`](009-conformidad-fhir-capas/contracts/fhir-api.md).

@@ -50,25 +50,5 @@ namespace ChequeAR.Tests.Application
 
             Assert.False(VariableDefinition.From(Severidad()).SameAs(VariableDefinition.From(con)));
         }
-
-        [Fact]
-        public void Matches_PreguntaArmadaConLaMismaDefinicion()
-        {
-            var v = Severidad(300.0000m);
-            var q = new Question { Id = Guid.NewGuid() };
-            TestHelpers.ApplySnapshot(q, Severidad(300m));
-
-            Assert.True(VariableDefinition.From(v).Matches(q));
-        }
-
-        [Fact]
-        public void Matches_PreguntaConOtraDefinicion()
-        {
-            var q = new Question { Id = Guid.NewGuid() };
-            TestHelpers.ApplySnapshot(q, Severidad());
-            q.Options = new List<AnswerOption> { new AnswerOption { Value = "leve", Display = "Leve", Code = "255604002", SnomedCode = "255604002" } };
-
-            Assert.False(VariableDefinition.From(Severidad()).Matches(q));
-        }
     }
 }

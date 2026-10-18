@@ -25,7 +25,7 @@ namespace ChequeAR.Tests.Application
         private readonly Mock<IReportQueryRunner> _runner = new Mock<IReportQueryRunner>();
 
         private ReportExecutor Sut(ChequeAR.Application.Security.ISpecialtyGuard guard)
-            => new ReportExecutor(_runner.Object, new QueryBuilder(), _repo.Object, guard);
+            => new ReportExecutor(_runner.Object, new QueryBuilder(), _repo.Object, guard, TestHelpers.VariableRepoWith());
 
         private static Questionnaire Minimal(Guid id, string specialtyCode) => new Questionnaire
         {
