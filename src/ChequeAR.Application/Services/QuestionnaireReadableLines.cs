@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -98,7 +99,7 @@ namespace ChequeAR.Application.Services
         {
             var linkId = (string)c["question"];
             var pregunta = linkId != null && textos.TryGetValue(linkId, out var t) && !string.IsNullOrWhiteSpace(t) ? t : linkId;
-            var valor = c.Properties().FirstOrDefault(p => p.Name.StartsWith("answer"))?.Value;
+            var valor = c.Properties().FirstOrDefault(p => p.Name.StartsWith("answer", StringComparison.Ordinal))?.Value;
             var texto = valor is JObject coding ? (string)coding["display"] ?? (string)coding["code"] : valor?.ToString();
             if (valor?.Type == JTokenType.Boolean) texto = (bool)valor ? "Sí" : "No";
             return "«" + pregunta + "» " + OperatorLabel((string)c["operator"]) + " " + texto;
