@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -52,22 +51,20 @@ namespace ChequeAR.Tests.Application
         public async Task LosProbesCorrenEnParalelo()
         {
             var enCurso = 0;
+            var vieronAlOtro = 0;
             var todos = new TaskCompletionSource<bool>();
             Func<Task> barrera = async () =>
             {
                 if (Interlocked.Increment(ref enCurso) == 2) todos.TrySetResult(true);
-                await Task.WhenAny(todos.Task, Task.Delay(5000));
+                if (await Task.WhenAny(todos.Task, Task.Delay(30000)) == todos.Task)
+                    Interlocked.Increment(ref vieronAlOtro);
             };
             _fhir.Setup(f => f.GetPatientAsync(It.IsAny<string>())).Returns(async () => { await barrera(); return (string)null; });
             _oracle.Setup(o => o.PingAsync()).Returns(() => barrera());
-            var sut = Sut();
 
-            var sw = Stopwatch.StartNew();
-            var estados = await sut.ProbeAllAsync();
-            sw.Stop();
+            var estados = await Sut().ProbeAllAsync();
 
-            Assert.True(todos.Task.IsCompleted, "Los probes no estuvieron en curso a la vez.");
-            Assert.True(sw.ElapsedMilliseconds < 4000, "Tardó " + sw.ElapsedMilliseconds + " ms: los probes corrieron en serie.");
+            Assert.Equal(2, vieronAlOtro);
             Assert.All(estados.Where(s => s.Name != "Validador FHIR"), s => Assert.Equal("ok", s.Status));
         }
 
