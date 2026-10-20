@@ -24,6 +24,11 @@ namespace ChequeAR.Infrastructure.Repositories
         public Task PurgeExpiredAsync(DateTime before) =>
             _ctx.Database.ExecuteSqlCommandAsync(@"DELETE FROM ""CHEQUEAR"".""RefreshToken"" WHERE ""ExpiresAt"" < :p0", before);
 
+        public Task RevokeAllForUserAsync(string userId, DateTime nowUtc) =>
+            _ctx.Database.ExecuteSqlCommandAsync(
+                @"UPDATE ""CHEQUEAR"".""RefreshToken"" SET ""RevokedAt"" = :p0 WHERE ""UserId"" = :p1 AND ""RevokedAt"" IS NULL AND ""ExpiresAt"" > :p2",
+                nowUtc, userId, nowUtc);
+
         public async Task RevokeAsync(string hash)
         {
             var t = await _ctx.RefreshTokens.FirstOrDefaultAsync(x => x.TokenHash == hash);

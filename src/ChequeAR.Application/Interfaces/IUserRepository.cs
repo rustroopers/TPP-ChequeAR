@@ -34,6 +34,8 @@ namespace ChequeAR.Application.Interfaces
         Task SyncFromHospitalAsync(string userId, string displayName, string email,
             IReadOnlyList<string> roles, IReadOnlyList<string> specialties);
 
+        Task ApplyAdminEditAsync(Dtos.AdminUserEdit edit);
+
         /// <summary>Devuelve el sello de seguridad del usuario, generándolo si todavía no tiene uno.</summary>
         Task<string> EnsureSecurityStampAsync(string userId);
 

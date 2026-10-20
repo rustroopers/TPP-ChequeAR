@@ -31,6 +31,8 @@ namespace ChequeAR.Domain.Entities
         /// <summary>UTC.</summary>
         public DateTime? LockoutUntil { get; set; }
 
+        public int Revision { get; set; }
+
         public virtual ICollection<UserRole> Roles { get; set; } = new List<UserRole>();
         public virtual ICollection<UserSpecialty> Specialties { get; set; } = new List<UserSpecialty>();
     }

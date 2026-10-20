@@ -18,6 +18,9 @@ namespace ChequeAR.Api.Filters
             if (!(filterContext.Exception is PermissionForbiddenException)) return;
 
             filterContext.ExceptionHandled = true;
+            ChequeAR.Api.App_Start.ServiceComposition.AuditForbidden(
+                ChequeAR.Api.Auth.CurrentUser.Id(filterContext.HttpContext.User as System.Security.Claims.ClaimsPrincipal),
+                ChequeAR.Api.Helpers.LogSanitizer.Path(filterContext.HttpContext.Request.Path));
             filterContext.Result = new RedirectToRouteResult(new RouteValueDictionary(
                 new { controller = "Error", action = "Index", code = 403 }));
         }

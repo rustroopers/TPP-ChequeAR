@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -57,15 +58,22 @@ namespace ChequeAR.Api.Controllers.Api
         /// <summary>Campos editables; no se enlaza a User para evitar asignación masiva.</summary>
         public class UserUpsertRequest
         {
+            [StringLength(256)]
             public string DisplayName { get; set; }
+
+            [EmailAddress, StringLength(256)]
             public string Email { get; set; }
-            public bool IsActive { get; set; }
+
+            public bool? IsActive { get; set; }
         }
 
         [HttpPut, Route("{id}"), RequiresPermissionApi(Permissions.UserManage)]
         public async Task<IHttpActionResult> Upsert(string id, [FromBody] UserUpsertRequest body)
         {
-            if (body == null) return BadRequest("body required");
+            if (body == null) return BadRequest("Falta el cuerpo del pedido.");
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (await _users.GetAsync(id) == null) return NotFound();
+
             await _users.UpdateBasicsAsync(id, body.DisplayName, body.Email, body.IsActive,
                 CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
             SessionRevalidation.Invalidate(id);

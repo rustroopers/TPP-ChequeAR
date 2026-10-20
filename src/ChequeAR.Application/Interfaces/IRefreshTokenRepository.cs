@@ -9,6 +9,9 @@ namespace ChequeAR.Application.Interfaces
         Task AddAsync(RefreshToken t);
         Task<RefreshToken> GetByHashAsync(string hash);
         Task RevokeAsync(string hash);
+
+        Task RevokeAllForUserAsync(string userId, DateTime nowUtc);
+
         Task PurgeExpiredAsync(DateTime before);
     }
 }

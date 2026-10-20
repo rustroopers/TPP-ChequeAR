@@ -110,6 +110,11 @@ namespace ChequeAR.Api.App_Start
                 () => new AuditRepository(new ChequeARDbContext(), ownsContext: true), 1000,
                 (ex, message) => Log.Error(ex, "{AuditMessage}", message));
             _audit.AgentIpProvider = () => System.Web.HttpContext.Current?.Request.UserHostAddress;
+            var auditSpill = new Helpers.AuditSpillFile(Environment.ExpandEnvironmentVariables(
+                ConfigurationManager.AppSettings["Logging:Root"] ?? @"C:\ChequeAR\Logs"));
+            _audit.Spill = auditSpill.Write;
+            var reenviados = auditSpill.Replay(_audit, (ex, message) => Log.Error(ex, "{AuditMessage}", message));
+            if (reenviados > 0) Log.Warning("Se reencolaron {Count} eventos de auditoría pendientes de un arranque anterior.", reenviados);
             container.RegisterInstance(_audit);
 
             // Mismo criterio: contexto propio por recarga. El catálogo cambia rarísimo, así que
@@ -180,6 +185,7 @@ namespace ChequeAR.Api.App_Start
 
             // ===== Usuario actual y autorización =====
             // Adaptador ClaimsPrincipal -> ICurrentUser (Application no conoce System.Web).
+            container.RegisterSingleton<IOperationalLog, Helpers.SerilogOperationalLog>();
             container.Register<ICurrentUser, Auth.HttpCurrentUser>();
             container.Register<ISpecialtyGuard>(() => new SpecialtyGuard(container.GetInstance<ICurrentUser>(), enforceSpecialtyScope));
             // Eje rol (paralelo al de especialidad): RolePolicy es la matriz explícita, no
@@ -190,7 +196,7 @@ namespace ChequeAR.Api.App_Start
             container.Register<RefreshTokenService>(() => new RefreshTokenService(container.GetInstance<IRefreshTokenRepository>(), refreshTtlHours, SystemClock.Instance));
             container.Register<IntegrationHealthService>(() => new IntegrationHealthService(
                 container.GetInstance<IHospitalFhirClient>(), container.GetInstance<IOracleViewClient>(),
-                container.GetInstance<IFhirValidator>()));
+                container.GetInstance<IFhirValidator>(), container.GetInstance<IOperationalLog>()));
             container.RegisterInstance<IClock>(SystemClock.Instance);
             container.Register<QuestionnaireService>();
             container.Register<QuestionnaireResponseService>();

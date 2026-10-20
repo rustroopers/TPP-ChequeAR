@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
+using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Interfaces;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Entities;
@@ -135,6 +137,90 @@ namespace ChequeAR.Infrastructure.Repositories
             }
         }
 
+        public async Task ApplyAdminEditAsync(AdminUserEdit edit)
+        {
+            var own = _ctx.Database.CurrentTransaction == null ? _ctx.Database.BeginTransaction() : null;
+            try
+            {
+                await BumpRevisionAsync(edit.UserId, edit.ExpectedRevision);
+
+                var user = await _ctx.Users.Include(u => u.Roles).Include(u => u.Specialties)
+                    .FirstOrDefaultAsync(u => u.Id == edit.UserId);
+                if (user == null) throw new NotFoundException("Usuario inexistente.");
+
+                var desactivado = user.IsActive && !edit.IsActive;
+                user.DisplayName = edit.DisplayName ?? user.DisplayName;
+                user.IsActive = edit.IsActive;
+                if (desactivado) await RotateAsync(user);
+
+                var diff = UserMirrorDiff.Compute(
+                    user.Roles.Select(r => r.Role), new[] { edit.Role },
+                    user.Specialties.Select(s => s.SpecialtyCode), edit.Specialties ?? new List<string>());
+                ApplyDiff(user, diff);
+
+                await _ctx.SaveChangesAsync();
+                own?.Commit();
+            }
+            catch
+            {
+                own?.Rollback();
+                foreach (var entry in _ctx.ChangeTracker.Entries().ToList()) entry.State = EntityState.Detached;
+                throw;
+            }
+            finally
+            {
+                own?.Dispose();
+            }
+        }
+
+        private async Task BumpRevisionAsync(string userId, int? expected)
+        {
+            var sql = "UPDATE \"CHEQUEAR\".\"AppUser\" SET \"Revision\" = \"Revision\" + 1 WHERE \"Id\" = :id"
+                + (expected.HasValue ? " AND \"Revision\" = :rev" : "");
+            var args = expected.HasValue
+                ? new object[] { new OracleParameter("id", userId), new OracleParameter("rev", expected.Value) }
+                : new object[] { new OracleParameter("id", userId) };
+            if (await _ctx.Database.ExecuteSqlCommandAsync(sql, args) == 1) return;
+
+            var actual = await _ctx.Database.SqlQuery<decimal?>(
+                "SELECT \"Revision\" FROM \"CHEQUEAR\".\"AppUser\" WHERE \"Id\" = :id",
+                new OracleParameter("id", userId)).FirstOrDefaultAsync();
+            if (actual == null) throw new NotFoundException("Usuario inexistente.");
+            throw new ConcurrencyConflictException(expected ?? 0, (int)actual.Value,
+                "Otra persona modificó este usuario mientras lo editabas. Recargá la ficha y volvé a aplicar los cambios.");
+        }
+
+        private void ApplyDiff(User user, MirrorDiff diff)
+        {
+            // Se opera contra los DbSet, no contra las colecciones de navegación: mismo
+            // motivo que QuestionnaireRepository.ReplaceStructureAsync -- las FKs son
+            // requeridas, así que sacar un elemento de la colección sin borrarlo de su set
+            // intentaría poner la FK en null y EF lo rechazaría.
+            foreach (var role in diff.RolesToRemove)
+            {
+                var row = user.Roles.FirstOrDefault(r => string.Equals(r.Role, role, StringComparison.OrdinalIgnoreCase));
+                if (row != null) { _ctx.UserRoles.Remove(row); user.Roles.Remove(row); }
+            }
+            foreach (var role in diff.RolesToAdd)
+            {
+                var row = new UserRole { UserId = user.Id, Role = role };
+                _ctx.UserRoles.Add(row);
+                user.Roles.Add(row);
+            }
+
+            foreach (var code in diff.SpecialtiesToRemove)
+            {
+                var row = user.Specialties.FirstOrDefault(s => string.Equals(s.SpecialtyCode, code, StringComparison.OrdinalIgnoreCase));
+                if (row != null) { _ctx.UserSpecialties.Remove(row); user.Specialties.Remove(row); }
+            }
+            foreach (var code in diff.SpecialtiesToAdd)
+            {
+                var row = new UserSpecialty { UserId = user.Id, SpecialtyCode = code };
+                _ctx.UserSpecialties.Add(row);
+                user.Specialties.Add(row);
+            }
+        }
+
         public async Task SyncFromHospitalAsync(string userId, string displayName, string email,
             IReadOnlyList<string> roles, IReadOnlyList<string> specialties)
         {
@@ -166,34 +252,7 @@ namespace ChequeAR.Infrastructure.Repositories
             var diff = UserMirrorDiff.Compute(
                 user.Roles.Select(r => r.Role), roles,
                 user.Specialties.Select(s => s.SpecialtyCode), specialties);
-
-            // Se opera contra los DbSet, no contra las colecciones de navegación: mismo
-            // motivo que QuestionnaireRepository.ReplaceStructureAsync -- las FKs son
-            // requeridas, así que sacar un elemento de la colección sin borrarlo de su set
-            // intentaría poner la FK en null y EF lo rechazaría.
-            foreach (var role in diff.RolesToRemove)
-            {
-                var row = user.Roles.FirstOrDefault(r => string.Equals(r.Role, role, StringComparison.OrdinalIgnoreCase));
-                if (row != null) { _ctx.UserRoles.Remove(row); user.Roles.Remove(row); }
-            }
-            foreach (var role in diff.RolesToAdd)
-            {
-                var row = new UserRole { UserId = userId, Role = role };
-                _ctx.UserRoles.Add(row);
-                user.Roles.Add(row);
-            }
-
-            foreach (var code in diff.SpecialtiesToRemove)
-            {
-                var row = user.Specialties.FirstOrDefault(s => string.Equals(s.SpecialtyCode, code, StringComparison.OrdinalIgnoreCase));
-                if (row != null) { _ctx.UserSpecialties.Remove(row); user.Specialties.Remove(row); }
-            }
-            foreach (var code in diff.SpecialtiesToAdd)
-            {
-                var row = new UserSpecialty { UserId = userId, SpecialtyCode = code };
-                _ctx.UserSpecialties.Add(row);
-                user.Specialties.Add(row);
-            }
+            ApplyDiff(user, diff);
 
             await _ctx.SaveChangesAsync();
         }

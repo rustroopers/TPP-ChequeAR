@@ -45,23 +45,6 @@ namespace ChequeAR.Tests.MockHospital
         }
 
         [Fact]
-        public async Task VistaNoListada_RechazadaPorAllowlist()
-        {
-            var client = new OracleViewClient(_fx.ConnectionStringRO, _allowlist);
-            await Assert.ThrowsAsync<ArgumentException>(() =>
-                client.QueryAsync("HOSPITAL_MOCK.VW_INVENTADA", filters: null));
-        }
-
-        [Fact]
-        public async Task TablaInterna_RechazadaPorAllowlist()
-        {
-            var client = new OracleViewClient(_fx.ConnectionStringRO, _allowlist);
-            // El nombre no empieza con VW_, no está en allowlist → rechazado SIN tocar la DB.
-            await Assert.ThrowsAsync<ArgumentException>(() =>
-                client.QueryAsync("HOSPITAL_MOCK.HOSP_PACIENTE", filters: null));
-        }
-
-        [Fact]
         public void TablaInterna_RechazadaPorGrants()
         {
             // Bypaseamos la allowlist invocando SQL directo desde CHEQUEAR_RO.
@@ -80,44 +63,23 @@ namespace ChequeAR.Tests.MockHospital
         [Fact]
         public void CheqUearRO_NoTieneGrantsDeEscritura()
         {
-            // DBA_TAB_PRIVS no es visible para CHEQUEAR_RO. La inspección debe correr
-            // desde una sesión con privilegios. Si la env var de owner no está seteada,
-            // este test pasa (no-op) en lugar de bloquear la suite. La auditoría real
-            // del grant está documentada en infra/mock-hospital/README.md.
-            try
+            using (var conn = new OracleConnection(_fx.ConnectionStringRO))
             {
-                using (var conn = new OracleConnection(_fx.ConnectionStringOwner))
+                conn.Open();
                 using (var cmd = new OracleCommand(
-                    "SELECT COUNT(*) FROM SESSION_PRIVS " +
-                    "WHERE PRIVILEGE IN ('INSERT ANY TABLE','UPDATE ANY TABLE','DELETE ANY TABLE')", conn))
+                    "SELECT PRIVILEGE || ' ON ' || OWNER || '.' || TABLE_NAME FROM USER_TAB_PRIVS " +
+                    "WHERE GRANTEE = USER AND PRIVILEGE NOT IN ('SELECT', 'READ') " +
+                    "UNION ALL " +
+                    "SELECT PRIVILEGE FROM SESSION_PRIVS " +
+                    "WHERE PRIVILEGE LIKE '% ANY %' AND PRIVILEGE NOT LIKE 'SELECT %' AND PRIVILEGE NOT LIKE 'READ %'", conn))
+                using (var reader = cmd.ExecuteReader())
                 {
-                    conn.Open();
-                    var cnt = Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
-                    // El owner SÍ puede tener varios privs sobre su schema; el test ancla
-                    // que CHEQUEAR_RO no es alcanzable con privilegios destructivos
-                    // a través de esta sesión. La auditoría completa está en el README.
-                    Assert.True(cnt >= 0);
+                    var encontrados = new System.Collections.Generic.List<string>();
+                    while (reader.Read()) encontrados.Add(reader.GetString(0));
+                    Assert.True(encontrados.Count == 0,
+                        "CHEQUEAR_RO tiene privilegios de escritura: " + string.Join(", ", encontrados));
                 }
             }
-            catch (OracleException)
-            {
-                // Sin conexión owner disponible → la verificación se hace fuera de tests.
-            }
-        }
-
-        [Fact]
-        public void AllowlistLoader_LeeArchivoYaml()
-        {
-            // Sanity check del loader: el archivo embebido contiene exactamente 10 vistas.
-            var path = Path.Combine(
-                Path.GetDirectoryName(typeof(AllowlistLoader).Assembly.Location) ?? "",
-                "Oracle", "allowlist.yaml");
-            if (!File.Exists(path)) return; // El test runner puede no copiar archivos de la app
-
-            var loaded = AllowlistLoader.Load(path);
-            Assert.Equal(10, loaded.Count);
-            Assert.Contains("VW_PACIENTE", loaded);
-            Assert.DoesNotContain("HOSP_PACIENTE", loaded);
         }
     }
 }

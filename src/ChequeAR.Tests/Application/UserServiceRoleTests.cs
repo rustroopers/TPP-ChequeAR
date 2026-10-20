@@ -170,7 +170,8 @@ namespace ChequeAR.Tests.Application
             repo.Setup(r => r.GetAsync("u1")).ReturnsAsync(UserWithRole("u1", Role.Medico));
             var sut = Sut(repo);
 
-            await Assert.ThrowsAsync<ArgumentException>(() => sut.SetRoleAsync("u1", "SuperAdmin"));
+            var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => sut.SetRoleAsync("u1", "SuperAdmin"));
+            Assert.Equal("Rol desconocido.", ex.Message);
         }
 
         [Fact]

@@ -32,6 +32,22 @@ namespace ChequeAR.Api.Tests
             Assert.True(ApiExceptionFilter.IsClientError(ex));
         }
 
+        public static IEnumerable<object[]> Dependencias() => new[]
+        {
+            new object[] { new TerminologyException(503, "Snowstorm no responde"), 503 },
+            new object[] { new TerminologyException(429, "Demasiados pedidos", retryAfterSeconds: 10), 429 },
+        };
+
+        [Theory]
+        [MemberData(nameof(Dependencias))]
+        public void DependenciaCaida_CodigoHttp(Exception ex, int codigo)
+        {
+            var response = ApiExceptionFilter.ToResponse(Request(), ex);
+
+            Assert.Equal((HttpStatusCode)codigo, response.StatusCode);
+            Assert.Equal(codigo < 500, ApiExceptionFilter.IsClientError(ex));
+        }
+
         // Una excepción cualquiera puede ser un bug: sigue siendo un 500 sin detalles.
         [Fact]
         public void OtraExcepcion_NoSeTraduce()

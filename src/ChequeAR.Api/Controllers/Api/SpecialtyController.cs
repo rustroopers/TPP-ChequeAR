@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -40,7 +41,7 @@ namespace ChequeAR.Api.Controllers.Api
             // (un Jefe restringido a "cardio" no tiene "general" asignada): si no está,
             // se cae a la primera especialidad que SÍ puede elegir. Sin esto, un cuestionario
             // nuevo arrancaba preseleccionado en una especialidad ajena ("fuera de catálogo").
-            var defaultCode = scoped.Any(s => s.Code == cat.DefaultCode)
+            var defaultCode = scoped.Any(s => string.Equals(s.Code, cat.DefaultCode, StringComparison.OrdinalIgnoreCase))
                 ? cat.DefaultCode
                 : scoped.Select(s => s.Code).FirstOrDefault();
 
@@ -49,7 +50,7 @@ namespace ChequeAR.Api.Controllers.Api
                 code = s.Code,
                 name = s.Name,
                 color = cat.Color(s.Code),
-                isDefault = s.Code == cat.DefaultCode,
+                isDefault = string.Equals(s.Code, defaultCode, StringComparison.OrdinalIgnoreCase),
                 isActive = s.IsActive
             });
 

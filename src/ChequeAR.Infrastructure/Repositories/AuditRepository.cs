@@ -54,9 +54,9 @@ namespace ChequeAR.Infrastructure.Repositories
                 // x.AgentUserId.ToLower() queda tal cual (sin Invariant): esto es una expresion
                 // LINQ-to-Entities que el proveedor de Oracle traduce a LOWER() en SQL; el
                 // overload con CultureInfo no es un metodo que EF6 sepa traducir.
-#pragma warning disable CA1304, CA1311
-                q = q.Where(x => x.AgentUserId.ToLower().Contains(u));
-#pragma warning restore CA1304, CA1311
+#pragma warning disable CA1304, CA1311, CA1862
+                q = q.Where(x => x.AgentUserId.ToLower().StartsWith(u));
+#pragma warning restore CA1304, CA1311, CA1862
             }
             if (!string.IsNullOrEmpty(action)) q = q.Where(x => x.Action == action);
             if (fromUtc.HasValue) q = q.Where(x => x.Recorded >= fromUtc.Value);

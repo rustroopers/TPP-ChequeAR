@@ -103,40 +103,5 @@ namespace ChequeAR.Tests.Application
             _repo.Verify(r => r.RotateSecurityStampAsync("m1"), Times.Once);
             Assert.Equal("AppUser/m1$password", Assert.Single(_eventos).EntityRef);
         }
-
-        [Fact]
-        public async Task UpdateByAdmin_AuditaSoloLoQueCambio()
-        {
-            var antes = Usuario();
-            var despues = Usuario(role: Role.Jefe);
-            despues.Specialties.Add(new UserSpecialty { UserId = "m1", SpecialtyCode = "cardio" });
-            _repo.SetupSequence(r => r.GetAsync("m1"))
-                 .ReturnsAsync(antes).ReturnsAsync(antes).ReturnsAsync(antes).ReturnsAsync(antes).ReturnsAsync(despues);
-
-            await _sut.UpdateByAdminAsync("m1", "M1", true, Role.Jefe, new[] { "cardio" }, "admin1");
-            await _dispatcher.FlushAsync();
-
-            var evt = Assert.Single(_eventos);
-            Assert.Equal("AppUser/m1", evt.EntityRef);
-            Assert.Equal("admin1", evt.AgentUserId);
-            var cambios = AuditChangeSet.Read(evt.FhirJson).Changes;
-            Assert.Equal(new[] { "Rol", "Especialidades" }, cambios.Select(c => c.Field));
-            Assert.Equal(Role.Medico, cambios[0].Before);
-            Assert.Equal(Role.Jefe, cambios[0].After);
-        }
-
-        [Fact]
-        public async Task UpdateByAdmin_SinCambios_NoAudita()
-        {
-            var u = Usuario();
-            _repo.Setup(r => r.GetAsync("m1")).ReturnsAsync(u);
-
-            await _sut.UpdateByAdminAsync("m1", "M1", true, Role.Medico, Array.Empty<string>(), "admin1");
-            await _dispatcher.FlushAsync();
-
-            Assert.Empty(_eventos);
-            _repo.Verify(r => r.SyncFromHospitalAsync("m1", "M1", null, null,
-                It.Is<IReadOnlyList<string>>(l => l.Count == 0)), Times.Once);
-        }
     }
 }

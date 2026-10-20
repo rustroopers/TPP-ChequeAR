@@ -91,18 +91,26 @@ namespace ChequeAR.Api.Models
     public class UserListViewModel
     {
         public List<UserListItem> Users { get; set; } = new List<UserListItem>();
+
+        public string Query { get; set; }
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 50;
+        public int Total { get; set; }
     }
 
     public class UserDetailViewModel
     {
+        [System.ComponentModel.DataAnnotations.Required]
         public string Username { get; set; }
         public string FullName { get; set; }
         public string Email { get; set; }
-        public string DNI { get; set; }
         public bool Active { get; set; }
 
         /// <summary>Rol único y global del usuario (Administrador/Jefe/Medico). Ver Domain.Enums.Role.</summary>
+        [System.ComponentModel.DataAnnotations.Required]
         public string Role { get; set; }
+
+        public int Revision { get; set; }
         public List<UserSpecialtyItem> Specialties { get; set; } = new List<UserSpecialtyItem>();
 
         /// <summary>Códigos marcados en el formulario al guardar.</summary>

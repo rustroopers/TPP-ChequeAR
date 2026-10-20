@@ -16,7 +16,7 @@ namespace ChequeAR.Api.Auth
 
             var validator = ServiceComposition.Container?.GetInstance<SessionValidator>();
             // Todavía no terminó Application_Start.
-            if (validator == null) return Task.FromResult(true);
+            if (validator == null) return Task.FromResult(false);
 
             var userId = identity.FindFirst("sub")?.Value
                          ?? identity.FindFirst(ClaimTypes.NameIdentifier)?.Value

@@ -8,6 +8,13 @@ using ChequeAR.Domain.Entities;
 
 namespace ChequeAR.Application.Services
 {
+    public class RefreshRotation
+    {
+        public string UserId { get; set; }
+
+        public string RefreshToken { get; set; }
+    }
+
     public class RefreshTokenService
     {
         private readonly IRefreshTokenRepository _repo;
@@ -22,7 +29,10 @@ namespace ChequeAR.Application.Services
             _clock = clock ?? SystemClock.Instance;
         }
 
-        public async Task<string> IssueAsync(string userId, string userAgent, string ip)
+        public Task<string> IssueAsync(string userId, string userAgent, string ip)
+            => IssueAsync(userId, userAgent, ip, _clock.UtcNow.AddHours(_ttlHours));
+
+        private async Task<string> IssueAsync(string userId, string userAgent, string ip, DateTime expiresAt)
         {
             var bytes = new byte[64];
             using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
@@ -36,7 +46,7 @@ namespace ChequeAR.Application.Services
                 UserId = userId,
                 TokenHash = hash,
                 IssuedAt = _clock.UtcNow,
-                ExpiresAt = _clock.UtcNow.AddHours(_ttlHours),
+                ExpiresAt = expiresAt,
                 UserAgent = userAgent,
                 Ip = ip
             });
@@ -48,6 +58,22 @@ namespace ChequeAR.Application.Services
             var hash = Hash(raw);
             var t = await _repo.GetByHashAsync(hash);
             return t != null && t.IsActive(_clock.UtcNow) ? t : null;
+        }
+
+        public async Task<RefreshRotation> RotateAsync(string raw, string userAgent, string ip)
+        {
+            var now = _clock.UtcNow;
+            var t = await _repo.GetByHashAsync(Hash(raw));
+            if (t == null || t.ExpiresAt <= now) return null;
+            if (t.RevokedAt != null)
+            {
+                await _repo.RevokeAllForUserAsync(t.UserId, now);
+                return null;
+            }
+
+            await _repo.RevokeAsync(t.TokenHash);
+            var next = await IssueAsync(t.UserId, userAgent, ip, t.ExpiresAt);
+            return new RefreshRotation { UserId = t.UserId, RefreshToken = next };
         }
 
         public Task RevokeAsync(string raw)
