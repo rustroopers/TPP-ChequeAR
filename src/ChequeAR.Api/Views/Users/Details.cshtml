@@ -11,15 +11,18 @@
     <a href="@Url.Action("Index")" class="btn btn-neutral"><i class="bi bi-arrow-left me-1"></i>Volver</a>
 </header>
 
-@using (Html.BeginForm("Save", "Users", FormMethod.Post))
+@if (string.IsNullOrEmpty(ViewBag.DataError as string))
+{
+using (Html.BeginForm("Save", "Users", FormMethod.Post))
 {
     @Html.AntiForgeryToken()
     @Html.HiddenFor(m => m.Username)
+    @Html.HiddenFor(m => m.Revision)
 
     <div class="cq-card mb-3" style="max-width:720px;">
         <h2>Rol</h2>
 
-        <select class="form-select" name="Role" style="max-width:280px;">
+        <select class="form-select" name="Role" style="max-width:280px;" required>
             @foreach (var r in ChequeAR.Domain.Enums.Role.All)
             {
                 <option value="@r" selected="@(Model.Role == r)">@(r == ChequeAR.Domain.Enums.Role.Medico ? "Médico" : r)</option>
@@ -31,7 +34,8 @@
         <h2>Especialidades</h2>
         @{
             var disponibles = ViewBag.AvailableSpecialties as IEnumerable<ChequeAR.Domain.Entities.Specialty> ?? Enumerable.Empty<ChequeAR.Domain.Entities.Specialty>();
-            var asignadas = new HashSet<string>(Model.Specialties.Select(s => s.SpecialtyCode));
+            var inactivas = ViewBag.InactiveAssigned as IEnumerable<ChequeAR.Domain.Entities.Specialty> ?? Enumerable.Empty<ChequeAR.Domain.Entities.Specialty>();
+            var asignadas = new HashSet<string>(Model.Specialties.Select(s => s.SpecialtyCode), StringComparer.OrdinalIgnoreCase);
         }
         <div class="d-flex flex-wrap gap-3">
             @foreach (var sp in disponibles)
@@ -41,10 +45,18 @@
                     <label class="form-check-label" for="sp-@sp.Code">@sp.Name</label>
                 </div>
             }
+            @foreach (var sp in inactivas)
+            {
+                <div class="form-check" title="Especialidad dada de baja en el catálogo: se conserva, pero no se puede asignar ni quitar desde acá.">
+                    <input class="form-check-input" type="checkbox" id="sp-@sp.Code" checked disabled />
+                    <label class="form-check-label cq-text-muted" for="sp-@sp.Code">@sp.Name (inactiva)</label>
+                </div>
+            }
         </div>
     </div>
 
     <div class="d-flex gap-2" style="max-width:720px;">
         <button type="submit" class="btn btn-primary">Guardar cambios</button>
     </div>
+}
 }

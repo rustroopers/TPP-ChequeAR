@@ -43,8 +43,9 @@ namespace ChequeAR.Api.Filters
                     var user = users == null || string.IsNullOrEmpty(l.LockedByUserId) ? null : await users.GetAsync(l.LockedByUserId);
                     if (!string.IsNullOrWhiteSpace(user?.DisplayName)) name = user.DisplayName;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Serilog.Log.Warning(ex, "No se pudo leer el nombre de quien tiene el lock de la ficha");
                 }
                 context.Response = context.Request.CreateResponse(HttpStatusCode.Conflict,
                     OperationOutcomes.LockConflict(l.Message, name, l.LockExpiresAt));
@@ -57,47 +58,66 @@ namespace ChequeAR.Api.Filters
         /// Es un error del cliente (4xx) y no una falla del sistema. WebApiExceptionLogger lo usa
         /// para no registrar como error una regla de negocio que rechazó un pedido.
         /// </summary>
-        public static bool IsClientError(Exception ex) =>
-            ex is PermissionForbiddenException
-            || ex is SpecialtyForbiddenException
-            || ex is NotFoundException
-            || ex is ValidationFailedException
-            || ex is LockConflictException
-            || ex is ConcurrencyConflictException
-            || ex is BusinessRuleException;
+        public static bool IsClientError(Exception ex)
+        {
+            var status = StatusFor(ex);
+            return status.HasValue && status.Value < 500;
+        }
 
-        public static HttpResponseMessage ToResponse(HttpRequestMessage request, Exception ex)
+        public static int? StatusFor(Exception ex)
         {
             switch (ex)
             {
+                case PermissionForbiddenException _: return 403;
+                case SpecialtyForbiddenException _: return 403;
+                case NotFoundException _: return 404;
+                case ValidationFailedException _: return 422;
+                case LockConflictException _: return 409;
+                case ConcurrencyConflictException _: return 409;
+                case BusinessRuleException _: return 422;
+                case TerminologyException t: return t.StatusCode;
+                default: return null;
+            }
+        }
+
+        public static HttpResponseMessage ToResponse(HttpRequestMessage request, Exception ex)
+        {
+            var status = StatusFor(ex);
+            if (status == null) return null;
+            var code = (HttpStatusCode)status.Value;
+            switch (ex)
+            {
                 case PermissionForbiddenException _:
-                    return request.CreateResponse(HttpStatusCode.Forbidden, OperationOutcomes.Forbidden());
+                    return request.CreateResponse(code, OperationOutcomes.Forbidden());
 
                 case SpecialtyForbiddenException _:
-                    return request.CreateResponse(HttpStatusCode.Forbidden,
+                    return request.CreateResponse(code,
                         OperationOutcomes.Forbidden("No tiene acceso a la especialidad de ese cuestionario."));
 
                 case NotFoundException nf:
-                    return request.CreateResponse(HttpStatusCode.NotFound, OperationOutcomes.NotFound(nf.Message));
+                    return request.CreateResponse(code, OperationOutcomes.NotFound(nf.Message));
 
                 // Un issue por regla incumplida: con un mensaje concatenado, quien corrige
                 // arregla la primera y recién al reintentar descubre la segunda.
                 case ValidationFailedException v:
-                    return request.CreateResponse((HttpStatusCode)422, OperationOutcomes.ForValidationErrors(v.Errors));
+                    return request.CreateResponse(code, OperationOutcomes.ForValidationErrors(v.Errors));
 
                 // Única respuesta que no es un OperationOutcome: FHIR no tiene dónde expresar
                 // quién tiene el lock ni hasta cuándo, y el renderer necesita los dos datos
                 // para mostrar "lo está completando X hasta las HH:mm".
                 case LockConflictException l:
-                    return request.CreateResponse(HttpStatusCode.Conflict,
+                    return request.CreateResponse(code,
                         OperationOutcomes.LockConflict(l.Message, l.LockedByUserId, l.LockExpiresAt));
 
                 case ConcurrencyConflictException c:
-                    return request.CreateResponse(HttpStatusCode.Conflict,
+                    return request.CreateResponse(code,
                         OperationOutcomes.Conflict(c.ExpectedVersion, c.ActualVersion));
 
                 case BusinessRuleException br:
-                    return request.CreateResponse((HttpStatusCode)422, OperationOutcomes.Unprocessable(br.Message));
+                    return request.CreateResponse(code, OperationOutcomes.Unprocessable(br.Message));
+
+                case TerminologyException t:
+                    return request.CreateResponse(code, OperationOutcomes.Transient(t.Message, t.RetryAfterSeconds));
 
                 default:
                     return null;

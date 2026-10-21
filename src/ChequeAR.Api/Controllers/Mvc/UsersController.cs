@@ -6,6 +6,7 @@ using System.Web.Mvc;
 using ChequeAR.Api.Auth;
 using ChequeAR.Api.Models;
 using ChequeAR.Application.Dtos;
+using ChequeAR.Application.Exceptions;
 using ChequeAR.Application.Services;
 using ChequeAR.Domain.Enums;
 
@@ -23,16 +24,23 @@ namespace ChequeAR.Api.Controllers.Mvc
             _specialties = specialties;
         }
 
-        public async Task<ActionResult> Index()
+        public async Task<ActionResult> Index(string q = null, int page = 1)
         {
             ViewBag.Title = "Usuarios";
             ViewBag.PageId = "users";
-            var model = new UserListViewModel();
+            const int pageSize = 50;
+            var model = new UserListViewModel
+            {
+                Query = string.IsNullOrWhiteSpace(q) ? null : q.Trim(),
+                PageSize = pageSize,
+                Page = Math.Min(Math.Max(1, page), int.MaxValue / pageSize)
+            };
             try
             {
                 var cat = await _specialties.GetAsync();
-                var items = (await _users.ListAsync(null, null, null, null, 0, 100)).Items;
-                foreach (var u in items)
+                var pagina = await _users.ListAsync(model.Query, null, null, null, (model.Page - 1) * pageSize, pageSize);
+                model.Total = pagina.Total;
+                foreach (var u in pagina.Items)
                 {
                     // RoleHierarchy.Principal, no "el primer rol de la colección": UserRole es
                     // una colección por herencia del espejo del hospital, pero el modelo de
@@ -79,7 +87,8 @@ namespace ChequeAR.Api.Controllers.Mvc
                 {
                     Username = u.Id, FullName = u.DisplayName, Email = u.Email,
                     Active = u.IsActive,
-                    Role = RoleHierarchy.Principal(u.Roles?.Select(r => r.Role))
+                    Role = RoleHierarchy.Principal(u.Roles?.Select(r => r.Role)),
+                    Revision = u.Revision
                 };
                 if (u.Specialties != null)
                 {
@@ -96,19 +105,31 @@ namespace ChequeAR.Api.Controllers.Mvc
                 // Catálogo completo (activo), para que la vista pueda ofrecer un selector de
                 // especialidades a asignar además de las que ya tiene.
                 ViewBag.AvailableSpecialties = cat.Items.Where(s => s.IsActive).ToList();
+                ViewBag.InactiveAssigned = cat.Items
+                    .Where(s => !s.IsActive && model.Specialties.Any(m => string.Equals(m.SpecialtyCode, s.Code, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
                 return View(model);
             }
             catch (Exception ex)
             {
                 Helpers.HandledErrors.Log(this, ex);
-                ViewBag.DataError = "Ocurrió un error al procesar la solicitud.";
-                return View(new UserDetailViewModel { Username = username });
+                ViewBag.DataError = "No se pudo cargar la ficha del usuario. Volvé a intentarlo en unos minutos.";
+                return View(new UserDetailViewModel { Username = username, FullName = username });
             }
         }
 
         [HttpPost, ValidateAntiForgeryToken]
         public async Task<ActionResult> Save(UserDetailViewModel model)
         {
+            if (model == null || !ModelState.IsValid)
+            {
+                TempData["Toast"] = "No se guardó nada: el formulario llegó incompleto. Recargá la ficha y volvé a intentarlo.";
+                TempData["ToastLevel"] = "error";
+                return model?.Username == null
+                    ? RedirectToAction("Index")
+                    : RedirectToAction("Details", new { username = model.Username });
+            }
+
             try
             {
                 var existing = await _users.GetAsync(model.Username);
@@ -121,24 +142,25 @@ namespace ChequeAR.Api.Controllers.Mvc
                     .ToList();
                 // La pantalla ya no edita si la cuenta está activa: se conserva la actual.
                 await _users.UpdateByAdminAsync(existing.Id, model.FullName, existing.IsActive, model.Role, codes,
-                    CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
+                    CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal), model.Revision);
 
                 SessionRevalidation.Invalidate(existing.Id);
 
                 TempData["Toast"] = "Cambios guardados.";
                 TempData["ToastLevel"] = "success";
             }
-            catch (InvalidOperationException ex)
+            catch (ConcurrencyConflictException ex)
+            {
+                TempData["Toast"] = ex.Message;
+                TempData["ToastLevel"] = "error";
+                return RedirectToAction("Details", new { username = model.Username });
+            }
+            catch (Exception ex) when (ex is BusinessRuleException || ex is ValidationFailedException)
             {
                 TempData["Toast"] = ex.Message;
                 TempData["ToastLevel"] = "error";
             }
-            catch (ArgumentException ex)
-            {
-                TempData["Toast"] = ex.Message;
-                TempData["ToastLevel"] = "error";
-            }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 Helpers.HandledErrors.Log(this, ex);
                 TempData["Toast"] = "No se pudieron guardar los cambios.";

@@ -29,7 +29,7 @@ namespace ChequeAR.Api.Auth
         {
             var principal = actionContext.RequestContext?.Principal as ClaimsPrincipal;
             if (principal == null || !principal.Identity.IsAuthenticated) return false;
-            return RolePolicy.Allows(CurrentUser.Roles(principal), _permission);
+            return RolePolicy.Allows(new[] { CurrentUser.PrincipalRole(principal) }, _permission);
         }
 
         protected override void HandleUnauthorizedRequest(HttpActionContext actionContext)

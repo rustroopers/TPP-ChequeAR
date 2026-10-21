@@ -13,19 +13,21 @@ namespace ChequeAR.Application.Services
         private readonly IHospitalFhirClient _fhir;
         private readonly IOracleViewClient _oracle;
         private readonly IFhirValidator _validator;
+        private readonly IOperationalLog _log;
 
-        public IntegrationHealthService(IHospitalFhirClient fhir, IOracleViewClient oracle, IFhirValidator validator)
+        public IntegrationHealthService(IHospitalFhirClient fhir, IOracleViewClient oracle, IFhirValidator validator,
+            IOperationalLog log = null)
         {
             _fhir = fhir;
             _oracle = oracle;
             _validator = validator;
+            _log = log ?? NullOperationalLog.Instance;
         }
 
         public async Task<IReadOnlyList<IntegrationStatus>> ProbeAllAsync()
         {
-            var result = new List<IntegrationStatus>();
-            result.Add(await ProbeFhirAsync());
-            result.Add(await ProbeOracleAsync());
+            var probes = await Task.WhenAll(ProbeFhirAsync(), ProbeOracleAsync()).ConfigureAwait(false);
+            var result = new List<IntegrationStatus>(probes);
             result.Add(ProbeValidator());
             return result;
         }
@@ -35,11 +37,10 @@ namespace ChequeAR.Application.Services
             var sw = Stopwatch.StartNew();
             try
             {
-                await _fhir.GetPatientAsync("__ping__");
-                sw.Stop();
+                await _fhir.GetPatientAsync("__ping__").ConfigureAwait(false);
                 return Ok("FHIR Hospital", sw.ElapsedMilliseconds);
             }
-            catch (Exception ex) { return Down("FHIR Hospital", ex.Message); }
+            catch (Exception ex) { return Down("FHIR Hospital", ex); }
         }
 
         private async Task<IntegrationStatus> ProbeOracleAsync()
@@ -47,11 +48,10 @@ namespace ChequeAR.Application.Services
             var sw = Stopwatch.StartNew();
             try
             {
-                await _oracle.PingAsync();
-                sw.Stop();
+                await _oracle.PingAsync().ConfigureAwait(false);
                 return Ok("Oracle Vistas", sw.ElapsedMilliseconds);
             }
-            catch (Exception ex) { return Down("Oracle Vistas", ex.Message); }
+            catch (Exception ex) { return Down("Oracle Vistas", ex); }
         }
 
         /// <summary>Valida un recurso mínimo: si el validador no carga sus perfiles, falla acá.</summary>
@@ -61,17 +61,19 @@ namespace ChequeAR.Application.Services
             try
             {
                 _validator.Validate("{\"resourceType\":\"Questionnaire\",\"status\":\"draft\"}");
-                sw.Stop();
                 return Ok("Validador FHIR", sw.ElapsedMilliseconds);
             }
-            catch (Exception ex) { return Down("Validador FHIR", ex.Message); }
+            catch (Exception ex) { return Down("Validador FHIR", ex); }
         }
 
         private static IntegrationStatus Ok(string name, long ms) => new IntegrationStatus
         { Name = name, Status = "ok", LastPingUtc = DateTime.UtcNow, LatencyMs = ms };
 
-        private static IntegrationStatus Down(string name, string detail) => new IntegrationStatus
-        { Name = name, Status = "down", LastPingUtc = DateTime.UtcNow, Detail = detail };
+        private IntegrationStatus Down(string name, Exception ex)
+        {
+            _log.Warning(ex, "Chequeo de integraciones: " + name + " no responde.");
+            return new IntegrationStatus { Name = name, Status = "down", LastPingUtc = DateTime.UtcNow, Detail = "No responde" };
+        }
     }
 
     public class IntegrationStatus

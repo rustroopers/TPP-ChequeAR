@@ -32,22 +32,28 @@ namespace ChequeAR.Infrastructure.Oracle
                 throw new FileNotFoundException("Allowlist no encontrada", path);
 
             var views = new List<string>();
-            foreach (var rawLine in File.ReadAllLines(path))
+            var lines = File.ReadAllLines(path);
+            for (var i = 0; i < lines.Length; i++)
             {
-                var line = rawLine;
+                var line = lines[i];
                 var hash = line.IndexOf('#');
                 if (hash >= 0) line = line.Substring(0, hash);
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
+                var esEntrada = line.TrimStart().StartsWith("-", StringComparison.Ordinal);
                 var match = ViewEntryPattern.Match(line);
-                if (!match.Success) continue;
-
-                var candidate = match.Groups[1].Value;
                 // Filtro adicional: las allowlist entries se esperan con prefijo VW_.
                 // Si alguien pone "allowed_views" como entrada por error, esto lo descarta.
-                if (!candidate.StartsWith("VW_", StringComparison.Ordinal)) continue;
+                var esVista = match.Success && match.Groups[1].Value.StartsWith("VW_", StringComparison.Ordinal);
+                if (!esVista)
+                {
+                    if (esEntrada)
+                        throw new InvalidDataException(
+                            "Allowlist " + path + ", línea " + (i + 1) + ": '" + lines[i].Trim() + "' no es una vista válida (se espera `- VW_NOMBRE`).");
+                    continue;
+                }
 
-                views.Add(candidate);
+                views.Add(match.Groups[1].Value);
             }
 
             if (views.Count == 0)

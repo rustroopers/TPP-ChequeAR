@@ -37,7 +37,7 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Login([FromBody] LoginRequest req)
         {
             if (req == null || string.IsNullOrWhiteSpace(req.Username))
-                return BadRequest("username required");
+                return BadRequest("Falta el usuario.");
 
             var ip = ((HttpRequestMessage)Request).GetOwinContext()?.Request?.RemoteIpAddress;
             if (Auth.LoginThrottle.IsBlocked(ip))
@@ -81,8 +81,9 @@ namespace ChequeAR.Api.Controllers.Api
         public async Task<IHttpActionResult> Refresh([FromBody] RefreshRequest req)
         {
             if (req == null || string.IsNullOrEmpty(req.RefreshToken)) return BadRequest();
-            var t = await _refresh.ValidateAsync(req.RefreshToken);
-            if (t == null) return StatusCode(HttpStatusCode.Unauthorized);
+            var ip = ((HttpRequestMessage)Request).GetOwinContext()?.Request?.RemoteIpAddress;
+            var rotation = await _refresh.RotateAsync(req.RefreshToken, Request.Headers.UserAgent?.ToString(), ip);
+            if (rotation == null) return StatusCode(HttpStatusCode.Unauthorized);
 
             // Recargar roles y especialidades desde el espejo local: antes el token
             // refrescado salía SIN ninguno de los dos, así que a los 60 minutos (el TTL
@@ -92,10 +93,10 @@ namespace ChequeAR.Api.Controllers.Api
             // Esto convierte al refresh en el mecanismo de revocación: una especialidad
             // sacada (o el usuario desactivado) en el hospital se propaga en <= 60 min
             // sin esperar un re-login.
-            var u = await _users.GetAsync(t.UserId);
+            var u = await _users.GetAsync(rotation.UserId);
             if (u == null || !u.IsActive)
             {
-                await _refresh.RevokeAsync(req.RefreshToken);
+                await _refresh.RevokeAsync(rotation.RefreshToken);
                 return StatusCode(HttpStatusCode.Unauthorized);
             }
 
@@ -108,7 +109,7 @@ namespace ChequeAR.Api.Controllers.Api
                 SecurityStamp = u.SecurityStamp
             };
             var access = _jwt.IssueAccessToken(user);
-            return Ok(new LoginResult { AccessToken = access, ExpiresIn = _jwt.AccessTtlSeconds, User = user });
+            return Ok(new LoginResult { AccessToken = access, RefreshToken = rotation.RefreshToken, ExpiresIn = _jwt.AccessTtlSeconds, User = user });
         }
 
         [HttpPost, Route("logout"), Authorize]
@@ -116,7 +117,13 @@ namespace ChequeAR.Api.Controllers.Api
         {
             if (req != null && !string.IsNullOrEmpty(req.RefreshToken))
                 await _refresh.RevokeAsync(req.RefreshToken);
-            _users.LoggedOut(Auth.CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal));
+            var id = Auth.CurrentUser.Id(User as System.Security.Claims.ClaimsPrincipal);
+            if (!string.IsNullOrEmpty(id))
+            {
+                await _users.RotateSecurityStampAsync(id);
+                Auth.SessionRevalidation.Invalidate(id);
+                _users.LoggedOut(id);
+            }
             return Ok();
         }
 

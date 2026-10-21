@@ -23,6 +23,7 @@ namespace ChequeAR.Application.Services
     {
         /// <summary>Intentos de persistir un evento antes de descartarlo (reportándolo por onError).</summary>
         public const int MaxAttempts = 10;
+        public const int MaxQueued = 10000;
         private const int BatchSize = 500;
         /// <summary>Fallos seguidos, sin ningún acierto, que alcanzan para dar la base por caída.</summary>
         private const int OutageProbe = 3;
@@ -36,6 +37,8 @@ namespace ChequeAR.Application.Services
         private readonly bool _ownsRepositories;
         private readonly Action<Exception, string> _onError;
         private readonly ConcurrentQueue<Pending> _queue = new ConcurrentQueue<Pending>();
+        private int _queued;
+        private int _overflowReported;
         private readonly SemaphoreSlim _flushGate = new SemaphoreSlim(1, 1);
         private readonly Timer _timer;
         private int _disposed;
@@ -67,10 +70,47 @@ namespace ChequeAR.Application.Services
         /// <summary>IP de quien origina el evento; null fuera de un pedido.</summary>
         public Func<string> AgentIpProvider { get; set; }
 
+        public Action<AuditEvent> Spill { get; set; }
+
         public void Enqueue(AuditEvent evt)
         {
             StampIp(evt);
-            _queue.Enqueue(new Pending(evt));
+            TryQueue(new Pending(evt));
+        }
+
+        private void TryQueue(Pending p)
+        {
+            if (Interlocked.Increment(ref _queued) > MaxQueued)
+            {
+                Interlocked.Decrement(ref _queued);
+                if (Interlocked.Exchange(ref _overflowReported, 1) == 0)
+                    _onError(null, "Cola de auditoría llena (" + MaxQueued + " eventos): los nuevos van al archivo de pendientes hasta que la base vuelva.");
+                SpillEvent(p.Event, null);
+                return;
+            }
+            _queue.Enqueue(p);
+        }
+
+        private bool TryDequeue(out Pending p)
+        {
+            if (!_queue.TryDequeue(out p)) return false;
+            if (Interlocked.Decrement(ref _queued) < MaxQueued / 2) Interlocked.Exchange(ref _overflowReported, 0);
+            return true;
+        }
+
+        private void SpillEvent(AuditEvent evt, Exception cause)
+        {
+            if (evt == null) return;
+            try
+            {
+                if (Spill != null) { Spill(evt); return; }
+            }
+            catch (Exception ex)
+            {
+                cause = ex;
+            }
+            _onError(cause, "Evento de auditoría perdido: " + evt.Action + " " + evt.EntityRef + " por " + evt.AgentUserId
+                            + " (" + evt.Recorded.ToString("o", CultureInfo.InvariantCulture) + ")");
         }
 
         private void StampIp(AuditEvent evt)
@@ -95,7 +135,7 @@ namespace ChequeAR.Application.Services
             catch (Exception ex)
             {
                 _onError(ex, "No se pudo persistir el evento de auditoría " + evt?.EntityRef + "; queda encolado para reintentar.");
-                _queue.Enqueue(new Pending(evt, attempts: 1));
+                TryQueue(new Pending(evt, attempts: 1));
             }
         }
 
@@ -117,7 +157,7 @@ namespace ChequeAR.Application.Services
         private async Task<bool> FlushBatchAsync()
         {
             var batch = new List<Pending>();
-            while (batch.Count < BatchSize && _queue.TryDequeue(out var p)) batch.Add(p);
+            while (batch.Count < BatchSize && TryDequeue(out var p)) batch.Add(p);
             if (batch.Count == 0) return true;
 
             try
@@ -179,13 +219,11 @@ namespace ChequeAR.Application.Services
             foreach (var p in failed)
             {
                 p.Attempts++;
-                if (p.Attempts < MaxAttempts) _queue.Enqueue(p);
+                if (p.Attempts < MaxAttempts) TryQueue(p);
                 else
                 {
                     dropped++;
-                    _onError(ex, "Evento de auditoría descartado tras " + MaxAttempts + " intentos: "
-                                 + p.Event?.Action + " " + p.Event?.EntityRef + " por " + p.Event?.AgentUserId
-                                 + " (" + p.Event?.Recorded.ToString("o", CultureInfo.InvariantCulture) + ")");
+                    SpillEvent(p.Event, ex);
                 }
             }
             return dropped;
@@ -251,9 +289,10 @@ namespace ChequeAR.Application.Services
                 // Un lote fallido no se reintenta en loop: si la base está caída al apagar,
                 // los eventos que queden se reportan como perdidos.
                 while (!_queue.IsEmpty && FlushBatchAsync().GetAwaiter().GetResult()) { }
-                var lost = _queue.Count;
+                var lost = 0;
+                while (TryDequeue(out var p)) { lost++; SpillEvent(p.Event, null); }
                 if (lost > 0)
-                    _onError(null, lost + " eventos de auditoría sin persistir al apagar la aplicación.");
+                    _onError(null, lost + " eventos de auditoría sin persistir al apagar la aplicación; quedan en el archivo de pendientes.");
             }
             catch (Exception ex)
             {

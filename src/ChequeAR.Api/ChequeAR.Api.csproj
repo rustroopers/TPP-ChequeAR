@@ -121,9 +121,11 @@
     <Compile Include="Helpers\ArgentinaTime.cs" />
     <Compile Include="Helpers\Asset.cs" />
     <Compile Include="Helpers\AuditPresentation.cs" />
+    <Compile Include="Helpers\AuditSpillFile.cs" />
     <Compile Include="Helpers\CqLocalizer.cs" />
     <Compile Include="Helpers\HandledErrors.cs" />
     <Compile Include="Helpers\LogSanitizer.cs" />
+    <Compile Include="Helpers\SerilogOperationalLog.cs" />
     <Compile Include="Middleware\WebApiExceptionLogger.cs" />
     <Compile Include="Controllers\Mvc\HomeController.cs" />
     <Compile Include="Controllers\Mvc\AccountController.cs" />

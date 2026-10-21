@@ -97,7 +97,7 @@ namespace ChequeAR.Api
                 Context.Response.Cache.SetNoStore();
             }
 
-            if (Context.Response.StatusCode == 403)
+            if (Context.Response.StatusCode == 403 && !IsErrorPage(Context.Request))
                 ServiceComposition.AuditForbidden(CurrentUser.Id(Context.User as ClaimsPrincipal),
                     Helpers.LogSanitizer.Path(Context.Request.Path));
 
@@ -110,6 +110,13 @@ namespace ChequeAR.Api
             {
                 Context.Response.SuppressFormsAuthenticationRedirect = true;
             }
+        }
+
+        private static bool IsErrorPage(HttpRequest request)
+        {
+            var path = request.AppRelativeCurrentExecutionFilePath ?? string.Empty;
+            return path.Equals("~/Error", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("~/Error/", StringComparison.OrdinalIgnoreCase);
         }
 
         /// SameSite=Lax y Secure. net471 no tiene HttpCookie.SameSite, así que va al final del

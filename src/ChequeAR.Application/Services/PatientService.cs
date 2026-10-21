@@ -33,9 +33,12 @@ namespace ChequeAR.Application.Services
         private readonly IQuestionnaireRepository _qRepo;
         private readonly SpecialtyCatalogService _specialties;
         private readonly ISpecialtyGuard _guard;
+        private readonly IOperationalLog _log;
 
-        public PatientService(IHospitalFhirClient fhir, IOracleViewClient oracle, IQuestionnaireResponseRepository qrRepo, IQuestionnaireRepository qRepo, SpecialtyCatalogService specialties, ISpecialtyGuard guard)
+        public PatientService(IHospitalFhirClient fhir, IOracleViewClient oracle, IQuestionnaireResponseRepository qrRepo, IQuestionnaireRepository qRepo, SpecialtyCatalogService specialties, ISpecialtyGuard guard,
+            IOperationalLog log = null)
         {
+            _log = log ?? NullOperationalLog.Instance;
             _guard = guard;
             _fhir = fhir;
             _oracle = oracle;
@@ -69,7 +72,7 @@ namespace ChequeAR.Application.Services
                 foreach (var row in rows) result.Add(MapRow(row, null));
                 if (result.Count > 0) return result;
             }
-            catch { /* hospital no disponible: caemos a datos propios */ }
+            catch (Exception ex) { _log.Warning(ex, "Búsqueda de pacientes: " + PatientView + " no disponible; se usan las fichas propias."); }
 
             return await SearchFromResponsesAsync(query, limit);
         }
@@ -83,7 +86,7 @@ namespace ChequeAR.Application.Services
                 var row = rows.Count > 0 ? rows[0] : null;
                 if (row != null) return MapRow(row, hospitalId);
             }
-            catch { /* hospital no disponible */ }
+            catch (Exception ex) { _log.Warning(ex, "Ficha de paciente: " + PatientView + " no disponible; se usan las fichas propias."); }
 
             var responses = await _qrRepo.SearchAsync(hospitalId, null, null, 0, 50, _guard.Scope);
             if (responses.Count == 0) return null;
@@ -112,7 +115,11 @@ namespace ChequeAR.Application.Services
                     BirthDate = row.TryGetValue("FECHA_NACIMIENTO", out var fn) && fn is DateTime dob ? dob : (DateTime?)null
                 };
             }
-            catch { return null; /* hospital no disponible */ }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Datos demográficos: " + PatientView + " no disponible; la ficha sigue sin ellos.");
+                return null;
+            }
         }
 
         private static string Gender(string sexo)
@@ -178,7 +185,11 @@ namespace ChequeAR.Application.Services
             if (!specialtyByQuestionnaire.TryGetValue(latest.QuestionnaireId, out var specialtyCode))
             {
                 try { specialtyCode = await _qRepo.GetSpecialtyCodeAsync(latest.QuestionnaireId); }
-                catch { specialtyCode = null; /* modo degradado: sin especialidad, se usa la de omisión */ }
+                catch (Exception ex)
+                {
+                    _log.Warning(ex, "No se pudo leer la especialidad del cuestionario " + latest.QuestionnaireId + "; se usa la de omisión.");
+                    specialtyCode = null;
+                }
                 specialtyByQuestionnaire[latest.QuestionnaireId] = specialtyCode;
             }
 

@@ -29,7 +29,7 @@ namespace ChequeAR.Api.Auth
         {
             var principal = httpContext.User as ClaimsPrincipal;
             if (principal == null || !principal.Identity.IsAuthenticated) return false;
-            return RolePolicy.Allows(CurrentUser.Roles(principal), _permission);
+            return RolePolicy.Allows(new[] { CurrentUser.PrincipalRole(principal) }, _permission);
         }
 
         protected override void HandleUnauthorizedRequest(AuthorizationContext filterContext)
@@ -37,6 +37,8 @@ namespace ChequeAR.Api.Auth
             var principal = filterContext.HttpContext.User as ClaimsPrincipal;
             if (principal != null && principal.Identity.IsAuthenticated)
             {
+                App_Start.ServiceComposition.AuditForbidden(CurrentUser.Id(principal),
+                    Helpers.LogSanitizer.Path(filterContext.HttpContext.Request.Path));
                 filterContext.Result = new RedirectToRouteResult(new RouteValueDictionary(
                     new { controller = "Error", action = "Index", code = 403 }));
                 return;
