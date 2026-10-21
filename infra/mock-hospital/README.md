@@ -110,37 +110,6 @@ Como el seed es determinístico (`DBMS_RANDOM.SEED(20260625)`), los pacientes,
 episodios y resultados son los mismos; sólo se corren las fechas al día de la
 nueva carga (SC-002). `DeterminismTests` lo verifica con hashes fijos.
 
-## Stakeholder review (US3, SC-005)
-
-Para revisión con clínicos del Garrahan: el script `init/sample-historiales.sql`
-genera 5 historiales completos (paciente + alergias + episodios + dx + signos +
-laboratorio) con una semilla distinta a la del seed (`20260101`), así la muestra
-no privilegia siempre los mismos pacientes.
-
-```bash
-cd infra/mock-hospital/init
-sqlplus -S CHEQUEAR_RO/devdev@//localhost:1521/XEPDB1 @sample-historiales.sql
-```
-
-Procedimiento sugerido para la review:
-
-1. Imprimir o compartir en pantalla la salida.
-2. Pedirle al clínico que evalúe **cada uno de los 5 historiales** contra esta
-   rúbrica binaria (✓ / ✗):
-   - **Nombre+apellido creíbles para un paciente argentino**.
-   - **Edad coherente** entre `FECHA_NACIMIENTO` y los episodios.
-   - **Diagnóstico CIE-10 razonable** para la edad y la especialidad atendiente.
-   - **Observaciones de laboratorio dentro de rangos fisiológicos** para la edad.
-   - **Signos vitales coherentes** (peso/talla vs edad, FC/FR vs banda etaria).
-3. Anotar el resultado en una minuta de stakeholder review.
-4. **Criterio de aceptación SC-005**: al menos 4 de los 5 historiales deben
-   tener todos los ítems ✓. Si quedan <4, ajustar el seed (T028–T030) y
-   re-correr la review.
-
-Cualquier dato que el clínico marque como implausible que requiera cambio se
-levanta como issue contra `infra/mock-hospital/init/03-seed.sql` o contra los
-catálogos embebidos (CIE-10, LOINC).
-
 ## Tests de integración
 
 ```bash
